@@ -729,9 +729,15 @@ export default function RasterTool(){
       built[di]={}
       DD.forEach(dd=>{
         const pool=orderPool(g[dd]||[])
-        const need=fillRooms(pool, usableFor(dd), Infinity).rooms.length  // onbeperkt = werkelijk nodig
+        // Onbeperkte pak = werkelijk benodigde kamers. In automatische modus IS dit
+        // meteen het resultaat (geen tweede pak nodig → sneller). Alleen bij een
+        // vaste limiet doen we een tweede, begrensde pak voor de overloop.
+        const full=fillRooms(pool, usableFor(dd), Infinity)
+        const need=full.rooms.length
         neededRooms=Math.max(neededRooms, need)
-        const {rooms,overflow}=fillRooms(pool, usableFor(dd), maxParallel) // begrensd = wat past
+        let rooms, overflow
+        if(maxParallel===Infinity){ rooms=full.rooms; overflow=[] }
+        else { const r=fillRooms(pool, usableFor(dd), maxParallel); rooms=r.rooms; overflow=r.overflow }
         built[di][dd]=rooms
         overflow.forEach(a=>overflowInst.push({...a, day:di, dd, edited:false}))
         maxRooms=Math.max(maxRooms, rooms.length)
@@ -863,12 +869,17 @@ export default function RasterTool(){
     setRaster(res)
   },[cfg,newRows,ctrlRows,m2,rules,capacity])
 
-  // ENGINE 2.0 — live sync: zodra er een raster is, wordt elke wijziging in
-  // gegevens/tijden/regels direct doorgerekend (studio: canvas is altijd zichtbaar).
+  // ENGINE 2.0 — live sync (gedebounced): zodra er een raster is, wordt élke
+  // wijziging in gegevens/tijden/regels/capaciteit doorgerekend. De debounce
+  // voorkomt dat het snelle slepen aan een schuif de engine laat vastlopen; de
+  // TRAILING-edge garandeert dat er ALTIJD op de laatste waarde wordt herrekend,
+  // zodat de uitkomst nooit op een oude stand blijft hangen.
   const hasRasterRef=useRef(false)
   useEffect(()=>{ hasRasterRef.current=!!raster },[raster])
   useEffect(()=>{
-    if(hasRasterRef.current) doGenerate()
+    if(!hasRasterRef.current) return
+    const id=setTimeout(()=>doGenerate(),80)
+    return ()=>clearTimeout(id)
   },[doGenerate])
   // auto-start: genereer bij openen zodat de studio direct leeft
   const bootRef=useRef(false)
