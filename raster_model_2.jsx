@@ -127,6 +127,53 @@ const MODALITEITEN=[
 ]
 const modInfo=m=>MODALITEITEN.find(x=>x.v===m)||MODALITEITEN[0]
 
+// ─── SPECIALISME-VOORBEELDSETS ─────────────────────────────────────────────────
+// Rij = [code, omschrijving, duur, verdeling%, modaliteit, spoed]. Het kiezen van
+// een specialisme laadt hiermee realistische startcodes, zodat de poli-keuze het
+// model écht aanstuurt. Verdeling% telt per groep (nieuw / controle) op tot 100.
+const mkRow=([code,oms,duur,pct,mod='fysiek',spoed=false])=>({
+  ...defaultRow(1),afspraakcode:code,omschrijving:oms,duur,percentage:pct,
+  modaliteit:mod,digitaal:mod!=='fysiek',spoed})
+const SPEC_PRESETS={
+  'Dermatologie':{newPat:30,ctrlPat:48,
+    nieuw:[['NP','Nieuwe patiënt',15,70],['NPX','Nieuw complex/verdenking',25,30]],
+    ctrl:[['CO','Controle',10,50],['TC','Telefonisch consult',10,20,'telefonisch'],['VER','Kleine verrichting',20,30]]},
+  'Cardiologie':{newPat:14,ctrlPat:42,
+    nieuw:[['NP','Nieuwe patiënt',30,100]],
+    ctrl:[['CO','Controle',15,55],['TC','Telefonische controle',10,25,'telefonisch'],['ECHO','Echo-bespreking',20,20]]},
+  'Orthopedie':{newPat:18,ctrlPat:46,
+    nieuw:[['NP','Nieuwe patiënt',20,100]],
+    ctrl:[['CO','Controle',10,58],['GIPS','Gips/wondcontrole',15,27],['TC','Telefonisch consult',10,15,'telefonisch']]},
+  'Interne':{newPat:12,ctrlPat:36,
+    nieuw:[['NP','Nieuwe patiënt',30,100]],
+    ctrl:[['CO','Controle',15,60],['TC','Telefonische controle',10,25,'telefonisch'],['VCO','Video-controle',15,15,'video']]},
+  'Neurologie':{newPat:12,ctrlPat:34,
+    nieuw:[['NP','Nieuwe patiënt',30,100]],
+    ctrl:[['CO','Controle',20,65],['TC','Telefonisch consult',10,35,'telefonisch']]},
+  'KNO':{newPat:26,ctrlPat:40,
+    nieuw:[['NP','Nieuwe patiënt',15,100]],
+    ctrl:[['CO','Controle',10,70],['VER','Kleine verrichting',15,30]]},
+  'Oogheelkunde':{newPat:28,ctrlPat:52,
+    nieuw:[['NP','Nieuwe patiënt',15,100]],
+    ctrl:[['CO','Controle',10,75],['TC','Telefonisch consult',10,25,'telefonisch']]},
+  'Urologie':{newPat:16,ctrlPat:38,
+    nieuw:[['NP','Nieuwe patiënt',20,100]],
+    ctrl:[['CO','Controle',10,60],['TC','Telefonische controle',10,25,'telefonisch'],['VER','Flexiscopie',20,15]]},
+  'Gynaecologie':{newPat:18,ctrlPat:40,
+    nieuw:[['NP','Nieuwe patiënt',20,100]],
+    ctrl:[['CO','Controle',15,60],['ECHO','Echo',15,25],['TC','Telefonisch consult',10,15,'telefonisch']]},
+  'Chirurgie':{newPat:20,ctrlPat:44,
+    nieuw:[['NP','Nieuwe patiënt',15,100]],
+    ctrl:[['CO','Controle',10,60],['POK','Postoperatieve controle',15,25],['TC','Telefonisch consult',10,15,'telefonisch']]},
+  'Longziekten':{newPat:12,ctrlPat:34,
+    nieuw:[['NP','Nieuwe patiënt',30,100]],
+    ctrl:[['CO','Controle',15,55],['TC','Telefonische controle',10,30,'telefonisch'],['LF','Longfunctie-bespreking',15,15]]},
+  'Reumatologie':{newPat:12,ctrlPat:38,
+    nieuw:[['NP','Nieuwe patiënt',30,100]],
+    ctrl:[['CO','Controle',15,60],['TC','Telefonische controle',10,40,'telefonisch']]},
+}
+const SPECIALISMEN=Object.keys(SPEC_PRESETS)
+
 // ─── MICRO COMPONENTS ─────────────────────────────────────────────────────────
 const Btn=({children,variant='primary',onClick,disabled,small,style={}})=>{
   const [h,sH]=useState(false)
@@ -903,6 +950,22 @@ export default function RasterTool(){
     setSelDay(0); setRaster(null); setDrag(null)
     setShowFullReset(false)
   }
+
+  // Kies een specialisme: werk de naam live bij (tenzij de gebruiker een eigen
+  // naam typte) en laad de bijbehorende voorbeeldcodes. Zo stuurt de poli-keuze
+  // het hele model aan. `codes` false = alleen naam/label bijwerken.
+  const kiesSpecialisme=(v,codes=true)=>{
+    setPoli(p=>({...p, specialisme:v,
+      naam:(!p.naam || /^Poli\s/i.test(p.naam)) ? (v?'Poli '+v:'') : p.naam}))
+    const pre=SPEC_PRESETS[v]
+    if(!codes||!pre) return
+    const nieuw=pre.nieuw.map(mkRow), ctrl=pre.ctrl.map(mkRow)
+    setCfg(c=>({...c,newPat:pre.newPat,ctrlPat:pre.ctrlPat,newCodes:nieuw.length,ctrlCodes:ctrl.length}))
+    setNewRows(nieuw); setCtrlRows(ctrl)
+    setM1Mode(m=>m||'manual'); setM1Section(2)
+  }
+  // Zijn er al door de gebruiker ingevoerde codes? (voor de bevestiging bij laden)
+  const heeftCodes=()=> (newRows.some(r=>r.afspraakcode||r.omschrijving) || ctrlRows.some(r=>r.afspraakcode||r.omschrijving))
 
   const m2c=useMemo(()=>{
     const od=toMin(m2.ochEnd)-toMin(m2.ochStart)   // ochtend dagdeel bruto minuten
@@ -2620,14 +2683,27 @@ export default function RasterTool(){
             onBlur={e=>{e.target.style.background='transparent';e.target.style.borderColor='transparent'}}/>
           <select value={poli.specialisme} onChange={e=>{
               const v=e.target.value
-              setPoli(p=>({...p,specialisme:v,naam:p.naam||(v?'Poli '+v:'')}))
+              if(!v){ setPoli(p=>({...p,specialisme:''})); return }
+              // Voorbeeldcodes laden — vraag alleen om bevestiging als er al eigen codes staan
+              if(heeftCodes()){
+                if(window.confirm(`Voorbeeldcodes voor ${v} laden?\n\nDit vervangt de huidige afspraakcodes en aantallen. Klik Annuleren om alleen de naam te wijzigen.`))
+                  kiesSpecialisme(v,true)
+                else kiesSpecialisme(v,false)
+              } else kiesSpecialisme(v,true)
             }}
-            title="Kies een specialisme (optioneel)"
-            style={{fontSize:11.5,color:C.muted,border:`1px solid ${C.border}`,background:C.white,
+            title="Kies een specialisme — laadt passende voorbeeldcodes"
+            style={{fontSize:11.5,color:poli.specialisme?C.primary:C.muted,fontWeight:poli.specialisme?700:400,
+              border:`1px solid ${C.border}`,background:C.white,
               borderRadius:7,padding:'5px 8px',cursor:'pointer',fontFamily:'inherit'}}>
             <option value="">Specialisme…</option>
-            {['Dermatologie','Cardiologie','Orthopedie','Interne','Neurologie','KNO','Oogheelkunde','Urologie','Gynaecologie','Chirurgie','Longziekten','Reumatologie'].map(s=><option key={s} value={s}>{s}</option>)}
+            {SPECIALISMEN.map(s=><option key={s} value={s}>{s}</option>)}
           </select>
+          {poli.specialisme&&SPEC_PRESETS[poli.specialisme]&&(
+            <button onClick={()=>{ if(!heeftCodes()||window.confirm(`Voorbeeldcodes voor ${poli.specialisme} opnieuw laden?\n\nDit vervangt de huidige afspraakcodes.`)) kiesSpecialisme(poli.specialisme,true) }}
+              title="Laad opnieuw de voorbeeldcodes voor dit specialisme"
+              style={{fontSize:11,fontWeight:600,color:C.primary,background:C.blueAccent,border:`1px solid ${C.primary}`,
+                borderRadius:7,padding:'5px 10px',cursor:'pointer',whiteSpace:'nowrap'}}>⤓ Voorbeeldcodes</button>
+          )}
           <span style={{fontSize:10.5,color:C.muted}}>· live — wijzigingen links worden direct doorgerekend</span>
           <div style={{flex:1}}/>
           {importBadge&&<span style={{fontSize:10,fontWeight:600,color:C.green,background:'#EAF4EE',

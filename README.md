@@ -24,8 +24,11 @@ Losse, klikbare versie: `dist/polimodel.html` (alles ingebundeld, direct in de b
   van één "digitaal"-vinkje. Zo leg je vast dat zowel nieuwe als controlepatiënten in
   verschillende varianten voorkomen. De modaliteit stroomt door naar de blokken (☎ / 📹)
   en naar het sleeppalet, dat nu elke ingevoerde code als sleepbron toont.
-- **Poli-identiteit bovenin** — typ de naam van de poli of kies een specialisme. Wordt
-  meegenomen in de titel en de Excel-export. Hoeft niet, maar kan.
+- **Poli-identiteit bovenin die het model aanstuurt** — typ de naam van de poli of kies een
+  specialisme. Bij het kiezen van een specialisme (dermatologie, cardiologie, orthopedie, …)
+  laadt de tool meteen een realistische set afspraakcodes, aantallen en modaliteiten voor dat
+  vak, werkt de naam live bij en herberekent het raster. Een eigen getypte naam blijft behouden;
+  met de knop **⤓ Voorbeeldcodes** laad je de set desgewenst opnieuw.
 - **Capaciteitsplanning met past-advies** — een besturingsbalk boven het raster waarin je
   de capaciteit *kiest* in plaats van hem te laten raden:
   - schakel tussen **Automatisch** (het rooster groeit tot precies wat nodig is) en
