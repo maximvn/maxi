@@ -1,1235 +1,2572 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react'
+import React, { useState, useMemo, useCallback, useRef, useEffect } from "react"
 import * as XLSX from 'xlsx'
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   POLIMODEL 2.1 — Snelstart & Weekraster
-   ───────────────────────────────────────────────────────────────────────────
-   Twee snelle wegen naar een raster:
-   1. SNELSTART — sleep een paar schuiven (patiëntaantallen, duur, team) en er
-      rolt direct een compleet weekraster uit. Geen Excel of handwerk nodig.
-   2. VERFIJNEN — wil je meer grip, dan open je de zorgvraag, capaciteit en
-      strategie en stel je alles met de hand bij.
-   Het weekraster toont álle vijf dagen tegelijk als tijdkalender: je ziet in
-   één oogopslag hoe de week eruitziet, afspraak voor afspraak.
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-/* ─── THEMA ─────────────────────────────────────────────────────────────────── */
-const CSS = `
-:root{
-  --rail:#0F1D19; --railTxt:#9DB4AA; --railHi:#E7F5EE;
-  --acc:#0FA48A; --accD:#0B7A67; --accSoft:#E1F4EF;
-  --warn:#B26A00; --warnSoft:#FCF1DF; --bad:#C6362B; --badSoft:#FBE7E5;
-  --ok:#0E8F63; --okSoft:#E3F5EC;
-  --bg:#F4F5F2; --panel:#FFFFFF; --line:#E2E6E1; --line2:#EDF0EC;
-  --ink:#1B2420; --mut:#68746E; --mut2:#939D97;
-  --nieuw:#0C8F79; --nieuwBg:#DBF2EC; --nieuwLn:#8FD3C4;
-  --controle:#5D57C4; --controleBg:#E7E6F7; --controleLn:#BAB6E6;
-  --behandeling:#B14E1E; --behandelingBg:#F9E6DA; --behandelingLn:#E9B69A;
-  --overig:#3F7191; --overigBg:#E1ECF3; --overigLn:#A9C7D9;
-  --buffer:#7C8781; --bufferBg:#EFF1EE;
-  --spoedBg:#FBE5E4; --spoed:#A83228;
-  --mono:'IBM Plex Mono',ui-monospace,monospace;
+// ─── DESIGN TOKENS ────────────────────────────────────────────────────────────
+const C = {
+  primary:'#1C6EA4',     // clean professional blue
+  primaryDark:'#155888',
+  light:'#4A92C4',
+  green:'#2E8B57',
+  ink:'#1B2733',
+  ink2:'#243443',
+  ink3:'#33485A',
+  bg:'#F7F9FB',          // very light page background
+  surface2:'#F0F4F8',    // raised light surface
+  border:'#E4E9EF',      // soft light border
+  rowAlt:'#F5F8FB',
+  white:'#FFFFFF',
+  text:'#1B2733',
+  muted:'#6A7A88',
+  danger:'#C8503E',
+  card:'#FFFFFF',
+  shadow:'0 1px 2px rgba(27,39,51,0.04)',
+  shadowLg:'0 16px 48px rgba(27,39,51,0.16)',
+  timeline:'#FAFCFD',
+  calBg:'#FCFDFE',
+  hour:'#1B2733',
+  halfHour:'#A8B4BE',
+  blueAccent:'#E4F0F8',
 }
-*{box-sizing:border-box}
-.pm-root{display:flex;min-height:100vh;background:var(--bg);color:var(--ink);
-  font-family:'Manrope',system-ui,sans-serif;font-size:14px;line-height:1.45}
-/* ── START ── */
-.pm-intro{flex:1;min-height:100vh;background:
-  radial-gradient(1100px 520px at 82% -12%,#1E3B31 0%,transparent 60%),
-  radial-gradient(900px 620px at -8% 112%,#122A22 0%,transparent 55%),var(--rail);
-  color:#E9F3EE;display:flex;flex-direction:column;align-items:center;padding:52px 24px 70px}
-.pm-badge{font-family:var(--mono);font-size:11px;letter-spacing:.24em;color:#6FD3BE;
-  border:1px solid #2C4A3E;border-radius:99px;padding:7px 18px;margin-bottom:22px}
-.pm-intro h1{font-size:40px;font-weight:800;letter-spacing:-.03em;margin:0 0 12px;text-align:center;line-height:1.08}
-.pm-intro h1 em{font-style:normal;color:#5ED6BC}
-.pm-intro .sub{max-width:600px;text-align:center;color:#AFC6BC;font-size:15px;margin:0 0 34px}
-/* snelstart-kaart */
-.snel-card{width:100%;max-width:940px;background:#0E201A;border:1px solid #24413688;border-radius:20px;
-  padding:26px 30px 30px;box-shadow:0 30px 80px #04120d55}
-.snel-head{display:flex;align-items:center;gap:12px;margin-bottom:6px}
-.snel-head .n{font-family:var(--mono);font-size:11px;color:#5ED6BC;letter-spacing:.18em}
-.snel-head h2{margin:0;font-size:21px;color:#F0FAF5}
-.snel-head p{margin:0;color:#88A296;font-size:13px}
-.spec-row{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0 22px}
-.spec-btn{border:1px solid #2C4A3E;background:#12271F;color:#B9D2C7;border-radius:99px;padding:8px 16px;
-  font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;transition:all .13s}
-.spec-btn:hover{border-color:var(--acc)}
-.spec-btn.on{background:var(--acc);border-color:var(--acc);color:#04120D}
-.snel-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px 34px}
-.slz{display:flex;flex-direction:column;gap:7px}
-.slz .lab{display:flex;justify-content:space-between;align-items:baseline}
-.slz .lab b{font-size:13px;color:#DCEDE6;font-weight:700}
-.slz .lab .v{font-family:var(--mono);font-size:14px;color:#5ED6BC;font-weight:600}
-.slz .hint{font-size:11px;color:#6E877C;margin-top:-2px}
-input[type=range]{-webkit-appearance:none;appearance:none;height:6px;border-radius:99px;
-  background:#20382E;outline:none;cursor:pointer}
-input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;
-  background:var(--acc);border:3px solid #0E201A;box-shadow:0 0 0 1px var(--acc);cursor:grab}
-input[type=range]::-moz-range-thumb{width:15px;height:15px;border-radius:50%;background:var(--acc);
-  border:3px solid #0E201A;cursor:grab}
-.snel-foot{display:flex;align-items:center;gap:14px;margin-top:26px;flex-wrap:wrap}
-.snel-preview{flex:1;min-width:220px;font-size:12.5px;color:#9DB9AD;line-height:1.6}
-.snel-preview b{color:#DCEDE6}
-.big-btn{background:var(--acc);color:#04120D;border:none;border-radius:12px;padding:14px 26px;
-  font:inherit;font-size:15px;font-weight:800;cursor:pointer;transition:all .14s;white-space:nowrap}
-.big-btn:hover{background:#37C7AC;transform:translateY(-1px)}
-.alt-routes{display:flex;gap:10px;margin-top:26px;flex-wrap:wrap;justify-content:center}
-.alt-route{border:1px solid #2C4A3E55;background:#0D1B16;border-radius:12px;padding:13px 18px;cursor:pointer;
-  font-size:12.5px;color:#9DB4AA;transition:border-color .13s;display:flex;align-items:center;gap:9px}
-.alt-route:hover{border-color:var(--acc);color:#DCEDE6}
-.alt-route b{color:#DCEDE6;font-weight:700}
-/* ── RAIL ── */
-.pm-rail{width:220px;flex-shrink:0;background:var(--rail);color:var(--railTxt);display:flex;flex-direction:column;
-  position:sticky;top:0;height:100vh;overflow-y:auto}
-.pm-logo{padding:20px 18px 16px;border-bottom:1px solid #FFFFFF12}
-.pm-logo .t{font-weight:800;font-size:16px;color:var(--railHi)}
-.pm-logo .s{font-family:var(--mono);font-size:10px;letter-spacing:.2em;color:#5ED6BC;margin-top:3px}
-.pm-nav{padding:12px 10px;flex:1}
-.pm-nav-item{display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:10px;cursor:pointer;
-  margin-bottom:3px;transition:background .12s;border:1px solid transparent}
-.pm-nav-item:hover{background:#FFFFFF0A}
-.pm-nav-item.act{background:#FFFFFF12;border-color:#FFFFFF14;color:var(--railHi)}
-.pm-nav-item .nr{font-family:var(--mono);font-size:10.5px;width:20px;height:20px;border-radius:6px;background:#FFFFFF10;
-  display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.pm-nav-item.act .nr{background:var(--acc);color:#04120D}
-.pm-nav-item .lbl{flex:1;font-size:13px;font-weight:600}
-.pm-nav-item .st{width:8px;height:8px;border-radius:99px;flex-shrink:0}
-.st-ok{background:var(--ok)} .st-warn{background:var(--warn)} .st-bad{background:var(--bad)} .st-idle{background:#FFFFFF22}
-.pm-cockpit{margin:8px 12px 16px;background:#FFFFFF08;border:1px solid #FFFFFF10;border-radius:12px;padding:13px}
-.pm-cockpit .h{font-family:var(--mono);font-size:9.5px;letter-spacing:.18em;color:#6FD3BE;margin-bottom:9px}
-.pm-cq{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}
-.pm-cq .k{font-size:11px;color:#8FA79C} .pm-cq .v{font-family:var(--mono);font-size:13px;color:var(--railHi)}
-.pm-cbar{height:5px;border-radius:3px;background:#FFFFFF14;overflow:hidden;margin-top:3px}
-.pm-cbar>div{height:100%;border-radius:3px}
-/* ── MAIN ── */
-.pm-main{flex:1;display:flex;flex-direction:column;min-width:0}
-.pm-top{display:flex;align-items:center;gap:12px;background:var(--panel);border-bottom:1px solid var(--line);
-  padding:11px 22px;position:sticky;top:0;z-index:30}
-.pm-top .poli-naam{font-size:16px;font-weight:800;border:none;background:transparent;color:var(--ink);
-  font-family:inherit;min-width:60px;max-width:320px;padding:4px 6px;border-radius:8px}
-.pm-top .poli-naam:hover,.pm-top .poli-naam:focus{background:var(--bg);outline:none}
-.pm-top .meta{font-size:12px;color:var(--mut)}
-.pm-body{flex:1;padding:24px;max-width:1320px;width:100%;margin:0 auto}
-.pm-h1{font-size:23px;font-weight:800;letter-spacing:-.02em;margin:0 0 4px}
-.pm-lead{color:var(--mut);font-size:13.5px;margin:0 0 20px;max-width:820px}
-.pm-panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:15px}
-.pm-panel .ph{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:13px;flex-wrap:wrap}
-.pm-panel .ph b{font-size:14px}
-.pm-panel .ph .sub{font-size:12px;color:var(--mut);font-weight:400}
-/* atoms */
-.btn{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);background:var(--panel);color:var(--ink);
-  font:inherit;font-size:12.5px;font-weight:700;padding:8px 15px;border-radius:9px;cursor:pointer;transition:all .13s}
-.btn:hover{border-color:var(--acc);color:var(--accD)}
-.btn.solid{background:var(--rail);border-color:var(--rail);color:#EAF6F0}
-.btn.solid:hover{background:#1C332B;color:#fff}
-.btn.acc{background:var(--acc);border-color:var(--acc);color:#04120D}
-.btn.acc:hover{background:var(--accD);border-color:var(--accD);color:#fff}
-.btn.mini{padding:4px 9px;font-size:11px;border-radius:7px}
-.btn.danger:hover{border-color:var(--bad);color:var(--bad)}
-.btn:disabled{opacity:.4;cursor:not-allowed}
-.inp{font:inherit;font-size:13px;border:1px solid var(--line);border-radius:8px;padding:7px 10px;color:var(--ink);
-  background:var(--panel);width:100%}
-.inp:focus{outline:none;border-color:var(--acc)}
-.inp.num{font-family:var(--mono);text-align:right;width:70px}
-select.inp{cursor:pointer}
-.chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;border-radius:99px;padding:3px 10px}
-.chip.nieuw{background:var(--nieuwBg);color:var(--accD)}
-.chip.controle{background:var(--controleBg);color:var(--controle)}
-.chip.behandeling{background:var(--behandelingBg);color:var(--behandeling)}
-.chip.overig{background:var(--overigBg);color:var(--overig)}
-.badge{font-family:var(--mono);font-size:10.5px;border-radius:6px;padding:2px 7px}
-.badge.ok{background:var(--okSoft);color:var(--ok)} .badge.warn{background:var(--warnSoft);color:var(--warn)}
-.badge.bad{background:var(--badSoft);color:var(--bad)}
-/* inline snelpaneel */
-.snel-inline{background:linear-gradient(180deg,#0F1D1908,transparent),var(--accSoft);
-  border:1px solid var(--nieuwLn);border-radius:14px;padding:18px;margin-bottom:15px}
-.snel-inline .sg{display:grid;grid-template-columns:repeat(3,1fr);gap:16px 24px}
-.snel-inline .slz .lab b{color:var(--ink)} .snel-inline .slz .lab .v{color:var(--accD)}
-.snel-inline .slz .hint{color:var(--mut)}
-.snel-inline input[type=range]{background:#C6E5DC}
-.snel-inline input[type=range]::-webkit-slider-thumb{border-color:#fff}
-/* tabel zorgvraag */
-.vt{width:100%;border-collapse:collapse}
-.vt th{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;color:var(--mut2);text-transform:uppercase;
-  text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
-.vt td{padding:6px 8px;border-bottom:1px solid var(--line2);vertical-align:middle}
-.vt tr:hover td{background:#FAFBF9}
-/* weekgrid capaciteit */
-.wg{display:grid;grid-template-columns:168px repeat(5,1fr);gap:6px;align-items:stretch}
-.wg .hd{font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--mut);text-transform:uppercase;
-  display:flex;align-items:flex-end;padding:4px 2px}
-.wg .bh{display:flex;flex-direction:column;justify-content:center;gap:3px;padding:6px 4px}
-.cel-col{display:flex;flex-direction:column;gap:4px}
-.cel{border:1px dashed var(--line);border-radius:8px;padding:6px 8px;cursor:pointer;font-size:11px;color:var(--mut2);
-  display:flex;align-items:center;justify-content:space-between;gap:6px;transition:all .12s;background:var(--panel)}
-.cel:hover{border-color:var(--acc);color:var(--accD)}
-.cel.on{border:1px solid var(--nieuwLn);background:var(--accSoft);color:var(--accD);font-weight:700}
-.cel .tijd{display:flex;align-items:center;gap:2px}
-/* KPI */
-.kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:11px;margin-bottom:15px}
-.kpi{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:14px 16px}
-.kpi .k{font-family:var(--mono);font-size:9px;letter-spacing:.13em;color:var(--mut2);text-transform:uppercase;margin-bottom:7px}
-.kpi .v{font-size:23px;font-weight:800;letter-spacing:-.02em;font-family:var(--mono)}
-.kpi .d{font-size:11px;color:var(--mut);margin-top:3px}
-.bar-rij{display:flex;align-items:center;gap:10px;margin-bottom:8px}
-.bar-rij .lb{width:86px;font-size:12px;font-weight:700}
-.bar-track{flex:1;height:20px;border-radius:6px;background:var(--line2);position:relative;overflow:hidden}
-.bar-track .ab{position:absolute;inset:0 auto 0 0;background:var(--accSoft);border-right:2px solid var(--acc);opacity:.9}
-.bar-track .vr{position:absolute;inset:0 auto 0 0;background:var(--controleBg);border-right:2px solid var(--controle)}
-.bar-rij .cf{font-family:var(--mono);font-size:11px;width:130px;text-align:right;color:var(--mut)}
-.issue{display:flex;gap:12px;padding:11px 14px;border-radius:11px;margin-bottom:8px;border:1px solid}
-.issue.bad{background:var(--badSoft);border-color:#F0C8C3}
-.issue.warn{background:var(--warnSoft);border-color:#EFD9B4}
-.issue.info{background:var(--okSoft);border-color:#BFE5D2}
-.issue .dot{width:9px;height:9px;border-radius:99px;margin-top:5px;flex-shrink:0}
-.issue b{display:block;font-size:13px;margin-bottom:2px}
-.issue p{margin:0;font-size:12px;color:var(--mut)}
-/* strategie */
-.prof-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:15px}
-.prof{border:1px solid var(--line);border-radius:14px;padding:16px;cursor:pointer;background:var(--panel);transition:all .13s}
-.prof:hover{border-color:var(--acc)}
-.prof.on{border-color:var(--acc);background:var(--accSoft);box-shadow:0 0 0 1px var(--acc)}
-.prof b{display:block;font-size:14px;margin-bottom:6px}
-.prof p{margin:0;font-size:12px;color:var(--mut);line-height:1.55}
-.par-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 26px}
-.par{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid var(--line2)}
-.par .pl b{font-size:13px;display:block} .par .pl span{font-size:11.5px;color:var(--mut)}
-.seg{display:inline-flex;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:2px}
-.seg button{font:inherit;font-size:11.5px;font-weight:700;border:none;background:transparent;color:var(--mut);
-  padding:5px 11px;border-radius:7px;cursor:pointer}
-.seg button.on{background:var(--panel);color:var(--accD);box-shadow:0 1px 3px #0002}
-.step{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:8px;overflow:hidden}
-.step button{border:none;background:var(--bg);width:26px;height:30px;cursor:pointer;font-weight:800;color:var(--mut);font-size:14px}
-.step .val{font-family:var(--mono);font-size:12.5px;min-width:52px;text-align:center;font-weight:700}
-/* ══ WEEK-KALENDER ══ */
-.cal-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
-.cal-legend{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--mut);align-items:center}
-.cal-legend .lg{display:inline-flex;align-items:center;gap:5px}
-.cal-legend .sw{width:11px;height:11px;border-radius:3px}
-.wk-cal{display:flex;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--panel)}
-.wk-gutter{width:50px;flex-shrink:0;position:relative;border-right:1px solid var(--line);background:var(--bg)}
-.wk-gutter .ghd{height:38px;border-bottom:1px solid var(--line)}
-.wk-day{flex:1;position:relative;border-right:1px solid var(--line2);min-width:150px}
-.wk-day:last-child{border-right:none}
-.wk-dayhd{height:38px;display:flex;align-items:center;justify-content:space-between;padding:0 11px;
-  border-bottom:1px solid var(--line);font-weight:800;font-size:12.5px;background:var(--panel);position:sticky;top:0;z-index:4}
-.wk-dayhd .du{font-family:var(--mono);font-size:10.5px;color:var(--mut);font-weight:600}
-.wk-canvas{position:relative}
-.wk-hour{position:absolute;left:0;right:0;height:1px;background:var(--line2)}
-.wk-hourlab{position:absolute;right:6px;font-family:var(--mono);font-size:10px;color:var(--mut2);transform:translateY(-50%)}
-.wk-ses{position:absolute;border-radius:8px;overflow:hidden;border:1px solid var(--line);cursor:pointer;
-  background:var(--panel);box-shadow:0 1px 3px #0f1d1911;transition:box-shadow .12s,transform .12s}
-.wk-ses:hover{box-shadow:0 6px 18px #0f1d1926;transform:translateY(-1px);z-index:9}
-.wk-ses.sel{box-shadow:0 0 0 2px var(--acc),0 6px 18px #0f1d1926;z-index:9}
-.wk-ses-lab{position:absolute;top:0;left:0;right:0;height:15px;display:flex;align-items:center;gap:4px;
-  padding:0 5px;font-size:9px;font-weight:800;color:var(--ink);background:var(--panel);
-  border-bottom:1px solid var(--line2);z-index:3;pointer-events:none;white-space:nowrap;overflow:hidden}
-.wk-slotwrap{position:absolute;top:15px;left:0;right:0;bottom:0}
-.wk-slot{position:absolute;left:0;right:0;overflow:hidden;display:flex;align-items:center;gap:3px;
-  padding:0 4px;font-size:9px;font-weight:700;border-top:1px solid #ffffff55}
-.wk-slot .sc{font-family:var(--mono)}
-.wk-empty-day{position:absolute;inset:38px 0 0 0;display:flex;align-items:center;justify-content:center;
-  color:var(--mut2);font-size:11px}
-/* drawer */
-.drawer{position:fixed;top:0;right:0;bottom:0;width:410px;background:var(--panel);border-left:1px solid var(--line);
-  z-index:60;box-shadow:-18px 0 50px #0F1D1922;display:flex;flex-direction:column;animation:pmSlide .18s ease}
-@keyframes pmSlide{from{transform:translateX(30px);opacity:0}to{transform:none;opacity:1}}
-.drawer .dh{padding:15px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
-.drawer .dh b{font-size:15px} .drawer .dh .x{margin-left:auto}
-.drawer .db{flex:1;overflow-y:auto;padding:14px 18px}
-.tl-slot{display:flex;align-items:center;gap:10px;border:1px solid var(--line2);border-left-width:4px;border-radius:9px;
-  padding:7px 10px;margin-bottom:6px;background:var(--panel)}
-.tl-slot .t{font-family:var(--mono);font-size:11px;color:var(--mut);width:76px;flex-shrink:0}
-.tl-slot .n{flex:1;font-size:12.5px;font-weight:700;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.tl-slot .n span{font-weight:400;color:var(--mut);font-size:11px}
-.tl-slot .acts{display:flex;gap:3px}
-.tl-slot .acts button{border:1px solid var(--line);background:var(--bg);border-radius:6px;width:22px;height:22px;
-  cursor:pointer;font-size:11px;color:var(--mut);padding:0}
-.tl-slot .acts button:hover{border-color:var(--acc);color:var(--accD)}
-.tl-slot.buffer{border-left-color:var(--buffer);background:var(--bufferBg)}
-.tl-slot.spoed{border-left-color:var(--spoed);background:var(--spoedBg)}
-.tl-slot.vrij{border-left-color:var(--line);background:transparent;border-style:dashed;color:var(--mut)}
-.ob-badge{font-family:var(--mono);font-size:9px;font-weight:800;background:var(--controle);color:#fff;border-radius:4px;padding:1px 5px}
-/* rest & scenario */
-.rest-item{display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid #F0C8C3;background:var(--badSoft);
-  border-radius:9px;margin-bottom:6px;font-size:12.5px}
-.rest-item .rd{font-size:11px;color:var(--mut);margin-left:auto}
-.sc-chip{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--panel);
-  border-radius:99px;padding:6px 8px 6px 14px;font-size:12px;font-weight:700}
-.sc-tbl{width:100%;border-collapse:collapse;font-size:12.5px}
-.sc-tbl th,.sc-tbl td{padding:8px 12px;border-bottom:1px solid var(--line2);text-align:left}
-.sc-tbl th{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--mut2)}
-.sc-tbl td.num{font-family:var(--mono)}
-/* modal */
-.pm-modal-achter{position:fixed;inset:0;background:#0F1D1980;z-index:80;display:flex;align-items:center;justify-content:center;padding:24px}
-.pm-modal{background:var(--panel);border-radius:16px;width:100%;max-width:560px;max-height:86vh;overflow-y:auto;padding:24px}
-.pm-modal h3{margin:0 0 6px;font-size:17px}
-.pm-modal .ml{font-size:12.5px;color:var(--mut);margin:0 0 16px}
-textarea.inp{font-family:var(--mono);font-size:12px;min-height:150px;resize:vertical}
-.leeg-blok{border:1px dashed var(--line);border-radius:12px;padding:30px;text-align:center;color:var(--mut);font-size:13px}
-@media (max-width:820px){.snel-grid,.par-grid,.snel-inline .sg{grid-template-columns:1fr}.kpis{grid-template-columns:repeat(2,1fr)}}
-`
-
-/* ─── CONSTANTEN ───────────────────────────────────────────────────────────── */
-const DAGEN = ['Maandag', 'Dinsdag', 'Woensdag', 'Donderdag', 'Vrijdag']
-const DAG_KORT = ['MA', 'DI', 'WO', 'DO', 'VR']
-const DAGDELEN = [
-  { k: 'O', naam: 'Ochtend', van: 510, tot: 720 },
-  { k: 'M', naam: 'Middag', van: 780, tot: 990 },
-  { k: 'A', naam: 'Avond', van: 1050, tot: 1230 },
+const NEW_PALETTE = [
+  {bg:'#DDEAF5',brd:'#A4C4DE',fg:'#1C4E72'},{bg:'#D4E3F0',brd:'#99BBD8',fg:'#184567'},
+  {bg:'#E3EDF6',brd:'#ACCBE2',fg:'#205377'},{bg:'#CFDFEE',brd:'#90B5D3',fg:'#163E5E'},
+  {bg:'#DAE7F3',brd:'#A0C0DA',fg:'#1D4F73'},{bg:'#E6EFF7',brd:'#B2CFE6',fg:'#23577C'},
 ]
-const DD_IX = { O: 0, M: 1, A: 2 }
-const CATS = {
-  nieuw: { naam: 'Nieuw', var: 'nieuw' },
-  controle: { naam: 'Controle', var: 'controle' },
-  behandeling: { naam: 'Verrichting', var: 'behandeling' },
-  overig: { naam: 'Overig', var: 'overig' },
-}
-const CAT_KLEUR = {
-  nieuw: { bg: 'var(--nieuwBg)', fg: 'var(--nieuw)', ln: 'var(--nieuwLn)' },
-  controle: { bg: 'var(--controleBg)', fg: 'var(--controle)', ln: 'var(--controleLn)' },
-  behandeling: { bg: 'var(--behandelingBg)', fg: 'var(--behandeling)', ln: 'var(--behandelingLn)' },
-  overig: { bg: 'var(--overigBg)', fg: 'var(--overig)', ln: 'var(--overigLn)' },
-}
-const MODALITEITEN = [
-  { v: 'fysiek', l: 'Fysiek', ico: '' },
-  { v: 'telefonisch', l: 'Telefonisch', ico: '☎' },
-  { v: 'video', l: 'Beeldbellen', ico: '▶' },
+const CTRL_PALETTE = [
+  {bg:'#DBEBE0',brd:'#A6CBB2',fg:'#296547'},{bg:'#D4E7DB',brd:'#9CC4A9',fg:'#245A3F'},
+  {bg:'#E1F0E6',brd:'#B0D5BC',fg:'#2E6B4E'},{bg:'#D0E5D7',brd:'#94BFA2',fg:'#1F5238'},
+  {bg:'#D8ECE4',brd:'#A0CCBC',fg:'#225A4D'},{bg:'#DDEEDF',brd:'#AAD0B2',fg:'#2B6647'},
 ]
-const modIco = m => (MODALITEITEN.find(x => x.v === m) || {}).ico || ''
+const BUF_COLOR = {bg:'#F0F3F6',brd:'#D2DBE3',fg:'#6A7A88'}
 
-const PROFIELEN = {
-  toegang: { naam: 'Toegang eerst', ico: '⇉', desc: 'Maximale instroom: nieuwe patiënten vooraan, weinig buffer. Bij oplopende toegangstijden.', preset: { bufferElke: 6, bufferDuur: 5, spoedReserve: 10 } },
-  balans: { naam: 'In balans', ico: '⇄', desc: 'Nieuwe patiënten gelijkmatig geweven, gemiddelde buffers en spoedreserve. De veilige standaard.', preset: { bufferElke: 4, bufferDuur: 10, spoedReserve: 15 } },
-  rust: { naam: 'Rust & uitloop', ico: '≋', desc: 'Ruime buffers en spoedreserve, lagere druk per sessie. Bij veel uitloop of complexe zorg.', preset: { bufferElke: 3, bufferDuur: 10, spoedReserve: 20 } },
-}
-
-const SPECIALISMEN = [
-  { id: 'algemeen', naam: 'Algemeen', extra: null },
-  { id: 'derma', naam: 'Dermatologie', extra: { code: 'VER', naam: 'Kleine verrichting', cat: 'behandeling', duur: 20, aandeel: 0.18, voorkeurDd: 'O', spreiding: 'bundel' } },
-  { id: 'cardio', naam: 'Cardiologie', extra: { code: 'ECHO', naam: 'Echo-bespreking', cat: 'behandeling', duur: 20, aandeel: 0.20, voorkeurDd: 'O', spreiding: 'bundel' } },
-  { id: 'ortho', naam: 'Orthopedie', extra: { code: 'GIPS', naam: 'Gips / wondcontrole', cat: 'behandeling', duur: 15, aandeel: 0.16, voorkeurDd: '*', spreiding: 'bundel' } },
-  { id: 'interne', naam: 'Interne', extra: null },
+const DAYS=['Maandag','Dinsdag','Woensdag','Donderdag','Vrijdag','Zaterdag','Zondag']
+const DAY_ABBR=['MA','DI','WO','DO','VR']
+const WEEKDAY_KEYS=['ma','di','wo','do','vr']
+const MODULES=[
+  {id:0,title:'Gegevens invoer',icon:'📋',short:'Gegevens'},
+  {id:1,title:'Spreekuurtijden',icon:'⏰',short:'Tijden'},
+  {id:2,title:'Planregels',icon:'📐',short:'Planregels'},
+  {id:3,title:'Rasterproces',icon:'📅',short:'Raster'}
 ]
+const PX_PER_MIN = 3.0
+const MIN_BLOCK_H = 28 // minimum block height in px
 
-/* ─── HELPERS ──────────────────────────────────────────────────────────────── */
-const uid = p => (p || 'id') + '_' + Math.random().toString(36).slice(2, 9)
-const mm = t => `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(Math.round(t) % 60).padStart(2, '0')}`
-const parseTijd = s => { const [a, b] = String(s).split(':').map(Number); return (a || 0) * 60 + (b || 0) }
-const uur = min => (Math.round(min / 6) / 10).toFixed(1).replace('.', ',')
-const klem = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
-const initialen = naam => String(naam || '').split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase()
-
-const nieuwType = (over = {}) => ({
-  id: uid('t'), code: '', naam: '', cat: 'controle', duur: 15, perWeek: 0,
-  modaliteit: 'fysiek', voorkeurDd: '*', spreiding: 'spreid', noShow: 5, ...over,
-})
-const nieuwLid = (n = 1) => ({ id: uid('bh'), naam: `Behandelaar ${n}`, rol: 'arts' })
-
-const leegModel = () => ({
-  poli: { naam: 'Nieuwe poli', specialisme: '', periode: '' },
-  kamers: 2,
-  team: [nieuwLid(1)],
-  types: [],
-  sessies: [],
-  strategie: { profiel: 'balans', bufferElke: 4, bufferDuur: 10, spoedReserve: 15, spoedPositie: 'einde', digitaalPositie: 'einde', overboekStart: false, maxNieuwPerSessie: 0 },
-  bron: null,
-})
-
-/* ─── SNELSTART: model uit schuifknoppen ───────────────────────────────────── */
-const SNEL_DEFAULT = { specialisme: 'algemeen', nieuwPw: 20, controlePw: 40, pctTel: 20, duurNieuw: 20, duurControle: 10, nBeh: 2, dagen: 5, benutting: 85 }
-
-function snelTypes(s) {
-  const spec = SPECIALISMEN.find(x => x.id === s.specialisme) || SPECIALISMEN[0]
-  const types = []
-  if (s.nieuwPw > 0) types.push(nieuwType({ code: 'NP', naam: 'Nieuwe patiënt', cat: 'nieuw', duur: s.duurNieuw, perWeek: s.nieuwPw, noShow: 7 }))
-  const tel = Math.round(s.controlePw * s.pctTel / 100)
-  const fys = s.controlePw - tel
-  if (fys > 0) types.push(nieuwType({ code: 'CO', naam: 'Controle', cat: 'controle', duur: s.duurControle, perWeek: fys, noShow: 9 }))
-  if (tel > 0) types.push(nieuwType({ code: 'TC', naam: 'Telefonisch consult', cat: 'controle', duur: Math.max(5, s.duurControle - 2), perWeek: tel, modaliteit: 'telefonisch', voorkeurDd: 'M', noShow: 6 }))
-  if (spec.extra) {
-    const basis = s.nieuwPw + s.controlePw
-    types.push(nieuwType({ code: spec.extra.code, naam: spec.extra.naam, cat: spec.extra.cat, duur: spec.extra.duur, perWeek: Math.max(4, Math.round(basis * spec.extra.aandeel)), voorkeurDd: spec.extra.voorkeurDd, spreiding: spec.extra.spreiding }))
-  }
-  return types
+const PLAN_INFO = {
+  // ── Planning volgorde ──────────────────────────────────────────────────────
+  shortFirst:{label:'Starten met korte afspraken',type:'toggle',
+    desc:'De kortste afspraken worden als eerste ingepland. Dit zorgt voor snelle doorstroom aan het begin van het spreekuur en houdt de wachtkamer kort.'},
+  spoedFirst:{label:'Spoed afspraken eerst',type:'toggle',
+    desc:'Urgente/spoedafspraken worden als eerste ingepland zodat ze gegarandeerd vroeg in het spreekuur vallen, ongeacht duur of andere regels.'},
+  certainFirst:{label:'Zekere afspraken eerst',type:'toggle',
+    desc:'Afspraken met een lage onzekerheid (voorspelbare duur) worden vroeg in het dagdeel gepland; onzekere afspraken komen later, bij voorkeur vlak vóór een buffer, zodat uitloop kan worden opgevangen. Onzekerheid stel je per afspraakcode in bij Gegevens invoer.'},
+  // ── Digitale consulten ─────────────────────────────────────────────────────
+  digitalMode:{label:'Digitale consulten',type:'radio',
+    opts:[{v:'spread',l:'Verdelen over dag'},{v:'cluster',l:'Clusteren in blok'},{v:'end',l:'Aan het einde plannen'}],
+    desc:'Hoe telefonische en digitale consulten worden gegroepeerd binnen het spreekuur.'},
+  // ── Groepering afsprakencodes ──────────────────────────────────────────────
+  groupMode:{label:'Groepering afsprakencodes',type:'radio',
+    opts:[{v:'spread',l:'Gespreid inplannen (afwisselen)'},{v:'wave',l:'Wave planning (per blok)'}],
+    desc:'Gespreid = afspraakcodes worden afwisselend ingepland (A,B,A,B). Wave = alle afspraken van dezelfde code worden aaneengesloten ingepland (A,A,B,B).'},
+  // ── Flex-tijd beheer ───────────────────────────────────────────────────────
+  flexMode:{label:'Flex-tijd verdeling',type:'radio',
+    opts:[{v:'end',l:'Flex-blok aan het einde'},{v:'spread',l:'Flex verspreid tussen afspraken'}],
+    desc:'Bepaalt waar de vrije (flex) tijd in het spreekuur valt. "Aan het einde" = één aaneengesloten vrij blok na de laatste afspraak. "Verspreid" = gelijke gaten tussen alle afspraken.'},
+  // ── Bailey-Welsh ───────────────────────────────────────────────────────────
+  baileyWelsh:{label:'Bailey-Welsh regel',type:'toggle',
+    desc:'De eerste afspraak van het spreekuur wordt dubbel geboekt (twee patiënten tegelijk). Dit compenseert voor no-shows en start-vertragingen, en verhoogt de gemiddelde benutting.'},
 }
 
-function bouwModelUitSnel(s) {
-  const m = leegModel()
-  const spec = SPECIALISMEN.find(x => x.id === s.specialisme) || SPECIALISMEN[0]
-  m.poli = { naam: spec.id === 'algemeen' ? 'Mijn poli' : 'Poli ' + spec.naam, specialisme: spec.naam, periode: '' }
-  m.types = snelTypes(s)
-  m.team = Array.from({ length: s.nBeh }, (_, i) => ({ id: uid('bh'), naam: `Behandelaar ${i + 1}`, rol: 'arts' }))
-  m.kamers = Math.max(1, s.nBeh)
+// Which keys are boolean toggles vs radio
+const TOGGLE_KEYS = ['shortFirst','spoedFirst','certainFirst','baileyWelsh']
+const RADIO_KEYS = ['digitalMode','groupMode','flexMode']
 
-  // Benodigd aantal sessies: de benutting laat al lucht voor buffers/spoed, dus
-  // een kleine marge volstaat. Zo staat er precies genoeg — bij deze vraag vaak
-  // één sessie per dag, wat de week gelijkmatig vult.
-  const vraag = m.types.reduce((a, t) => a + t.perWeek * t.duur, 0) * 1.05
-  const sesLen = 210
-  const nSes = klem(Math.ceil(vraag / (sesLen * (s.benutting / 100))), 1, s.nBeh * s.dagen * 2)
-  // Slots: één per dag met afwisselend ochtend/middag (zodat de week álle dagen
-  // dekt én beide dagdelen voorkomen), daarna het andere dagdeel per dag. Per
-  // doorgang één behandelaar per slot → gelijkmatig gevulde week, nieuwe
-  // patiënten over alle werkdagen.
-  const slots = []
-  for (let d = 0; d < s.dagen; d++) slots.push([d, d % 2 ? 'M' : 'O'])
-  for (let d = 0; d < s.dagen; d++) slots.push([d, d % 2 ? 'O' : 'M'])
-  const used = new Set()
-  const ses = []
-  let bi = 0
-  for (let pass = 0; pass < s.nBeh && ses.length < nSes; pass++) {
-    for (const [d, dd] of slots) {
-      if (ses.length >= nSes) break
-      let chosen = null
-      for (let k = 0; k < s.nBeh; k++) {
-        const bh = m.team[(bi + k) % s.nBeh]
-        if (!used.has(bh.id + '_' + d + '_' + dd)) { chosen = bh; bi = (bi + k + 1) % s.nBeh; break }
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+const toMin = t => { const [h,m]=t.split(':').map(Number); return h*60+m }
+const toTime = m => { const mins=Math.round(Math.max(0,m)); return `${String(Math.floor(mins/60)).padStart(2,'0')}:${String(mins%60).padStart(2,'0')}` }
+const clamp = (v,lo,hi) => Math.min(hi,Math.max(lo,v))
+const snapMin = (m,step=5) => Math.round(m/step)*step
+
+// Layout overlapping appointments into columns (like a real calendar)
+function layoutBlocks(appts) {
+  if(!appts||appts.length===0) return []
+  const sorted=[...appts].map((a,i)=>({...a,_idx:i})).sort((a,b)=>a.start-b.start)
+  // Assign column slots
+  const colEnds=[] // colEnds[c] = end time of last appt in col c
+  const withCol=sorted.map(appt=>{
+    let c=0
+    while(colEnds[c]!==undefined && colEnds[c]>appt.start+1) c++
+    colEnds[c]=appt.end
+    return{...appt,_col:c}
+  })
+  // For each appt, find total concurrent columns (max column among all overlapping)
+  const laid=withCol.map((appt,i)=>{
+    let maxC=appt._col
+    withCol.forEach((other,j)=>{
+      if(i!==j && other.start<appt.end-1 && other.end>appt.start+1){
+        if(other._col>maxC) maxC=other._col
       }
-      if (!chosen) continue
-      used.add(chosen.id + '_' + d + '_' + dd)
-      const dgl = DAGDELEN[DD_IX[dd]]
-      ses.push({ id: uid('s'), bhId: chosen.id, dag: d, dd, van: dgl.van, tot: dgl.tot })
-    }
-  }
-  m.sessies = ses
-  m.strategie.profiel = 'balans'
-  Object.assign(m.strategie, PROFIELEN.balans.preset)
-  m.bron = { soort: 'snelstart', label: 'Snelstart · ' + spec.naam }
-  return m
-}
-
-/* ─── TEMPLATES (uitgebreide voorbeeldmodellen) ────────────────────────────── */
-const mkSessies = (team, spec) => spec.map(([bhIx, dag, dd]) => { const d = DAGDELEN[DD_IX[dd]]; return { id: uid('s'), bhId: team[bhIx].id, dag, dd, van: d.van, tot: d.tot } })
-const TEMPLATES = [
-  { id: 'derma', naam: 'Dermatologie', sub: 'Hoge omloop · veel nieuw · korte consulten', bouw: () => bouwModelUitSnel({ specialisme: 'derma', nieuwPw: 34, controlePw: 52, pctTel: 22, duurNieuw: 15, duurControle: 10, nBeh: 3, dagen: 5, benutting: 88 }) },
-  { id: 'cardio', naam: 'Cardiologie', sub: 'Langere consulten · functieonderzoek', bouw: () => bouwModelUitSnel({ specialisme: 'cardio', nieuwPw: 12, controlePw: 40, pctTel: 25, duurNieuw: 30, duurControle: 15, nBeh: 3, dagen: 5, benutting: 85 }) },
-  { id: 'ortho', naam: 'Orthopedie', sub: 'Gips & wondcontrole · spoedinloop', bouw: () => bouwModelUitSnel({ specialisme: 'ortho', nieuwPw: 16, controlePw: 46, pctTel: 15, duurNieuw: 20, duurControle: 10, nBeh: 3, dagen: 5, benutting: 84 }) },
-]
-
-/* ═══ ENGINE — FIT-ANALYSE ══════════════════════════════════════════════════ */
-function analyseerFit(model) {
-  const { types, team, sessies, kamers, strategie } = model
-  const actieveTypes = types.filter(t => t.perWeek > 0 && t.duur > 0)
-  const vraagMin = actieveTypes.reduce((s, t) => s + t.perWeek * t.duur, 0)
-  const nAfspraken = actieveTypes.reduce((s, t) => s + t.perWeek, 0)
-  const dagenMetSessie = [...new Set(sessies.map(s => s.dag))]
-  const spoedMin = (strategie.spoedReserve || 0) * dagenMetSessie.length
-  const bufMin = strategie.bufferElke > 0 ? Math.floor(nAfspraken / strategie.bufferElke) * strategie.bufferDuur : 0
-  const behoefte = vraagMin + spoedMin + bufMin
-  const aanbodMin = sessies.reduce((s, x) => s + (x.tot - x.van), 0)
-  const dekking = behoefte > 0 ? Math.round((aanbodMin / behoefte) * 100) : (aanbodMin > 0 ? 999 : 100)
-  const perDag = [0, 1, 2, 3, 4].map(d => ({ dag: d, aanbod: sessies.filter(s => s.dag === d).reduce((s, x) => s + (x.tot - x.van), 0), sessies: sessies.filter(s => s.dag === d).length }))
-  const vraagPerDagGem = dagenMetSessie.length ? behoefte / dagenMetSessie.length : 0
-  const perDd = ['O', 'M', 'A'].map(dd => ({ dd, aanbod: sessies.filter(s => s.dd === dd).reduce((s, x) => s + (x.tot - x.van), 0), gebonden: actieveTypes.filter(t => t.voorkeurDd === dd).reduce((s, t) => s + t.perWeek * t.duur, 0) }))
-  const issues = []
-  const zeg = (ernst, kop, txt) => issues.push({ ernst, kop, txt })
-  if (!actieveTypes.length) zeg('bad', 'Geen zorgvraag ingevoerd', 'Gebruik de snelstart-schuiven of voeg bij Zorgvraag minimaal één afspraaktype met een weekaantal toe.')
-  if (!sessies.length) zeg('bad', 'Geen capaciteit ingepland', 'Schilder bij Capaciteit sessies in het weekrooster, of gebruik de snelstart.')
-  if (sessies.length && actieveTypes.length) {
-    if (behoefte > aanbodMin) {
-      const tekort = behoefte - aanbodMin
-      zeg('bad', `Vraag overstijgt aanbod met ${uur(tekort)} uur/week`, `Nodig ${uur(behoefte)} u (zorg ${uur(vraagMin)} + buffer ${uur(bufMin)} + spoed ${uur(spoedMin)}), beschikbaar ${uur(aanbodMin)} u. Voeg ± ${Math.ceil(tekort / 210)} sessie(s) toe of verkort consulten.`)
-    } else if (aanbodMin > behoefte * 1.35) {
-      zeg('warn', 'Ruim capaciteitsoverschot', `${uur(aanbodMin - behoefte)} uur méér capaciteit dan de vraag vraagt. Overweeg sessies te schrappen of ruimte voor inhaalzorg te reserveren.`)
-    } else zeg('info', 'Vraag en aanbod in balans', `Behoefte ${uur(behoefte)} u tegenover ${uur(aanbodMin)} u aanbod (${dekking}% dekking).`)
-    perDd.forEach(x => { if (x.gebonden > 0 && x.gebonden > x.aanbod) { const nm = DAGDELEN[DD_IX[x.dd]].naam.toLowerCase(); zeg('bad', `Te weinig ${nm}capaciteit voor gebonden afspraken`, `Typen met voorkeur "${nm}" vragen ${uur(x.gebonden)} u, maar er is ${uur(x.aanbod)} u aan ${nm}sessies.`) } })
-    actieveTypes.forEach(t => { if (t.voorkeurDd !== '*' && !sessies.some(s => s.dd === t.voorkeurDd)) zeg('bad', `"${t.code || t.naam}" kan nergens terecht`, `Staat vast op ${DAGDELEN[DD_IX[t.voorkeurDd]].naam.toLowerCase()}, maar dat dagdeel komt niet voor in het rooster.`) })
-    const druk = perDag.filter(d => d.aanbod > 0 && vraagPerDagGem > d.aanbod * 1.15)
-    if (druk.length) zeg('warn', `Scheve weekverdeling (${druk.map(d => DAG_KORT[d.dag]).join(', ')})`, 'Sommige dagen hebben minder capaciteit dan de gemiddelde dagvraag; daar wordt het raster krap.')
-  }
-  ;[0, 1, 2, 3, 4].forEach(d => ['O', 'M', 'A'].forEach(dd => { const g = sessies.filter(s => s.dag === d && s.dd === dd).length; if (g > kamers) zeg('bad', `Kamertekort op ${DAGEN[d].toLowerCase()} (${DAGDELEN[DD_IX[dd]].naam.toLowerCase()})`, `${g} gelijktijdige sessies bij ${kamers} kamer(s). Verplaats een sessie of voeg kamers toe.`) }))
-  const gemNoShow = actieveTypes.length ? actieveTypes.reduce((s, t) => s + (t.noShow || 0) * t.perWeek, 0) / Math.max(1, nAfspraken) : 0
-  if (gemNoShow >= 9 && !strategie.overboekStart) zeg('warn', `Gemiddelde no-show ${Math.round(gemNoShow)}% zonder compensatie`, 'Zet in de strategie "overboek het eerste slot" aan om een vroege no-show op te vangen.')
-  team.filter(b => !sessies.some(s => s.bhId === b.id)).forEach(b => zeg('info', `${b.naam} heeft geen sessies`, 'Dit teamlid telt niet mee in het aanbod.'))
-  const ernstScore = issues.some(i => i.ernst === 'bad') ? 'bad' : issues.some(i => i.ernst === 'warn') ? 'warn' : 'ok'
-  return { vraagMin, spoedMin, bufMin, behoefte, aanbodMin, dekking, perDag, perDd, issues, ernstScore, nAfspraken, gemNoShow, vraagPerDagGem }
-}
-
-/* ═══ ENGINE — RASTERBOUW ═══════════════════════════════════════════════════ */
-const hertijd = (slots, van) => { let t = van; return slots.map(sl => { const o = { ...sl, van: t, tot: t + sl.duur }; t += sl.duur; return o }) }
-const meng = (a, b) => { const out = []; let i = 0, j = 0; while (i < a.length || j < b.length) { const fa = a.length ? i / a.length : 1, fb = b.length ? j / b.length : 1; if (j >= b.length || (i < a.length && fa <= fb)) out.push(a[i++]); else out.push(b[j++]) } return out }
-
-function componeerSessie(ses, items, st) {
-  const fysiek = items.filter(i => i.mod === 'fysiek')
-  const digi = items.filter(i => i.mod !== 'fysiek')
-  const npF = fysiek.filter(i => i.cat === 'nieuw')
-  const restF = fysiek.filter(i => i.cat !== 'nieuw')
-  let volg = st.profielVolgorde === 'np-eerst' ? [...npF, ...restF] : meng(restF, npF)
-  if (st.digitaalPositie === 'einde') volg = [...volg, ...digi]
-  else if (st.digitaalPositie === 'blok') { const cut = Math.ceil(volg.length * 0.66); volg = [...volg.slice(0, cut), ...digi, ...volg.slice(cut)] }
-  else volg = meng(volg, digi)
-  let slots = []; let sinds = 0
-  volg.forEach((it, ix) => {
-    if (st.bufferElke > 0 && sinds >= st.bufferElke && st.bufferDuur > 0) { slots.push({ id: uid('b'), soort: 'buffer', naam: 'Buffer / uitloop', duur: st.bufferDuur }); sinds = 0 }
-    slots.push({ ...it, soort: 'afspraak', overboek: !!(st.overboekStart && ix === 0) }); sinds++
-  })
-  if (ses.reserve > 0) { const sp = { id: uid('sp'), soort: 'spoed', naam: 'Spoed / inloop reserve', duur: ses.reserve }; if (st.spoedPositie === 'midden') slots.splice(Math.ceil(slots.length / 2), 0, sp); else slots.push(sp) }
-  slots = hertijd(slots, ses.van)
-  const rest = []
-  while (slots.length && slots[slots.length - 1].tot > ses.tot) { const sl = slots.pop(); if (sl.soort === 'afspraak') rest.push({ ...sl, reden: `Past niet meer binnen ${DAG_KORT[ses.dag]} ${mm(ses.van)}–${mm(ses.tot)}` }) }
-  return { slots, rest }
-}
-
-function bouwRaster(model) {
-  const st = { ...model.strategie, profielVolgorde: model.strategie.profiel === 'toegang' ? 'np-eerst' : 'geweven' }
-  const ses = model.sessies.map(s => ({ ...s, items: [], used: 0, reserve: 0 })).sort((a, b) => a.dag - b.dag || DD_IX[a.dd] - DD_IX[b.dd] || a.van - b.van)
-  if (st.spoedReserve > 0) [0, 1, 2, 3, 4].forEach(d => { const k = ses.filter(s => s.dag === d); if (k.length) k.sort((a, b) => (b.tot - b.van) - (a.tot - a.van))[0].reserve = st.spoedReserve })
-  const capVan = s => (s.tot - s.van) - s.reserve
-  const bufKost = n => st.bufferElke > 0 ? Math.floor(n / st.bufferElke) * st.bufferDuur : 0
-  const past = (s, dur) => s.used + dur + bufKost(s.items.length + 1) <= capVan(s)
-  const rest = []
-  // Volgorde van plaatsen: dagdeel-gebonden types eerst (die hebben de minste
-  // vrijheid en moeten hun plek claimen), dan gebundelde, dan de langste consulten.
-  const typesOrd = model.types.filter(t => t.perWeek > 0 && t.duur > 0).sort((a, b) =>
-    ((b.voorkeurDd !== '*') - (a.voorkeurDd !== '*')) ||
-    ((b.spreiding === 'bundel') - (a.spreiding === 'bundel')) ||
-    b.duur - a.duur)
-  typesOrd.forEach(t => {
-    const elig = ses.filter(s => t.voorkeurDd === '*' || s.dd === t.voorkeurDd)
-    for (let i = 0; i < t.perWeek; i++) {
-      const inst = { id: uid('a'), typeId: t.id, code: t.code || '—', naam: t.naam || t.code, cat: t.cat, duur: t.duur, mod: t.modaliteit }
-      if (!elig.length) { rest.push({ ...inst, reden: `Geen sessie in ${t.voorkeurDd === '*' ? 'de week' : DAGDELEN[DD_IX[t.voorkeurDd]].naam.toLowerCase()}` }); continue }
-      let cand = elig.filter(s => past(s, t.duur))
-      if (t.cat === 'nieuw' && st.maxNieuwPerSessie > 0) cand = cand.filter(s => s.items.filter(x => x.cat === 'nieuw').length < st.maxNieuwPerSessie)
-      if (!cand.length) { rest.push({ ...inst, reden: 'Alle passende sessies zitten vol' }); continue }
-      let keuze
-      if (t.spreiding === 'bundel') keuze = cand.find(s => s.items.some(x => x.typeId === t.id)) || [...cand].sort((a, b) => (capVan(b) - b.used) - (capVan(a) - a.used))[0]
-      else keuze = [...cand].sort((a, b) => { const fa = a.used / Math.max(1, capVan(a)), fb = b.used / Math.max(1, capVan(b)); if (Math.abs(fa - fb) > 0.001) return fa - fb; const ca = a.items.filter(x => x.typeId === t.id).length, cb = b.items.filter(x => x.typeId === t.id).length; return ca - cb || a.dag - b.dag })[0]
-      keuze.items.push(inst); keuze.used += t.duur
-    }
-  })
-  const sesOut = ses.map(s => { const { slots, rest: over } = componeerSessie(s, s.items, st); rest.push(...over); return { id: s.id, bhId: s.bhId, dag: s.dag, dd: s.dd, van: s.van, tot: s.tot, slots, handmatig: false } })
-  return { sessies: sesOut, rest, gemaaktMet: { profiel: model.strategie.profiel } }
-}
-
-function rasterKpi(raster, model) {
-  if (!raster) return null
-  let apptMin = 0, bufMin = 0, spoedMin = 0, sesMin = 0, nAppt = 0, wissels = 0
-  const npPerDag = [0, 0, 0, 0, 0]
-  raster.sessies.forEach(s => {
-    sesMin += s.tot - s.van
-    let vorig = null
-    s.slots.forEach(sl => {
-      if (sl.soort === 'afspraak') { apptMin += sl.duur; nAppt++; if (sl.cat === 'nieuw') npPerDag[s.dag]++; if (vorig && vorig !== sl.typeId) wissels++; vorig = sl.typeId }
-      else if (sl.soort === 'buffer') bufMin += sl.duur; else if (sl.soort === 'spoed') spoedMin += sl.duur
     })
+    return{...appt,_totalCols:maxC+1}
   })
-  const totaalVraag = model.types.reduce((s, t) => s + (t.perWeek > 0 && t.duur > 0 ? t.perWeek : 0), 0)
-  const geplaatst = totaalVraag > 0 ? Math.round((nAppt / totaalVraag) * 100) : 100
-  const benutting = sesMin > 0 ? Math.round((apptMin / sesMin) * 100) : 0
-  const rustAandeel = sesMin > 0 ? Math.round(((sesMin - apptMin) / sesMin) * 100) : 0
-  const npDagen = npPerDag.filter((v, d) => raster.sessies.some(s => s.dag === d))
-  const npGem = npDagen.length ? npDagen.reduce((a, b) => a + b, 0) / npDagen.length : 0
-  const npSd = npDagen.length ? Math.sqrt(npDagen.reduce((s, v) => s + (v - npGem) ** 2, 0) / npDagen.length) : 0
-  const npSpreiding = npGem > 0 ? Math.max(0, Math.round(100 - (npSd / npGem) * 100)) : 100
-  return { apptMin, bufMin, spoedMin, sesMin, nAppt, geplaatst, benutting, rustAandeel, npSpreiding, wissels, nRest: raster.rest.length }
+  // Restore original order
+  const result=new Array(appts.length)
+  laid.forEach(a=>{ result[a._idx]={...a} })
+  return result
 }
 
-function schouwRaster(raster, model, kpi) {
-  const opm = []
-  if (!raster || !kpi) return opm
-  if (raster.rest.length) opm.push({ ernst: 'bad', txt: `${raster.rest.length} afspraken passen niet in het raster — zie de restlijst onderaan.` })
-  raster.sessies.forEach(s => {
-    const app = s.slots.filter(x => x.soort === 'afspraak').reduce((a, b) => a + b.duur, 0)
-    const bez = (s.tot - s.van) > 0 ? app / (s.tot - s.van) : 0
-    const bh = model.team.find(b => b.id === s.bhId)
-    if (bez > 0.95) opm.push({ ernst: 'warn', txt: `${DAG_KORT[s.dag]} ${DAGDELEN[DD_IX[s.dd]].naam.toLowerCase()} (${bh ? bh.naam : '?'}) zit op ${Math.round(bez * 100)}% — elke uitloop stapelt direct door.` })
-  })
-  const dagenMetSes = [...new Set(raster.sessies.map(s => s.dag))]
-  const zonderNp = dagenMetSes.filter(d => !raster.sessies.some(s => s.dag === d && s.slots.some(x => x.cat === 'nieuw')))
-  if (zonderNp.length && model.types.some(t => t.cat === 'nieuw' && t.perWeek > 0)) opm.push({ ernst: 'warn', txt: `Geen nieuwe patiënten op ${zonderNp.map(d => DAG_KORT[d]).join(', ')} — toegangstijd concentreert zich op de overige dagen.` })
-  if (kpi.benutting < 60 && kpi.nAppt > 0) opm.push({ ernst: 'warn', txt: `Benutting ${kpi.benutting}% is laag — er blijft veel sessieruimte leeg.` })
-  if (!opm.length) opm.push({ ernst: 'info', txt: 'Geen bijzonderheden: alle vraag geplaatst, geen overbelaste sessies.' })
-  return opm
-}
+const defaultRow=n=>({afspraakcode:'',omschrijving:'',duur:15,digitaal:false,modaliteit:'fysiek',spoed:false,
+  percentage:n>0?Math.floor(100/n):100,weekdagen:{MA:true,DI:true,WO:true,DO:true,VR:true},
+  dagdelen:{O:true,M:true,A:false},onzeker:'gemiddeld'})
 
-/* ─── IMPORT-heuristiek ────────────────────────────────────────────────────── */
-function herkenTypes(rijen) {
-  if (!rijen || !rijen.length) return null
-  const norm = c => String(c || '').toLowerCase().trim()
-  let hIx = -1, kol = {}
-  for (let i = 0; i < Math.min(12, rijen.length); i++) {
-    const cells = (rijen[i] || []).map(norm)
-    const vind = pats => cells.findIndex(c => pats.some(p => c.includes(p)))
-    const c = { code: vind(['code']), naam: vind(['omschrijving', 'naam', 'consult', 'afspraaktype']), aantal: vind(['aantal', 'per week', 'perweek', 'freq', 'volume']), duur: vind(['duur', 'minuten', 'tijd']) }
-    if (c.code >= 0 && (c.aantal >= 0 || c.duur >= 0)) { hIx = i; kol = c; break }
-  }
-  if (hIx < 0) return null
-  const out = []
-  for (let i = hIx + 1; i < rijen.length; i++) {
-    const r = rijen[i] || []
-    const code = String(r[kol.code] ?? '').trim(); if (!code) continue
-    const naam = kol.naam >= 0 ? String(r[kol.naam] ?? '').trim() : code
-    const aantal = kol.aantal >= 0 ? parseInt(r[kol.aantal]) || 0 : 0
-    const duur = kol.duur >= 0 ? parseInt(r[kol.duur]) || 15 : 15
-    const lc = (code + ' ' + naam).toLowerCase()
-    const cat = /np|nieuw/.test(lc) ? 'nieuw' : /verricht|ingreep|gips|echo|behandel/.test(lc) ? 'behandeling' : 'controle'
-    const modaliteit = /video|beeld/.test(lc) ? 'video' : /tel|bel/.test(lc) ? 'telefonisch' : 'fysiek'
-    out.push(nieuwType({ code, naam, cat, duur: klem(duur, 5, 120), perWeek: klem(aantal, 0, 500), modaliteit }))
-  }
-  return out.length ? out : null
-}
-
-/* ═══════════════════════ HOOFDCOMPONENT ════════════════════════════════════ */
-const FASEN = [
-  { id: 'raster', nr: '◆', naam: 'Weekraster' },
-  { id: 'vraag', nr: '01', naam: 'Zorgvraag' },
-  { id: 'capaciteit', nr: '02', naam: 'Capaciteit' },
-  { id: 'toets', nr: '03', naam: 'Kritische toets' },
-  { id: 'strategie', nr: '04', naam: 'Strategie' },
+// Modaliteiten: fysiek consult, telefonisch, of beeldbellen. "digitaal" = niet-fysiek
+// (blijft bestaan voor de engine/kleuren); modaliteit voegt het onderscheid tel/video toe.
+const MODALITEITEN=[
+  {v:'fysiek',l:'Fysiek',ico:'',dig:false},
+  {v:'telefonisch',l:'Telefonisch',ico:'☎',dig:true},
+  {v:'video',l:'Beeldbellen',ico:'📹',dig:true},
 ]
+const modInfo=m=>MODALITEITEN.find(x=>x.v===m)||MODALITEITEN[0]
 
-export default function PoliModel() {
-  const [model, setModel] = useState(null)
-  const [snel, setSnel] = useState(SNEL_DEFAULT)
-  const [fase, setFase] = useState('raster')
-  const [raster, setRaster] = useState(null)
-  const [selSessie, setSelSessie] = useState(null)
-  const [zoom, setZoom] = useState(1.15)
-  const [scenarios, setScenarios] = useState([])
-  const [vergelijk, setVergelijk] = useState(false)
-  const [toonSnelInline, setToonSnelInline] = useState(false)
-  const [modal, setModal] = useState(null)
-  const [csvTekst, setCsvTekst] = useState('')
-  const [melding, setMelding] = useState(null)
-  const fileXlsx = useRef(null)
-  const fileJson = useRef(null)
+// ─── MICRO COMPONENTS ─────────────────────────────────────────────────────────
+const Btn=({children,variant='primary',onClick,disabled,small,style={}})=>{
+  const [h,sH]=useState(false)
+  const base=variant==='primary'
+    ?{background:h?'#0C4F79':C.primary,color:'#fff',border:`1px solid ${h?'#0C4F79':C.primary}`,boxShadow:'none'}
+    :{background:h?C.surface2:C.white,color:C.text,
+       border:`1px solid ${h?C.primary:C.border}`,boxShadow:'none'}
+  return <button onClick={onClick} disabled={disabled}
+    onMouseEnter={()=>sH(true)} onMouseLeave={()=>sH(false)}
+    style={{...base,padding:small?'6px 14px':'10px 20px',borderRadius:10,
+      cursor:disabled?'not-allowed':'pointer',fontSize:small?12:13,fontWeight:600,
+      letterSpacing:'-0.01em',transition:'all 0.13s',opacity:disabled?0.4:1,...style}}>{children}</button>
+}
+const Card=({children,style={}})=>
+  <div style={{background:C.card,border:`1px solid ${C.border}`,borderRadius:16,
+    padding:22,boxShadow:'0 2px 12px rgba(27,39,51,0.04)',...style}}>{children}</div>
+const Lbl=({children})=>
+  <div style={{fontSize:10.5,fontWeight:600,color:C.muted,textTransform:'uppercase',
+    letterSpacing:'0.07em',marginBottom:6}}>{children}</div>
+const H2=({children})=>
+  <h2 style={{fontSize:19,fontWeight:700,color:C.text,margin:'0 0 4px 0',letterSpacing:'-0.02em'}}>{children}</h2>
+const H3=({children,style={}})=>
+  <h3 style={{fontSize:13,fontWeight:700,color:C.text,margin:'0 0 14px 0',letterSpacing:'-0.01em',
+    textTransform:'uppercase',...style}}>{children}</h3>
+const Tip=({text,children})=>{
+  const [pos,setPos]=useState(null)
+  const ref=useRef(null)
+  const show=()=>{
+    if(!ref.current) return
+    const r=ref.current.getBoundingClientRect()
+    setPos({x:r.left+r.width/2, y:r.top})
+  }
+  return(
+    <div ref={ref} style={{position:'relative',display:'inline-flex',alignItems:'center'}}
+      onMouseEnter={show} onMouseLeave={()=>setPos(null)}>
+      {children}
+      {pos&&typeof document!=='undefined'&&(
+        <div style={{
+          position:'fixed',
+          bottom: window.innerHeight-pos.y+9,
+          left: Math.max(10,Math.min(pos.x-137,window.innerWidth-290)),
+          background:'#1B2A38',color:'#C5D3DD',
+          fontSize:12,padding:'9px 14px',borderRadius:8,width:275,zIndex:99999,
+          lineHeight:1.55,fontWeight:400,pointerEvents:'none',
+          boxShadow:'0 8px 24px rgba(0,0,0,0.22)',
+        }}>
+          {text}
+          <div style={{position:'absolute',top:'100%',
+            left:Math.min(137,pos.x-Math.max(10,pos.x-137))+'px',
+            transform:'translateX(-50%)',
+            border:'6px solid transparent',borderTopColor:'#1B2A38'}}/>
+        </div>
+      )}
+    </div>
+  )
+}
+const IBtn=({tip})=>(
+  <Tip text={tip}>
+    <span style={{width:15,height:15,borderRadius:'50%',background:C.surface2,
+      border:`1px solid ${C.border}`,fontSize:9,color:C.muted,cursor:'help',
+      display:'inline-flex',alignItems:'center',justifyContent:'center',fontWeight:700,flexShrink:0}}>i</span>
+  </Tip>
+)
 
-  useEffect(() => {
-    const l = document.createElement('link')
-    l.rel = 'stylesheet'
-    l.href = 'https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;600&display=swap'
-    document.head.appendChild(l)
-  }, [])
-  useEffect(() => { if (!melding) return; const t = setTimeout(() => setMelding(null), 4000); return () => clearTimeout(t) }, [melding])
-
-  const fit = useMemo(() => model ? analyseerFit(model) : null, [model])
-  const kpi = useMemo(() => raster ? rasterKpi(raster, model) : null, [raster, model])
-  const schouw = useMemo(() => raster ? schouwRaster(raster, model, kpi) : [], [raster, model, kpi])
-
-  const upModel = fn => setModel(p => { const n = JSON.parse(JSON.stringify(p)); fn(n); return n })
-  const upStrat = (k, v) => upModel(m => { m.strategie[k] = v })
-  const kiesProfiel = key => upModel(m => { m.strategie.profiel = key; Object.assign(m.strategie, PROFIELEN[key].preset) })
-
-  const genereerVoor = m => { const r = bouwRaster(m); setRaster(r); setSelSessie(null); return r }
-  const genereer = () => { if (model) genereerVoor(model); setFase('raster') }
-
-  /* startpunten */
-  const startSnel = () => { const m = bouwModelUitSnel(snel); setModel(m); genereerVoor(m); setFase('raster'); setMelding('Weekraster gegenereerd uit snelstart') }
-  const startTemplate = tp => { const m = tp.bouw(); setModel(m); genereerVoor(m); setFase('raster'); setMelding(`Voorbeeld «${tp.naam}» geladen`) }
-  const startLeeg = () => { setModel(leegModel()); setRaster(null); setFase('vraag') }
-
-  /* snel-inline (herbouw types uit schuiven, behoud team/sessies indien mogelijk) */
-  const herbouwUitSnel = () => upModel(m => { m.types = snelTypes(snel); if (!m.bron || m.bron.soort !== 'import') m.bron = { soort: 'snelstart', label: 'Snelstart-schuiven' } })
-
-  /* capaciteit */
-  const toggleSessie = (bhId, dag, dd) => upModel(m => { const ix = m.sessies.findIndex(s => s.bhId === bhId && s.dag === dag && s.dd === dd); if (ix >= 0) m.sessies.splice(ix, 1); else { const d = DAGDELEN[DD_IX[dd]]; m.sessies.push({ id: uid('s'), bhId, dag, dd, van: d.van, tot: d.tot }) } })
-  const zetSessieTijd = (sid, veld, waarde) => upModel(m => { const s = m.sessies.find(x => x.id === sid); if (!s) return; s[veld] = parseTijd(waarde); if (s.tot <= s.van) s.tot = s.van + 30 })
-
-  /* raster-bewerkingen */
-  const upSessieSlots = (sid, fn) => setRaster(p => {
-    if (!p) return p
-    const n = JSON.parse(JSON.stringify(p))
-    const s = n.sessies.find(x => x.id === sid); if (!s) return p
-    fn(s, n); s.slots = hertijd(s.slots, s.van)
-    while (s.slots.length && s.slots[s.slots.length - 1].tot > s.tot) { const sl = s.slots.pop(); if (sl.soort === 'afspraak') n.rest.push({ ...sl, reden: 'Verdrongen door handmatige bewerking' }) }
-    s.handmatig = true; return n
+// ─── MAIN ─────────────────────────────────────────────────────────────────────
+export default function RasterTool(){
+  const [active,setActive]=useState(0)
+  const [now,setNow]=useState(new Date())
+  useEffect(()=>{ const t=setInterval(()=>setNow(new Date()),1000); return()=>clearInterval(t) },[])
+  const [visited,setVisited]=useState(new Set([0]))
+  const [m1Mode,setM1Mode]=useState(null)
+  const [m1Section,setM1Section]=useState(1)
+  const [cfg,setCfg]=useState({newPat:10,ctrlPat:20,newCodes:2,ctrlCodes:3})
+  const [poli,setPoli]=useState({naam:'',specialisme:''})   // vrij invulbare poli-identiteit
+  const [newRows,setNewRows]=useState([])
+  const [ctrlRows,setCtrlRows]=useState([])
+  const [importBadge,setImportBadge]=useState(null)
+  const [m2,setM2]=useState({ochStart:'08:30',ochEnd:'12:00',midStart:'13:00',midEnd:'16:30',
+    avondOn:false,avondStart:'17:00',avondEnd:'20:00',verAvond:0,
+    verOch:50,benutting:85,days:{ma:20,di:20,wo:20,do:20,vr:20}})
+  const [rules,setRules]=useState({
+    shortFirst:false, spoedFirst:false, certainFirst:false, baileyWelsh:false,
+    digitalMode:'spread', groupMode:'spread', flexMode:'end',
+    order:['spoedFirst','shortFirst','certainFirst']  // priority order of sequence rules
   })
-  const slotWeg = (sid, slotId) => upSessieSlots(sid, (s, n) => { const ix = s.slots.findIndex(x => x.id === slotId); if (ix < 0) return; const [sl] = s.slots.splice(ix, 1); if (sl.soort === 'afspraak') n.rest.push({ ...sl, reden: 'Handmatig uit sessie gehaald' }) })
-  const slotSchuif = (sid, slotId, dir) => upSessieSlots(sid, s => { const ix = s.slots.findIndex(x => x.id === slotId); const j = ix + dir; if (ix < 0 || j < 0 || j >= s.slots.length) return; const t = s.slots[ix]; s.slots[ix] = s.slots[j]; s.slots[j] = t })
-  const slotDuur = (sid, slotId, delta) => upSessieSlots(sid, s => { const sl = s.slots.find(x => x.id === slotId); if (sl) sl.duur = klem(sl.duur + delta, 5, 120) })
-  const bufferErbij = sid => upSessieSlots(sid, s => { s.slots.push({ id: uid('b'), soort: 'buffer', naam: 'Buffer / uitloop', duur: model.strategie.bufferDuur || 10 }) })
-  const uitRest = (sid, restId) => setRaster(p => {
-    if (!p) return p
-    const n = JSON.parse(JSON.stringify(p))
-    const s = n.sessies.find(x => x.id === sid); if (!s) return p
-    const ix = n.rest.findIndex(r => r.id === restId); if (ix < 0) return p
-    const [item] = n.rest.splice(ix, 1); delete item.reden
-    s.slots.push({ ...item, soort: 'afspraak' }); s.slots = hertijd(s.slots, s.van)
-    if (s.slots[s.slots.length - 1].tot > s.tot) { const sl = s.slots.pop(); n.rest.splice(ix, 0, { ...sl, reden: 'Past niet: sessie is vol' }) } else s.handmatig = true
-    return n
-  })
+  const [selDay,setSelDay]=useState(0)
+  const [raster,setRaster]=useState(null)
+  const [calZoom,setCalZoom]=useState(3.0) // px per minute, range 1.5–6
+  const [viewMode,setViewMode]=useState('dag') // 'dag' | 'week' (multi-dynamisch overzicht)
+  const [drag,setDrag]=useState(null)
+  const [showExport,setShowExport]=useState(false)
+  const [showReset,setShowReset]=useState(false)
+  const [showFullReset,setShowFullReset]=useState(false)
+  const [expName,setExpName]=useState('slingeland_raster')
+  const [expOk,setExpOk]=useState(false)
+  const [exporting,setExporting]=useState(false)
+  const [exportLink,setExportLink]=useState(null) // {href, filename}
+  const calRef=useRef(null)
+  const fileRef=useRef(null)
 
-  /* scenario's */
-  const bewaarScenario = () => { if (!raster || !kpi) return; const naam = `Scenario ${String.fromCharCode(65 + scenarios.length)} · ${PROFIELEN[model.strategie.profiel].naam}`; setScenarios(p => [...p, { id: uid('sc'), naam, model: JSON.parse(JSON.stringify(model)), raster: JSON.parse(JSON.stringify(raster)), kpi: { ...kpi } }]); setMelding(`Bewaard als ${naam}`) }
-  const laadScenario = sc => { setModel(JSON.parse(JSON.stringify(sc.model))); setRaster(JSON.parse(JSON.stringify(sc.raster))); setMelding(`${sc.naam} geladen`) }
+  useEffect(()=>{
+    const l=document.createElement('link')
+    l.href='https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap'
+    l.rel='stylesheet'; document.head.appendChild(l)
+  },[])
 
-  /* import/export */
-  const leesXlsx = e => {
-    const f = e.target.files[0]; e.target.value = ''; if (!f) return
-    const rd = new FileReader()
-    rd.onload = ev => {
-      try {
-        const wb = XLSX.read(ev.target.result, { type: 'binary' })
-        const wsModel = wb.Sheets['_polimodel']
-        if (wsModel) { const rijen = XLSX.utils.sheet_to_json(wsModel, { header: 1 }); const st = JSON.parse(rijen[0][0]); setModel(st.model); setRaster(st.raster || null); setFase('raster'); setMelding('Model hersteld uit bestand'); return }
-        const eerste = wb.Sheets[wb.SheetNames[0]]
-        const types = herkenTypes(XLSX.utils.sheet_to_json(eerste, { header: 1 }))
-        if (!types) throw new Error('Geen kolommen herkend. Verwacht: code, omschrijving, aantal, duur.')
-        const basis = model || bouwModelUitSnel(snel)
-        const m = { ...JSON.parse(JSON.stringify(basis)), types, bron: { soort: 'import', label: f.name } }
-        setModel(m); genereerVoor(m); setFase('raster'); setMelding(`${types.length} afspraaktypen ingelezen uit ${f.name}`)
-      } catch (err) { alert('Import mislukt: ' + err.message) }
+  // ── Pointer-based drag, free-positioning + resize (reliable in sandbox) ──────
+  // dragItem = {mode:'move'|'new'|'resize-top'|'resize-bot', appt, fromDay, fromSlot, palette, grabOffsetMin}
+  const [dragItem,setDragItem]=useState(null)
+  const [dragOver,setDragOver]=useState(null) // {day, slot} | {slot:'ntp'}
+  const dragItemRef=useRef(null)
+  dragItemRef.current=dragItem
+  const gridGeomRef=useRef(null)
+  const ghostRef=useRef(null)        // direct-DOM ghost (for 'new' from palette)
+  const startPosRef=useRef({x:0,y:0})
+  const lastSlotRef=useRef(null)
+  const liveLocRef=useRef(null)      // current live location of the block being moved
+  const [roomNames,setRoomNames]=useState({})   // {roomIndex: 'spreekuur naam'}
+  const [addMenu,setAddMenu]=useState(null)      // {room} when the + menu is open
+
+  // Start a drag/resize
+  const startDrag=(e,item)=>{
+    e.preventDefault(); e.stopPropagation()
+    const cx=e.touches?e.touches[0].clientX:e.clientX
+    const cy=e.touches?e.touches[0].clientY:e.clientY
+    startPosRef.current={x:cx,y:cy}
+    lastSlotRef.current=null
+    // For move: record where in the block you grabbed (so it doesn't jump), and its live location
+    if(item.mode==='move'){
+      if(item.fromSlot==='ntp'){
+        // NTP item has no grid position — placed on drop, shown via ghost
+        item.grabOffsetMin=0
+        liveLocRef.current=null
+      } else {
+        const g=gridGeomRef.current
+        const rect=e.currentTarget.getBoundingClientRect()
+        item.grabOffsetMin=g?Math.max(0,(cy-rect.top)/g.PXMIN):0
+        liveLocRef.current={day:item.fromDay,slot:item.fromSlot,id:item.appt.id,start:item.appt.start}
+      }
     }
-    rd.readAsBinaryString(f)
-  }
-  const leesJson = e => {
-    const f = e.target.files[0]; e.target.value = ''; if (!f) return
-    const rd = new FileReader()
-    rd.onload = ev => { try { const st = JSON.parse(ev.target.result); if (!st.model || !st.model.strategie) throw new Error('Geen PoliModel-bestand.'); setModel(st.model); setRaster(st.raster || null); setScenarios(st.scenarios || []); setFase('raster'); setMelding('Model geladen uit ' + f.name) } catch (err) { alert('Laden mislukt: ' + err.message) } }
-    rd.readAsText(f)
-  }
-  const bewaarJson = () => { const blob = new Blob([JSON.stringify({ versie: '2.1', model, raster, scenarios }, null, 1)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = (model.poli.naam || 'polimodel').toLowerCase().replace(/\s+/g, '_') + '.polimodel.json'; a.click(); URL.revokeObjectURL(a.href) }
-  const exporteerXlsx = () => {
-    if (!raster) { alert('Genereer eerst een raster.'); return }
-    const wb = XLSX.utils.book_new()
-    const bhNaam = id => (model.team.find(b => b.id === id) || {}).naam || '?'
-    const wk = [['WEEKRASTER — ' + (model.poli.naam || 'Poli')], []]
-    ;[0, 1, 2, 3, 4].forEach(d => { const dagSes = raster.sessies.filter(s => s.dag === d); if (!dagSes.length) return; wk.push([DAGEN[d].toUpperCase()]); dagSes.forEach(s => { const app = s.slots.filter(x => x.soort === 'afspraak'); wk.push([`${mm(s.van)}–${mm(s.tot)}`, bhNaam(s.bhId), DAGDELEN[DD_IX[s.dd]].naam, `${app.length} afspraken`, app.map(x => x.code).join(' · ')]) }); wk.push([]) })
-    const wsW = XLSX.utils.aoa_to_sheet(wk); wsW['!cols'] = [{ wch: 13 }, { wch: 24 }, { wch: 10 }, { wch: 14 }, { wch: 70 }]; XLSX.utils.book_append_sheet(wb, wsW, 'Weekraster')
-    const pl = [['Dag', 'Dagdeel', 'Behandelaar', 'Van', 'Tot', 'Soort', 'Code', 'Omschrijving', 'Duur', 'Modaliteit', 'Overboekt', 'Reden']]
-    raster.sessies.forEach(s => s.slots.forEach(sl => pl.push([DAGEN[s.dag], DAGDELEN[DD_IX[s.dd]].naam, bhNaam(s.bhId), mm(sl.van), mm(sl.tot), sl.soort, sl.code || '', sl.naam || '', sl.duur, sl.mod || '', sl.overboek ? 'ja' : '', ''])))
-    raster.rest.forEach(r => pl.push(['— restlijst', '', '', '', '', 'afspraak', r.code, r.naam, r.duur, r.mod, '', r.reden]))
-    const wsP = XLSX.utils.aoa_to_sheet(pl); wsP['!cols'] = [{ wch: 11 }, { wch: 9 }, { wch: 22 }, { wch: 7 }, { wch: 7 }, { wch: 9 }, { wch: 9 }, { wch: 28 }, { wch: 6 }, { wch: 11 }, { wch: 9 }, { wch: 40 }]; XLSX.utils.book_append_sheet(wb, wsP, 'Alle slots')
-    const an = [['ANALYSE'], [], ['Dekking', fit ? fit.dekking + '%' : ''], ['Geplaatst', kpi.geplaatst + '%'], ['Benutting', kpi.benutting + '%'], ['Rust-aandeel', kpi.rustAandeel + '%'], ['NP-spreiding', kpi.npSpreiding + '%'], ['Restlijst', kpi.nRest], [], ['BEVINDINGEN']]
-    ;(fit ? fit.issues : []).forEach(i => an.push([i.ernst.toUpperCase(), i.kop, i.txt])); schouw.forEach(o => an.push([o.ernst.toUpperCase(), 'Naschouw', o.txt]))
-    const wsA = XLSX.utils.aoa_to_sheet(an); wsA['!cols'] = [{ wch: 22 }, { wch: 44 }, { wch: 90 }]; XLSX.utils.book_append_sheet(wb, wsA, 'Analyse')
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([[JSON.stringify({ versie: '2.1', model, raster })]]), '_polimodel')
-    const b64 = XLSX.write(wb, { bookType: 'xlsx', type: 'base64' })
-    const a = document.createElement('a'); a.href = 'data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,' + b64; a.download = (model.poli.naam || 'polimodel').toLowerCase().replace(/\s+/g, '_') + '_raster.xlsx'; a.click()
-    setMelding('Raster geëxporteerd als Excel')
-  }
-  const verwerkCsv = () => {
-    const rijen = csvTekst.split(/\r?\n/).filter(Boolean).map(l => l.split(/[;,\t]/).map(c => c.trim()))
-    const types = herkenTypes(rijen) || rijen.filter(r => r[0]).map(r => nieuwType({ code: r[0], naam: r[1] || r[0], perWeek: parseInt(r[2]) || 0, duur: parseInt(r[3]) || 15, cat: /np|nieuw/i.test(r[0] + (r[1] || '')) ? 'nieuw' : 'controle' }))
-    if (!types || !types.length) { alert('Geen regels herkend. Formaat: code;omschrijving;aantal;duur'); return }
-    const basis = model || bouwModelUitSnel(snel)
-    const m = { ...JSON.parse(JSON.stringify(basis)), types, bron: { soort: 'import', label: 'Geplakte gegevens' } }
-    setModel(m); genereerVoor(m); setModal(null); setCsvTekst(''); setFase('raster'); setMelding(`${types.length} afspraaktypen overgenomen`)
+    setDragItem(item)
   }
 
-  const faseStatus = id => {
-    if (!model) return 'idle'
-    if (id === 'raster') return raster ? (raster.rest.length ? 'warn' : 'ok') : 'idle'
-    if (id === 'vraag') return model.types.some(t => t.perWeek > 0) ? 'ok' : 'idle'
-    if (id === 'capaciteit') return model.sessies.length ? 'ok' : 'idle'
-    if (id === 'toets') return fit ? (fit.ernstScore === 'ok' ? 'ok' : fit.ernstScore) : 'idle'
-    return 'ok'
+  const yToTime=(clientY, bodyEl)=>{
+    const g=gridGeomRef.current; if(!g||!bodyEl||!g.regions) return null
+    const rect=bodyEl.getBoundingClientRect()
+    const y=clientY-rect.top
+    // Find the region whose y-band contains y (clamp into nearest otherwise)
+    let best=g.regions[0]
+    for(const r of g.regions){
+      const yEnd=r.y0+(r.end-r.start)*g.PXMIN
+      if(y>=r.y0-1 && y<=yEnd+g.pauseH){ best=r; if(y<=yEnd) break }
+    }
+    return best.start + Math.max(0,(y-best.y0))/g.PXMIN
+  }
+  const snap5=t=>Math.round(t/5)*5
+
+  // Live-move the block to a new slot/start within the grid (realtime, as you drag)
+  const liveMove=(targetDay,targetSlot,targetStart)=>{
+    const loc=liveLocRef.current; if(!loc) return
+    setRaster(prev=>{
+      if(!prev) return prev
+      const nxt=JSON.parse(JSON.stringify(prev))
+      const fromArr=nxt.days[loc.day]?.[loc.slot]; if(!fromArr) return prev
+      const idx=fromArr.findIndex(a=>a.id===loc.id); if(idx<0) return prev
+      const appt=fromArr[idx]
+      const dur=appt.duur||15
+      const ddp=targetSlot[0]
+      const dd=ddp==='o'?0:ddp==='m'?1:2
+      const room=parseInt(targetSlot.slice(1))
+      const sessStart=ddp==='o'?nxt.ochStart:ddp==='m'?nxt.midStart:nxt.avondStart
+      const sessEnd=ddp==='o'?nxt.ochEnd:ddp==='m'?nxt.midEnd:nxt.avondEnd
+      let st=Math.max(sessStart,Math.min(targetStart,sessEnd-dur))
+      st=snap5(st)
+      // no change? skip
+      if(loc.slot===targetSlot && loc.day===targetDay && appt.start===st) return prev
+      fromArr.splice(idx,1)
+      const moved={...appt,dagdeel:dd,room,start:st,end:st+dur,edited:true}
+      if(!nxt.days[targetDay]) nxt.days[targetDay]={}
+      if(!nxt.days[targetDay][targetSlot]) nxt.days[targetDay][targetSlot]=[]
+      nxt.days[targetDay][targetSlot].push(moved)
+      nxt.days[targetDay][targetSlot].sort((a,b)=>(a.start||0)-(b.start||0))
+      return nxt
+    })
+    liveLocRef.current={day:targetDay,slot:targetSlot,id:loc.id,start:targetStart}
   }
 
-  /* herbruikbaar schuif-atoom */
-  const Schuif = ({ lab, hint, val, min, max, step = 1, on, fmt }) => (
-    <div className="slz">
-      <div className="lab"><b>{lab}</b><span className="v">{fmt ? fmt(val) : val}</span></div>
-      <input type="range" min={min} max={max} step={step} value={val} onChange={e => on(Number(e.target.value))} />
-      {hint && <span className="hint">{hint}</span>}
-    </div>
-  )
+  useEffect(()=>{
+    if(!dragItem) return
+    if(ghostRef.current){
+      ghostRef.current.style.left=(startPosRef.current.x+14)+'px'
+      ghostRef.current.style.top=(startPosRef.current.y+8)+'px'
+    }
+    const onMove=e=>{
+      const cx=e.touches?e.touches[0].clientX:e.clientX
+      const cy=e.touches?e.touches[0].clientY:e.clientY
+      if(ghostRef.current){
+        ghostRef.current.style.left=(cx+14)+'px'
+        ghostRef.current.style.top=(cy+8)+'px'
+      }
+      const el=document.elementFromPoint(cx,cy)
+      const zone=el&&el.closest?el.closest('[data-slotkey]'):null
+      const item=dragItemRef.current
+      const key=zone?zone.dataset.slotkey:null
+      if(key!==lastSlotRef.current){
+        lastSlotRef.current=key
+        if(zone){
+          const slot=zone.dataset.slotkey
+          setDragOver(slot==='ntp'?{slot:'ntp'}:{day:+zone.dataset.day,slot})
+        } else setDragOver(null)
+      }
+      // LIVE MOVE — reposition the actual block in the grid as you drag (grid items only)
+      if(item&&item.mode==='move'&&item.fromSlot!=='ntp'&&zone){
+        const slot=zone.dataset.slotkey
+        if(slot!=='ntp'){
+          const day=+zone.dataset.day
+          const bodyEl=zone.closest('[data-roombody]')||document.querySelector(`[data-roombody="${day}_${slot}"]`)
+          const t=yToTime(cy,bodyEl)
+          if(t!=null) liveMove(day,slot,snap5(t-(item.grabOffsetMin||0)))
+        }
+      }
+      // Live resize feedback
+      if(item&&(item.mode==='resize-top'||item.mode==='resize-bot')){
+        const bodyEl=document.querySelector(`[data-roombody="${item.fromDay}_${item.fromSlot}"]`)
+        const t=yToTime(cy,bodyEl)
+        if(t!=null) doResize(item,snap5(t))
+      }
+    }
+    const onUp=e=>{
+      const cx=(e.changedTouches?e.changedTouches[0].clientX:e.clientX)
+      const cy=(e.changedTouches?e.changedTouches[0].clientY:e.clientY)
+      const item=dragItemRef.current
+      if(item&&(item.mode==='new'||(item.mode==='move'&&item.fromSlot==='ntp'))){
+        // 'new' from palette OR an item dragged out of "Nog te plannen": place where dropped
+        const el=document.elementFromPoint(cx,cy)
+        const zone=el&&el.closest?el.closest('[data-slotkey]'):null
+        if(zone){
+          const slot=zone.dataset.slotkey
+          if(slot==='ntp') dropTo('ntp',null)
+          else {
+            const bodyEl=zone.closest('[data-roombody]')||document.querySelector(`[data-roombody="${zone.dataset.day}_${slot}"]`)
+            const t=yToTime(cy,bodyEl)
+            dropTo({day:+zone.dataset.day,slot}, t!=null?snap5(t):null)
+          }
+        }
+      } else if(item&&item.mode==='move'){
+        // Grid item already live-placed; only handle drop back to NTP
+        const el=document.elementFromPoint(cx,cy)
+        const zone=el&&el.closest?el.closest('[data-slotkey]'):null
+        if(zone&&zone.dataset.slotkey==='ntp') dropTo('ntp',null)
+      }
+      setDragItem(null); setDragOver(null); lastSlotRef.current=null; liveLocRef.current=null
+    }
+    window.addEventListener('mousemove',onMove)
+    window.addEventListener('mouseup',onUp)
+    window.addEventListener('touchmove',onMove,{passive:false})
+    window.addEventListener('touchend',onUp)
+    return()=>{
+      window.removeEventListener('mousemove',onMove)
+      window.removeEventListener('mouseup',onUp)
+      window.removeEventListener('touchmove',onMove)
+      window.removeEventListener('touchend',onUp)
+    }
+  },[dragItem])
 
-  /* ════════ STARTSCHERM ════════ */
-  if (!model) {
-    const t = snelTypes(snel)
-    const vraag = t.reduce((a, x) => a + x.perWeek * x.duur, 0)
-    const nSes = klem(Math.ceil(vraag * 1.15 / (210 * (snel.benutting / 100))), snel.nBeh, snel.nBeh * snel.dagen * 2)
-    return (
-      <div className="pm-root">
-        <style>{CSS}</style>
-        <div className="pm-intro">
-          <div className="pm-badge">POLIMODEL · VERSIE 2.1</div>
-          <h1>Sleep, en je hebt<br />een <em>weekraster</em>.</h1>
-          <p className="sub">Geen Excel of handwerk nodig. Stel met de schuiven in wat er wekelijks binnenkomt en wie er werkt — er rolt meteen een compleet, kritisch getoetst weekraster uit dat je daarna kunt bijstellen.</p>
+  // Resize an appointment or flex block in place
+  const doResize=(item,t)=>{
+    setRaster(prev=>{
+      if(!prev) return prev
+      const nxt=JSON.parse(JSON.stringify(prev))
+      const arr=nxt.days[item.fromDay]?.[item.fromSlot]; if(!arr) return prev
+      const it=arr.find(a=>a.id===item.appt.id); if(!it) return prev
+      if(item.mode==='resize-bot'){
+        const ne=Math.max(it.start+5,t)
+        it.end=ne; it.duur=ne-it.start
+      } else {
+        const ns=Math.min(it.end-5,t)
+        it.start=ns; it.duur=it.end-ns
+      }
+      it.edited=true
+      return nxt
+    })
+  }
 
-          <div className="snel-card">
-            <div className="snel-head">
-              <div>
-                <div className="n">SNELSTART</div>
-                <h2>Bouw je poli in dertig seconden</h2>
-              </div>
-            </div>
-            <div className="spec-row">
-              {SPECIALISMEN.map(sp => (
-                <button key={sp.id} className={'spec-btn' + (snel.specialisme === sp.id ? ' on' : '')} onClick={() => setSnel(s => ({ ...s, specialisme: sp.id }))}>{sp.naam}</button>
-              ))}
-            </div>
-            <div className="snel-grid">
-              <Schuif lab="Nieuwe patiënten / week" hint="instroom die je toegangstijd bepaalt" val={snel.nieuwPw} min={0} max={80} on={v => setSnel(s => ({ ...s, nieuwPw: v }))} />
-              <Schuif lab="Controles / week" hint="terugkerende patiënten" val={snel.controlePw} min={0} max={140} on={v => setSnel(s => ({ ...s, controlePw: v }))} />
-              <Schuif lab="Duur nieuw consult" fmt={v => v + ' min'} val={snel.duurNieuw} min={5} max={45} step={5} on={v => setSnel(s => ({ ...s, duurNieuw: v }))} />
-              <Schuif lab="Duur controle" fmt={v => v + ' min'} val={snel.duurControle} min={5} max={30} step={5} on={v => setSnel(s => ({ ...s, duurControle: v }))} />
-              <Schuif lab="Telefonisch / beeldbellen" fmt={v => v + '%'} hint="deel van de controles op afstand" val={snel.pctTel} min={0} max={80} step={5} on={v => setSnel(s => ({ ...s, pctTel: v }))} />
-              <Schuif lab="Aantal behandelaars" val={snel.nBeh} min={1} max={8} on={v => setSnel(s => ({ ...s, nBeh: v }))} />
-              <Schuif lab="Werkdagen / week" val={snel.dagen} min={1} max={5} on={v => setSnel(s => ({ ...s, dagen: v }))} />
-              <Schuif lab="Beoogde benutting" fmt={v => v + '%'} hint="lager = meer lucht in de sessies" val={snel.benutting} min={60} max={95} step={5} on={v => setSnel(s => ({ ...s, benutting: v }))} />
-            </div>
-            <div className="snel-foot">
-              <div className="snel-preview">
-                Dit levert <b>{snel.nieuwPw + snel.controlePw} afspraken/week</b> ({uur(vraag)} u zorgvraag) verdeeld over <b>± {nSes} sessies</b> van {snel.nBeh} behandelaar{snel.nBeh > 1 ? 's' : ''} over {snel.dagen} dag{snel.dagen > 1 ? 'en' : ''}.
-              </div>
-              <button className="big-btn" onClick={startSnel}>Genereer mijn weekraster →</button>
-            </div>
-          </div>
+  // Move/add an appointment to a target slot at a given start time
+  const dropTo=(target,startMin)=>{
+    const item=dragItemRef.current
+    if(!item) return
+    setRaster(prev=>{
+      if(!prev) return prev
+      const nxt=JSON.parse(JSON.stringify(prev))
+      let appt
+      if(item.mode==='move'){
+        if(item.fromSlot==='ntp'){
+          const i=nxt.ntp.findIndex(a=>a.id===item.appt.id)
+          if(i>=0){appt=nxt.ntp[i];nxt.ntp.splice(i,1)}
+        } else {
+          const arr=nxt.days[item.fromDay]?.[item.fromSlot]
+          if(arr){const i=arr.findIndex(a=>a.id===item.appt.id);if(i>=0){appt=arr[i];arr.splice(i,1)}}
+        }
+      } else if(item.mode==='new'){
+        const p=item.palette
+        appt={id:'man_'+Math.random().toString(36).slice(2,9),code:p.code,description:p.label,
+          duur:p.duur,digitaal:p.digitaal,modaliteit:p.modaliteit||(p.digitaal?'telefonisch':'fysiek'),
+          spoed:false,category:p.category,ci:p.ci??0,edited:true,manual:true}
+      }
+      if(!appt) return nxt
+      const dur=appt.duur||15
+      if(target==='ntp'){
+        delete appt.start; delete appt.end; appt.edited=true; nxt.ntp.push(appt)
+      } else {
+        const {day,slot}=target
+        const ddp=slot[0]
+        const dd=ddp==='o'?0:ddp==='m'?1:2
+        const room=parseInt(slot.slice(1))
+        const sessStart=ddp==='o'?nxt.ochStart:ddp==='m'?nxt.midStart:nxt.avondStart
+        const sessEnd=ddp==='o'?nxt.ochEnd:ddp==='m'?nxt.midEnd:nxt.avondEnd
+        let st=startMin!=null?(startMin-(item.grabOffsetMin||0)):sessStart
+        st=Math.max(sessStart,Math.min(st,sessEnd-dur))
+        st=snap5(st)
+        appt={...appt,dagdeel:dd,room,start:st,end:st+dur,edited:true}
+        if(!nxt.days[day]) nxt.days[day]={}
+        if(!nxt.days[day][slot]) nxt.days[day][slot]=[]
+        nxt.days[day][slot].push(appt)
+        // keep sorted by start
+        nxt.days[day][slot].sort((a,b)=>(a.start||0)-(b.start||0))
+      }
+      return nxt
+    })
+  }
 
-          <div className="alt-routes">
-            {TEMPLATES.map(tp => (
-              <div key={tp.id} className="alt-route" onClick={() => startTemplate(tp)}>
-                <b>{tp.naam}</b><span>· {tp.sub}</span>
-              </div>
-            ))}
-            <div className="alt-route" onClick={() => { setModal('csv') }}><b>Gegevens plakken</b><span>· code;aantal;duur</span></div>
-            <div className="alt-route" onClick={() => fileXlsx.current && fileXlsx.current.click()}><b>Excel importeren</b></div>
-            <div className="alt-route" onClick={() => fileJson.current && fileJson.current.click()}><b>Model openen</b><span>· .json</span></div>
-            <div className="alt-route" onClick={startLeeg}><b>Leeg beginnen</b></div>
-          </div>
-          <input ref={fileXlsx} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={leesXlsx} />
-          <input ref={fileJson} type="file" accept=".json,.xlsx" style={{ display: 'none' }} onChange={e => { const f = e.target.files[0]; if (f && f.name.endsWith('.json')) leesJson(e); else leesXlsx(e) }} />
-          {modal === 'csv' && renderCsvModal()}
-        </div>
+  const deleteAppt=(day,slot,id)=>{
+    setRaster(prev=>{
+      if(!prev) return prev
+      const nxt=JSON.parse(JSON.stringify(prev))
+      if(slot==='ntp'){const i=nxt.ntp.findIndex(a=>a.id===id);if(i>=0)nxt.ntp.splice(i,1)}
+      else {const arr=nxt.days[day]?.[slot];if(arr){const i=arr.findIndex(a=>a.id===id);if(i>=0)arr.splice(i,1)}}
+      return nxt
+    })
+  }
+
+  // Add an appointment (from a code) or a manual flex block to a room's morning session,
+  // placed right after the last real appointment. The trailing auto-flex is recomputed to fit.
+  const addToRoom=(day,room,item)=>{
+    setRaster(prev=>{
+      if(!prev) return prev
+      const nxt=JSON.parse(JSON.stringify(prev))
+      const slot='o'+room
+      if(!nxt.days[day]) nxt.days[day]={}
+      const arr=nxt.days[day][slot]||(nxt.days[day][slot]=[])
+      const sessStart=nxt.ochStart, sessEnd=nxt.ochEnd
+      // keep manual flex; drop the auto trailing flex so we can recompute it
+      const keep=arr.filter(a=>!(a.isFlex&&!a.manual))
+      let lastEnd=sessStart
+      keep.filter(a=>!a.isFlex).forEach(a=>{ lastEnd=Math.max(lastEnd, a.end) })
+      const dur=Math.max(5,item.flex?(item.duur||15):(item.duur||15))
+      const start=Math.min(lastEnd, sessEnd-dur)
+      if(item.flex){
+        keep.push({id:'flexman_'+Math.random().toString(36).slice(2,8),isFlex:true,manual:true,
+          dagdeel:0,room,start,end:start+dur,duur:dur,code:'Flex',
+          description:'Flexblok (handmatig)',category:'flex',
+          _why:['Handmatig toegevoegd flexblok.']})
+      } else {
+        keep.push({id:'man_'+Math.random().toString(36).slice(2,8),
+          code:item.afspraakcode||item.code||'AFSPR',description:item.omschrijving||item.description||'Afspraak',
+          duur:dur,digitaal:item.digitaal||false,spoed:item.spoed||false,onzeker:item.onzeker||'gemiddeld',
+          category:item.category,ci:item.ci??0,dagdeel:0,room,start,end:start+dur,edited:true,manual:true,
+          _why:['Handmatig toegevoegd aan dit spreekuur.']})
+      }
+      keep.sort((a,b)=>(a.start||0)-(b.start||0))
+      // recompute trailing auto-flex from the end of the last item to the session end
+      const realEnd=Math.max(sessStart,...keep.filter(a=>!(a.isFlex&&!a.manual)).map(a=>a.end||sessStart))
+      const rest=sessEnd-realEnd
+      if(rest>=5) keep.push({id:'flex_o_'+room+'_'+realEnd+'_'+Math.random().toString(36).slice(2,5),
+        isFlex:true,dagdeel:0,room,start:realEnd,end:sessEnd,duur:rest,code:'Flex',
+        description:'Flexruimte / buffer',category:'flex'})
+      nxt.days[day][slot]=keep
+      return nxt
+    })
+    setAddMenu(null)
+  }
+
+  const addRoom=()=>setRaster(prev=>{
+    if(!prev) return prev
+    const nxt=JSON.parse(JSON.stringify(prev))
+    const r=nxt.numRooms
+    Object.keys(nxt.days).forEach(d=>{ if(nxt.days[d]){nxt.days[d]['o'+r]=[];nxt.days[d]['m'+r]=[];if(nxt.avondOn)nxt.days[d]['a'+r]=[]} })
+    nxt.numRooms=r+1
+    return nxt
+  })
+  const removeRoom=()=>setRaster(prev=>{
+    if(!prev||prev.numRooms<=1) return prev
+    const nxt=JSON.parse(JSON.stringify(prev))
+    const r=nxt.numRooms-1
+    Object.keys(nxt.days).forEach(d=>{
+      if(!nxt.days[d]) return
+      ;['o'+r,'m'+r,'a'+r].forEach(sl=>{(nxt.days[d][sl]||[]).filter(a=>!a.isFlex).forEach(a=>nxt.ntp.push({...a,day:+d}));delete nxt.days[d][sl]})
+    })
+    nxt.numRooms=r
+    return nxt
+  })
+
+  const nav=idx=>{
+    if(idx===3) doGenerate()
+    setActive(idx); setVisited(p=>new Set([...p,idx]))
+  }
+
+
+
+  // ── SCHEDULING ENGINE — slot-based model (reference-proven) ───────────────────
+  // Each slot = (day, dagdeel, room). Flex = unused capacity within benutting cap.
+  // benutting 85% → fill each slot to 85% of dagdeel, leaving 15% as natural flex.
+  const doGenerate=useCallback(()=>{
+    const ochStart=toMin(m2.ochStart), ochEnd=toMin(m2.ochEnd)
+    const midStart=toMin(m2.midStart), midEnd=toMin(m2.midEnd)
+    const ochDur=ochEnd-ochStart, midDur=midEnd-midStart
+    // Usable capacity per slot = dagdeel duration × benutting%
+    const mUsable=Math.max(15, Math.round(ochDur*(m2.benutting/100)))
+    const aUsable=Math.max(15, Math.round(midDur*(m2.benutting/100)))
+
+    const eNew=newRows.length>0?newRows:[{afspraakcode:'NP',omschrijving:'Nieuwe patiënt',duur:20,digitaal:false,spoed:false,percentage:100,weekdagen:{MA:true,DI:true,WO:true,DO:true,VR:true}}]
+    const eCtrl=ctrlRows.length>0?ctrlRows:[{afspraakcode:'CP',omschrijving:'Controle',duur:15,digitaal:false,spoed:false,percentage:100,weekdagen:{MA:true,DI:true,WO:true,DO:true,VR:true}}]
+    const eNPat=cfg.newPat>0?cfg.newPat:5
+    const eCPat=cfg.ctrlPat>0?cfg.ctrlPat:10
+
+    // Uncertainty score: zeker=0, gemiddeld=1, onzeker=2
+    const uScore=a=> a.onzeker==='zeker'?0:a.onzeker==='onzeker'?2:1
+    // Per-rule comparators (negative = a before b)
+    const ruleCmp={
+      spoedFirst:(a,b)=>(b.spoed?1:0)-(a.spoed?1:0),
+      shortFirst:(a,b)=>a.duur-b.duur,
+      certainFirst:(a,b)=>uScore(a)-uScore(b),
+    }
+    const ruleActive=k=>rules[k]
+
+    // Order a pool of appointments using a COMPOSITE comparator driven by rule priority order.
+    // Each appointment keeps a stable _seq for reproducible tie-breaking.
+    const orderPool=(pool)=>{
+      let rest=pool.map((a,i)=>({...a,_seq:a._seq??i}))
+      // Active sequence rules in user-defined priority order
+      const activeOrder=(rules.order||['spoedFirst','shortFirst','certainFirst']).filter(k=>ruleActive(k)&&ruleCmp[k])
+      if(activeOrder.length){
+        rest.sort((a,b)=>{
+          for(const k of activeOrder){ const c=ruleCmp[k](a,b); if(c!==0) return c }
+          return a._seq-b._seq   // stable fallback
+        })
+      }
+      // Grouping strategy (wave = contiguous per code; spread = interleave) — preserves rule order (stable)
+      if(rules.groupMode==='wave'){
+        const byCode={}; const codeOrder=[]
+        rest.forEach(a=>{ if(!byCode[a.code]){byCode[a.code]=[];codeOrder.push(a.code)} byCode[a.code].push(a) })
+        rest=codeOrder.flatMap(c=>byCode[c])
+      } else {
+        const byType={}; const typeOrder=[]
+        rest.forEach(a=>{const k=a.category+'_'+a.ci; if(!byType[k]){byType[k]=[];typeOrder.push(k)} byType[k].push(a)})
+        const types=typeOrder.map(k=>byType[k]), maxL=Math.max(0,...types.map(t=>t.length)), il=[]
+        for(let i=0;i<maxL;i++) types.forEach(t=>{if(i<t.length)il.push(t[i])})
+        rest=il
+      }
+      // Digital ordering (sub-preference)
+      if(rules.digitalMode==='end') rest=[...rest.filter(a=>!a.digitaal),...rest.filter(a=>a.digitaal)]
+      else if(rules.digitalMode==='cluster'){
+        const dig=rest.filter(a=>a.digitaal), phys=rest.filter(a=>!a.digitaal), m=Math.floor(phys.length/2)
+        rest=[...phys.slice(0,m),...dig,...phys.slice(m)]
+      }
+      return rest
+    }
+
+    // ENGINE 2.0 — cluster-pack plaatsing.
+    // 1) Groepeer de (al door de planregels gesorteerde) afspraken per code.
+    // 2) Pak groepen in kamers via best-fit-decreasing → zelfde codes bij elkaar
+    //    (minder wisselingen), hoge benutting, kamers groeien alleen indien nodig.
+    // 3) Herstel binnen elke kamer de regel-volgorde (pool-index), zodat
+    //    kort/spoed/zeker-eerst de starttijden binnen de kamer blijven bepalen.
+    const fillRooms=(ordered, usable)=>{
+      const tagged=ordered.map((a,i)=>({...a,_pi:i}))
+      // code groups in first-appearance order
+      const gmap=new Map()
+      tagged.forEach(a=>{ if(!gmap.has(a.code)) gmap.set(a.code,[]); gmap.get(a.code).push(a) })
+      const groups=[...gmap.values()].map(items=>({items,dur:items.reduce((s,a)=>s+a.duur,0)}))
+      groups.sort((x,y)=>y.dur-x.dur)   // decreasing: big clusters first pack tightest
+      const rooms=[], loads=[]
+      const place=a=>{ // best-fit single item (used when a group must split)
+        let best=-1,bestRem=Infinity
+        for(let r=0;r<rooms.length;r++){
+          const rem=usable-loads[r]
+          if(a.duur<=rem&&rem<bestRem){bestRem=rem;best=r}
+        }
+        if(best<0){rooms.push([]);loads.push(0);best=rooms.length-1}
+        rooms[best].push(a);loads[best]+=a.duur
+      }
+      groups.forEach(g=>{
+        // try to keep the whole group in one room (best fit)
+        let best=-1,bestRem=Infinity
+        for(let r=0;r<rooms.length;r++){
+          const rem=usable-loads[r]
+          if(g.dur<=rem&&rem<bestRem){bestRem=rem;best=r}
+        }
+        if(best>=0){ rooms[best].push(...g.items); loads[best]+=g.dur }
+        else if(g.dur<=usable){ rooms.push([...g.items]); loads.push(g.dur) }
+        else g.items.forEach(place)   // group larger than a room: split item-wise
+      })
+      // restore rule ordering within each room → correct start times
+      rooms.forEach(r=>r.sort((x,y)=>x._pi-y._pi))
+      return rooms
+    }
+
+    // Fair integer split of `count` over buckets, proportional to `weights` (largest remainder).
+    const distribute=(count, weights)=>{
+      const sum=weights.reduce((a,b)=>a+b,0)
+      if(count<=0||sum<=0) return weights.map(()=>0)
+      const raw=weights.map(w=>count*w/sum)
+      const base=raw.map(Math.floor)
+      let rem=count-base.reduce((a,b)=>a+b,0)
+      const order=raw.map((r,i)=>({i,frac:r-Math.floor(r)})).sort((a,b)=>b.frac-a.frac)
+      for(let k=0;k<rem;k++) base[order[k%order.length].i]++
+      return base
+    }
+
+    // Which dagdelen exist (from spreekuurtijden) and their distribution weights
+    const avondOn=!!m2.avondOn
+    const avondStart=toMin(m2.avondStart||'17:00'), avondEnd=toMin(m2.avondEnd||'20:00')
+    const avDur=Math.max(0,avondEnd-avondStart)
+    const avUsable=Math.max(15,Math.round(avDur*(m2.benutting/100)))
+    const DD=avondOn?['O','M','A']:['O','M']
+    const verAv=avondOn?(m2.verAvond||0):0
+    const ddWeight={O:m2.verOch, M:Math.max(0,100-m2.verOch-verAv), A:verAv}
+
+    // Build appointment instances, each tagged with its day + dagdeel, distributed PROPORTIONALLY
+    // across allowed days (weighted by weekday %) and allowed dagdelen (weighted by dagdeel %).
+    const buildAll=(rows,cat,total)=>{
+      const out=[]
+      rows.forEach((code,ci)=>{
+        const weekCount=Math.round(total*((code.percentage||0)/100))
+        if(weekCount<=0) return
+        // Allowed days = code's weekdays that also have a weekday-% > 0
+        const allowedDays=[0,1,2,3,4].filter(di=>code.weekdagen?.[DAY_ABBR[di]] && (m2.days[WEEKDAY_KEYS[di]]||0)>0)
+        if(!allowedDays.length) return
+        const dayCounts=distribute(weekCount, allowedDays.map(di=>m2.days[WEEKDAY_KEYS[di]]||0))
+        // Allowed dagdelen = code's dagdelen that also exist in spreekuurtijden
+        const cdd=code.dagdelen||{O:true,M:true,A:false}
+        const allowedDd=DD.filter(x=>cdd[x])
+        const useDd=allowedDd.length?allowedDd:DD
+        allowedDays.forEach((di,idx)=>{
+          const dCount=dayCounts[idx]; if(dCount<=0) return
+          const w=useDd.map(x=>ddWeight[x]||0)
+          const wsum=w.reduce((a,b)=>a+b,0)
+          const ddCounts=distribute(dCount, wsum>0?w:useDd.map(()=>1))
+          useDd.forEach((x,j)=>{
+            for(let k=0;k<ddCounts[j];k++) out.push({
+              day:di, dd:x,
+              id:cat[0]+ci+'_'+di+'_'+x+'_'+k,
+              code:code.afspraakcode||(cat==='nieuw'?'NP'+(ci+1):'CP'+(ci+1)),
+              description:code.omschrijving||(cat==='nieuw'?'Nieuwe patiënt':'Controle'),
+              duur:Math.max(5,code.duur||15), digitaal:code.digitaal||false,
+              modaliteit:code.modaliteit||(code.digitaal?'telefonisch':'fysiek'), spoed:code.spoed||false,
+              onzeker:code.onzeker||'gemiddeld',
+              category:cat, ci, edited:false
+            })
+          })
+        })
+      })
+      return out
+    }
+
+    const allInst=[...buildAll(eNew,'nieuw',eNPat),...buildAll(eCtrl,'controle',eCPat)]
+
+    // Group by day + dagdeel
+    const grouped={} // grouped[day][dd] = [instances]
+    allInst.forEach(it=>{
+      (grouped[it.day]=grouped[it.day]||{});
+      (grouped[it.day][it.dd]=grouped[it.day][it.dd]||[]).push(it)
+    })
+
+    const usableFor=dd=> dd==='O'?mUsable : dd==='M'?aUsable : avUsable
+    const ddIndex={O:0,M:1,A:2}
+    const ddPrefix={O:'o',M:'m',A:'a'}
+
+    // Bin-pack each (day, dagdeel) into rooms; track the max rooms needed anywhere
+    let maxRooms=1
+    const built={} // built[day][dd] = rooms[]
+    ;[0,1,2,3,4].forEach(di=>{
+      if((m2.days[WEEKDAY_KEYS[di]]||0)===0){ built[di]=null; return }
+      const g=grouped[di]||{}
+      built[di]={}
+      DD.forEach(dd=>{
+        const pool=orderPool(g[dd]||[])
+        const rooms=fillRooms(pool, usableFor(dd))
+        built[di][dd]=rooms
+        maxRooms=Math.max(maxRooms, rooms.length)
+      })
+    })
+
+    // Build slot structure with explicit start times + flex blocks
+    const res={ numRooms:maxRooms, mUsable, aUsable, avUsable, ochDur, midDur, avDur, avondOn,
+      ochStart, ochEnd, midStart, midEnd, avondStart, avondEnd, days:{}, ntp:[] }
+    const snap5=t=>Math.round(t/5)*5
+
+    const ddName=dd=>dd===0?'ochtend':dd===1?'middag':'avond'
+    // Build a reason list explaining why an appointment sits where it does
+    const explain=(a, idx, total, dd)=>{
+      const why=[]
+      if(rules.spoedFirst&&a.spoed) why.push('Spoed: vooraan gepland.')
+      if(rules.shortFirst&&idx<Math.ceil(total/2)&&a.duur<=20) why.push('Korte afspraak: vroeg in het '+ddName(dd)+'-spreekuur.')
+      if(rules.certainFirst){
+        if(a.onzeker==='onzeker') why.push('Onzekere afspraak: later geplaatst, vlak vóór de buffer om uitloop op te vangen.')
+        else if(a.onzeker==='zeker') why.push('Zekere afspraak: vroeg geplaatst.')
+      }
+      if(a.baileyWelsh) why.push('Bailey-Welsh: eerste positie is dubbel boekbaar (vangt no-show/startvertraging op).')
+      if(rules.groupMode==='wave') why.push('Wave-planning: gelijke afspraakcodes aaneengesloten.')
+      if(!why.length) why.push('Standaard ingepland op de eerstvolgende vrije positie.')
+      return why
+    }
+
+    // Lay out appointments in a room+dagdeel, honoring flexMode (end vs spread) and Bailey-Welsh.
+    const layoutSlot=(apptsIn, sessStart, dagdeelMin, dd, room)=>{
+      const appts=apptsIn||[]
+      const out=[]
+      const usedByAppts=appts.reduce((s,a)=>s+a.duur,0)
+      const flexTotal=Math.max(0, dagdeelMin-usedByAppts)
+      const mkFlex=(start,dur,label)=>({id:'flex_'+dd+'_'+room+'_'+start+'_'+Math.random().toString(36).slice(2,5),
+        isFlex:true,dagdeel:dd,room,start,end:start+dur,duur:dur,code:'Flex',
+        description:label||'Flexruimte / buffer',category:'flex'})
+      // Push an appointment; if it's the first one and Bailey-Welsh is active, also push a
+      // second OVERBOOKED position at the same start time (visible side-by-side double booking).
+      const pushAppt=(a,idx,t)=>{
+        const isBW=rules.baileyWelsh&&idx===0
+        out.push({...a,dagdeel:dd,room,start:t,end:t+a.duur,
+          baileyWelsh:isBW, _why:explain({...a,baileyWelsh:isBW},idx,appts.length,dd)})
+        if(isBW){
+          out.push({...a,id:a.id+'_bw',dagdeel:dd,room,start:t,end:t+a.duur,
+            baileyWelsh:true, overbook:true,
+            description:'Overboeking (Bailey-Welsh)',
+            _why:['Bailey-Welsh: extra (dubbel geboekte) positie op het eerste tijdslot om no-show en startvertraging op te vangen.']})
+        }
+      }
+
+      if(rules.flexMode==='spread' && appts.length>0 && flexTotal>=5){
+        // Distribute the flex evenly as buffers AFTER appointments (never at the very start).
+        const gaps=appts.length
+        const perRaw=flexTotal/gaps
+        let placed=0, t=sessStart
+        appts.forEach((a,idx)=>{
+          pushAppt(a,idx,t)
+          t+=a.duur
+          let chunk=Math.round((perRaw*(idx+1)-placed)/5)*5
+          chunk=Math.max(0,Math.min(chunk, flexTotal-placed))
+          if(chunk>=5){ out.push(mkFlex(t,chunk,'Buffer (verspreid)')); t+=chunk; placed+=chunk }
+        })
+        if(flexTotal-placed>=5) out.push(mkFlex(t, flexTotal-placed, 'Buffer (rest)'))
+      } else {
+        // flexMode 'end' (default): all appointments first, one buffer block at the end
+        let t=sessStart
+        appts.forEach((a,idx)=>{ pushAppt(a,idx,t); t+=a.duur })
+        if(flexTotal>=5) out.push(mkFlex(t, flexTotal, rules.flexMode==='end'?'Buffer (einde sessie)':'Flexruimte'))
+      }
+      return out
+    }
+    const sessInfo={O:[ochStart,ochDur],M:[midStart,midDur],A:[avondStart,avDur]}
+
+    ;[0,1,2,3,4].forEach(di=>{
+      if(!built[di]){ res.days[di]=null; return }
+      const slots={}
+      for(let r=0;r<maxRooms;r++){
+        DD.forEach(dd=>{
+          const [ss,dm]=sessInfo[dd]
+          slots[ddPrefix[dd]+r]=layoutSlot(built[di][dd][r]||[], ss, dm, ddIndex[dd], r)
+        })
+      }
+      res.days[di]=slots
+    })
+
+    // ── ENGINE 2.0: analytics (KPI) + validation ──────────────────────────────
+    const kpi={perDay:{},week:{appts:0,planned:0,capacity:0,flex:0},issues:[]}
+    const sessEndOf=dd=>dd===0?ochEnd:dd===1?midEnd:avondEnd
+    ;[0,1,2,3,4].forEach(di=>{
+      const slots=res.days[di]
+      if(!slots){kpi.perDay[di]=null;return}
+      let appts=0,planned=0,flex=0,capacity=0
+      Object.entries(slots).forEach(([key,arr])=>{
+        const dd=key[0]==='o'?0:key[0]==='m'?1:2
+        capacity+= dd===0?ochDur : dd===1?midDur : avDur
+        ;(arr||[]).forEach(a=>{
+          if(a.isFlex){flex+=a.duur;return}
+          if(a.overbook)return               // overbook is extra capacity, not load
+          appts++;planned+=a.duur
+          // validation: block must end within its session
+          if(a.end>sessEndOf(dd)+0.01)
+            kpi.issues.push({day:di,room:a.room,msg:`${a.code} (${toTime(a.start)}) loopt buiten het dagdeel`})
+        })
+        // validation: overlaps within a slot (except overbook pairs)
+        const reg=(arr||[]).filter(a=>!a.isFlex&&!a.overbook).sort((x,y)=>x.start-y.start)
+        for(let i=1;i<reg.length;i++)
+          if(reg[i].start<reg[i-1].end-0.01)
+            kpi.issues.push({day:di,room:reg[i].room,msg:`Overlap: ${reg[i-1].code} en ${reg[i].code} om ${toTime(reg[i].start)}`})
+      })
+      kpi.perDay[di]={appts,planned,flex,capacity,benutting:capacity>0?Math.round(planned/capacity*100):0}
+      kpi.week.appts+=appts;kpi.week.planned+=planned;kpi.week.capacity+=capacity;kpi.week.flex+=flex
+    })
+    kpi.week.benutting=kpi.week.capacity>0?Math.round(kpi.week.planned/kpi.week.capacity*100):0
+    // spreiding: hoe gelijkmatig zijn de dagen gevuld (100 = perfect gelijk)
+    const dayLoads=[0,1,2,3,4].map(d=>kpi.perDay[d]?.planned??null).filter(v=>v!=null)
+    if(dayLoads.length>1){
+      const avg=dayLoads.reduce((a,b)=>a+b,0)/dayLoads.length
+      const sd=Math.sqrt(dayLoads.reduce((s,v)=>s+(v-avg)**2,0)/dayLoads.length)
+      kpi.week.spreiding=avg>0?Math.max(0,Math.round(100-(sd/avg)*100)):100
+    } else kpi.week.spreiding=100
+    res.kpi=kpi
+
+    setRaster(res)
+  },[cfg,newRows,ctrlRows,m2,rules])
+
+  // ENGINE 2.0 — live sync: zodra er een raster is, wordt elke wijziging in
+  // gegevens/tijden/regels direct doorgerekend (studio: canvas is altijd zichtbaar).
+  const hasRasterRef=useRef(false)
+  useEffect(()=>{ hasRasterRef.current=!!raster },[raster])
+  useEffect(()=>{
+    if(hasRasterRef.current) doGenerate()
+  },[doGenerate])
+  // auto-start: genereer bij openen zodat de studio direct leeft
+  const bootRef=useRef(false)
+  useEffect(()=>{
+    if(!bootRef.current){ bootRef.current=true; doGenerate() }
+  },[])
+
+  const handleFullReset=()=>{
+    setActive(0); setVisited(new Set([0]))
+    setM1Mode(null); setM1Section(1)
+    setCfg({newPat:10,ctrlPat:20,newCodes:2,ctrlCodes:3})
+    setPoli({naam:'',specialisme:''})
+    setNewRows([]); setCtrlRows([]); setImportBadge(null)
+    setM2({ochStart:'08:30',ochEnd:'12:00',midStart:'13:00',midEnd:'16:30',
+      avondOn:false,avondStart:'17:00',avondEnd:'20:00',verAvond:0,
+      verOch:50,benutting:85,days:{ma:20,di:20,wo:20,do:20,vr:20}})
+    setRules({shortFirst:false,spoedFirst:false,certainFirst:false,baileyWelsh:false,
+      digitalMode:'spread',groupMode:'spread',flexMode:'end',
+      order:['spoedFirst','shortFirst','certainFirst']})
+    setSelDay(0); setRaster(null); setDrag(null)
+    setShowFullReset(false)
+  }
+
+  const m2c=useMemo(()=>{
+    const od=toMin(m2.ochEnd)-toMin(m2.ochStart)   // ochtend dagdeel bruto minuten
+    const md=toMin(m2.midEnd)-toMin(m2.midStart)   // middag dagdeel bruto minuten
+
+    // A spreekuur is ONE dagdeel — benutting applies per dagdeel, not per full day
+    const nOch=Math.round(od*(m2.benutting/100))   // netto ochtend spreekuur
+    const nMid=Math.round(md*(m2.benutting/100))   // netto middag spreekuur
+    const fOch=od-nOch                              // flex ochtend spreekuur
+    const fMid=md-nMid                              // flex middag spreekuur
+
+    // Per-dag totals (sum of both dagdelen, for display only)
+    const bDay=od+md
+    const nDay=nOch+nMid
+    const fDay=fOch+fMid
+
+    // Per-week totals (weighted by weekday distribution)
+    const dSum=WEEKDAY_KEYS.reduce((s,k)=>s+(m2.days[k]||0),0)
+    const weekFactor=WEEKDAY_KEYS.reduce((s,k)=>s+(m2.days[k]||0)/100,0)
+    const bWk=Math.round(weekFactor*bDay*5)
+    const nWk=Math.round(weekFactor*nDay*5)
+
+    return{od,md,nOch,nMid,fOch,fMid,bDay,nDay,fDay,bWk,nWk,dSum}
+  },[m2])
+
+  const getColor=appt=>{
+    if(appt.isFlex) return {bg:'#E3F1E7',brd:'#9AC9A8',fg:'#2E6B3A'}
+    if(appt.isBuffer) return BUF_COLOR
+    if(appt.category==='controle'&&appt.digitaal) return {bg:'#D6EAE3',brd:'#94C5B4',fg:'#1A5544'}
+    if(appt.category==='nieuw') return NEW_PALETTE[appt.ci%NEW_PALETTE.length]||NEW_PALETTE[0]
+    if(appt.category==='controle') return CTRL_PALETTE[appt.ci%CTRL_PALETTE.length]||CTRL_PALETTE[0]
+    return {bg:'#E2E8EE',brd:'#B4C2CE',fg:'#3A4A58'}
+  }
+
+  // ── IMPORT ──────────────────────────────────────────────────────────────────
+  const handleImport=e=>{
+    const file=e.target.files[0]; if(!file) return
+    // Reset the file input so the same file can be re-selected
+    e.target.value=''
+    const reader=new FileReader()
+    reader.onload=ev=>{
+      try{
+        const wb=XLSX.read(ev.target.result,{type:'binary'})
+        const ws=wb.Sheets['_rasterdata']
+        if(!ws) throw new Error('Dit bestand bevat geen hersteldata (_rasterdata). Exporteer opnieuw vanuit de Raster Tool.')
+        const rows=XLSX.utils.sheet_to_json(ws,{header:1})
+        if(!rows||!rows[0]||!rows[0][0]) throw new Error('Hersteldata is leeg of beschadigd.')
+        const state=JSON.parse(rows[0][0])
+        // Restore all config state (with migration defaults for older files)
+        const migRow=r=>({onzeker:'gemiddeld',dagdelen:{O:true,M:true,A:false},
+          modaliteit:r.modaliteit||(r.digitaal?'telefonisch':'fysiek'),...r})
+        if(state.cfg)      setCfg(state.cfg)
+        if(state.newRows)  setNewRows(state.newRows.map(migRow))
+        if(state.ctrlRows) setCtrlRows(state.ctrlRows.map(migRow))
+        if(state.m2)       setM2({avondOn:false,avondStart:'17:00',avondEnd:'20:00',verAvond:0,...state.m2})
+        if(state.rules){
+          const sr=state.rules
+          setRules({shortFirst:false,spoedFirst:false,certainFirst:false,baileyWelsh:false,
+            digitalMode:'spread',groupMode:'spread',flexMode:'end',...sr,
+            order:Array.isArray(sr.order)&&sr.order.length?sr.order:['spoedFirst','shortFirst','certainFirst']})
+        }
+        // Note: raster is not stored (too large), it will be auto-generated
+        setRaster(null)
+        setImportBadge({
+          filename:file.name,
+          date:state.exportDate?new Date(state.exportDate).toLocaleDateString('nl-NL'):'onbekend'
+        })
+        // Navigate to module 1 section 2 (codes table) so user sees their data
+        setM1Mode('imported')
+        setM1Section(state.newRows?.length>0||state.ctrlRows?.length>0 ? 2 : 1)
+        setActive(0)
+        setVisited(new Set([0,1,2,3]))
+        alert('✅ Sessie hersteld!\n\nGegevens, codes, tijden en planregels zijn ingeladen.\nGa naar "Rasterproces" om het rooster opnieuw te genereren.')
+      }catch(err){
+        alert('Import mislukt:\n\n'+err.message)
+      }
+    }
+    reader.readAsBinaryString(file)
+  }
+
+  // ── EXPORT ─────────────────────────────────────────────────────────────────
+  const handleExport=useCallback(()=>{
+    if(!raster){alert('Genereer eerst een raster.');return}
+    setExporting(true); setExportLink(null)
+    setTimeout(()=>{
+      try{
+        const wb=XLSX.utils.book_new()
+        const today=new Date().toLocaleDateString('nl-NL')
+        const s=v=>(v===null||v===undefined)?'':String(v)
+        const numRooms=raster.numRooms||1
+
+        // Sheet per day: rooms × dagdeel
+        for(let di=0;di<5;di++){
+          const slots=raster.days[di]
+          const rows=[]
+          rows.push([((poli.naam||poli.specialisme||'Poliraster').toUpperCase())+' — '+DAYS[di].toUpperCase(),'Geëxporteerd: '+today])
+          rows.push([])
+          if(!slots){ rows.push(['Geen spreekuur op deze dag']) }
+          else {
+            ;[['☀ OCHTEND','o',raster.mUsable],['🌤 MIDDAG','m',raster.aUsable]].forEach(([lab,pfx,usable])=>{
+              rows.push([lab])
+              rows.push(['Kamer','Afspraken','Gebruikt','Beschikbaar','Flex'])
+              for(let r=0;r<numRooms;r++){
+                const arr=slots[pfx+r]||[]
+                const used=arr.reduce((t,a)=>t+a.duur,0)
+                const list=arr.map(a=>`${a.description||a.code} (${a.duur}m)${a.digitaal?' [tel]':''}`).join(', ')
+                rows.push([s('Kamer '+(r+1)),s(list||'—'),s(used+' min'),s(usable+' min'),s(Math.max(0,usable-used)+' min')])
+              }
+              rows.push([])
+            })
+          }
+          const ws=XLSX.utils.aoa_to_sheet(rows)
+          ws['!cols']=[{wch:12},{wch:60},{wch:12},{wch:12},{wch:10}]
+          XLSX.utils.book_append_sheet(wb,ws,DAYS[di].substring(0,3))
+        }
+
+        // All appointments flat
+        const ar=[['ALLE AFSPRAKEN'],['Geëxporteerd: '+today],[],
+          ['Dag','Dagdeel','Kamer','Code','Omschrijving','Duur','Categorie','Digitaal']]
+        for(let di=0;di<5;di++){
+          const slots=raster.days[di]; if(!slots) continue
+          for(let r=0;r<numRooms;r++){
+            ;[['Ochtend','o'],['Middag','m']].forEach(([ddl,pfx])=>{
+              (slots[pfx+r]||[]).forEach(a=>{
+                ar.push([s(DAYS[di]),ddl,s('Kamer '+(r+1)),s(a.code),s(a.description),s(a.duur),
+                  s(a.category==='nieuw'?'Nieuw':'Controle'),s(a.digitaal?'Ja':'Nee')])
+              })
+            })
+          }
+        }
+        ;(raster.ntp||[]).forEach(a=>ar.push([s(DAYS[a.day]||'?'),'Nog te plannen','—',s(a.code),s(a.description),s(a.duur),
+          s(a.category==='nieuw'?'Nieuw':'Controle'),s(a.digitaal?'Ja':'Nee')]))
+        const wsA=XLSX.utils.aoa_to_sheet(ar)
+        wsA['!cols']=[{wch:12},{wch:14},{wch:10},{wch:12},{wch:30},{wch:7},{wch:10},{wch:9}]
+        XLSX.utils.book_append_sheet(wb,wsA,'Alle afspraken')
+
+        // Configuratie
+        const cr=[['CONFIGURATIE'],['Geëxporteerd: '+today],[],
+          ['Nieuwe patiënten/week',s(cfg.newPat)],['Controle patiënten/week',s(cfg.ctrlPat)],[],
+          ['Ochtend spreekuur',s(m2.ochStart)+'–'+s(m2.ochEnd),s(m2c.od+' min bruto'),s(m2c.nOch+' min netto')],
+          ['Middag spreekuur',s(m2.midStart)+'–'+s(m2.midEnd),s(m2c.md+' min bruto'),s(m2c.nMid+' min netto')],
+          ['Benutting',s(m2.benutting+'%'),'Verdeling',s(m2.verOch+'% / '+(100-m2.verOch)+'%')],
+          ['Aantal kamers',s(numRooms)],[],
+          ['ACTIEVE PLANREGELS'],
+          ...Object.entries(PLAN_INFO).map(([k,info])=>{
+            const val=rules[k]; return [s(info.label),s(typeof val==='boolean'?(val?'Actief':'Inactief'):val)]
+          })
+        ]
+        const wsC=XLSX.utils.aoa_to_sheet(cr)
+        wsC['!cols']=[{wch:26},{wch:20},{wch:16},{wch:16}]
+        XLSX.utils.book_append_sheet(wb,wsC,'Configuratie')
+
+        // Restore data (config only, no raster)
+        const state={version:'4.0',exportDate:new Date().toISOString(),cfg,newRows,ctrlRows,m2,rules}
+        const wsS=XLSX.utils.aoa_to_sheet([[JSON.stringify(state)]])
+        XLSX.utils.book_append_sheet(wb,wsS,'_rasterdata')
+
+        const b64=XLSX.write(wb,{bookType:'xlsx',type:'base64'})
+        setExportLink({
+          href:'data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,'+b64,
+          filename:(expName.trim()||(poli.naam||'raster').toLowerCase().replace(/\s+/g,'_')||'raster')+'.xlsx'
+        })
+      }catch(err){console.error('Export:',err);alert('Export fout: '+err.message)}
+      finally{setExporting(false)}
+    },50)
+  },[raster,cfg,newRows,ctrlRows,m2,rules,expName,m2c,poli])
+
+  // ─── PROGRESS BAR ──────────────────────────────────────────────────────────
+  const renderProg=()=>null
+
+  // ─── MODULE 0 ──────────────────────────────────────────────────────────────
+  const upRow=(set,i,f,v)=>set(p=>p.map((r,j)=>j===i?{...r,[f]:v}:r))
+  const upNested=(set,i,f,k,v)=>set(p=>p.map((r,j)=>j===i?{...r,[f]:{...r[f],[k]:v}}:r))
+
+  const renderTable=(rows,set,label,n,total,cat)=>{
+    const cc=cat==='nieuw'?C.primary:C.green
+    const sumPct=rows.reduce((a,r)=>a+r.percentage,0)
+    const Stepper=({val,on,suffix,step=5,min=0,max=999})=>(
+      <div style={{display:'inline-flex',alignItems:'center',border:`1px solid ${C.border}`,borderRadius:8,overflow:'hidden',background:C.white}}>
+        <button onClick={()=>on(Math.max(min,val-step))}
+          style={{width:30,height:34,border:'none',borderRight:`1px solid ${C.border}`,background:C.surface2,cursor:'pointer',fontWeight:700,color:C.muted,fontSize:15}}>−</button>
+        <input type="number" value={val} onChange={e=>on(Math.max(min,Math.min(max,parseInt(e.target.value)||min)))}
+          style={{width:48,textAlign:'center',border:'none',padding:'7px 2px',fontSize:14,fontWeight:700,color:C.text,fontFamily:'inherit'}}/>
+        <button onClick={()=>on(Math.min(max,val+step))}
+          style={{width:30,height:34,border:'none',borderLeft:`1px solid ${C.border}`,background:C.surface2,cursor:'pointer',fontWeight:700,color:C.muted,fontSize:15}}>+</button>
+        {suffix&&<span style={{fontSize:11,color:C.muted,padding:'0 9px 0 7px'}}>{suffix}</span>}
       </div>
     )
-  }
-
-  function renderCsvModal() {
-    return (
-      <div className="pm-modal-achter" onClick={() => setModal(null)}>
-        <div className="pm-modal" onClick={e => e.stopPropagation()}>
-          <h3>Poli-gegevens plakken</h3>
-          <p className="ml">Eén regel per afspraaktype: <b>code ; omschrijving ; aantal per week ; duur (min)</b>. Een kopregel mag.</p>
-          <textarea className="inp" value={csvTekst} onChange={e => setCsvTekst(e.target.value)} placeholder={'NP;Nieuwe patiënt;24;20\nCO;Controle;40;10\nTC;Telefonisch consult;12;10'} />
-          <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
-            <button className="btn" onClick={() => setModal(null)}>Annuleren</button>
-            <button className="btn acc" onClick={verwerkCsv}>Inlezen &amp; genereren</button>
-          </div>
-        </div>
-      </div>
+    const FieldLabel=({children})=>(
+      <div style={{fontSize:9.5,fontWeight:600,color:C.muted,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:6}}>{children}</div>
     )
-  }
-
-  /* ─── snel-inline paneel (verfijn-schermen) ─── */
-  const renderSnelInline = () => (
-    <div className="snel-inline">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-        <b style={{ fontSize: 13.5 }}>⚡ Snel opbouwen met schuiven</b>
-        <button className="btn mini" onClick={() => setToonSnelInline(false)}>Verbergen</button>
-      </div>
-      <div className="spec-row" style={{ margin: '0 0 14px' }}>
-        {SPECIALISMEN.map(sp => (
-          <button key={sp.id} className={'spec-btn' + (snel.specialisme === sp.id ? ' on' : '')} style={{ background: snel.specialisme === sp.id ? 'var(--acc)' : 'var(--panel)', color: snel.specialisme === sp.id ? '#04120D' : 'var(--mut)', borderColor: snel.specialisme === sp.id ? 'var(--acc)' : 'var(--line)' }} onClick={() => setSnel(s => ({ ...s, specialisme: sp.id }))}>{sp.naam}</button>
-        ))}
-      </div>
-      <div className="sg">
-        <Schuif lab="Nieuw / week" val={snel.nieuwPw} min={0} max={80} on={v => setSnel(s => ({ ...s, nieuwPw: v }))} />
-        <Schuif lab="Controles / week" val={snel.controlePw} min={0} max={140} on={v => setSnel(s => ({ ...s, controlePw: v }))} />
-        <Schuif lab="Telefonisch" fmt={v => v + '%'} val={snel.pctTel} min={0} max={80} step={5} on={v => setSnel(s => ({ ...s, pctTel: v }))} />
-        <Schuif lab="Duur nieuw" fmt={v => v + ' min'} val={snel.duurNieuw} min={5} max={45} step={5} on={v => setSnel(s => ({ ...s, duurNieuw: v }))} />
-        <Schuif lab="Duur controle" fmt={v => v + ' min'} val={snel.duurControle} min={5} max={30} step={5} on={v => setSnel(s => ({ ...s, duurControle: v }))} />
-        <div style={{ display: 'flex', alignItems: 'flex-end' }}><button className="btn acc" onClick={herbouwUitSnel}>Zorgvraag herbouwen</button></div>
-      </div>
-    </div>
-  )
-
-  /* ════════ FASE: ZORGVRAAG ════════ */
-  const renderVraag = () => {
-    const totMin = model.types.reduce((s, t) => s + t.perWeek * t.duur, 0)
-    const perCat = Object.keys(CATS).map(c => ({ c, min: model.types.filter(t => t.cat === c).reduce((s, t) => s + t.perWeek * t.duur, 0) })).filter(x => x.min > 0)
-    const upT = (id, veld, v) => upModel(m => { const t = m.types.find(x => x.id === id); if (t) t[veld] = v })
-    return (
-      <div>
-        <h1 className="pm-h1">Zorgvraag</h1>
-        <p className="pm-lead">Wat komt er wekelijks binnen. Sleep de schuiven voor een snelle opzet, of pas elk type met de hand aan in de tabel.</p>
-        {!toonSnelInline
-          ? <button className="btn" style={{ marginBottom: 15 }} onClick={() => setToonSnelInline(true)}>⚡ Snel opbouwen met schuiven</button>
-          : renderSnelInline()}
-        <div className="pm-panel">
-          <div className="ph">
-            <b>Afspraaktypen <span className="sub">· {model.types.length} typen · {fit ? fit.nAfspraken : 0} afspraken/week · {uur(totMin)} u vraag</span></b>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn mini" onClick={() => setModal('csv')}>Plak gegevens</button>
-              <button className="btn mini" onClick={() => fileXlsx.current && fileXlsx.current.click()}>Importeer Excel</button>
-              <button className="btn mini acc" onClick={() => upModel(m => m.types.push(nieuwType()))}>+ Type</button>
+    return(
+      <div style={{marginBottom:26}}>
+        {/* Section header — portal style */}
+        <div style={{display:'flex',alignItems:'flex-end',justifyContent:'space-between',marginBottom:14,gap:12}}>
+          <div>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:5}}>
+              <span style={{width:8,height:8,borderRadius:'50%',background:cc}}/>
+              <span style={{fontSize:9.5,fontWeight:700,color:cc,letterSpacing:'0.16em'}}>
+                {cat==='nieuw'?'NIEUWE PATIËNTEN':'CONTROLE PATIËNTEN'}
+              </span>
             </div>
+            <div style={{fontFamily:"'Newsreader',Georgia,serif",fontSize:22,fontWeight:500,color:C.text,letterSpacing:'-0.01em'}}>
+              {label}
+            </div>
+            <div style={{fontSize:12,color:C.muted,marginTop:2}}>{total} afspraken per week · {n} afspraakcode{n!==1?'s':''}</div>
           </div>
-          {model.types.length === 0 ? <div className="leeg-blok">Nog geen afspraaktypen. Gebruik de schuiven hierboven of voeg handmatig een type toe.</div> : (
-            <table className="vt">
-              <thead><tr><th style={{ width: 84 }}>Code</th><th>Omschrijving</th><th style={{ width: 116 }}>Categorie</th><th style={{ width: 78 }}>Duur</th><th style={{ width: 78 }}>Per week</th><th style={{ width: 116 }}>Modaliteit</th><th style={{ width: 104 }}>Dagdeel</th><th style={{ width: 116 }}>Verdeling</th><th style={{ width: 74 }}>No-show</th><th style={{ width: 32 }}></th></tr></thead>
-              <tbody>
-                {model.types.map(t => (
-                  <tr key={t.id}>
-                    <td><input className="inp" style={{ fontWeight: 800, fontFamily: 'var(--mono)', fontSize: 12 }} value={t.code} placeholder="CODE" onChange={e => upT(t.id, 'code', e.target.value.toUpperCase())} /></td>
-                    <td><input className="inp" value={t.naam} placeholder="Omschrijving…" onChange={e => upT(t.id, 'naam', e.target.value)} /></td>
-                    <td><select className="inp" value={t.cat} onChange={e => upT(t.id, 'cat', e.target.value)}>{Object.entries(CATS).map(([k, c]) => <option key={k} value={k}>{c.naam}</option>)}</select></td>
-                    <td><input className="inp num" type="number" min={5} max={120} step={5} value={t.duur} onChange={e => upT(t.id, 'duur', klem(parseInt(e.target.value) || 5, 5, 120))} /></td>
-                    <td><input className="inp num" type="number" min={0} max={500} value={t.perWeek} onChange={e => upT(t.id, 'perWeek', klem(parseInt(e.target.value) || 0, 0, 500))} /></td>
-                    <td><select className="inp" value={t.modaliteit} onChange={e => upT(t.id, 'modaliteit', e.target.value)}>{MODALITEITEN.map(m => <option key={m.v} value={m.v}>{m.l}</option>)}</select></td>
-                    <td><select className="inp" value={t.voorkeurDd} onChange={e => upT(t.id, 'voorkeurDd', e.target.value)}><option value="*">Vrij</option><option value="O">Ochtend</option><option value="M">Middag</option><option value="A">Avond</option></select></td>
-                    <td><div className="seg">{[['spreid', 'Spreid'], ['bundel', 'Bundel']].map(([v, l]) => <button key={v} className={t.spreiding === v ? 'on' : ''} onClick={() => upT(t.id, 'spreiding', v)}>{l}</button>)}</div></td>
-                    <td><input className="inp num" style={{ width: 60 }} type="number" min={0} max={40} value={t.noShow} onChange={e => upT(t.id, 'noShow', klem(parseInt(e.target.value) || 0, 0, 40))} /></td>
-                    <td><button className="btn mini danger" onClick={() => upModel(m => { m.types = m.types.filter(x => x.id !== t.id) })}>✕</button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+          <span style={{fontSize:11.5,fontWeight:600,padding:'5px 12px',borderRadius:20,whiteSpace:'nowrap',
+            background:sumPct===100?'#EAF5EE':'#FCEEEB',color:sumPct===100?C.green:C.danger,
+            border:`1px solid ${sumPct===100?'#C9E6D5':'#F1CFC8'}`}}>
+            Verdeling {sumPct}%{sumPct!==100?' — moet 100%':' ✓'}
+          </span>
         </div>
-        {totMin > 0 && (
-          <div className="pm-panel">
-            <div className="ph"><b>Samenstelling van de vraag</b><span className="sub">{uur(totMin)} u/week</span></div>
-            <div className="mix" style={{ display: 'flex', height: 26, borderRadius: 6, overflow: 'hidden', border: '1px solid var(--line2)' }}>
-              {perCat.map(x => <div key={x.c} style={{ width: (x.min / totMin * 100) + '%', background: CAT_KLEUR[x.c].bg, borderRight: `2px solid ${CAT_KLEUR[x.c].ln}` }} title={`${CATS[x.c].naam}: ${uur(x.min)} u`} />)}
-            </div>
-            <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>{perCat.map(x => <span key={x.c} className={'chip ' + x.c}>{CATS[x.c].naam} · {uur(x.min)} u · {Math.round(x.min / totMin * 100)}%</span>)}</div>
-          </div>
-        )}
-        <div style={{ display: 'flex', gap: 10 }}>
-          <button className="btn" onClick={() => setFase('capaciteit')}>Naar capaciteit →</button>
-          <button className="btn acc" onClick={genereer}>Raster bijwerken ⚙</button>
-        </div>
-      </div>
-    )
-  }
 
-  /* ════════ FASE: CAPACITEIT ════════ */
-  const renderCapaciteit = () => {
-    const upLid = (id, veld, v) => upModel(m => { const b = m.team.find(x => x.id === id); if (b) b[veld] = v })
-    return (
-      <div>
-        <h1 className="pm-h1">Capaciteit</h1>
-        <p className="pm-lead">Wie werkt wanneer. Klik in het rooster om een sessie aan/uit te zetten; elke sessie heeft zijn eigen begin- en eindtijd.</p>
-        <div className="pm-panel">
-          <div className="ph">
-            <b>Team &amp; kamers</b>
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-              <span className="sub">Spreekkamers</span>
-              <div className="step"><button onClick={() => upModel(m => { m.kamers = klem(m.kamers - 1, 1, 20) })}>−</button><span className="val">{model.kamers}</span><button onClick={() => upModel(m => { m.kamers = klem(m.kamers + 1, 1, 20) })}>+</button></div>
-              <button className="btn mini acc" onClick={() => upModel(m => m.team.push(nieuwLid(m.team.length + 1)))}>+ Teamlid</button>
-            </div>
-          </div>
-          <div className="wg">
-            <div className="hd">Teamlid</div>
-            {DAG_KORT.map(d => <div key={d} className="hd">{d}</div>)}
-            {model.team.map(bh => (
-              <React.Fragment key={bh.id}>
-                <div className="bh">
-                  <input className="inp" style={{ fontWeight: 800 }} value={bh.naam} onChange={e => upLid(bh.id, 'naam', e.target.value)} />
-                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <select className="inp" style={{ fontSize: 11, padding: '4px 6px' }} value={bh.rol} onChange={e => upLid(bh.id, 'rol', e.target.value)}><option value="arts">Arts</option><option value="vs">Verpleegk. spec.</option><option value="pa">Physician assistant</option></select>
-                    <button className="btn mini danger" onClick={() => upModel(m => { m.team = m.team.filter(x => x.id !== bh.id); m.sessies = m.sessies.filter(s => s.bhId !== bh.id) })}>✕</button>
+        {/* Code cards */}
+        <div style={{display:'flex',flexDirection:'column',gap:12}}>
+          {rows.map((row,i)=>(
+            <div key={i} style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:16,
+              padding:'18px 20px',transition:'box-shadow 0.15s'}}
+              onMouseEnter={e=>e.currentTarget.style.boxShadow='0 6px 20px rgba(27,39,51,0.06)'}
+              onMouseLeave={e=>e.currentTarget.style.boxShadow='none'}>
+              {/* Top row: code + description */}
+              <div style={{display:'flex',gap:12,marginBottom:16,alignItems:'center'}}>
+                <div style={{display:'flex',alignItems:'center',justifyContent:'center',
+                  width:34,height:34,borderRadius:10,background:cat==='nieuw'?C.blueAccent:'#E7F3EC',
+                  color:cc,fontWeight:700,fontSize:13,flexShrink:0,
+                  fontFamily:"'Newsreader',Georgia,serif"}}>{i+1}</div>
+                <input value={row.afspraakcode} onChange={e=>upRow(set,i,'afspraakcode',e.target.value)}
+                  placeholder={`Code ${i+1}`}
+                  style={{width:120,border:`1px solid ${C.border}`,borderRadius:8,padding:'9px 12px',fontSize:13,fontWeight:700,fontFamily:'inherit',color:C.text}}/>
+                <input value={row.omschrijving} onChange={e=>upRow(set,i,'omschrijving',e.target.value)}
+                  placeholder="Omschrijving van de afspraak…"
+                  style={{flex:1,border:`1px solid ${C.border}`,borderRadius:8,padding:'9px 12px',fontSize:13,fontFamily:'inherit',color:C.text}}/>
+              </div>
+              {/* Field groups */}
+              <div style={{display:'flex',flexWrap:'wrap',gap:'14px 28px',alignItems:'flex-end'}}>
+                <div>
+                  <FieldLabel>Duur</FieldLabel>
+                  <Stepper val={row.duur} on={v=>upRow(set,i,'duur',v)} suffix="min" min={5}/>
+                </div>
+                <div>
+                  <FieldLabel>Verdeling</FieldLabel>
+                  <Stepper val={row.percentage} on={v=>upRow(set,i,'percentage',v)} suffix="%" min={0} max={100}/>
+                </div>
+                <div>
+                  <FieldLabel>Modaliteit</FieldLabel>
+                  <div style={{display:'flex',gap:5,alignItems:'center'}}>
+                    <div style={{display:'inline-flex',background:C.surface2,border:`1px solid ${C.border}`,borderRadius:8,padding:2}}>
+                      {MODALITEITEN.map(mo=>{
+                        const on=(row.modaliteit||(row.digitaal?'telefonisch':'fysiek'))===mo.v
+                        return(<button key={mo.v}
+                          onClick={()=>{upRow(set,i,'modaliteit',mo.v);upRow(set,i,'digitaal',mo.dig)}}
+                          style={{display:'flex',alignItems:'center',gap:5,padding:'5px 10px',borderRadius:6,cursor:'pointer',
+                            fontSize:11.5,fontWeight:600,border:'none',transition:'all 0.12s',
+                            background:on?C.white:'transparent',color:on?C.primary:C.muted,
+                            boxShadow:on?'0 1px 3px rgba(27,39,51,0.12)':'none'}}>
+                          {mo.ico&&<span style={{fontSize:11}}>{mo.ico}</span>}{mo.l}
+                        </button>)
+                      })}
+                    </div>
+                    <button onClick={()=>upRow(set,i,'spoed',!row.spoed)}
+                      style={{display:'flex',alignItems:'center',gap:6,padding:'7px 12px',borderRadius:8,cursor:'pointer',
+                        fontSize:12,fontWeight:600,transition:'all 0.12s',
+                        background:row.spoed?'#FCEEEB':C.white,color:row.spoed?C.danger:C.muted,
+                        border:`1px solid ${row.spoed?C.danger:C.border}`}}>
+                      <span style={{width:7,height:7,borderRadius:'50%',background:row.spoed?C.danger:C.border}}/>Spoed
+                    </button>
                   </div>
                 </div>
-                {[0, 1, 2, 3, 4].map(dag => (
-                  <div key={dag} className="cel-col">
-                    {DAGDELEN.map(dd => {
-                      const ses = model.sessies.find(s => s.bhId === bh.id && s.dag === dag && s.dd === dd.k)
-                      if (!ses) return <div key={dd.k} className="cel" onClick={() => toggleSessie(bh.id, dag, dd.k)}><span>{dd.naam}</span><span>+</span></div>
-                      return (
-                        <div key={dd.k} className="cel on">
-                          <span onClick={() => toggleSessie(bh.id, dag, dd.k)} style={{ cursor: 'pointer' }}>✓ {dd.naam}</span>
-                          <span className="tijd">
-                            <input type="time" className="inp" style={{ width: 66, padding: '2px 3px', fontSize: 10, fontFamily: 'var(--mono)' }} value={mm(ses.van)} onChange={e => zetSessieTijd(ses.id, 'van', e.target.value)} />
-                            <input type="time" className="inp" style={{ width: 66, padding: '2px 3px', fontSize: 10, fontFamily: 'var(--mono)' }} value={mm(ses.tot)} onChange={e => zetSessieTijd(ses.id, 'tot', e.target.value)} />
+                <div style={{flex:1,minWidth:200}}>
+                  <FieldLabel>Weekdagen</FieldLabel>
+                  <div style={{display:'flex',gap:5}}>
+                    {DAY_ABBR.map(d=>{
+                      const on=row.weekdagen?.[d]||false
+                      const cnt=DAY_ABBR.filter(dd=>row.weekdagen?.[dd]).length
+                      return(<button key={d} onClick={()=>{if(on&&cnt<=1)return;upNested(set,i,'weekdagen',d,!on)}}
+                        style={{flex:1,maxWidth:46,height:34,borderRadius:7,fontSize:11,fontWeight:700,cursor:'pointer',transition:'all 0.12s',
+                          background:on?cc:C.white,color:on?'#fff':C.muted,border:`1px solid ${on?cc:C.border}`}}>{d}</button>)
+                    })}
+                  </div>
+                </div>
+                <div>
+                  <FieldLabel>Onzekerheid</FieldLabel>
+                  <div style={{display:'flex',gap:5}}>
+                    {[{v:'zeker',l:'Zeker'},{v:'gemiddeld',l:'Gemiddeld'},{v:'onzeker',l:'Onzeker'}].map(o=>{
+                      const on=(row.onzeker||'gemiddeld')===o.v
+                      const oc=o.v==='zeker'?C.green:o.v==='onzeker'?C.danger:C.muted
+                      return(<button key={o.v} onClick={()=>upRow(set,i,'onzeker',o.v)}
+                        style={{padding:'7px 10px',borderRadius:8,cursor:'pointer',fontSize:11.5,fontWeight:600,transition:'all 0.12s',
+                          background:on?oc:C.white,color:on?'#fff':C.muted,border:`1px solid ${on?oc:C.border}`}}>{o.l}</button>)
+                    })}
+                  </div>
+                </div>
+                <div style={{minWidth:200}}>
+                  <FieldLabel>Dagdeel</FieldLabel>
+                  <div style={{display:'flex',gap:6}}>
+                    {[{k:'O',l:'Ochtend',avail:true},{k:'M',l:'Middag',avail:true},{k:'A',l:'Avond',avail:!!m2.avondOn}].map(({k,l,avail})=>{
+                      const dd=row.dagdelen||{O:true,M:true,A:false}
+                      const on=!!dd[k]
+                      if(!avail) return(
+                        <span key={k} title="Schakel avondspreekuur in bij Spreekuurtijden"
+                          style={{padding:'7px 11px',borderRadius:8,fontSize:11.5,fontWeight:600,
+                            background:C.surface2,color:'#B6C0C9',border:`1px dashed ${C.border}`,cursor:'not-allowed'}}>{l}</span>
+                      )
+                      const cnt=['O','M','A'].filter(x=>dd[x]&&(x!=='A'||m2.avondOn)).length
+                      return(<button key={k} onClick={()=>{if(on&&cnt<=1)return;upNested(set,i,'dagdelen',k,!on)}}
+                        style={{display:'flex',alignItems:'center',gap:6,padding:'7px 11px',borderRadius:8,cursor:'pointer',
+                          fontSize:11.5,fontWeight:600,transition:'all 0.12s',
+                          background:on?cc:C.white,color:on?'#fff':C.muted,border:`1px solid ${on?cc:C.border}`}}>
+                        <span style={{width:13,height:13,borderRadius:4,flexShrink:0,
+                          background:on?'rgba(255,255,255,0.3)':C.white,border:`1px solid ${on?'rgba(255,255,255,0.6)':C.border}`,
+                          display:'flex',alignItems:'center',justifyContent:'center',fontSize:9,color:'#fff'}}>{on?'✓':''}</span>
+                        {l}
+                      </button>)
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  const renderMod0=()=>{
+    const hh=now.getHours()
+    const greet=hh<12?'Goedemorgen':hh<18?'Goedemiddag':'Goedenavond'
+    const hhmm=now.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'})
+    const ss=now.toLocaleTimeString('nl-NL',{second:'2-digit'}).padStart(2,'0')
+    const dateStr=now.toLocaleDateString('nl-NL',{weekday:'long',day:'numeric',month:'long',year:'numeric'}).toUpperCase()
+    const nowMin=hh*60+now.getMinutes()
+    const wdPos=Math.max(0,Math.min(1,(nowMin-420)/840)) // 07:00–21:00
+    return(
+    <div style={{animation:'fadeIn 0.18s ease'}}>
+      {miniHero('GEGEVENS INVOER','Vul de','spreekuurgegevens',greet+', stel patiëntaantallen en afspraakcodes in — of laad een sessie.')}
+
+      {!m1Mode&&(
+        <div style={{display:'grid',gridTemplateColumns:'1fr',gap:14}}>
+          {/* New — portal-style model card */}
+          <div onClick={()=>setM1Mode('manual')} style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:16,
+            padding:'24px 24px 20px',cursor:'pointer',transition:'all 0.16s'}}
+            onMouseEnter={e=>{e.currentTarget.style.borderColor=C.primary;e.currentTarget.style.boxShadow='0 8px 26px rgba(28,110,164,0.10)'}}
+            onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.boxShadow='none'}}>
+            <div style={{width:48,height:48,borderRadius:14,background:C.blueAccent,
+              display:'flex',alignItems:'center',justifyContent:'center',marginBottom:20}}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={C.primary} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+            </div>
+            <div style={{fontSize:9.5,fontWeight:700,color:C.primary,letterSpacing:'0.16em',marginBottom:8}}>HANDMATIG</div>
+            <div style={{fontFamily:"'Newsreader',Georgia,serif",fontSize:21,fontWeight:500,color:C.text,marginBottom:6,letterSpacing:'-0.01em'}}>Nieuw raster starten</div>
+            <div style={{fontSize:12.5,color:C.muted,lineHeight:1.6,marginBottom:18}}>Voer handmatig de patiëntaantallen en afspraakcodes in.</div>
+            <span style={{display:'inline-flex',alignItems:'center',gap:7,fontSize:12.5,fontWeight:600,color:C.primary}}>Openen →</span>
+          </div>
+
+          {/* Import — portal-style model card */}
+          <label htmlFor="import-file-input" style={{display:'block',background:C.white,border:`1px solid ${C.border}`,borderRadius:16,
+            padding:'24px 24px 20px',cursor:'pointer',transition:'all 0.16s'}}
+            onMouseEnter={e=>{e.currentTarget.style.borderColor=C.green;e.currentTarget.style.boxShadow='0 8px 26px rgba(46,139,87,0.10)'}}
+            onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.boxShadow='none'}}>
+            <div style={{width:48,height:48,borderRadius:14,background:'#E7F3EC',
+              display:'flex',alignItems:'center',justifyContent:'center',marginBottom:20}}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={C.green} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+            </div>
+            <div style={{fontSize:9.5,fontWeight:700,color:C.green,letterSpacing:'0.16em',marginBottom:8}}>UIT BESTAND</div>
+            <div style={{fontFamily:"'Newsreader',Georgia,serif",fontSize:21,fontWeight:500,color:C.text,marginBottom:6,letterSpacing:'-0.01em'}}>Bestaand raster inladen</div>
+            <div style={{fontSize:12.5,color:C.muted,lineHeight:1.6,marginBottom:18}}>Upload een eerder geëxporteerd Excel-bestand om verder te gaan.</div>
+            <span style={{display:'inline-flex',alignItems:'center',gap:7,fontSize:12.5,fontWeight:600,color:C.green}}>Openen ↑</span>
+          </label>
+        </div>
+      )}
+
+      <input id="import-file-input" type="file" accept=".xlsx"
+        style={{position:'absolute',width:1,height:1,opacity:0,overflow:'hidden',clip:'rect(0,0,0,0)',whiteSpace:'nowrap'}}
+        onChange={handleImport}/>
+
+      {m1Mode==='imported'&&importBadge&&(
+        <div style={{background:'#EFF8F2',border:`1px solid #CBE6D5`,borderRadius:10,padding:'13px 16px',marginBottom:18,display:'flex',alignItems:'center',gap:12}}>
+          <div style={{width:28,height:28,borderRadius:'50%',background:C.green,display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontWeight:700,flexShrink:0}}>✓</div>
+          <div><div style={{fontWeight:700,color:C.text,fontSize:13.5}}>Sessie hersteld</div>
+          <div style={{fontSize:12,color:C.muted}}>Bestand: <b style={{color:C.text}}>{importBadge.filename}</b> · {importBadge.date}</div></div>
+          <button onClick={()=>{setM1Mode(null);setImportBadge(null)}} style={{marginLeft:'auto',background:'none',border:'none',cursor:'pointer',color:C.muted,fontSize:18}}>✕</button>
+        </div>
+      )}
+
+      {/* STEP 1 — counts */}
+      {m1Mode&&m1Section===1&&(
+        <div style={{maxWidth:760}}>
+          {/* Step indicator */}
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:18,fontSize:12,color:C.muted}}>
+            <span style={{fontWeight:700,color:C.primary}}>1. Aantallen</span>
+            <span style={{color:C.border}}>───</span>
+            <span>2. Afspraakcodes</span>
+          </div>
+          {[
+            {key:'new',label:'Nieuwe patiënten',color:C.primary,patKey:'newPat',codeKey:'newCodes'},
+            {key:'ctrl',label:'Controle patiënten',color:C.green,patKey:'ctrlPat',codeKey:'ctrlCodes'}
+          ].map(({key,label,color,patKey,codeKey})=>(
+            <div key={key} style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:16,
+              padding:'22px 24px',marginBottom:14}}>
+              <div style={{marginBottom:18}}>
+                <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+                  <span style={{width:8,height:8,borderRadius:'50%',background:color}}/>
+                  <span style={{fontSize:9.5,fontWeight:700,color,letterSpacing:'0.16em'}}>{key==='new'?'NIEUW':'CONTROLE'}</span>
+                </div>
+                <span style={{fontFamily:"'Newsreader',Georgia,serif",fontWeight:500,fontSize:20,color:C.text,letterSpacing:'-0.01em'}}>{label}</span>
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:24}}>
+                {[
+                  {sub:'Afspraken per week',sk:patKey},
+                  {sub:'Aantal afspraakcodes',sk:codeKey}
+                ].map(({sub,sk})=>(
+                  <div key={sk}>
+                    <Lbl>{sub}</Lbl>
+                    <div style={{display:'inline-flex',alignItems:'center',border:`1px solid ${C.border}`,borderRadius:9,overflow:'hidden',marginTop:4}}>
+                      <button onClick={()=>setCfg(p=>({...p,[sk]:Math.max(1,p[sk]-1)}))}
+                        style={{width:40,height:44,border:'none',borderRight:`1px solid ${C.border}`,background:C.surface2,cursor:'pointer',fontSize:20,fontWeight:700,color:C.muted}}>−</button>
+                      <input type="number" min={1} max={999} value={cfg[sk]}
+                        onChange={e=>setCfg(p=>({...p,[sk]:clamp(parseInt(e.target.value)||1,1,999)}))}
+                        style={{width:72,textAlign:'center',border:'none',padding:'10px',
+                          fontSize:20,fontWeight:700,color:C.text,fontFamily:'inherit'}}/>
+                      <button onClick={()=>setCfg(p=>({...p,[sk]:Math.min(999,p[sk]+1)}))}
+                        style={{width:40,height:44,border:'none',borderLeft:`1px solid ${C.border}`,background:C.surface2,cursor:'pointer',fontSize:20,fontWeight:700,color:C.muted}}>+</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+          <Btn onClick={()=>{
+            const resizeRows=(existing,n)=>{
+              const next=[...existing]
+              while(next.length<n) next.push(defaultRow(n))
+              next.length=n
+              return next
+            }
+            setNewRows(r=>resizeRows(r,cfg.newCodes))
+            setCtrlRows(r=>resizeRows(r,cfg.ctrlCodes))
+            setM1Section(2)
+          }} style={{marginTop:4}}>Volgende: afspraakcodes →</Btn>
+        </div>
+      )}
+
+      {/* STEP 2 — codes */}
+      {m1Mode&&m1Section===2&&(
+        <div>
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:18,fontSize:12,color:C.muted}}>
+            <button onClick={()=>setM1Section(1)} style={{background:C.white,border:`1px solid ${C.border}`,
+              borderRadius:7,padding:'6px 12px',cursor:'pointer',fontSize:12,fontWeight:600,color:C.text}}>← Aantallen</button>
+            <span style={{color:C.border}}>───</span>
+            <span style={{fontWeight:700,color:C.primary}}>2. Afspraakcodes</span>
+          </div>
+          {renderTable(newRows,setNewRows,'Nieuwe patiënten',cfg.newCodes,cfg.newPat,'nieuw')}
+          {renderTable(ctrlRows,setCtrlRows,'Controle patiënten',cfg.ctrlCodes,cfg.ctrlPat,'controle')}
+        </div>
+      )}
+    </div>
+    )
+  }
+
+  // ─── MODULE 1: SPREEKUURTIJDEN ─────────────────────────────────────────────
+  // Portal 2.0 — compact serif hero for module headers
+  const miniHero=(eyebrow,titleA,titleI,sub)=>(
+    <div style={{position:'relative',background:C.white,border:`1px solid ${C.border}`,borderRadius:18,
+      padding:'20px 26px',marginBottom:20,overflow:'hidden'}}>
+      <div style={{position:'absolute',right:-90,top:-90,width:260,height:260,borderRadius:'50%',
+        border:`1px solid ${C.border}`,opacity:0.5,pointerEvents:'none'}}/>
+      <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:8}}>
+        <span style={{width:20,height:1.5,background:C.primary}}/>
+        <span style={{fontSize:10,fontWeight:700,color:C.primary,letterSpacing:'0.22em'}}>{eyebrow}</span>
+      </div>
+      <h1 style={{fontFamily:"'Newsreader',Georgia,serif",fontWeight:500,fontSize:27,lineHeight:1.1,
+        color:C.text,margin:'0 0 6px 0',letterSpacing:'-0.01em'}}>
+        {titleA} <span style={{fontStyle:'italic',color:C.primary}}>{titleI}</span>
+      </h1>
+      <p style={{fontSize:12.5,color:C.muted,margin:0,lineHeight:1.55}}>{sub}</p>
+    </div>
+  )
+
+  const renderMod1=()=>{
+    const sf=(f,v)=>setM2(p=>({...p,[f]:v}))
+    return(
+      <div style={{animation:'fadeIn 0.18s ease'}}>
+        {miniHero('SPREEKUURTIJDEN','Tijden en','weekindeling','Stel tijden, dagdeelverdeling, benutting en weekpatroon in.')}
+        <Card style={{marginBottom:16}}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
+            <H3 style={{margin:0}}>Tijden per dagdeel</H3>
+            <button onClick={()=>sf('avondOn',!m2.avondOn)} style={{display:'flex',alignItems:'center',gap:8,
+              padding:'6px 12px',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:600,
+              background:m2.avondOn?C.blueAccent:C.white,color:m2.avondOn?C.primary:C.muted,
+              border:`1px solid ${m2.avondOn?C.primary:C.border}`}}>
+              <span style={{width:30,height:17,borderRadius:9,background:m2.avondOn?C.primary:C.border,position:'relative',transition:'all 0.18s'}}>
+                <span style={{position:'absolute',top:2,left:m2.avondOn?15:2,width:13,height:13,borderRadius:'50%',background:'#fff',transition:'left 0.18s'}}/>
+              </span>
+              Avondspreekuur {m2.avondOn?'aan':'uit'}
+            </button>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:m2.avondOn?'1fr 1fr 1fr':'1fr 1fr',gap:20}}>
+            {[{label:'Ochtend',s:'ochStart',e:'ochEnd',color:C.primary,dur:m2c.od,show:true},
+              {label:'Middag',s:'midStart',e:'midEnd',color:C.green,dur:m2c.md,show:true},
+              {label:'Avond',s:'avondStart',e:'avondEnd',color:'#8B5CF6',dur:Math.max(0,toMin(m2.avondEnd)-toMin(m2.avondStart)),show:m2.avondOn}
+            ].filter(x=>x.show).map(({label,s,e,color,dur})=>(
+              <div key={s} style={{padding:16,borderRadius:10,border:`1px solid ${C.border}`,borderTop:`3px solid ${color}`}}>
+                <div style={{fontSize:12,fontWeight:700,color:C.text,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:12}}>{label}</div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
+                  {[{l:'Start',k:s},{l:'Einde',k:e}].map(({l,k})=>(
+                    <div key={k}><Lbl>{l}</Lbl>
+                      <input type="time" value={m2[k]} onChange={ev=>sf(k,ev.target.value)}
+                        style={{width:'100%',border:`1px solid ${C.border}`,borderRadius:7,padding:'8px 10px',fontSize:14,fontFamily:'inherit',fontWeight:600,color:C.text}}/>
+                    </div>
+                  ))}
+                </div>
+                <div style={{padding:'7px 12px',background:C.surface2,borderRadius:6,fontSize:12.5,fontWeight:600,color:C.text}}>
+                  Duur: {dur} minuten
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:16}}>
+          <Card>
+            <H3>Verdeling over dagdelen</H3>
+            <p style={{fontSize:11.5,color:C.muted,marginBottom:14,lineHeight:1.55}}>
+              Bepaalt hoe afspraken over de dagdelen verdeeld worden. Gelijk = gelijkmatig; meer naar een dagdeel = dat dagdeel voller.
+            </p>
+            {(()=>{
+              const mid=Math.max(0,100-m2.verOch-(m2.avondOn?m2.verAvond:0))
+              const sum=m2.verOch+mid+(m2.avondOn?m2.verAvond:0)
+              const setOch=v=>{const nv=clamp(v,0,100-(m2.avondOn?m2.verAvond:0));sf('verOch',nv)}
+              const setAv=v=>{const nv=clamp(v,0,100-m2.verOch);setM2(p=>({...p,verAvond:nv}))}
+              const Row=({label,color,val,on,readOnly})=>(
+                <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:10}}>
+                  <span style={{width:74,fontSize:12.5,fontWeight:700,color}}>{label}</span>
+                  <div style={{flex:1,height:8,borderRadius:4,background:C.surface2,overflow:'hidden'}}>
+                    <div style={{height:'100%',borderRadius:4,background:color,width:val+'%',transition:'width 0.15s'}}/>
+                  </div>
+                  {readOnly
+                    ?<span style={{width:96,textAlign:'right',fontSize:14,fontWeight:700,color}}>{val}%</span>
+                    :<div style={{display:'inline-flex',alignItems:'center',border:`1px solid ${C.border}`,borderRadius:7,overflow:'hidden',width:96}}>
+                      <button onClick={()=>on(val-5)} style={{width:28,height:30,border:'none',borderRight:`1px solid ${C.border}`,background:C.surface2,cursor:'pointer',fontWeight:700,color:C.muted}}>−</button>
+                      <span style={{flex:1,textAlign:'center',fontSize:13,fontWeight:700,color:C.text}}>{val}%</span>
+                      <button onClick={()=>on(val+5)} style={{width:28,height:30,border:'none',borderLeft:`1px solid ${C.border}`,background:C.surface2,cursor:'pointer',fontWeight:700,color:C.muted}}>+</button>
+                    </div>}
+                </div>
+              )
+              return(<div>
+                <Row label="Ochtend" color={C.primary} val={m2.verOch} on={setOch}/>
+                <Row label="Middag" color={C.green} val={mid} readOnly/>
+                {m2.avondOn&&<Row label="Avond" color="#8B5CF6" val={m2.verAvond} on={setAv}/>}
+                <div style={{marginTop:6,fontSize:11.5,fontWeight:600,color:sum===100?C.green:C.danger}}>
+                  Totaal {sum}%{sum!==100?' — Middag vult automatisch aan':' ✓'}
+                </div>
+              </div>)
+            })()}
+          </Card>
+          <Card>
+            <H3>Benutting spreekuur (per dagdeel)</H3>
+            <p style={{fontSize:11.5,color:C.muted,marginBottom:10,lineHeight:1.55}}>
+              Een spreekuur is altijd één dagdeel. De benutting bepaalt hoeveel van dat dagdeel gevuld wordt met afspraken.
+            </p>
+            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12}}>
+              <input type="range" min={50} max={100} value={m2.benutting} onChange={e=>sf('benutting',Number(e.target.value))}
+                style={{flex:1,accentColor:C.primary}}/>
+              <button onClick={()=>sf('benutting',Math.max(50,m2.benutting-1))} style={{width:24,height:24,border:`1px solid ${C.border}`,borderRadius:5,background:C.white,cursor:'pointer',fontWeight:700}}>−</button>
+              <span style={{fontWeight:700,fontSize:17,color:C.primary,minWidth:40,textAlign:'center'}}>{m2.benutting}</span>
+              <button onClick={()=>sf('benutting',Math.min(100,m2.benutting+1))} style={{width:24,height:24,border:`1px solid ${C.border}`,borderRadius:5,background:C.white,cursor:'pointer',fontWeight:700}}>+</button>
+              <span style={{color:C.muted,fontWeight:700}}>%</span>
+            </div>
+            {/* Per-dagdeel breakdown */}
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}}>
+              <div style={{padding:'9px 12px',background:'#EFF9FF',borderRadius:7,border:`1px solid ${C.border}`,fontSize:12.5}}>
+                <div style={{fontSize:10,fontWeight:700,color:C.light,textTransform:'uppercase',letterSpacing:'0.07em',marginBottom:4}}>☀ Ochtend spreekuur</div>
+                <div><b style={{color:C.primary}}>{m2c.nOch} min</b> netto van {m2c.od} min bruto</div>
+                <div style={{color:C.muted,fontSize:11.5}}>Flex: <b style={{color:C.green}}>{m2c.fOch} min</b></div>
+              </div>
+              <div style={{padding:'9px 12px',background:'#F0FDF4',borderRadius:7,border:`1px solid ${C.border}`,fontSize:12.5}}>
+                <div style={{fontSize:10,fontWeight:700,color:C.green,textTransform:'uppercase',letterSpacing:'0.07em',marginBottom:4}}>🌤 Middag spreekuur</div>
+                <div><b style={{color:C.primary}}>{m2c.nMid} min</b> netto van {m2c.md} min bruto</div>
+                <div style={{color:C.muted,fontSize:11.5}}>Flex: <b style={{color:C.green}}>{m2c.fMid} min</b></div>
+              </div>
+            </div>
+          </Card>
+        </div>
+
+        <Card style={{marginBottom:16}}>
+          <H3>Weekdagverdeling (%)</H3>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:10}}>
+            {WEEKDAY_KEYS.map((k,i)=>{
+              const v=m2.days[k]||0
+              return(
+                <div key={k} style={{background:C.rowAlt,borderRadius:9,padding:14,textAlign:'center',border:`1px solid ${C.border}`}}>
+                  <div style={{fontSize:12,fontWeight:700,color:C.primary,marginBottom:8}}>{DAY_ABBR[i]}</div>
+                  <button onClick={()=>setM2(p=>({...p,days:{...p.days,[k]:Math.max(0,p.days[k]-1)}}))}
+                    style={{width:26,height:26,border:`1px solid ${C.border}`,borderRadius:5,background:C.white,cursor:'pointer',fontWeight:700,color:C.primary}}>−</button>
+                  <div style={{fontSize:20,fontWeight:700,color:C.primary,margin:'7px 0'}}>{v}<span style={{fontSize:11,color:C.muted,fontWeight:400}}>%</span></div>
+                  <button onClick={()=>setM2(p=>({...p,days:{...p.days,[k]:p.days[k]+1}}))}
+                    style={{width:26,height:26,border:`1px solid ${C.border}`,borderRadius:5,background:C.white,cursor:'pointer',fontWeight:700,color:C.primary}}>+</button>
+                  <div style={{marginTop:8,height:3,borderRadius:2,background:C.border,overflow:'hidden'}}>
+                    <div style={{height:'100%',width:Math.min(100,v*5)+'%',background:C.light,transition:'width 0.2s'}}/>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          <div style={{textAlign:'center',marginTop:12,fontWeight:700,fontSize:15,color:m2c.dSum===100?C.green:C.danger}}>
+            {m2c.dSum===100?'✓ ':'⚠ '}Som: {m2c.dSum}%{m2c.dSum!==100&&<span style={{fontSize:11,fontWeight:400}}> — moet 100% zijn</span>}
+          </div>
+        </Card>
+
+        <div style={{background:C.primary,borderRadius:10,padding:18}}>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(6,1fr)',textAlign:'center'}}>
+            {[
+              ['Ochtend bruto',m2c.od+' min'],
+              ['Ochtend netto',m2c.nOch+' min'],
+              ['Middag bruto',m2c.md+' min'],
+              ['Middag netto',m2c.nMid+' min'],
+              ['Bruto/week',m2c.bWk+' min'],
+              ['Netto/week',m2c.nWk+' min']
+            ].map(([l,v],i)=>(
+              <div key={l} style={{padding:'0 10px',borderLeft:i>0?'1px solid rgba(255,255,255,0.18)':'none'}}>
+                <div style={{fontSize:9.5,color:'rgba(255,255,255,0.65)',textTransform:'uppercase',letterSpacing:'0.07em',marginBottom:3}}>{l}</div>
+                <div style={{fontSize:18,fontWeight:700,color:'#fff'}}>{v}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{marginTop:12,fontSize:11,color:'rgba(255,255,255,0.7)',textAlign:'center'}}>
+            Per spreekuur = één dagdeel · Benutting {m2.benutting}% · Verdeling ochtend {m2.verOch}% / middag {100-m2.verOch}%
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ─── MODULE 2: PLANREGELS ─────────────────────────────────────────────────
+  const renderMod2=()=>{
+    return(
+      <div style={{animation:'fadeIn 0.18s ease'}}>
+        {miniHero('PLANREGELS','Regels en','strategieën','Kies hoe het rooster automatisch wordt samengesteld — klik op ⓘ bij een regel voor uitleg.')}
+        <p style={{display:'none'}}>
+        </p>
+
+        {/* Sequence rules with PRIORITY ORDER (drives the composite comparator) */}
+        <Card style={{marginBottom:14}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
+            <span style={{fontWeight:700,fontSize:13.5,color:C.primary}}>Planmethodieken &amp; volgorde</span>
+          </div>
+          <p style={{fontSize:11.5,color:C.muted,marginBottom:14,lineHeight:1.55}}>
+            Volgorderegels bepalen de positie van afspraken binnen een dagdeel. De <b>prioriteit</b> (1, 2, 3…) bepaalt welke regel als eerste sorteert; gebruik de pijlen om te herordenen. Een hogere regel weegt zwaarder.
+          </p>
+          {(() => {
+            const order=rules.order||['spoedFirst','shortFirst','certainFirst']
+            const move=(idx,dir)=>{
+              const ni=idx+dir; if(ni<0||ni>=order.length) return
+              const no=[...order]; const t=no[idx]; no[idx]=no[ni]; no[ni]=t
+              setRules(p=>({...p,order:no}))
+            }
+            // Warning: certainFirst needs uncertainty classifications
+            const allRows=[...newRows,...ctrlRows]
+            const noCls=allRows.filter(r=>!r.onzeker||r.onzeker==='gemiddeld').length
+            return order.map((key,idx)=>{
+              const info=PLAN_INFO[key]; const on=rules[key]
+              const prio=order.filter(k=>rules[k]).indexOf(key)+1 // active priority number
+              const showWarn=key==='certainFirst'&&on&&noCls===allRows.length&&allRows.length>0
+              return(
+                <div key={key} style={{marginBottom:8}}>
+                  <div style={{display:'flex',alignItems:'center',gap:10,
+                    padding:'11px 14px',borderRadius:8,
+                    background:on?C.rowAlt:'transparent',border:`1px solid ${on?C.light:C.border}`,transition:'all 0.13s'}}>
+                    {/* priority badge */}
+                    <span style={{width:24,height:24,borderRadius:6,flexShrink:0,fontSize:12,fontWeight:700,
+                      display:'flex',alignItems:'center',justifyContent:'center',
+                      background:on?C.primary:C.surface2,color:on?'#fff':C.muted}}>{on?prio:'–'}</span>
+                    {/* arrows */}
+                    <div style={{display:'flex',flexDirection:'column',gap:1,flexShrink:0}}>
+                      <button onClick={()=>move(idx,-1)} disabled={idx===0}
+                        style={{width:22,height:14,border:`1px solid ${C.border}`,borderRadius:'4px 4px 0 0',background:C.white,
+                          cursor:idx===0?'not-allowed':'pointer',fontSize:8,color:idx===0?C.border:C.muted,lineHeight:1,padding:0}}>▲</button>
+                      <button onClick={()=>move(idx,1)} disabled={idx===order.length-1}
+                        style={{width:22,height:14,border:`1px solid ${C.border}`,borderTop:'none',borderRadius:'0 0 4px 4px',background:C.white,
+                          cursor:idx===order.length-1?'not-allowed':'pointer',fontSize:8,color:idx===order.length-1?C.border:C.muted,lineHeight:1,padding:0}}>▼</button>
+                    </div>
+                    <Tip text={info.desc}>
+                      <span style={{width:17,height:17,borderRadius:'50%',background:C.surface2,border:`1px solid ${C.border}`,
+                        fontSize:9,color:C.muted,cursor:'help',display:'inline-flex',alignItems:'center',justifyContent:'center',
+                        fontWeight:700,flexShrink:0}}>ⓘ</span>
+                    </Tip>
+                    <div style={{flex:1,minWidth:0}}>
+                      <span style={{fontSize:12.5,fontWeight:on?600:400,color:on?C.primary:C.text,lineHeight:1.4}}>{info.label}</span>
+                      <span style={{fontSize:10.5,color:C.muted,marginLeft:7}}>volgorderegel</span>
+                    </div>
+                    <div onClick={()=>setRules(p=>({...p,[key]:!p[key]}))}
+                      style={{width:38,height:22,borderRadius:11,background:on?C.primary:C.border,
+                        cursor:'pointer',position:'relative',transition:'background 0.18s',flexShrink:0}}>
+                      <div style={{width:16,height:16,borderRadius:'50%',background:'#fff',position:'absolute',top:3,left:on?19:3,transition:'left 0.18s'}}/>
+                    </div>
+                  </div>
+                  {showWarn&&(
+                    <div style={{margin:'4px 0 0 34px',fontSize:11,color:C.danger,display:'flex',alignItems:'center',gap:6}}>
+                      ⚠ Geen onzekerheid ingesteld bij de afspraakcodes — stel dit in bij Gegevens invoer, anders heeft deze regel geen effect.
+                    </div>
+                  )}
+                </div>
+              )
+            })
+          })()}
+          {/* Bailey-Welsh — internal block strategy, separate from sequence order */}
+          {(() => {
+            const on=rules.baileyWelsh, info=PLAN_INFO.baileyWelsh
+            return(
+              <div style={{display:'flex',alignItems:'center',gap:10,marginTop:6,
+                padding:'11px 14px',borderRadius:8,
+                background:on?'#F3EEFA':'transparent',border:`1px solid ${on?'#B79CE0':C.border}`}}>
+                <span style={{width:24,height:24,borderRadius:6,flexShrink:0,fontSize:13,
+                  display:'flex',alignItems:'center',justifyContent:'center',
+                  background:on?'#8B5CF6':C.surface2,color:on?'#fff':C.muted,fontWeight:700}}>B</span>
+                <Tip text={info.desc}>
+                  <span style={{width:17,height:17,borderRadius:'50%',background:C.surface2,border:`1px solid ${C.border}`,
+                    fontSize:9,color:C.muted,cursor:'help',display:'inline-flex',alignItems:'center',justifyContent:'center',
+                    fontWeight:700,flexShrink:0}}>ⓘ</span>
+                </Tip>
+                <div style={{flex:1,minWidth:0}}>
+                  <span style={{fontSize:12.5,fontWeight:on?600:400,color:on?'#6D28B5':C.text}}>{info.label}</span>
+                  <span style={{fontSize:10.5,color:C.muted,marginLeft:7}}>blokstrategie · markeert eerste positie als dubbel boekbaar</span>
+                </div>
+                <div onClick={()=>setRules(p=>({...p,baileyWelsh:!p.baileyWelsh}))}
+                  style={{width:38,height:22,borderRadius:11,background:on?'#8B5CF6':C.border,
+                    cursor:'pointer',position:'relative',transition:'background 0.18s',flexShrink:0}}>
+                  <div style={{width:16,height:16,borderRadius:'50%',background:'#fff',position:'absolute',top:3,left:on?19:3,transition:'left 0.18s'}}/>
+                </div>
+              </div>
+            )
+          })()}
+        </Card>
+
+        {/* Radios: Digitale consulten */}
+        <Card style={{marginBottom:14}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
+            <Tip text={PLAN_INFO.digitalMode.desc}>
+              <span style={{width:17,height:17,borderRadius:'50%',background:C.rowAlt,border:`1px solid ${C.border}`,
+                fontSize:9,color:C.muted,cursor:'help',display:'inline-flex',alignItems:'center',justifyContent:'center',
+                fontWeight:700,flexShrink:0}}>ⓘ</span>
+            </Tip>
+            <span style={{fontWeight:700,fontSize:13.5,color:C.primary}}>📱 {PLAN_INFO.digitalMode.label}</span>
+          </div>
+          <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+            {PLAN_INFO.digitalMode.opts.map(opt=>{
+              const on=rules.digitalMode===opt.v
+              return(
+                <div key={opt.v} onClick={()=>setRules(p=>({...p,digitalMode:opt.v}))}
+                  style={{flex:1,minWidth:130,display:'flex',alignItems:'center',gap:9,padding:'9px 13px',borderRadius:7,cursor:'pointer',
+                    background:on?C.rowAlt:'transparent',border:`1px solid ${on?C.light:C.border}`,transition:'all 0.13s'}}>
+                  <div style={{width:15,height:15,borderRadius:'50%',border:`2px solid ${on?C.light:C.border}`,
+                    background:on?C.light:'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                    {on&&<div style={{width:5,height:5,borderRadius:'50%',background:'#fff'}}/>}
+                  </div>
+                  <span style={{fontSize:12.5,fontWeight:on?600:400,color:on?C.primary:C.text}}>{opt.l}</span>
+                </div>
+              )
+            })}
+          </div>
+        </Card>
+
+        {/* Radios: Groepering */}
+        <Card style={{marginBottom:14}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
+            <Tip text={PLAN_INFO.groupMode.desc}>
+              <span style={{width:17,height:17,borderRadius:'50%',background:C.rowAlt,border:`1px solid ${C.border}`,
+                fontSize:9,color:C.muted,cursor:'help',display:'inline-flex',alignItems:'center',justifyContent:'center',
+                fontWeight:700,flexShrink:0}}>ⓘ</span>
+            </Tip>
+            <span style={{fontWeight:700,fontSize:13.5,color:C.primary}}>🔀 {PLAN_INFO.groupMode.label}</span>
+          </div>
+          <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+            {PLAN_INFO.groupMode.opts.map(opt=>{
+              const on=rules.groupMode===opt.v
+              return(
+                <div key={opt.v} onClick={()=>setRules(p=>({...p,groupMode:opt.v}))}
+                  style={{flex:1,minWidth:160,display:'flex',alignItems:'center',gap:9,padding:'9px 13px',borderRadius:7,cursor:'pointer',
+                    background:on?C.rowAlt:'transparent',border:`1px solid ${on?C.light:C.border}`,transition:'all 0.13s'}}>
+                  <div style={{width:15,height:15,borderRadius:'50%',border:`2px solid ${on?C.light:C.border}`,
+                    background:on?C.light:'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                    {on&&<div style={{width:5,height:5,borderRadius:'50%',background:'#fff'}}/>}
+                  </div>
+                  <span style={{fontSize:12.5,fontWeight:on?600:400,color:on?C.primary:C.text}}>{opt.l}</span>
+                </div>
+              )
+            })}
+          </div>
+        </Card>
+
+        {/* Radios: Flex-tijd */}
+        <Card style={{marginBottom:14}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
+            <Tip text={PLAN_INFO.flexMode.desc}>
+              <span style={{width:17,height:17,borderRadius:'50%',background:C.rowAlt,border:`1px solid ${C.border}`,
+                fontSize:9,color:C.muted,cursor:'help',display:'inline-flex',alignItems:'center',justifyContent:'center',
+                fontWeight:700,flexShrink:0}}>ⓘ</span>
+            </Tip>
+            <span style={{fontWeight:700,fontSize:13.5,color:C.primary}}>⏱ {PLAN_INFO.flexMode.label}</span>
+          </div>
+          <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+            {PLAN_INFO.flexMode.opts.map(opt=>{
+              const on=rules.flexMode===opt.v
+              return(
+                <div key={opt.v} onClick={()=>setRules(p=>({...p,flexMode:opt.v}))}
+                  style={{flex:1,minWidth:160,display:'flex',alignItems:'center',gap:9,padding:'9px 13px',borderRadius:7,cursor:'pointer',
+                    background:on?C.rowAlt:'transparent',border:`1px solid ${on?C.light:C.border}`,transition:'all 0.13s'}}>
+                  <div style={{width:15,height:15,borderRadius:'50%',border:`2px solid ${on?C.light:C.border}`,
+                    background:on?C.light:'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                    {on&&<div style={{width:5,height:5,borderRadius:'50%',background:'#fff'}}/>}
+                  </div>
+                  <span style={{fontSize:12.5,fontWeight:on?600:400,color:on?C.primary:C.text}}>{opt.l}</span>
+                </div>
+              )
+            })}
+          </div>
+        </Card>
+
+        {/* Active summary */}
+        <div style={{background:C.rowAlt,borderRadius:9,padding:'12px 16px',border:`1px solid ${C.border}`}}>
+          <div style={{fontSize:10.5,fontWeight:700,color:C.primary,marginBottom:7,textTransform:'uppercase',letterSpacing:'0.06em'}}>Actieve instellingen:</div>
+          <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
+            <span style={{padding:'3px 10px',background:C.white,borderRadius:20,fontSize:11,border:`1px solid ${C.border}`,color:C.muted}}>
+              Flex: <b>{rules.flexMode==='end'?'Aan het einde':'Verspreid'}</b>
+            </span>
+            <span style={{padding:'3px 10px',background:C.white,borderRadius:20,fontSize:11,border:`1px solid ${C.border}`,color:C.muted}}>
+              Groepering: <b>{rules.groupMode==='wave'?'Wave (blokken)':'Gespreid'}</b>
+            </span>
+            <span style={{padding:'3px 10px',background:C.white,borderRadius:20,fontSize:11,border:`1px solid ${C.border}`,color:C.muted}}>
+              Digitaal: <b>{rules.digitalMode==='end'?'Einde':rules.digitalMode==='cluster'?'Cluster':'Verdelen'}</b>
+            </span>
+            {TOGGLE_KEYS.filter(k=>rules[k]).map(k=>(
+              <span key={k} style={{padding:'3px 10px',background:'#F0FDF4',borderRadius:20,fontSize:11,border:`1px solid ${C.green}`,color:C.green,fontWeight:600}}>
+                ✓ {PLAN_INFO[k]?.label}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ─── MODULE 3: RASTER ─────────────────────────────────────────────────────
+  // ─── MODULE 3: RASTERPROCES — week grid (slot-based) ───────────────────────
+  // Sleepbronnen: leid ze rechtstreeks af uit de ingevoerde codes, zodat je élke
+  // variant (nieuw/controle × fysiek/telefonisch/video) direct het raster op sleept.
+  const PALETTE=(()=>{
+    const uit=[]
+    newRows.forEach((r,i)=>{ if(r.afspraakcode||r.omschrijving) uit.push({
+      key:'np'+i,label:r.omschrijving||r.afspraakcode||'Nieuw',code:r.afspraakcode||'NP'+(i+1),
+      category:'nieuw',ci:i,digitaal:!!r.digitaal,modaliteit:r.modaliteit||(r.digitaal?'telefonisch':'fysiek'),
+      duur:r.duur||30,clr:NEW_PALETTE[i%NEW_PALETTE.length]}) })
+    ctrlRows.forEach((r,i)=>{ if(r.afspraakcode||r.omschrijving) uit.push({
+      key:'cp'+i,label:r.omschrijving||r.afspraakcode||'Controle',code:r.afspraakcode||'CP'+(i+1),
+      category:'controle',ci:i,digitaal:!!r.digitaal,modaliteit:r.modaliteit||(r.digitaal?'telefonisch':'fysiek'),
+      duur:r.duur||15,clr:r.digitaal?{bg:'#D6EAE3',brd:'#94C5B4',fg:'#1A5544'}:CTRL_PALETTE[i%CTRL_PALETTE.length]}) })
+    if(!uit.length) uit.push(
+      {key:'np',label:'Nieuwe patiënt',code:'NP',category:'nieuw',ci:0,digitaal:false,modaliteit:'fysiek',duur:30,clr:NEW_PALETTE[0]},
+      {key:'cf',label:'Controle',code:'CP',category:'controle',ci:0,digitaal:false,modaliteit:'fysiek',duur:15,clr:CTRL_PALETTE[0]})
+    return uit
+  })()
+
+  const renderMod3=()=>{
+    if(!raster){
+      return(
+        <div style={{animation:'fadeIn 0.18s ease'}}>
+          {renderProg()}
+          <div style={{padding:'60px 40px',textAlign:'center',background:C.white,borderRadius:12,border:`1px solid ${C.border}`}}>
+            <div style={{fontSize:48,marginBottom:16}}>⚡</div>
+            <div style={{fontWeight:700,color:C.primary,fontSize:17,marginBottom:8}}>Raster nog niet gegenereerd</div>
+            <Btn onClick={doGenerate} style={{fontSize:14,padding:'11px 28px'}}>⚡ Genereer raster nu</Btn>
+          </div>
+        </div>
+      )
+    }
+
+    const numRooms=raster.numRooms||1
+    const {mUsable,aUsable,ochDur,midDur}=raster
+
+    // Helper: total duration in a slot
+    const slotUsed=(arr)=>(arr||[]).reduce((s,a)=>s+a.duur,0)
+    const cap=dd=>dd===0?mUsable:dd===1?aUsable:(raster.avUsable||aUsable)
+    const dagdeelDur=dd=>dd===0?ochDur:dd===1?midDur:(raster.avDur||midDur)
+
+    // Week stats
+    const allAppts=[]
+    Object.values(raster.days||{}).forEach(slots=>{ if(slots) Object.values(slots).forEach(arr=>arr.forEach(a=>allAppts.push(a))) })
+    const nNieuw=allAppts.filter(a=>a.category==='nieuw').length
+    const nCtrlF=allAppts.filter(a=>a.category==='controle'&&!a.digitaal).length
+    const nCtrlT=allAppts.filter(a=>a.category==='controle'&&a.digitaal).length
+    const totC=nCtrlF+nCtrlT
+    const pctTel=totC>0?Math.round(nCtrlT/totC*100):0
+    const nNtp=(raster.ntp||[]).length
+
+    // ── ANALYSE 2.1 — vraag vs. capaciteit + modaliteitsmix + risico's ──────────
+    const realAppts=allAppts.filter(a=>!a.isFlex&&!a.overbook)
+    const modMix=['fysiek','telefonisch','video'].map(mv=>({
+      mv,label:modInfo(mv).l,ico:modInfo(mv).ico,
+      n:realAppts.filter(a=>(a.modaliteit||(a.digitaal?'telefonisch':'fysiek'))===mv).length
+    })).filter(x=>x.n>0)
+    const nReal=realAppts.length||1
+    // Wekelijkse vráág (uit de codes) los van wat het raster plaatste
+    const demandMin=Math.round(
+      newRows.reduce((s,r)=>s+cfg.newPat*((r.percentage||0)/100)*(r.duur||15),0)+
+      ctrlRows.reduce((s,r)=>s+cfg.ctrlPat*((r.percentage||0)/100)*(r.duur||15),0))
+    const capMin=raster.kpi?raster.kpi.week.capacity:0
+    const plannedMin=raster.kpi?raster.kpi.week.planned:0
+    const dekking=demandMin>0?Math.round(capMin/demandMin*100):100
+    // Onzekerheid-mix (voor buffer-advies)
+    const onzMix={zeker:0,gemiddeld:0,onzeker:0}
+    realAppts.forEach(a=>{onzMix[a.onzeker||'gemiddeld']=(onzMix[a.onzeker||'gemiddeld']||0)+1})
+    const pctOnzeker=nReal>0?Math.round(onzMix.onzeker/nReal*100):0
+    // Advies-signalen
+    const adviezen=[]
+    if(nNtp>0) adviezen.push({t:'bad',m:`${nNtp} afspraken passen niet — meer kamers, langere spreekuren of minder vraag nodig.`})
+    if(dekking<100&&demandMin>0) adviezen.push({t:'bad',m:`Capaciteit dekt ${dekking}% van de weekvraag (${(demandMin/60).toFixed(1)} u vraag vs ${(capMin/60).toFixed(1)} u). Structureel tekort.`})
+    else if(dekking>145) adviezen.push({t:'warn',m:`Ruim overschot: ${dekking}% capaciteit t.o.v. de vraag. Overweeg spreekuren te schrappen of inhaalzorg te plannen.`})
+    if(pctOnzeker>=30&&rules.flexMode!=='spread') adviezen.push({t:'warn',m:`${pctOnzeker}% onzekere afspraken — zet "Buffer: verspreid" aan om uitloop op te vangen.`})
+    if(pctTel>0&&rules.digitalMode==='spread') adviezen.push({t:'info',m:`${pctTel}% van de controles is op afstand — clusteren of aan het einde plannen houdt de kamer efficiënter bezet.`})
+    if(raster.kpi&&raster.kpi.week.benutting>92) adviezen.push({t:'warn',m:`Benutting ${raster.kpi.week.benutting}% is hoog — weinig lucht voor uitloop.`})
+    if(!adviezen.length) adviezen.push({t:'ok',m:'Vraag en capaciteit zijn in balans; geen knelpunten gevonden.'})
+
+    // ── Time-grid raster (resource calendar: rooms as columns, time on Y) ──────
+    const PXMIN=calZoom*0.95 // px per minute for the grid
+    const ochStart=raster.ochStart, ochEnd=raster.ochEnd, midStart=raster.midStart, midEnd=raster.midEnd
+    const avondOn=!!raster.avondOn, avondStart=raster.avondStart, avondEnd=raster.avondEnd
+    const PAUSE_H=Math.max(36,(midStart-ochEnd)*PXMIN*0.32)
+    const PAUSE_H2=avondOn?Math.max(36,(avondStart-midEnd)*PXMIN*0.32):0
+    // Build dagdeel regions with their y-offsets
+    const regions=[{dd:'O',pre:'o',label:'Ochtend',start:ochStart,end:ochEnd,y0:0}]
+    let yAcc=(ochEnd-ochStart)*PXMIN+PAUSE_H
+    regions.push({dd:'M',pre:'m',label:'Middag',start:midStart,end:midEnd,y0:yAcc})
+    yAcc+=(midEnd-midStart)*PXMIN
+    if(avondOn){
+      yAcc+=PAUSE_H2
+      regions.push({dd:'A',pre:'a',label:'Avond',start:avondStart,end:avondEnd,y0:yAcc})
+      yAcc+=(avondEnd-avondStart)*PXMIN
+    }
+    const gridH=yAcc
+    const regionOf=t=>{
+      for(let i=regions.length-1;i>=0;i--){ if(t>=regions[i].start) return regions[i] }
+      return regions[0]
+    }
+    const toY=t=>{ const r=regionOf(t); return r.y0+(t-r.start)*PXMIN }
+
+    // expose geometry for drag math (region-based)
+    gridGeomRef.current={PXMIN,pauseH:Math.max(PAUSE_H,PAUSE_H2),
+      regions:regions.map(r=>({start:r.start,end:r.end,y0:r.y0}))}
+
+    const gridLines=[]
+    regions.forEach(r=>{ for(let t=r.start;t<=r.end;t+=15) gridLines.push({t,y:toY(t),hour:t%60===0,half:t%30===0}) })
+
+    const isDragging=!!dragItem
+
+    // Overlap layout: assign each item a column + column-count so overlapping items sit side-by-side
+    const layoutOverlap=(items)=>{
+      const sorted=[...items].sort((a,b)=>(a.start||0)-(b.start||0)||(b.duur-a.duur))
+      const cols=[] // each col holds the end-time of its last item
+      const placed=sorted.map(it=>{
+        let c=0
+        while(c<cols.length && cols[c]>(it.start||0)) c++
+        cols[c]=it.end||((it.start||0)+it.duur)
+        return {it,col:c}
+      })
+      // group into overlap clusters to compute total columns per cluster
+      const result=[]
+      placed.forEach(({it,col})=>{
+        const overlaps=placed.filter(p=>(p.it.start||0)<(it.end||0)&&(p.it.end||0)>(it.start||0))
+        const totalCols=Math.max(...overlaps.map(o=>o.col))+1
+        result.push({...it,_col:col,_cols:totalCols})
+      })
+      return result
+    }
+
+    // A positioned block (appointment OR flex) with drag + resize handles
+    const Block=({it,day,slot})=>{
+      const isFlex=it.isFlex
+      const clr=isFlex?{bg:'#E8F5E9',brd:'#7FC08A',fg:'#2E6B3A'}:getColor(it)
+      const beingDragged=dragItem&&dragItem.appt&&dragItem.appt.id===it.id&&dragItem.mode!=='resize-top'&&dragItem.mode!=='resize-bot'
+      const top=toY(it.start)+1
+      const h=Math.max((it.duur)*PXMIN-2, 22)
+      const W=100/(it._cols||1)
+      const L=(it._col||0)*W
+      return(
+        <div
+          onMouseDown={e=>startDrag(e,{mode:'move',appt:it,fromDay:day,fromSlot:slot})}
+          onTouchStart={e=>startDrag(e,{mode:'move',appt:it,fromDay:day,fromSlot:slot})}
+          style={{position:'absolute',top,left:`calc(${L}% + 2px)`,width:`calc(${W}% - 4px)`,height:h,
+            background:isFlex?'repeating-linear-gradient(45deg,#E8F5E9,#E8F5E9 6px,#F2FBF3 6px,#F2FBF3 13px)'
+              :it.overbook?'repeating-linear-gradient(45deg,#F3EEFA,#F3EEFA 6px,#EBE2F7 6px,#EBE2F7 13px)':clr.bg,
+            color:it.overbook?'#6D28B5':clr.fg,border:`1px solid ${it.overbook?'#8B5CF6':clr.brd}`,
+            borderLeft:(isFlex||it.overbook)?`3px dashed ${it.overbook?'#8B5CF6':clr.brd}`:`3px solid ${clr.brd}`,
+            borderRadius:6,cursor:isDragging?'grabbing':'grab',userSelect:'none',overflow:'hidden',
+            outline:beingDragged?`2px solid ${C.primary}`:(it.baileyWelsh&&!it.overbook?`2px solid #8B5CF6`:'none'),outlineOffset:1,
+            boxShadow:beingDragged?`0 10px 26px rgba(28,110,164,0.35)`:'0 1px 2px rgba(16,40,60,0.08)',
+            zIndex:beingDragged?60:(isFlex?3:5),
+            transition:beingDragged?'none':'top 0.08s ease, left 0.08s ease',
+            pointerEvents:isDragging?'none':'auto',
+            display:'flex',flexDirection:'column'}}>
+          {/* top resize handle */}
+          <div onMouseDown={e=>startDrag(e,{mode:'resize-top',appt:it,fromDay:day,fromSlot:slot})}
+            onTouchStart={e=>startDrag(e,{mode:'resize-top',appt:it,fromDay:day,fromSlot:slot})}
+            style={{position:'absolute',top:0,left:0,right:0,height:6,cursor:'ns-resize',zIndex:6}}/>
+          <div style={{padding:'4px 7px',flex:1,overflow:'hidden',pointerEvents:'none'}}
+            title={it._why?('Waarom hier?\n• '+it._why.join('\n• ')):''}>
+            <div style={{display:'flex',alignItems:'center',gap:4,fontSize:10.5,fontWeight:700,lineHeight:1.25}}>
+              <span style={{fontVariantNumeric:'tabular-nums',opacity:0.9}}>{toTime(it.start)}</span>
+              {!isFlex&&it.spoed&&<span>●</span>}
+              {!isFlex&&it.digitaal&&<span style={{fontSize:9}}>{modInfo(it.modaliteit||'telefonisch').ico||'📞'}</span>}
+              {!isFlex&&it.baileyWelsh&&<span style={{fontSize:8,fontWeight:800,background:'#8B5CF6',color:'#fff',
+                borderRadius:3,padding:'0 3px'}}>B²</span>}
+              <span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                {isFlex?'Flex':it.code}
+              </span>
+              <span onMouseDown={e=>{e.stopPropagation();e.preventDefault();deleteAppt(day,slot,it.id)}}
+                style={{cursor:'pointer',opacity:0.45,fontWeight:700,fontSize:13,pointerEvents:isDragging?'none':'auto',padding:'0 1px'}}>×</span>
+            </div>
+            {h>32&&<div style={{fontSize:9.5,opacity:0.8,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',marginTop:1}}>
+              {isFlex?(it.description||`${it.duur} min vrij`):`${it.description} · ${it.duur}m`}
+            </div>}
+          </div>
+          {/* bottom resize handle */}
+          <div onMouseDown={e=>startDrag(e,{mode:'resize-bot',appt:it,fromDay:day,fromSlot:slot})}
+            onTouchStart={e=>startDrag(e,{mode:'resize-bot',appt:it,fromDay:day,fromSlot:slot})}
+            style={{position:'absolute',bottom:0,left:0,right:0,height:6,cursor:'ns-resize',zIndex:6,
+              display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
+            <div style={{width:20,height:2,marginBottom:1,borderRadius:2,background:clr.brd,opacity:0.4}}/>
+          </div>
+        </div>
+      )
+    }
+
+    // One room column
+    const RoomColumn=({room})=>{
+      const slots=raster.days[selDay]||{}
+      const regData=regions.map(r=>{
+        const arr=slots[r.pre+room]||[]
+        const used=arr.filter(a=>!a.isFlex).reduce((s,a)=>s+a.duur,0)
+        return {...r,arr,used,laid:layoutOverlap(arr),
+          over:dragOver&&dragOver.day===selDay&&dragOver.slot===r.pre+room}
+      })
+      return(
+        <div style={{flex:1,minWidth:158,borderRight:`1px solid ${C.border}`,position:'relative'}}>
+          {/* Column header — editable spreekuur name + add menu */}
+          <div style={{height:48,background:C.surface2,borderBottom:`2px solid ${C.primary}`,
+            display:'flex',alignItems:'center',gap:6,padding:'0 6px 0 8px',
+            position:'sticky',top:0,zIndex:addMenu&&addMenu.room===room?40:15,borderRight:`1px solid ${C.border}`}}>
+            <div style={{flex:1,minWidth:0}}>
+              <input value={roomNames[room]??`Kamer ${room+1}`}
+                onChange={e=>setRoomNames(p=>({...p,[room]:e.target.value}))}
+                title="Naam van het spreekuur — klik om te wijzigen"
+                style={{width:'100%',border:'1px solid transparent',background:'transparent',
+                  fontSize:12.5,fontWeight:700,color:C.text,letterSpacing:'-0.01em',fontFamily:'inherit',
+                  padding:'3px 5px',borderRadius:5,cursor:'text'}}
+                onFocus={e=>{e.target.style.background='#fff';e.target.style.borderColor=C.border}}
+                onBlur={e=>{e.target.style.background='transparent';e.target.style.borderColor='transparent'}}/>
+              <div style={{fontSize:9,color:C.muted,fontFamily:'monospace',paddingLeft:5}}>{regData.map(r=>r.used+'m').join(' · ')}</div>
+            </div>
+            <div style={{position:'relative'}}>
+              <button onClick={()=>setAddMenu(addMenu&&addMenu.room===room?null:{room})}
+                title="Afspraak of flexblok toevoegen aan dit spreekuur"
+                style={{width:26,height:26,borderRadius:7,flexShrink:0,cursor:'pointer',
+                  border:`1px solid ${addMenu&&addMenu.room===room?C.primary:C.border}`,
+                  background:addMenu&&addMenu.room===room?C.primary:C.white,
+                  color:addMenu&&addMenu.room===room?'#fff':C.primary,fontSize:17,fontWeight:700,lineHeight:1,
+                  display:'flex',alignItems:'center',justifyContent:'center'}}>+</button>
+              {addMenu&&addMenu.room===room&&(
+                <>
+                  <div onClick={()=>setAddMenu(null)} style={{position:'fixed',inset:0,zIndex:90}}/>
+                  <div style={{position:'absolute',top:30,right:0,width:230,zIndex:91,
+                    background:C.white,border:`1px solid ${C.border}`,borderRadius:10,
+                    boxShadow:C.shadowLg,padding:8,maxHeight:340,overflowY:'auto'}}>
+                    <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',
+                      letterSpacing:'0.06em',padding:'4px 8px 6px'}}>Afspraak toevoegen</div>
+                    {[...newRows.map(r=>({...r,category:'nieuw'})),...ctrlRows.map(r=>({...r,category:'controle'}))]
+                      .filter(r=>r.afspraakcode||r.omschrijving).map((r,idx)=>{
+                      const clr=getColor({category:r.category,ci:0,digitaal:r.digitaal})
+                      return(
+                        <div key={idx} onClick={()=>addToRoom(selDay,room,r)}
+                          style={{display:'flex',alignItems:'center',gap:8,padding:'7px 8px',borderRadius:7,cursor:'pointer',transition:'background 0.1s'}}
+                          onMouseEnter={e=>e.currentTarget.style.background=C.surface2}
+                          onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                          <span style={{width:9,height:9,borderRadius:'50%',background:clr.brd,flexShrink:0}}/>
+                          <span style={{flex:1,fontSize:12,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                            {r.afspraakcode||r.omschrijving} {r.digitaal&&'📞'}
                           </span>
+                          <span style={{fontSize:10.5,color:C.muted,fontVariantNumeric:'tabular-nums'}}>{r.duur}m</span>
                         </div>
                       )
                     })}
+                    {[...newRows,...ctrlRows].filter(r=>r.afspraakcode||r.omschrijving).length===0&&(
+                      <div style={{fontSize:11,color:C.muted,padding:'4px 8px 8px'}}>Geen afspraakcodes ingevoerd.</div>
+                    )}
+                    <div style={{borderTop:`1px solid ${C.border}`,margin:'6px 0'}}/>
+                    <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',
+                      letterSpacing:'0.06em',padding:'2px 8px 6px'}}>Flexblok toevoegen</div>
+                    <div style={{display:'flex',gap:6,padding:'0 8px 6px'}}>
+                      {[15,30,45].map(d=>(
+                        <button key={d} onClick={()=>addToRoom(selDay,room,{flex:true,duur:d})}
+                          style={{flex:1,padding:'7px 4px',borderRadius:7,cursor:'pointer',fontSize:11.5,fontWeight:600,
+                            background:'#E3F1E7',color:'#2E6B3A',border:'1px dashed #9AC9A8'}}>{d} min</button>
+                      ))}
+                    </div>
                   </div>
-                ))}
-              </React.Fragment>
-            ))}
-          </div>
-        </div>
-        {fit && (
-          <div className="pm-panel">
-            <div className="ph"><b>Aanbod per dag</b><span className="sub">totaal {uur(fit.aanbodMin)} u/week · {model.sessies.length} sessies</span></div>
-            {fit.perDag.map(d => <div key={d.dag} className="bar-rij"><span className="lb">{DAGEN[d.dag]}</span><div className="bar-track"><div className="ab" style={{ width: klem(d.aanbod / 6.3, 0, 100) + '%' }} /></div><span className="cf">{d.sessies} sessie{d.sessies === 1 ? '' : 's'} · {uur(d.aanbod)} u</span></div>)}
-          </div>
-        )}
-        <div style={{ display: 'flex', gap: 10 }}>
-          <button className="btn" onClick={() => setFase('toets')}>Naar de toets →</button>
-          <button className="btn acc" onClick={genereer}>Raster bijwerken ⚙</button>
-        </div>
-      </div>
-    )
-  }
-
-  /* ════════ FASE: KRITISCHE TOETS ════════ */
-  const renderToets = () => {
-    if (!fit) return null
-    const kleur = fit.ernstScore === 'ok' ? 'var(--ok)' : fit.ernstScore === 'warn' ? 'var(--warn)' : 'var(--bad)'
-    const maxDd = Math.max(1, ...fit.perDd.map(x => Math.max(x.aanbod, x.gebonden)))
-    return (
-      <div>
-        <h1 className="pm-h1">Kritische toets</h1>
-        <p className="pm-lead">De confrontatie tussen zorgvraag en capaciteit, vóór het plannen. Rood betekent dat het raster op deze aannames gaat knellen.</p>
-        <div className="kpis" style={{ gridTemplateColumns: 'repeat(4,1fr)' }}>
-          <div className="kpi"><div className="k">Dekking</div><div className="v" style={{ color: kleur }}>{fit.dekking > 400 ? '∞' : fit.dekking + '%'}</div><div className="d">100% = passend, &lt;100% = tekort</div></div>
-          <div className="kpi"><div className="k">Behoefte/week</div><div className="v">{uur(fit.behoefte)} u</div><div className="d">vraag {uur(fit.vraagMin)} + buffer {uur(fit.bufMin)} + spoed {uur(fit.spoedMin)}</div></div>
-          <div className="kpi"><div className="k">Aanbod/week</div><div className="v">{uur(fit.aanbodMin)} u</div><div className="d">{model.sessies.length} sessies · {model.kamers} kamers</div></div>
-          <div className="kpi"><div className="k">Gem. no-show</div><div className="v">{Math.round(fit.gemNoShow)}%</div><div className="d">{model.strategie.overboekStart ? 'gecompenseerd' : 'niet gecompenseerd'}</div></div>
-        </div>
-        <div className="pm-panel">
-          <div className="ph"><b>Dagdeel-balans</b><span className="sub">paars = gebonden vraag · groen = aanbod</span></div>
-          {fit.perDd.filter(x => x.aanbod > 0 || x.gebonden > 0).map(x => (
-            <div key={x.dd} className="bar-rij"><span className="lb">{DAGDELEN[DD_IX[x.dd]].naam}</span><div className="bar-track" style={{ height: 24 }}><div className="ab" style={{ width: (x.aanbod / maxDd * 100) + '%' }} /><div className="vr" style={{ width: (x.gebonden / maxDd * 100) + '%', top: '55%' }} /></div><span className="cf">{uur(x.gebonden)} u vast · {uur(x.aanbod)} u</span></div>
-          ))}
-        </div>
-        <div className="pm-panel">
-          <div className="ph"><b>Bevindingen &amp; advies</b><span className="sub">{fit.issues.length} punten</span></div>
-          {fit.issues.map((i, ix) => <div key={ix} className={'issue ' + (i.ernst === 'info' ? 'info' : i.ernst)}><span className="dot" style={{ background: i.ernst === 'bad' ? 'var(--bad)' : i.ernst === 'warn' ? 'var(--warn)' : 'var(--ok)' }} /><div><b>{i.kop}</b><p>{i.txt}</p></div></div>)}
-        </div>
-        <button className="btn acc" onClick={() => setFase('strategie')}>Naar de strategie →</button>
-      </div>
-    )
-  }
-
-  /* ════════ FASE: STRATEGIE ════════ */
-  const renderStrategie = () => {
-    const st = model.strategie
-    return (
-      <div>
-        <h1 className="pm-h1">Strategie</h1>
-        <p className="pm-lead">Kies een profiel (dat zet de parameters op een beproefde combinatie) en stel daarna bij. De strategie stuurt volgorde, buffers, spoedreserve en overboeking.</p>
-        <div className="prof-grid">{Object.entries(PROFIELEN).map(([k, p]) => <div key={k} className={'prof' + (st.profiel === k ? ' on' : '')} onClick={() => kiesProfiel(k)}><b>{p.ico} {p.naam}</b><p>{p.desc}</p></div>)}</div>
-        <div className="pm-panel">
-          <div className="ph"><b>Parameters</b><span className="sub">gestart vanaf «{PROFIELEN[st.profiel].naam}»</span></div>
-          <div className="par-grid">
-            <div className="par"><div className="pl"><b>Buffer na elke … afspraken</b><span>0 = geen buffers tussendoor</span></div><div className="step"><button onClick={() => upStrat('bufferElke', klem(st.bufferElke - 1, 0, 12))}>−</button><span className="val">{st.bufferElke || '—'}</span><button onClick={() => upStrat('bufferElke', klem(st.bufferElke + 1, 0, 12))}>+</button></div></div>
-            <div className="par"><div className="pl"><b>Bufferduur</b><span>lengte per tussenblok</span></div><div className="step"><button onClick={() => upStrat('bufferDuur', klem(st.bufferDuur - 5, 5, 30))}>−</button><span className="val">{st.bufferDuur} m</span><button onClick={() => upStrat('bufferDuur', klem(st.bufferDuur + 5, 5, 30))}>+</button></div></div>
-            <div className="par"><div className="pl"><b>Spoedreserve per dag</b><span>landt in de grootste sessie</span></div><div className="step"><button onClick={() => upStrat('spoedReserve', klem(st.spoedReserve - 5, 0, 60))}>−</button><span className="val">{st.spoedReserve} m</span><button onClick={() => upStrat('spoedReserve', klem(st.spoedReserve + 5, 0, 60))}>+</button></div></div>
-            <div className="par"><div className="pl"><b>Positie spoedreserve</b><span>midden vangt eerder uitloop op</span></div><div className="seg">{[['midden', 'Midden'], ['einde', 'Einde']].map(([v, l]) => <button key={v} className={st.spoedPositie === v ? 'on' : ''} onClick={() => upStrat('spoedPositie', v)}>{l}</button>)}</div></div>
-            <div className="par"><div className="pl"><b>Telefonisch / beeldbellen</b><span>plek in de sessie</span></div><div className="seg">{[['einde', 'Einde'], ['blok', 'Blok'], ['gemengd', 'Gemengd']].map(([v, l]) => <button key={v} className={st.digitaalPositie === v ? 'on' : ''} onClick={() => upStrat('digitaalPositie', v)}>{l}</button>)}</div></div>
-            <div className="par"><div className="pl"><b>Overboek het eerste slot</b><span>no-showdemper</span></div><div className="seg">{[[false, 'Uit'], [true, 'Aan']].map(([v, l]) => <button key={String(v)} className={st.overboekStart === v ? 'on' : ''} onClick={() => upStrat('overboekStart', v)}>{l}</button>)}</div></div>
-            <div className="par"><div className="pl"><b>Max. nieuw per sessie</b><span>0 = geen plafond</span></div><div className="step"><button onClick={() => upStrat('maxNieuwPerSessie', klem(st.maxNieuwPerSessie - 1, 0, 20))}>−</button><span className="val">{st.maxNieuwPerSessie || '—'}</span><button onClick={() => upStrat('maxNieuwPerSessie', klem(st.maxNieuwPerSessie + 1, 0, 20))}>+</button></div></div>
-          </div>
-        </div>
-        <button className="btn acc" onClick={genereer} style={{ fontSize: 14, padding: '11px 22px' }}>Genereer het weekraster ⚙</button>
-      </div>
-    )
-  }
-
-  /* ════════ FASE: WEEKRASTER (kalender) ════════ */
-  const renderRaster = () => {
-    if (!raster) return (
-      <div>
-        <h1 className="pm-h1">Weekraster</h1>
-        <p className="pm-lead">Er is nog geen raster voor dit model.</p>
-        <button className="btn acc" onClick={genereer}>Genereer het weekraster ⚙</button>
-      </div>
-    )
-    const bh = id => model.team.find(b => b.id === id) || { naam: '?' }
-    const alle = raster.sessies
-    const rawT0 = alle.length ? Math.min(...alle.map(s => s.van)) : 510
-    const rawT1 = alle.length ? Math.max(...alle.map(s => s.tot)) : 990
-    const t0 = Math.floor((rawT0 - 15) / 30) * 30
-    const t1 = Math.ceil((rawT1 + 15) / 30) * 30
-    const PX = zoom
-    const H = (t1 - t0) * PX
-    const uren = []
-    for (let t = Math.ceil(t0 / 60) * 60; t <= t1; t += 60) uren.push(t)
-
-    const dagData = [0, 1, 2, 3, 4].map(d => {
-      const ses = raster.sessies.filter(s => s.dag === d).sort((a, b) => a.van - b.van || a.tot - b.tot)
-      const laneEnd = []
-      ses.forEach(s => { let l = 0; while (laneEnd[l] != null && laneEnd[l] > s.van) l++; laneEnd[l] = s.tot; s._lane = l })
-      const nLane = Math.max(1, laneEnd.length)
-      const min = ses.reduce((a, s) => a + (s.tot - s.van), 0)
-      return { d, ses, nLane, min }
-    })
-
-    return (
-      <div>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, flexWrap: 'wrap', marginBottom: 8 }}>
-          <div style={{ flex: 1, minWidth: 260 }}>
-            <h1 className="pm-h1">Weekraster</h1>
-            <p className="pm-lead" style={{ marginBottom: 8 }}>De hele week in één beeld — elke afspraak als blok, gekleurd naar categorie. Klik een sessie om het slotpatroon bij te stellen.</p>
-          </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button className="btn" onClick={genereer}>↻ Opnieuw genereren</button>
-            <button className="btn" onClick={bewaarScenario}>+ Scenario</button>
-            <button className="btn acc" onClick={exporteerXlsx}>Exporteer Excel</button>
-          </div>
-        </div>
-
-        {kpi && (
-          <div className="kpis">
-            <div className="kpi"><div className="k">Geplaatst</div><div className="v" style={{ color: kpi.geplaatst >= 100 ? 'var(--ok)' : 'var(--warn)' }}>{kpi.geplaatst}%</div><div className="d">{kpi.nAppt} afspraken · {kpi.nRest} op restlijst</div></div>
-            <div className="kpi"><div className="k">Benutting</div><div className="v">{kpi.benutting}%</div><div className="d">{uur(kpi.apptMin)} u in {uur(kpi.sesMin)} u</div></div>
-            <div className="kpi"><div className="k">Rust-aandeel</div><div className="v">{kpi.rustAandeel}%</div><div className="d">buffer {uur(kpi.bufMin)} + spoed {uur(kpi.spoedMin)}</div></div>
-            <div className="kpi"><div className="k">NP-spreiding</div><div className="v">{kpi.npSpreiding}%</div><div className="d">100% = nieuw gelijk over week</div></div>
-            <div className="kpi"><div className="k">Typewissels</div><div className="v">{kpi.wissels}</div><div className="d">lager = rustiger patroon</div></div>
-          </div>
-        )}
-
-        {schouw.length > 0 && (
-          <div className="pm-panel" style={{ padding: '12px 16px' }}>
-            {schouw.map((o, ix) => <div key={ix} className={'issue ' + (o.ernst === 'info' ? 'info' : o.ernst)} style={{ marginBottom: ix === schouw.length - 1 ? 0 : 8 }}><span className="dot" style={{ background: o.ernst === 'bad' ? 'var(--bad)' : o.ernst === 'warn' ? 'var(--warn)' : 'var(--ok)' }} /><div><p style={{ color: 'var(--ink)' }}>{o.txt}</p></div></div>)}
-          </div>
-        )}
-
-        <div className="cal-tools">
-          <div className="cal-legend">
-            {Object.entries(CATS).map(([k, c]) => <span key={k} className="lg"><span className="sw" style={{ background: CAT_KLEUR[k].bg, border: `1px solid ${CAT_KLEUR[k].ln}` }} />{c.naam}</span>)}
-            <span className="lg"><span className="sw" style={{ background: 'var(--bufferBg)', border: '1px solid var(--buffer)' }} />Buffer</span>
-            <span className="lg"><span className="sw" style={{ background: 'var(--spoedBg)', border: '1px solid var(--spoed)' }} />Spoed</span>
-          </div>
-          <span style={{ flex: 1 }} />
-          <span className="sub" style={{ fontSize: 12, color: 'var(--mut)' }}>Zoom</span>
-          <div className="step"><button onClick={() => setZoom(z => klem(+(z - 0.15).toFixed(2), 0.6, 2.4))}>−</button><span className="val">{Math.round(zoom * 100)}%</span><button onClick={() => setZoom(z => klem(+(z + 0.15).toFixed(2), 0.6, 2.4))}>+</button></div>
-        </div>
-
-        <div className="wk-cal" style={{ overflowX: 'auto' }}>
-          <div className="wk-gutter" style={{ height: H + 38 }}>
-            <div className="ghd" />
-            <div className="wk-canvas" style={{ height: H }}>
-              {uren.map(t => <div key={t} className="wk-hourlab" style={{ top: (t - t0) * PX }}>{mm(t)}</div>)}
+                </>
+              )}
             </div>
           </div>
-          {dagData.map(({ d, ses, nLane, min }) => (
-            <div key={d} className="wk-day">
-              <div className="wk-dayhd"><span>{DAG_KORT[d]} <span style={{ fontWeight: 400, color: 'var(--mut)' }}>{DAGEN[d].slice(2)}</span></span><span className="du">{min ? uur(min) + ' u' : '—'}</span></div>
-              <div className="wk-canvas" style={{ height: H }}>
-                {uren.map(t => <div key={t} className="wk-hour" style={{ top: (t - t0) * PX }} />)}
-                {ses.length === 0 && <div className="wk-empty-day" style={{ inset: 0 }}>—</div>}
-                {ses.map(s => {
-                  const top = (s.van - t0) * PX
-                  const hgt = (s.tot - s.van) * PX
-                  const w = 100 / nLane
-                  const left = s._lane * w
-                  const b = bh(s.bhId)
-                  const app = s.slots.filter(x => x.soort === 'afspraak')
-                  const bez = (s.tot - s.van) > 0 ? Math.round(app.reduce((a, x) => a + x.duur, 0) / (s.tot - s.van) * 100) : 0
-                  return (
-                    <div key={s.id} className={'wk-ses' + (selSessie === s.id ? ' sel' : '')} onClick={() => setSelSessie(selSessie === s.id ? null : s.id)}
-                      style={{ top, height: hgt, left: `calc(${left}% + 2px)`, width: `calc(${w}% - 4px)` }}
-                      title={`${b.naam} · ${mm(s.van)}–${mm(s.tot)} · ${app.length} afspraken · ${bez}% bezet`}>
-                      <div className="wk-ses-lab"><span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{nLane > 1 ? initialen(b.naam) : b.naam}</span><span style={{ marginLeft: 'auto', color: bez > 95 ? 'var(--bad)' : 'var(--mut)', fontFamily: 'var(--mono)' }}>{bez}%</span></div>
-                      <div className="wk-slotwrap">
-                        {s.slots.map(sl => {
-                          const st = (sl.van - s.van) * PX
-                          const h = Math.max(2, sl.duur * PX)
-                          let style, txt
-                          if (sl.soort === 'afspraak') { const c = CAT_KLEUR[sl.cat] || CAT_KLEUR.overig; style = { top: st, height: h, background: c.bg, color: c.fg, borderLeft: `3px solid ${c.fg}` }; txt = h >= 11 ? <><span className="sc">{sl.code}</span>{sl.overboek && <span className="ob-badge" style={{ fontSize: 8 }}>2×</span>}{h >= 15 && modIco(sl.mod) && <span>{modIco(sl.mod)}</span>}</> : null }
-                          else if (sl.soort === 'buffer') { style = { top: st, height: h, background: 'var(--bufferBg)', color: 'var(--buffer)', borderLeft: '3px solid var(--buffer)', backgroundImage: 'repeating-linear-gradient(45deg,transparent,transparent 4px,#ffffff88 4px,#ffffff88 8px)' }; txt = h >= 13 ? <span style={{ fontSize: 8 }}>buffer</span> : null }
-                          else { style = { top: st, height: h, background: 'var(--spoedBg)', color: 'var(--spoed)', borderLeft: '3px solid var(--spoed)' }; txt = h >= 13 ? <span style={{ fontSize: 8 }}>spoed</span> : null }
-                          return <div key={sl.id} className="wk-slot" style={style}>{txt}</div>
-                        })}
+          {/* Body */}
+          <div data-roombody={`${selDay}_o${room}`} style={{position:'relative',height:gridH,background:C.white}}>
+            {gridLines.map(({t,y,hour},idx)=>(
+              <div key={idx} style={{position:'absolute',top:y,left:0,right:0,height:1,
+                background:hour?'#D8E0E8':'#EEF2F6',zIndex:0}}/>
+            ))}
+            {/* Drop zones per region */}
+            {regData.map(r=>{
+              const yTop=r.y0, hZone=(r.end-r.start)*PXMIN
+              return(
+                <div key={'z'+r.pre} data-slotkey={r.pre+room} data-day={selDay}
+                  style={{position:'absolute',top:yTop,left:0,right:0,height:hZone,zIndex:1,
+                    background:r.over?'rgba(15,92,140,0.10)':'transparent',
+                    outline:r.over?`2px dashed ${C.primary}`:'none',outlineOffset:-2,transition:'background 0.1s'}}/>
+              )
+            })}
+            {/* Pause bands (between consecutive regions) */}
+            {regions.slice(1).map((r,i)=>{
+              const prev=regions[i]
+              const pTop=prev.y0+(prev.end-prev.start)*PXMIN
+              const pH=r.y0-pTop
+              return(
+                <div key={'p'+i} style={{position:'absolute',top:pTop,left:0,right:0,height:pH,zIndex:2,
+                  background:'repeating-linear-gradient(45deg,#EDF1F5,#EDF1F5 6px,#F6F9FB 6px,#F6F9FB 13px)',
+                  borderTop:`1px solid ${C.border}`,borderBottom:`1px solid ${C.border}`,
+                  display:'flex',alignItems:'center',justifyContent:'center'}}>
+                  <span style={{fontSize:8.5,color:C.muted,fontWeight:600,letterSpacing:'0.12em'}}>PAUZE</span>
+                </div>
+              )
+            })}
+            {/* Blocks per region */}
+            {regData.map(r=>r.laid.map(it=><Block key={it.id} it={it} day={selDay} slot={r.pre+room}/>))}
+          </div>
+        </div>
+      )
+    }
+
+    const rooms=Array.from({length:numRooms},(_,i)=>i)
+    const dayHasData=!!raster.days[selDay]
+
+    return(
+      <div style={{animation:'fadeIn 0.18s ease'}}>
+        {renderProg()}
+
+        {/* Header */}
+        <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:14,flexWrap:'wrap',gap:10}}>
+          <div>
+            <div style={{display:'flex',alignItems:'center',gap:9,marginBottom:5}}>
+              <span style={{width:18,height:1.5,background:C.primary}}/>
+              <span style={{fontSize:9.5,fontWeight:700,color:C.primary,letterSpacing:'0.2em'}}>RASTERPROCES</span>
+            </div>
+            <h1 style={{fontFamily:"'Newsreader',Georgia,serif",fontWeight:500,fontSize:25,lineHeight:1.1,
+              color:C.text,margin:'0 0 4px 0'}}>Multi-dynamische <span style={{fontStyle:'italic',color:C.primary}}>weekplanning</span></h1>
+            <p style={{fontSize:12.5,color:C.muted,margin:0}}>Klik een dag · sleep afspraken tussen kamers, dagdelen en het palet · pak elk blok vast om te verplaatsen of te verlengen.</p>
+          </div>
+          <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+            <div style={{display:'flex',padding:2,background:C.surface2,border:`1px solid ${C.border}`,borderRadius:9}}>
+              {[{v:'dag',l:'Dag'},{v:'week',l:'Week'}].map(o=>(
+                <button key={o.v} onClick={()=>setViewMode(o.v)}
+                  style={{padding:'5px 14px',borderRadius:7,border:'none',cursor:'pointer',fontSize:12,fontWeight:600,
+                    background:viewMode===o.v?C.white:'transparent',color:viewMode===o.v?C.primary:C.muted,
+                    boxShadow:viewMode===o.v?'0 1px 3px rgba(27,39,51,0.10)':'none',transition:'all 0.13s'}}>{o.l}</button>
+              ))}
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:6,padding:'5px 10px',background:C.white,border:`1px solid ${C.border}`,borderRadius:8}}>
+              <span style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.05em'}}>Zoom</span>
+              <button onClick={()=>setCalZoom(z=>Math.max(1.5,+(z-0.5).toFixed(1)))} style={{width:22,height:22,borderRadius:5,border:`1px solid ${C.border}`,background:C.white,cursor:'pointer',fontWeight:700,color:C.primary}}>−</button>
+              <span style={{fontWeight:700,fontSize:12,color:C.primary,minWidth:30,textAlign:'center'}}>{Math.round(calZoom/3*100)}%</span>
+              <button onClick={()=>setCalZoom(z=>Math.min(7,+(z+0.5).toFixed(1)))} style={{width:22,height:22,borderRadius:5,border:`1px solid ${C.border}`,background:C.white,cursor:'pointer',fontWeight:700,color:C.primary}}>+</button>
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:6,padding:'5px 10px',background:C.white,border:`1px solid ${C.border}`,borderRadius:8}}>
+              <span style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.05em'}}>Kamers</span>
+              <button onClick={removeRoom} style={{width:22,height:22,borderRadius:5,border:`1px solid ${C.border}`,background:C.white,cursor:'pointer',fontWeight:700,color:C.primary}}>−</button>
+              <span style={{fontWeight:700,fontSize:13,color:C.primary,minWidth:16,textAlign:'center'}}>{numRooms}</span>
+              <button onClick={addRoom} style={{width:22,height:22,borderRadius:5,border:`1px solid ${C.border}`,background:C.white,cursor:'pointer',fontWeight:700,color:C.primary}}>+</button>
+            </div>
+            <Btn variant="secondary" small onClick={doGenerate}>↺ Genereren</Btn>
+            <Btn small onClick={()=>setShowExport(true)} style={{background:C.green,border:'none'}}>⬇ Export</Btn>
+          </div>
+        </div>
+
+        {/* ── ENGINE 2.0: KPI dashboard ── */}
+        {raster.kpi&&(
+          <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:10,marginBottom:12}}>
+            {[
+              {l:'Afspraken / week',v:raster.kpi.week.appts,sub:`${raster.kpi.week.planned} min gepland`},
+              {l:'Benutting',v:raster.kpi.week.benutting+'%',sub:`van ${raster.kpi.week.capacity} min capaciteit`,
+                warn:raster.kpi.week.benutting>m2.benutting},
+              {l:'Flex / buffer',v:raster.kpi.week.flex+' min',sub:'gereserveerde ruimte'},
+              {l:'Spreiding',v:raster.kpi.week.spreiding+'%',sub:'gelijkmatigheid over dagen',
+                warn:raster.kpi.week.spreiding<70},
+              {l:'Validatie',v:raster.kpi.issues.length===0?'✓ OK':raster.kpi.issues.length,
+                sub:raster.kpi.issues.length===0?'geen conflicten':'conflicten gevonden',
+                warn:raster.kpi.issues.length>0},
+            ].map((k,i)=>(
+              <div key={i} title={i===4&&raster.kpi.issues.length?raster.kpi.issues.map(x=>`${DAYS[x.day]} K${x.room+1}: ${x.msg}`).join('\n'):''}
+                style={{background:C.white,border:`1px solid ${k.warn?'#F0C0B4':C.border}`,borderRadius:12,padding:'12px 14px'}}>
+                <div style={{fontSize:9.5,fontWeight:700,color:C.muted,letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:5}}>{k.l}</div>
+                <div style={{fontSize:21,fontWeight:700,color:k.warn?C.danger:C.text,lineHeight:1,fontVariantNumeric:'tabular-nums'}}>{k.v}</div>
+                <div style={{fontSize:10,color:C.muted,marginTop:4}}>{k.sub}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ── ANALYSE 2.1: vraag/capaciteit-balans · modaliteitsmix · advies ── */}
+        <div style={{display:'grid',gridTemplateColumns:'1.15fr 1fr 1.4fr',gap:10,marginBottom:12}}>
+          {/* Vraag vs capaciteit */}
+          <div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:12,padding:'13px 15px'}}>
+            <div style={{fontSize:9.5,fontWeight:700,color:C.muted,letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:9}}>Vraag vs. capaciteit</div>
+            {(()=>{
+              const mx=Math.max(demandMin,capMin,1)
+              const Row=({lb,val,clr})=>(
+                <div style={{marginBottom:8}}>
+                  <div style={{display:'flex',justifyContent:'space-between',fontSize:10.5,marginBottom:3}}>
+                    <span style={{color:C.muted}}>{lb}</span><span style={{fontWeight:700,color:C.text,fontVariantNumeric:'tabular-nums'}}>{(val/60).toFixed(1)} u</span>
+                  </div>
+                  <div style={{height:8,borderRadius:4,background:C.surface2,overflow:'hidden'}}>
+                    <div style={{height:'100%',width:(val/mx*100)+'%',background:clr,borderRadius:4,transition:'width 0.4s'}}/>
+                  </div>
+                </div>
+              )
+              return(<div>
+                <Row lb="Weekvraag (uit codes)" val={demandMin} clr={C.primary}/>
+                <Row lb="Beschikbare capaciteit" val={capMin} clr={C.green}/>
+                <div style={{marginTop:9,fontSize:11.5,fontWeight:600,
+                  color:dekking>=100?C.green:C.danger}}>
+                  Dekking {dekking>999?'∞':dekking+'%'} {dekking>=100?'— vraag past':'— tekort'}
+                </div>
+              </div>)
+            })()}
+          </div>
+          {/* Modaliteitsmix */}
+          <div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:12,padding:'13px 15px'}}>
+            <div style={{fontSize:9.5,fontWeight:700,color:C.muted,letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:9}}>Modaliteitsmix</div>
+            <div style={{display:'flex',height:12,borderRadius:6,overflow:'hidden',marginBottom:10,border:`1px solid ${C.border}`}}>
+              {modMix.map((x,i)=>(
+                <div key={x.mv} title={`${x.label}: ${x.n}`} style={{width:(x.n/nReal*100)+'%',
+                  background:x.mv==='fysiek'?C.primary:x.mv==='telefonisch'?'#2E8B57':'#8B5CF6'}}/>
+              ))}
+            </div>
+            <div style={{display:'flex',flexDirection:'column',gap:5}}>
+              {modMix.map(x=>(
+                <div key={x.mv} style={{display:'flex',alignItems:'center',gap:6,fontSize:11}}>
+                  <span style={{width:9,height:9,borderRadius:2,background:x.mv==='fysiek'?C.primary:x.mv==='telefonisch'?'#2E8B57':'#8B5CF6'}}/>
+                  <span style={{color:C.text}}>{x.ico} {x.label}</span>
+                  <span style={{marginLeft:'auto',fontWeight:700,color:C.text,fontVariantNumeric:'tabular-nums'}}>{x.n} · {Math.round(x.n/nReal*100)}%</span>
+                </div>
+              ))}
+              {!modMix.length&&<span style={{fontSize:11,color:C.muted}}>Geen afspraken.</span>}
+            </div>
+          </div>
+          {/* Advies */}
+          <div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:12,padding:'13px 15px'}}>
+            <div style={{fontSize:9.5,fontWeight:700,color:C.muted,letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:9}}>Analyse &amp; advies</div>
+            <div style={{display:'flex',flexDirection:'column',gap:6,maxHeight:118,overflowY:'auto'}}>
+              {adviezen.map((a,i)=>(
+                <div key={i} style={{display:'flex',gap:8,fontSize:11.5,lineHeight:1.45}}>
+                  <span style={{width:8,height:8,borderRadius:'50%',marginTop:4,flexShrink:0,
+                    background:a.t==='bad'?C.danger:a.t==='warn'?'#D9860A':a.t==='ok'?C.green:C.light}}/>
+                  <span style={{color:C.text}}>{a.m}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* ── ENGINE 2.0: quick rules (live — raster past zich direct aan) ── */}
+        <div style={{display:'flex',gap:6,marginBottom:12,flexWrap:'wrap',alignItems:'center',
+          background:C.white,border:`1px solid ${C.border}`,borderRadius:12,padding:'9px 13px'}}>
+          <span style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.08em',marginRight:3}}>Planregels · live</span>
+          {[
+            {k:'shortFirst',l:'Kort eerst'},
+            {k:'spoedFirst',l:'Spoed eerst'},
+            {k:'certainFirst',l:'Zeker eerst'},
+            {k:'baileyWelsh',l:'Bailey-Welsh'},
+          ].map(({k,l})=>(
+            <button key={k} onClick={()=>setRules(p=>({...p,[k]:!p[k]}))}
+              style={{padding:'5px 12px',borderRadius:16,cursor:'pointer',fontSize:11.5,fontWeight:600,transition:'all 0.12s',
+                background:rules[k]?(k==='baileyWelsh'?'#8B5CF6':C.primary):C.white,
+                color:rules[k]?'#fff':C.muted,
+                border:`1px solid ${rules[k]?(k==='baileyWelsh'?'#8B5CF6':C.primary):C.border}`}}>
+              {rules[k]?'✓ ':''}{l}
+            </button>
+          ))}
+          <span style={{width:1,height:18,background:C.border,margin:'0 4px'}}/>
+          {[{v:'end',l:'Buffer: einde'},{v:'spread',l:'Buffer: verspreid'}].map(o=>(
+            <button key={o.v} onClick={()=>setRules(p=>({...p,flexMode:o.v}))}
+              style={{padding:'5px 12px',borderRadius:16,cursor:'pointer',fontSize:11.5,fontWeight:600,
+                background:rules.flexMode===o.v?'#E3F1E7':C.white,color:rules.flexMode===o.v?'#2E6B3A':C.muted,
+                border:`1px solid ${rules.flexMode===o.v?'#9AC9A8':C.border}`}}>{o.l}</button>
+          ))}
+          <span style={{marginLeft:'auto',fontSize:10,color:C.muted,fontStyle:'italic'}}>wijzigingen worden direct doorgerekend</span>
+        </div>
+
+        {/* ── ENGINE 2.0: week-overzicht (multi-dynamisch) ── */}
+        {viewMode==='week'&&raster.kpi&&(
+          <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:10,marginBottom:14}}>
+            {DAYS.slice(0,5).map((d,di)=>{
+              const pk=raster.kpi.perDay[di]
+              const slots=raster.days[di]
+              const on=selDay===di
+              if(!pk||!slots) return(
+                <div key={di} style={{background:C.surface2,border:`1px dashed ${C.border}`,borderRadius:12,
+                  padding:'14px 12px',textAlign:'center',color:C.muted,fontSize:11.5}}>
+                  <div style={{fontWeight:700,marginBottom:6}}>{d}</div>Geen spreekuur
+                </div>
+              )
+              // per dagdeel: planned vs capacity
+              const dagdelen=[['o','Ochtend',ochDur],['m','Middag',midDur],...(raster.avondOn?[['a','Avond',raster.avDur||0]]:[])]
+              return(
+                <div key={di} onClick={()=>{setSelDay(di);setViewMode('dag')}}
+                  style={{background:C.white,border:`1.5px solid ${on?C.primary:C.border}`,borderRadius:12,
+                    padding:'12px 13px',cursor:'pointer',transition:'all 0.13s'}}
+                  onMouseEnter={e=>e.currentTarget.style.boxShadow='0 6px 18px rgba(28,110,164,0.10)'}
+                  onMouseLeave={e=>e.currentTarget.style.boxShadow='none'}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:9}}>
+                    <span style={{fontSize:12.5,fontWeight:700,color:C.text}}>{d}</span>
+                    <span style={{fontSize:10.5,fontWeight:700,padding:'2px 8px',borderRadius:10,
+                      background:pk.benutting>m2.benutting?'#FCEEEB':'#EAF5EE',
+                      color:pk.benutting>m2.benutting?C.danger:C.green}}>{pk.benutting}%</span>
+                  </div>
+                  {dagdelen.map(([pre,lbl,dur])=>{
+                    // aggregate over rooms for this dagdeel
+                    let pl=0,cap=0
+                    for(let r=0;r<numRooms;r++){
+                      const arr=slots[pre+r]||[]
+                      arr.forEach(a=>{if(!a.isFlex&&!a.overbook)pl+=a.duur})
+                      cap+=dur
+                    }
+                    const pct=cap>0?Math.min(100,pl/cap*100):0
+                    return(
+                      <div key={pre} style={{marginBottom:6}}>
+                        <div style={{display:'flex',justifyContent:'space-between',fontSize:9,color:C.muted,marginBottom:2}}>
+                          <span>{lbl}</span><span style={{fontVariantNumeric:'tabular-nums'}}>{pl}/{cap}m</span>
+                        </div>
+                        <div style={{height:6,borderRadius:3,background:C.surface2,overflow:'hidden'}}>
+                          <div style={{height:'100%',width:pct+'%',borderRadius:3,transition:'width 0.4s',
+                            background:pre==='o'?C.primary:pre==='m'?C.green:'#8B5CF6'}}/>
+                        </div>
                       </div>
+                    )
+                  })}
+                  <div style={{fontSize:10,color:C.muted,marginTop:7}}>{pk.appts} afspraken · {pk.flex}m flex</div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {/* Day tabs */}
+        <div style={{display:'flex',gap:6,marginBottom:14}}>
+          {DAYS.slice(0,5).map((d,i)=>{
+            const slots=raster.days[i]
+            let n=0; if(slots) Object.values(slots).forEach(arr=>n+=arr.length)
+            const on=selDay===i
+            return(
+              <button key={i} onClick={()=>setSelDay(i)}
+                style={{flex:1,padding:'9px 8px',borderRadius:9,cursor:'pointer',position:'relative',
+                  border:`1.5px solid ${on?C.primary:C.border}`,
+                  background:on?C.primary:C.white,color:on?'#fff':C.text,
+                  fontWeight:on?700:500,fontSize:12.5,transition:'all 0.13s'}}>
+                {d}
+                <span style={{display:'block',fontSize:9.5,fontWeight:500,marginTop:2,
+                  color:on?'rgba(255,255,255,0.8)':C.muted}}>{slots?n+' afspr.':'geen spreekuur'}</span>
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Status + palette */}
+        <div style={{display:'flex',gap:10,marginBottom:12,flexWrap:'wrap',alignItems:'center'}}>
+          <div style={{padding:'7px 13px',borderRadius:8,fontSize:12,display:'flex',alignItems:'center',gap:7,
+            background:nNtp>0?'#FEF6E0':'#EAF4E0',color:nNtp>0?'#7A5000':'#2A5018',
+            border:`1px solid ${nNtp>0?'#F0C840':'#98CC70'}`}}>
+            {nNtp>0?'⚠':'✓'} {nNtp>0?`${nNtp} nog te plannen`:'Alles ingepland'}
+          </div>
+          <span style={{fontSize:10.5,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.05em'}}>Toevoegen:</span>
+          {PALETTE.map(p=>(
+            <div key={p.key}
+              onMouseDown={e=>startDrag(e,{mode:'new',palette:p})}
+              onTouchStart={e=>startDrag(e,{mode:'new',palette:p})}
+              style={{display:'flex',alignItems:'center',gap:6,padding:'5px 11px',borderRadius:20,cursor:'grab',
+                userSelect:'none',background:p.clr.bg,border:`1px solid ${p.clr.brd}`,fontSize:11,fontWeight:500,color:p.clr.fg}}>
+              <span style={{width:8,height:8,borderRadius:2,background:p.clr.brd}}/>{p.label} <span style={{opacity:0.6}}>({p.duur}m)</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Main grid + NTP side panel */}
+        <div style={{display:'flex',gap:12,alignItems:'flex-start'}}>
+          {/* Time-grid raster */}
+          <div style={{flex:1,background:C.white,borderRadius:12,border:`1px solid ${C.border}`,
+            overflow:'hidden',boxShadow:C.shadow}}>
+            <div style={{padding:'10px 14px',background:C.rowAlt,borderBottom:`1px solid ${C.border}`,
+              display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+              <span style={{fontWeight:700,color:C.primary,fontSize:14}}>{DAYS[selDay]}</span>
+              <span style={{fontSize:11,color:C.muted}}>{toTime(ochStart)}–{toTime(ochEnd)} · {toTime(midStart)}–{toTime(midEnd)}{avondOn?` · ${toTime(avondStart)}–${toTime(avondEnd)}`:''}</span>
+            </div>
+            {dayHasData?(
+              <div style={{display:'flex',maxHeight:620,overflowY:'auto',overflowX:'auto'}}>
+                {/* Time axis */}
+                <div style={{width:54,flexShrink:0,position:'relative',borderRight:`1.5px solid ${C.border}`,
+                  background:C.timeline}}>
+                  <div style={{height:48,position:'sticky',top:0,background:C.timeline,zIndex:5,borderRight:`1px solid ${C.border}`}}/>
+                  <div style={{position:'relative',height:gridH}}>
+                    {gridLines.filter(g=>g.half).map(({t,y,hour},idx)=>(
+                      <div key={idx} style={{position:'absolute',top:y-7,right:6,fontSize:hour?10.5:9,
+                        fontWeight:hour?700:400,color:hour?C.hour:C.muted,fontVariantNumeric:'tabular-nums'}}>{toTime(t)}</div>
+                    ))}
+                  </div>
+                </div>
+                {/* Room columns */}
+                {rooms.map(r=><RoomColumn key={r} room={r}/>)}
+              </div>
+            ):(
+              <div style={{padding:'50px 30px',textAlign:'center',color:C.muted}}>
+                <div style={{fontSize:32,marginBottom:10}}>📭</div>
+                <div style={{fontWeight:700,fontSize:14,color:C.text}}>Geen spreekuur op {DAYS[selDay]}</div>
+                <div style={{fontSize:12.5,marginTop:4}}>Pas de weekverdeling aan in Spreekuurtijden (0% = geen spreekuur).</div>
+              </div>
+            )}
+          </div>
+
+          {/* NTP panel */}
+          <div data-slotkey="ntp" data-day="ntp"
+            style={{width:200,flexShrink:0,background:dragOver&&dragOver.slot==='ntp'?C.blueAccent:'#F0EDE8',
+              border:`1.5px dashed ${dragOver&&dragOver.slot==='ntp'?C.primary:C.border}`,borderRadius:12,
+              padding:12,minHeight:200,maxHeight:620,overflowY:'auto'}}>
+            <div style={{fontSize:11,fontWeight:700,color:C.muted,textTransform:'uppercase',
+              letterSpacing:'0.05em',marginBottom:10,display:'flex',alignItems:'center',gap:5}}>
+              ⏳ Nog te plannen {nNtp>0&&<span style={{background:C.danger,color:'#fff',borderRadius:10,padding:'1px 7px',fontSize:10}}>{nNtp}</span>}
+            </div>
+            {nNtp===0
+              ? <div style={{textAlign:'center',fontSize:11,color:C.muted,marginTop:30,lineHeight:1.6}}>✓<br/>Alle afspraken<br/>zijn ingepland</div>
+              : (raster.ntp||[]).map(a=>{
+                  const clr=getColor(a)
+                  return(
+                    <div key={a.id}
+                      onMouseDown={e=>startDrag(e,{mode:'move',appt:a,fromDay:a.day,fromSlot:'ntp'})}
+                      onTouchStart={e=>startDrag(e,{mode:'move',appt:a,fromDay:a.day,fromSlot:'ntp'})}
+                      style={{fontSize:11,padding:'5px 8px',borderRadius:5,marginBottom:4,cursor:'grab',userSelect:'none',
+                        background:clr.bg,color:clr.fg,border:`1px solid ${clr.brd}`,
+                        display:'flex',alignItems:'center',gap:4}}>
+                      {a.digitaal&&<span style={{fontSize:9}}>📱</span>}
+                      <span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{a.description} ({a.duur}m)</span>
                     </div>
                   )
                 })}
+          </div>
+        </div>
+
+        {/* Legend + stats footer */}
+        <div style={{display:'flex',gap:16,marginTop:14,flexWrap:'wrap',alignItems:'center'}}>
+          <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'center',flex:1}}>
+            <span style={{fontSize:10.5,fontWeight:700,color:C.muted,textTransform:'uppercase'}}>Legenda</span>
+            <div style={{display:'flex',alignItems:'center',gap:5,fontSize:11.5,color:C.muted}}>
+              <span style={{width:11,height:11,borderRadius:3,background:NEW_PALETTE[0].bg,border:`1px solid ${NEW_PALETTE[0].brd}`}}/>Nieuw
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:5,fontSize:11.5,color:C.muted}}>
+              <span style={{width:11,height:11,borderRadius:3,background:CTRL_PALETTE[0].bg,border:`1px solid ${CTRL_PALETTE[0].brd}`}}/>Controle
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:5,fontSize:11.5,color:C.muted}}>
+              <span style={{width:11,height:11,borderRadius:3,background:'repeating-linear-gradient(45deg,#E8F5E9,#E8F5E9 2px,#F1FBF2 2px,#F1FBF2 5px)',border:'1px dashed #81C784'}}/>Flex ({100-m2.benutting}%)
+            </div>
+          </div>
+          <div style={{display:'flex',gap:14,fontSize:12,fontWeight:600}}>
+            <span style={{color:C.primary}}>👥 {nNieuw} nieuw</span>
+            <span style={{color:C.green}}>📋 {totC} controle ({pctTel}% tel.)</span>
+            <span style={{color:nNtp>0?C.danger:C.green}}>⏳ {nNtp} te plannen</span>
+          </div>
+        </div>
+
+        {/* Floating drag ghost — moved via ref for smooth realtime tracking */}
+        {dragItem&&(dragItem.mode==='new'||(dragItem.mode==='move'&&dragItem.fromSlot==='ntp'))&&(()=>{
+          const clr=dragItem.mode==='new'?dragItem.palette.clr:getColor(dragItem.appt)
+          const label=dragItem.mode==='new'?dragItem.palette.label:(dragItem.appt.description||dragItem.appt.code)
+          const dur=dragItem.mode==='new'?dragItem.palette.duur:dragItem.appt.duur
+          return(
+            <div ref={ghostRef} style={{position:'fixed',zIndex:4000,pointerEvents:'none',
+              width:168,padding:'8px 11px',borderRadius:7,
+              background:clr.bg,color:clr.fg,border:`2px solid ${clr.brd}`,
+              boxShadow:'0 12px 30px rgba(0,0,0,0.28)',transform:'rotate(-1.5deg)',
+              fontSize:12,fontWeight:700,lineHeight:1.3}}>
+              <div style={{display:'flex',alignItems:'center',gap:5}}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={clr.fg} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{opacity:0.7}}><path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/></svg>
+                <span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{label}</span>
+              </div>
+              <div style={{fontSize:10.5,fontWeight:500,opacity:0.8,marginTop:2}}>{dur} min · sleep naar kamer</div>
+            </div>
+          )
+        })()}
+
+        {/* EXPORT dialog */}
+        {showExport&&(
+          <div style={{position:'fixed',inset:0,background:'rgba(15,30,45,0.55)',backdropFilter:'blur(6px)',
+            display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000}}>
+            <Card style={{width:520,maxWidth:'94vw',padding:28}}>
+              <div style={{fontWeight:700,fontSize:16,color:C.primary,marginBottom:4}}>📤 Excel export</div>
+              <div style={{fontSize:12.5,color:C.muted,marginBottom:18,lineHeight:1.65}}>
+                Genereert een Excel-bestand met de volledige weekplanning, alle afspraken en de configuratie.
+              </div>
+              {!exportLink?(
+                <>
+                  <Lbl>Bestandsnaam</Lbl>
+                  <div style={{display:'flex',gap:8,marginBottom:20}}>
+                    <input value={expName} onChange={e=>setExpName(e.target.value)}
+                      style={{flex:1,border:`1.5px solid ${C.border}`,borderRadius:7,padding:'8px 12px',fontSize:13.5,fontFamily:'inherit'}}/>
+                    <span style={{padding:'8px 12px',background:C.rowAlt,border:`1px solid ${C.border}`,borderRadius:7,fontSize:12.5,color:C.muted}}>.xlsx</span>
+                  </div>
+                  <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
+                    <Btn variant="secondary" onClick={()=>{setShowExport(false);setExportLink(null)}} disabled={exporting}>Annuleren</Btn>
+                    <Btn onClick={handleExport} disabled={exporting} style={{background:C.green,border:'none',minWidth:190}}>
+                      {exporting?'⏳ Genereren...':'⚙️ Genereer bestand'}
+                    </Btn>
+                  </div>
+                </>
+              ):(
+                <>
+                  <div style={{padding:'16px',background:'#F0FDF6',border:`1.5px solid ${C.green}`,borderRadius:10,marginBottom:20}}>
+                    <div style={{fontWeight:700,color:C.green,fontSize:13,marginBottom:4}}>✅ Bestand klaar!</div>
+                    <div style={{fontSize:12.5,color:C.muted}}>Klik hieronder om te downloaden.</div>
+                  </div>
+                  <a href={exportLink.href} download={exportLink.filename}
+                    style={{display:'block',textAlign:'center',padding:'14px 20px',
+                      background:C.green,color:'#fff',borderRadius:10,
+                      fontWeight:700,fontSize:15,textDecoration:'none',marginBottom:14}}>
+                    ⬇ Download {exportLink.filename}
+                  </a>
+                  <div style={{display:'flex',justifyContent:'flex-end'}}>
+                    <Btn variant="secondary" onClick={()=>{setShowExport(false);setExportLink(null)}}>Sluiten</Btn>
+                  </div>
+                </>
+              )}
+            </Card>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+
+  const mods=[renderMod0,renderMod1,renderMod2,renderMod3]
+
+  // ─── LAYOUT — POLIRASTER STUDIO (live workspace: rail + panel + canvas) ────
+  const clockStr=now.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'})
+  const RAIL=[
+    {id:0,label:'Gegevens',icon:<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>},
+    {id:1,label:'Tijden',icon:<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>},
+    {id:2,label:'Regels',icon:<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2" fill="currentColor"/><circle cx="15" cy="12" r="2" fill="currentColor"/><circle cx="7" cy="18" r="2" fill="currentColor"/></svg>},
+    {id:3,label:'Raster',icon:<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M9 9v12M15 9v12"/></svg>},
+  ]
+  const panelOpen=active<3
+  return(
+    <div style={{display:'flex',height:'100vh',overflow:'hidden',
+      fontFamily:"'Inter',system-ui,sans-serif",background:'#EEF1F5'}}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Newsreader:ital,opsz,wght@0,16..72,400;0,16..72,500;1,16..72,400;1,16..72,500&display=swap');
+        @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+        *{box-sizing:border-box}
+        input:focus{outline:none!important;border-color:${C.primary}!important;
+          box-shadow:0 0 0 3px rgba(28,110,164,0.13)!important}
+        ::-webkit-scrollbar{width:9px;height:9px}
+        ::-webkit-scrollbar-track{background:transparent}
+        ::-webkit-scrollbar-thumb{background:#C8D2DC;border-radius:6px}
+        ::-webkit-scrollbar-thumb:hover{background:#AEBCC9}
+        button:focus{outline:none}
+        input[type=number]::-webkit-inner-spin-button{opacity:0.5}
+      `}</style>
+
+      {/* ══ ICON RAIL ══ */}
+      <nav style={{width:68,flexShrink:0,background:'linear-gradient(180deg,#12405E,#155888)',
+        display:'flex',flexDirection:'column',alignItems:'center',padding:'14px 0 12px',gap:4,zIndex:50}}>
+        <div style={{width:38,height:38,borderRadius:11,background:'rgba(255,255,255,0.14)',
+          display:'flex',alignItems:'center',justifyContent:'center',marginBottom:16}}>
+          <span style={{color:'#fff',fontFamily:"'Newsreader',Georgia,serif",fontSize:20}}>S</span>
+        </div>
+        {RAIL.map(r=>{
+          const on=active===r.id
+          return(
+            <button key={r.id} onClick={()=>nav(r.id)} title={r.label} style={{
+              width:52,padding:'8px 0 6px',borderRadius:12,border:'none',cursor:'pointer',
+              display:'flex',flexDirection:'column',alignItems:'center',gap:4,
+              background:on?'rgba(255,255,255,0.16)':'transparent',
+              color:on?'#fff':'rgba(255,255,255,0.55)',transition:'all 0.14s'}}
+              onMouseEnter={e=>{if(!on)e.currentTarget.style.color='rgba(255,255,255,0.85)'}}
+              onMouseLeave={e=>{if(!on)e.currentTarget.style.color='rgba(255,255,255,0.55)'}}>
+              {r.icon}
+              <span style={{fontSize:8.5,fontWeight:600,letterSpacing:'0.04em'}}>{r.label}</span>
+            </button>
+          )
+        })}
+        <div style={{flex:1}}/>
+        <button onClick={()=>setShowExport(true)} title="Exporteren" style={{width:44,height:40,borderRadius:11,border:'none',
+          cursor:'pointer',background:'rgba(255,255,255,0.10)',color:'#B9E4C8',display:'flex',alignItems:'center',justifyContent:'center',marginBottom:6}}>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+        </button>
+        <button onClick={()=>setShowFullReset(true)} title="Opnieuw beginnen" style={{width:44,height:36,borderRadius:11,border:'none',
+          cursor:'pointer',background:'transparent',color:'rgba(255,255,255,0.45)',fontSize:15}}
+          onMouseEnter={e=>e.currentTarget.style.color='#F0A090'}
+          onMouseLeave={e=>e.currentTarget.style.color='rgba(255,255,255,0.45)'}>↺</button>
+      </nav>
+
+      {/* ══ SETTINGS PANEL (slides away on Raster) ══ */}
+      <aside style={{width:panelOpen?560:0,flexShrink:0,transition:'width 0.25s ease',overflow:'hidden',
+        background:C.white,borderRight:panelOpen?`1px solid ${C.border}`:'none',display:'flex',flexDirection:'column'}}>
+        <div style={{width:560,display:'flex',flexDirection:'column',height:'100%'}}>
+          <div style={{padding:'16px 22px 12px',borderBottom:`1px solid ${C.border}`,flexShrink:0,
+            display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+            <div>
+              <div style={{fontSize:9,fontWeight:700,color:C.primary,letterSpacing:'0.2em',marginBottom:3}}>INSTELLINGEN</div>
+              <div style={{fontFamily:"'Newsreader',Georgia,serif",fontSize:21,fontWeight:500,color:C.text}}>
+                {active===0?'Gegevens invoer':active===1?'Spreekuurtijden':'Planregels'}
               </div>
             </div>
-          ))}
-        </div>
-
-        {raster.rest.length > 0 && (
-          <div className="pm-panel" style={{ marginTop: 15 }}>
-            <div className="ph"><b>Restlijst — niet geplaatst</b><span className="sub">{selSessie ? 'klik ↩ om in de open sessie te plaatsen' : 'open een sessie om terug te plaatsen'}</span></div>
-            {raster.rest.map(r => <div key={r.id} className="rest-item"><span className={'chip ' + r.cat}>{r.code}</span><span>{r.naam} · {r.duur} min {modIco(r.mod)}</span><span className="rd">{r.reden}</span>{selSessie && <button className="btn mini" onClick={() => uitRest(selSessie, r.id)}>↩ plaats</button>}</div>)}
+            <button onClick={()=>nav(3)} title="Paneel sluiten — volledig raster"
+              style={{width:30,height:30,borderRadius:9,border:`1px solid ${C.border}`,background:C.white,
+                cursor:'pointer',color:C.muted,fontSize:13,display:'flex',alignItems:'center',justifyContent:'center'}}>⟨</button>
           </div>
-        )}
-
-        {scenarios.length > 0 && (
-          <div className="pm-panel">
-            <div className="ph"><b>Scenario’s</b><button className="btn mini" onClick={() => setVergelijk(v => !v)}>{vergelijk ? 'Verberg vergelijking' : 'Vergelijk'}</button></div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: vergelijk ? 14 : 0 }}>{scenarios.map(sc => <span key={sc.id} className="sc-chip">{sc.naam}<button className="btn mini" onClick={() => laadScenario(sc)}>laad</button><button className="btn mini danger" onClick={() => setScenarios(p => p.filter(x => x.id !== sc.id))}>✕</button></span>)}</div>
-            {vergelijk && (
-              <table className="sc-tbl">
-                <thead><tr><th>Indicator</th><th>Huidig</th>{scenarios.map(sc => <th key={sc.id}>{sc.naam}</th>)}</tr></thead>
-                <tbody>{[['Geplaatst', k => k.geplaatst + '%'], ['Benutting', k => k.benutting + '%'], ['Rust-aandeel', k => k.rustAandeel + '%'], ['NP-spreiding', k => k.npSpreiding + '%'], ['Restlijst', k => k.nRest], ['Typewissels', k => k.wissels]].map(([lbl, f]) => <tr key={lbl}><td>{lbl}</td><td className="num">{kpi ? f(kpi) : '—'}</td>{scenarios.map(sc => <td key={sc.id} className="num">{f(sc.kpi)}</td>)}</tr>)}</tbody>
-              </table>
-            )}
+          <div style={{flex:1,overflowY:'auto',padding:'16px 22px 30px',zoom:0.92}}>
+            {active<3&&mods[active]?.()}
           </div>
-        )}
-        {selSessie && renderDrawer(raster.sessies.find(s => s.id === selSessie))}
-      </div>
-    )
-  }
-
-  function renderDrawer(s) {
-    if (!s) return null
-    const b = model.team.find(x => x.id === s.bhId) || { naam: '?' }
-    const vrij = s.tot - (s.slots.length ? s.slots[s.slots.length - 1].tot : s.van)
-    return (
-      <div className="drawer">
-        <div className="dh">
-          <div><b>{b.naam}</b><div style={{ fontSize: 11.5, color: 'var(--mut)', fontFamily: 'var(--mono)' }}>{DAGEN[s.dag]} · {mm(s.van)}–{mm(s.tot)} · {DAGDELEN[DD_IX[s.dd]].naam}</div></div>
-          <button className="btn mini x" onClick={() => setSelSessie(null)}>Sluit ✕</button>
         </div>
-        <div className="db">
-          {s.slots.map(sl => {
-            const cls = sl.soort === 'buffer' ? 'buffer' : sl.soort === 'spoed' ? 'spoed' : ''
-            const kleur = sl.soort === 'afspraak' ? (CAT_KLEUR[sl.cat] || CAT_KLEUR.overig).fg : undefined
-            return (
-              <div key={sl.id} className={'tl-slot ' + cls} style={kleur ? { borderLeftColor: kleur } : {}}>
-                <span className="t">{mm(sl.van)}–{mm(sl.tot)}</span>
-                <span className="n">{sl.soort === 'afspraak' ? <>{sl.code} <span>· {sl.naam} {modIco(sl.mod)}</span></> : sl.naam}{sl.overboek && <> <span className="ob-badge">2×</span></>}</span>
-                <span style={{ fontFamily: 'var(--mono)', fontSize: 10.5, color: 'var(--mut)' }}>{sl.duur}m</span>
-                <span className="acts">
-                  <button title="Eerder" onClick={() => slotSchuif(s.id, sl.id, -1)}>↑</button>
-                  <button title="Later" onClick={() => slotSchuif(s.id, sl.id, 1)}>↓</button>
-                  <button title="Korter" onClick={() => slotDuur(s.id, sl.id, -5)}>−</button>
-                  <button title="Langer" onClick={() => slotDuur(s.id, sl.id, 5)}>+</button>
-                  <button title="Verwijder" onClick={() => slotWeg(s.id, sl.id)}>✕</button>
-                </span>
-              </div>
-            )
-          })}
-          {vrij >= 5 && <div className="tl-slot vrij"><span className="t">{mm(s.tot - vrij)}–{mm(s.tot)}</span><span className="n" style={{ fontWeight: 400 }}>Vrije ruimte · {vrij} min</span></div>}
-          <div style={{ marginTop: 12 }}><button className="btn mini" onClick={() => bufferErbij(s.id)}>+ Buffer</button></div>
-        </div>
-      </div>
-    )
-  }
-
-  /* ════════ LAYOUT ════════ */
-  const dekKleur = fit && fit.dekking >= 100 ? 'var(--ok)' : fit && fit.dekking >= 85 ? 'var(--warn)' : 'var(--bad)'
-  return (
-    <div className="pm-root">
-      <style>{CSS}</style>
-      <aside className="pm-rail">
-        <div className="pm-logo"><div className="t">PoliModel</div><div className="s">SNELSTART → RASTER</div></div>
-        <nav className="pm-nav">{FASEN.map(f => <div key={f.id} className={'pm-nav-item' + (fase === f.id ? ' act' : '')} onClick={() => setFase(f.id)}><span className="nr">{f.nr}</span><span className="lbl">{f.naam}</span><span className={'st st-' + faseStatus(f.id)} /></div>)}</nav>
-        {fit && (
-          <div className="pm-cockpit">
-            <div className="h">MODEL-COCKPIT</div>
-            <div className="pm-cq"><span className="k">Vraag + marges</span><span className="v">{uur(fit.behoefte)} u</span></div>
-            <div className="pm-cq"><span className="k">Aanbod</span><span className="v">{uur(fit.aanbodMin)} u</span></div>
-            <div className="pm-cq"><span className="k">Dekking</span><span className="v" style={{ color: dekKleur }}>{fit.dekking > 400 ? '∞' : fit.dekking + '%'}</span></div>
-            <div className="pm-cbar"><div style={{ width: klem(fit.dekking, 0, 100) + '%', background: dekKleur }} /></div>
-            {raster && kpi && <><div className="pm-cq" style={{ marginTop: 10 }}><span className="k">Geplaatst</span><span className="v">{kpi.geplaatst}%</span></div><div className="pm-cq"><span className="k">Restlijst</span><span className="v">{kpi.nRest}</span></div></>}
-          </div>
-        )}
       </aside>
-      <div className="pm-main">
-        <header className="pm-top">
-          <input className="poli-naam" value={model.poli.naam} onChange={e => upModel(m => { m.poli.naam = e.target.value })} />
-          <span className="meta">{model.bron ? model.bron.label : 'handmatig model'}</span>
-          <span style={{ flex: 1 }} />
-          {melding && <span className="badge ok" style={{ padding: '6px 12px' }}>{melding}</span>}
-          <button className="btn mini" onClick={() => fileJson.current && fileJson.current.click()}>Laad</button>
-          <button className="btn mini" onClick={bewaarJson}>Bewaar</button>
-          <button className="btn mini danger" onClick={() => setModal('reset')}>Nieuw</button>
-        </header>
-        <main className="pm-body">
-          {fase === 'raster' && renderRaster()}
-          {fase === 'vraag' && renderVraag()}
-          {fase === 'capaciteit' && renderCapaciteit()}
-          {fase === 'toets' && renderToets()}
-          {fase === 'strategie' && renderStrategie()}
-        </main>
-      </div>
-      <input ref={fileXlsx} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={leesXlsx} />
-      <input ref={fileJson} type="file" accept=".json,.xlsx" style={{ display: 'none' }} onChange={e => { const f = e.target.files[0]; if (f && f.name.endsWith('.json')) leesJson(e); else leesXlsx(e) }} />
-      {modal === 'csv' && renderCsvModal()}
-      {modal === 'reset' && (
-        <div className="pm-modal-achter" onClick={() => setModal(null)}>
-          <div className="pm-modal" onClick={e => e.stopPropagation()}>
-            <h3>Nieuw model beginnen?</h3>
-            <p className="ml">Het huidige model, raster en de scenario’s worden gewist. Bewaar eerst als je dit wilt houden.</p>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button className="btn" onClick={() => setModal(null)}>Annuleren</button>
-              <button className="btn" onClick={() => { bewaarJson(); setModal(null) }}>Eerst bewaren</button>
-              <button className="btn solid" onClick={() => { setModel(null); setRaster(null); setScenarios([]); setModal(null) }}>Wis en begin opnieuw</button>
+
+      {/* ══ LIVE RASTER CANVAS ══ */}
+      <section style={{flex:1,minWidth:0,overflowY:'auto',position:'relative'}}>
+        {/* canvas top strip */}
+        <div style={{position:'sticky',top:0,zIndex:60,background:'rgba(238,241,245,0.92)',backdropFilter:'blur(10px)',
+          borderBottom:`1px solid ${C.border}`,padding:'9px 22px',display:'flex',alignItems:'center',gap:14}}>
+          <div style={{fontSize:13,fontWeight:700,color:C.text,letterSpacing:'-0.01em'}}>
+            PoliRaster <span style={{fontFamily:"'Newsreader',Georgia,serif",fontStyle:'italic',color:C.primary}}>Studio</span>
+            <span style={{fontSize:8.5,fontWeight:700,color:C.primary,verticalAlign:'super',marginLeft:2}}>2.1</span>
+          </div>
+          <span style={{width:1,height:20,background:C.border}}/>
+          {/* Vrij invulbare poli — typ de naam of kies een specialisme */}
+          <input value={poli.naam} onChange={e=>setPoli(p=>({...p,naam:e.target.value}))}
+            placeholder="Naam van de poli…" title="Voor welke poli maak je dit raster?"
+            style={{fontSize:13,fontWeight:700,color:C.text,border:`1px solid transparent`,background:'transparent',
+              borderRadius:7,padding:'5px 9px',minWidth:130,maxWidth:240,fontFamily:'inherit',transition:'all 0.12s'}}
+            onFocus={e=>{e.target.style.background=C.white;e.target.style.borderColor=C.border}}
+            onBlur={e=>{e.target.style.background='transparent';e.target.style.borderColor='transparent'}}/>
+          <select value={poli.specialisme} onChange={e=>{
+              const v=e.target.value
+              setPoli(p=>({...p,specialisme:v,naam:p.naam||(v?'Poli '+v:'')}))
+            }}
+            title="Kies een specialisme (optioneel)"
+            style={{fontSize:11.5,color:C.muted,border:`1px solid ${C.border}`,background:C.white,
+              borderRadius:7,padding:'5px 8px',cursor:'pointer',fontFamily:'inherit'}}>
+            <option value="">Specialisme…</option>
+            {['Dermatologie','Cardiologie','Orthopedie','Interne','Neurologie','KNO','Oogheelkunde','Urologie','Gynaecologie','Chirurgie','Longziekten','Reumatologie'].map(s=><option key={s} value={s}>{s}</option>)}
+          </select>
+          <span style={{fontSize:10.5,color:C.muted}}>· live — wijzigingen links worden direct doorgerekend</span>
+          <div style={{flex:1}}/>
+          {importBadge&&<span style={{fontSize:10,fontWeight:600,color:C.green,background:'#EAF4EE',
+            padding:'3px 9px',borderRadius:10,border:'1px solid #CCE5D6'}}>{importBadge.filename}</span>}
+          <div style={{display:'flex',alignItems:'center',gap:6,padding:'3px 10px',borderRadius:12,border:`1px solid ${C.border}`,background:C.white}}>
+            <span style={{width:6,height:6,borderRadius:'50%',background:C.green}}/>
+            <span style={{fontSize:8.5,fontWeight:700,color:C.text,letterSpacing:'0.1em'}}>LIVE</span>
+          </div>
+          <span style={{fontSize:14,fontWeight:700,color:C.text,fontVariantNumeric:'tabular-nums'}}>{clockStr}</span>
+        </div>
+        <div style={{padding:'18px 22px 50px'}}>
+          {raster
+            ? renderMod3()
+            : (
+              <div style={{maxWidth:520,margin:'80px auto',textAlign:'center'}}>
+                <div style={{fontFamily:"'Newsreader',Georgia,serif",fontSize:30,color:C.text,marginBottom:10}}>
+                  Welkom in <span style={{fontStyle:'italic',color:C.primary}}>PoliRaster Studio</span>
+                </div>
+                <p style={{fontSize:13,color:C.muted,lineHeight:1.7,marginBottom:22}}>
+                  Stel links de gegevens, tijden en planregels in — het raster verschijnt hier en past zich live aan.
+                </p>
+                <Btn onClick={doGenerate}>Genereer eerste raster</Btn>
+              </div>
+            )}
+        </div>
+      </section>
+
+      {/* Full reset dialog */}
+      {showFullReset&&(
+        <div style={{position:'fixed',inset:0,background:'rgba(20,30,40,0.5)',backdropFilter:'blur(6px)',
+          display:'flex',alignItems:'center',justifyContent:'center',zIndex:2000}}>
+          <div style={{background:C.white,borderRadius:12,padding:30,width:420,boxShadow:C.shadowLg,border:`1px solid ${C.border}`}}>
+            <div style={{fontSize:17,fontWeight:700,color:C.text,marginBottom:8,letterSpacing:'-0.01em'}}>Alles wissen?</div>
+            <p style={{fontSize:13,color:C.muted,lineHeight:1.7,marginBottom:24}}>
+              Alle ingevoerde gegevens, codes, instellingen en het gegenereerde raster worden gewist.
+              U begint opnieuw bij stap 1. <b style={{color:C.text}}>Dit kan niet ongedaan worden gemaakt.</b>
+            </p>
+            <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
+              <Btn variant="secondary" onClick={()=>setShowFullReset(false)}>Annuleren</Btn>
+              <Btn onClick={handleFullReset} style={{background:C.danger,border:`1px solid ${C.danger}`}}>Ja, alles wissen</Btn>
             </div>
           </div>
         </div>
