@@ -1,0 +1,23 @@
+{
+  "name": "maxi",
+  "version": "1.0.0",
+  "description": "Volledige herbouw van de raster-tool. Dit is geen invulwizard meer, maar een **model**: je zet de zorgvraag van een poli tegenover de capaciteit, toetst kritisch of het past, kiest een planstrategie en genereert daarna pas het weekraster — inclusief scenario's.",
+  "main": "index.js",
+  "scripts": {
+    "build": "node build.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "http://local_proxy@127.0.0.1:41729/git/maximvn/maxi"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "esbuild": "^0.28.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "xlsx": "^0.18.5"
+  }
+}

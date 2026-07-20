@@ -35,9 +35,27 @@ elke fase heeft een statusindicator.
 
 ## Gebruik
 
+Als React-component in een bestaand project:
+
 ```jsx
 import PoliModel from './raster_model_2.jsx'
 // <PoliModel />
 ```
 
 Vereist React 18+ en het `xlsx`-pakket.
+
+### Losse HTML-versie (geen build-stap nodig)
+
+`dist/polimodel.html` is een volledig zelfstandig bestand — React, ReactDOM en
+`xlsx` zijn erin gebundeld — en kan direct in een browser geopend worden, zonder
+server of npm-install.
+
+Opnieuw bouwen na een wijziging aan `raster_model_2.jsx`:
+
+```
+npm install
+npm run build
+```
+
+Dit schrijft `dist/polimodel.html` opnieuw weg via `build.js` (esbuild-bundeling
+van `entry.jsx`, geïnjecteerd in de `html-shell.html`-template).
