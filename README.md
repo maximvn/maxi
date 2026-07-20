@@ -1,8 +1,18 @@
-# PoliModel 2.0 — Capaciteitsmodel & Rasterbouwer
+# PoliModel 2.1 — Snelstart & Weekraster
 
-Volledige herbouw van de raster-tool. Dit is geen invulwizard meer, maar een **model**:
-je zet de zorgvraag van een poli tegenover de capaciteit, toetst kritisch of het past,
-kiest een planstrategie en genereert daarna pas het weekraster — inclusief scenario's.
+Herbouw van de raster-tool met de nadruk op **gebruiksgemak** en **overzicht**:
+
+- **Snelstart** — geen Excel of handmatig tikken nodig. Sleep een handvol schuiven
+  (nieuwe patiënten/week, controles, % telefonisch, consultduur, aantal behandelaars,
+  werkdagen, benutting) en er rolt direct een compleet, kritisch getoetst weekraster uit.
+  Een live-preview laat vooraf zien wat je krijgt. Verfijnen kan daarna, maar hoeft niet.
+- **Weekraster als tijdkalender** — alle vijf de dagen naast elkaar, tijd verticaal,
+  elke afspraak als gekleurd blok (nieuw / controle / verrichting / buffer / spoed).
+  De hele week in één oogopslag; klik een sessie om het slotpatroon bij te stellen.
+
+Onder de motorkap is het nog steeds een **model**: je zet de zorgvraag van een poli
+tegenover de capaciteit, toetst kritisch of het past, kiest een planstrategie en
+genereert het weekraster — inclusief scenario's.
 
 Bestand: `raster_model_2.jsx` (zelfstandige React-component, alleen `xlsx` als dependency).
 
