@@ -201,6 +201,8 @@ export default function RasterTool(){
   const [m1Section,setM1Section]=useState(1)
   const [cfg,setCfg]=useState({newPat:10,ctrlPat:20,newCodes:2,ctrlCodes:3})
   const [poli,setPoli]=useState({naam:'',specialisme:''})   // vrij invulbare poli-identiteit
+  // Capaciteitsbasis: 'auto' = groeit vrij; 'vast' = begrensd tot gekozen kamers/specialisten
+  const [capacity,setCapacity]=useState({mode:'auto',kamers:3,specialisten:2})
   const [newRows,setNewRows]=useState([])
   const [ctrlRows,setCtrlRows]=useState([])
   const [importBadge,setImportBadge]=useState(null)
@@ -601,21 +603,26 @@ export default function RasterTool(){
     //    (minder wisselingen), hoge benutting, kamers groeien alleen indien nodig.
     // 3) Herstel binnen elke kamer de regel-volgorde (pool-index), zodat
     //    kort/spoed/zeker-eerst de starttijden binnen de kamer blijven bepalen.
-    const fillRooms=(ordered, usable)=>{
+    // cap = maximaal aantal parallelle kamers/spreekuren. Wat niet past → overflow
+    // (belandt op "nog te plannen"). cap=Infinity ⇒ groeit vrij (automatische modus).
+    const fillRooms=(ordered, usable, cap=Infinity)=>{
       const tagged=ordered.map((a,i)=>({...a,_pi:i}))
       // code groups in first-appearance order
       const gmap=new Map()
       tagged.forEach(a=>{ if(!gmap.has(a.code)) gmap.set(a.code,[]); gmap.get(a.code).push(a) })
       const groups=[...gmap.values()].map(items=>({items,dur:items.reduce((s,a)=>s+a.duur,0)}))
       groups.sort((x,y)=>y.dur-x.dur)   // decreasing: big clusters first pack tightest
-      const rooms=[], loads=[]
+      const rooms=[], loads=[], overflow=[]
       const place=a=>{ // best-fit single item (used when a group must split)
         let best=-1,bestRem=Infinity
         for(let r=0;r<rooms.length;r++){
           const rem=usable-loads[r]
           if(a.duur<=rem&&rem<bestRem){bestRem=rem;best=r}
         }
-        if(best<0){rooms.push([]);loads.push(0);best=rooms.length-1}
+        if(best<0){
+          if(rooms.length<cap){rooms.push([]);loads.push(0);best=rooms.length-1}
+          else { overflow.push(a); return }   // geen kamer meer vrij → overloop
+        }
         rooms[best].push(a);loads[best]+=a.duur
       }
       groups.forEach(g=>{
@@ -626,12 +633,12 @@ export default function RasterTool(){
           if(g.dur<=rem&&rem<bestRem){bestRem=rem;best=r}
         }
         if(best>=0){ rooms[best].push(...g.items); loads[best]+=g.dur }
-        else if(g.dur<=usable){ rooms.push([...g.items]); loads.push(g.dur) }
-        else g.items.forEach(place)   // group larger than a room: split item-wise
+        else if(rooms.length<cap && g.dur<=usable){ rooms.push([...g.items]); loads.push(g.dur) }
+        else g.items.forEach(place)   // groep groter dan kamer, of kamers vol: item-gewijs
       })
       // restore rule ordering within each room → correct start times
       rooms.forEach(r=>r.sort((x,y)=>x._pi-y._pi))
-      return rooms
+      return {rooms, overflow}
     }
 
     // Fair integer split of `count` over buckets, proportional to `weights` (largest remainder).
@@ -705,8 +712,16 @@ export default function RasterTool(){
     const ddIndex={O:0,M:1,A:2}
     const ddPrefix={O:'o',M:'m',A:'a'}
 
-    // Bin-pack each (day, dagdeel) into rooms; track the max rooms needed anywhere
-    let maxRooms=1
+    // ── CAPACITEIT — gekozen aantal kamers/specialisten begrenst het aantal
+    //    parallelle spreekuren per dagdeel. De bindende beperking is het kleinste
+    //    van beide (een specialist heeft een kamer nodig, en omgekeerd).
+    const capMode=capacity.mode||'auto'
+    const maxParallel = capMode==='vast'
+      ? Math.max(1, Math.min(capacity.kamers||1, capacity.specialisten||1))
+      : Infinity
+    let maxRooms=1, neededRooms=1
+    const overflowInst=[]
+    const perDagdeelNeed=[] // {day,dd,need,placed}
     const built={} // built[day][dd] = rooms[]
     ;[0,1,2,3,4].forEach(di=>{
       if((m2.days[WEEKDAY_KEYS[di]]||0)===0){ built[di]=null; return }
@@ -714,15 +729,24 @@ export default function RasterTool(){
       built[di]={}
       DD.forEach(dd=>{
         const pool=orderPool(g[dd]||[])
-        const rooms=fillRooms(pool, usableFor(dd))
+        const need=fillRooms(pool, usableFor(dd), Infinity).rooms.length  // onbeperkt = werkelijk nodig
+        neededRooms=Math.max(neededRooms, need)
+        const {rooms,overflow}=fillRooms(pool, usableFor(dd), maxParallel) // begrensd = wat past
         built[di][dd]=rooms
+        overflow.forEach(a=>overflowInst.push({...a, day:di, dd, edited:false}))
         maxRooms=Math.max(maxRooms, rooms.length)
+        perDagdeelNeed.push({day:di,dd,need,placed:rooms.length,over:overflow.length})
       })
     })
+    // Toon minstens het gekozen aantal kamers (lege kolommen kun je op inslepen)
+    if(capMode==='vast') maxRooms=Math.max(maxRooms, Math.min(maxParallel, neededRooms))
 
     // Build slot structure with explicit start times + flex blocks
     const res={ numRooms:maxRooms, mUsable, aUsable, avUsable, ochDur, midDur, avDur, avondOn,
-      ochStart, ochEnd, midStart, midEnd, avondStart, avondEnd, days:{}, ntp:[] }
+      ochStart, ochEnd, midStart, midEnd, avondStart, avondEnd, days:{}, ntp:[...overflowInst],
+      capacity:{ mode:capMode, kamers:capacity.kamers, specialisten:capacity.specialisten,
+        maxParallel: maxParallel===Infinity?null:maxParallel, needed:neededRooms, used:maxRooms,
+        overflow:overflowInst.length, fits: maxParallel===Infinity ? true : neededRooms<=maxParallel } }
     const snap5=t=>Math.round(t/5)*5
 
     const ddName=dd=>dd===0?'ochtend':dd===1?'middag':'avond'
@@ -837,7 +861,7 @@ export default function RasterTool(){
     res.kpi=kpi
 
     setRaster(res)
-  },[cfg,newRows,ctrlRows,m2,rules])
+  },[cfg,newRows,ctrlRows,m2,rules,capacity])
 
   // ENGINE 2.0 — live sync: zodra er een raster is, wordt elke wijziging in
   // gegevens/tijden/regels direct doorgerekend (studio: canvas is altijd zichtbaar).
@@ -857,6 +881,7 @@ export default function RasterTool(){
     setM1Mode(null); setM1Section(1)
     setCfg({newPat:10,ctrlPat:20,newCodes:2,ctrlCodes:3})
     setPoli({naam:'',specialisme:''})
+    setCapacity({mode:'auto',kamers:3,specialisten:2})
     setNewRows([]); setCtrlRows([]); setImportBadge(null)
     setM2({ochStart:'08:30',ochEnd:'12:00',midStart:'13:00',midEnd:'16:30',
       avondOn:false,avondStart:'17:00',avondEnd:'20:00',verAvond:0,
@@ -2045,16 +2070,81 @@ export default function RasterTool(){
               <span style={{fontWeight:700,fontSize:12,color:C.primary,minWidth:30,textAlign:'center'}}>{Math.round(calZoom/3*100)}%</span>
               <button onClick={()=>setCalZoom(z=>Math.min(7,+(z+0.5).toFixed(1)))} style={{width:22,height:22,borderRadius:5,border:`1px solid ${C.border}`,background:C.white,cursor:'pointer',fontWeight:700,color:C.primary}}>+</button>
             </div>
-            <div style={{display:'flex',alignItems:'center',gap:6,padding:'5px 10px',background:C.white,border:`1px solid ${C.border}`,borderRadius:8}}>
-              <span style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.05em'}}>Kamers</span>
-              <button onClick={removeRoom} style={{width:22,height:22,borderRadius:5,border:`1px solid ${C.border}`,background:C.white,cursor:'pointer',fontWeight:700,color:C.primary}}>−</button>
-              <span style={{fontWeight:700,fontSize:13,color:C.primary,minWidth:16,textAlign:'center'}}>{numRooms}</span>
-              <button onClick={addRoom} style={{width:22,height:22,borderRadius:5,border:`1px solid ${C.border}`,background:C.white,cursor:'pointer',fontWeight:700,color:C.primary}}>+</button>
-            </div>
             <Btn variant="secondary" small onClick={doGenerate}>↺ Genereren</Btn>
             <Btn small onClick={()=>setShowExport(true)} style={{background:C.green,border:'none'}}>⬇ Export</Btn>
           </div>
         </div>
+
+        {/* ── CAPACITEITSPLANNING — kies kamers/specialisten + past-advies ── */}
+        {raster.capacity&&(()=>{
+          const cap=raster.capacity
+          const besch=Math.min(capacity.kamers,capacity.specialisten)
+          const nodig=cap.needed
+          const past=nodig<=besch
+          const knel=capacity.kamers<capacity.specialisten?'kamers':capacity.specialisten<capacity.kamers?'specialisten':'kamers én specialisten'
+          const vast=capacity.mode==='vast'
+          const status = vast
+            ? (cap.fits
+                ? {t:'ok',ico:'✓',kop:`Past — ${nodig} parallel ${nodig===1?'spreekuur':'spreekuren'} nodig, ${besch} beschikbaar`,
+                   sub:`Er blijft ${Math.max(0,besch-nodig)} ${besch-nodig===1?'kamer/specialist':'kamers/specialisten'} over.`}
+                : {t:'bad',ico:'✗',kop:`Past niet — ${nodig} nodig, ${besch} beschikbaar (${knel} beperkend)`,
+                   sub:`${cap.overflow} afspra${cap.overflow===1?'ak staat':'ken staan'} op "nog te plannen". Verhoog ${knel}, verleng spreekuren of verlaag de vraag.`})
+            : (nodig<=besch
+                ? {t:'ok',ico:'✓',kop:`Past binnen je capaciteit — ${nodig} van ${besch} beschikbaar benut`,
+                   sub:'Automatische modus: het rooster groeit precies tot wat nodig is.'}
+                : {t:'warn',ico:'△',kop:`Rooster gebruikt ${nodig} parallelle spreekuren — meer dan de ${besch} die je opgaf`,
+                   sub:'Zet "Vast aantal" aan om te begrenzen (overschot gaat dan naar "nog te plannen"), of verhoog kamers/specialisten.'})
+          const stCol=status.t==='ok'?C.green:status.t==='bad'?C.danger:'#B8860B'
+          const stBg=status.t==='ok'?'#EDF7F0':status.t==='bad'?'#FCEEEB':'#FBF3E2'
+          const Stepper=({icon,label,val,onCh,min=1,max=20})=>(
+            <div style={{display:'flex',alignItems:'center',gap:9,padding:'8px 12px',background:C.white,
+              border:`1px solid ${C.border}`,borderRadius:10}}>
+              <span style={{fontSize:15}}>{icon}</span>
+              <div>
+                <div style={{fontSize:9.5,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.05em'}}>{label}</div>
+                <div style={{display:'flex',alignItems:'center',gap:8,marginTop:3}}>
+                  <button onClick={()=>onCh(Math.max(min,val-1))} style={{width:24,height:24,borderRadius:6,border:`1px solid ${C.border}`,background:C.surface2,cursor:'pointer',fontWeight:700,fontSize:15,color:C.primary}}>−</button>
+                  <span style={{fontWeight:700,fontSize:18,color:C.text,minWidth:20,textAlign:'center',fontVariantNumeric:'tabular-nums'}}>{val}</span>
+                  <button onClick={()=>onCh(Math.min(max,val+1))} style={{width:24,height:24,borderRadius:6,border:`1px solid ${C.border}`,background:C.surface2,cursor:'pointer',fontWeight:700,fontSize:15,color:C.primary}}>+</button>
+                </div>
+              </div>
+            </div>
+          )
+          return(
+            <div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:12,padding:'14px 16px',marginBottom:12,
+              display:'flex',alignItems:'center',gap:16,flexWrap:'wrap'}}>
+              <div style={{minWidth:150}}>
+                <div style={{fontSize:9.5,fontWeight:700,color:C.primary,letterSpacing:'0.12em',textTransform:'uppercase',marginBottom:5}}>Capaciteitsplanning</div>
+                <div style={{display:'flex',background:C.surface2,border:`1px solid ${C.border}`,borderRadius:8,padding:2}}>
+                  {[{v:'auto',l:'Automatisch'},{v:'vast',l:'Vast aantal'}].map(o=>(
+                    <button key={o.v} onClick={()=>setCapacity(p=>({...p,mode:o.v}))}
+                      style={{padding:'5px 11px',borderRadius:6,border:'none',cursor:'pointer',fontSize:11.5,fontWeight:700,transition:'all 0.12s',
+                        background:capacity.mode===o.v?C.primary:'transparent',color:capacity.mode===o.v?'#fff':C.muted}}>{o.l}</button>
+                  ))}
+                </div>
+                <div style={{fontSize:10.5,color:C.muted,marginTop:6,lineHeight:1.4,maxWidth:190}}>
+                  {vast?'Begrensd tot wat je opgeeft; wat niet past gaat naar "nog te plannen".':'Het rooster groeit tot precies wat de vraag nodig heeft.'}
+                </div>
+              </div>
+              <Stepper icon="🚪" label="Kamers" val={capacity.kamers} onCh={v=>setCapacity(p=>({...p,kamers:v}))}/>
+              <span style={{fontSize:16,color:C.muted,fontWeight:300}}>×</span>
+              <Stepper icon="🩺" label="Specialisten" val={capacity.specialisten} onCh={v=>setCapacity(p=>({...p,specialisten:v}))}/>
+              <button onClick={()=>setCapacity(p=>({...p,kamers:Math.max(p.kamers,nodig),specialisten:Math.max(p.specialisten,nodig)}))}
+                title="Stel kamers én specialisten in op het minimaal benodigde aantal"
+                style={{padding:'8px 12px',borderRadius:9,border:`1px solid ${C.border}`,background:C.surface2,cursor:'pointer',
+                  fontSize:11.5,fontWeight:600,color:C.text}}>Stel in op benodigd ({nodig})</button>
+              <div style={{flex:1,minWidth:220,display:'flex',alignItems:'center',gap:11,padding:'10px 14px',
+                background:stBg,border:`1px solid ${stCol}33`,borderRadius:10}}>
+                <span style={{width:26,height:26,borderRadius:'50%',background:stCol,color:'#fff',fontSize:15,fontWeight:700,
+                  display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>{status.ico}</span>
+                <div>
+                  <div style={{fontSize:12.5,fontWeight:700,color:stCol}}>{status.kop}</div>
+                  <div style={{fontSize:11,color:C.muted,marginTop:1,lineHeight:1.4}}>{status.sub}</div>
+                </div>
+              </div>
+            </div>
+          )
+        })()}
 
         {/* ── ENGINE 2.0: KPI dashboard ── */}
         {raster.kpi&&(

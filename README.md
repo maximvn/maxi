@@ -26,6 +26,14 @@ Losse, klikbare versie: `dist/polimodel.html` (alles ingebundeld, direct in de b
   en naar het sleeppalet, dat nu elke ingevoerde code als sleepbron toont.
 - **Poli-identiteit bovenin** — typ de naam van de poli of kies een specialisme. Wordt
   meegenomen in de titel en de Excel-export. Hoeft niet, maar kan.
+- **Capaciteitsplanning met past-advies** — een besturingsbalk boven het raster waarin je
+  de capaciteit *kiest* in plaats van hem te laten raden:
+  - schakel tussen **Automatisch** (het rooster groeit tot precies wat nodig is) en
+    **Vast aantal** (begrensd tot wat je opgeeft; wat niet past gaat naar "nog te plannen"),
+  - stel het aantal **kamers × specialisten** in (de kleinste van beide is de bindende beperking),
+  - knop **"Stel in op benodigd"** die de capaciteit op het minimaal benodigde aantal zet,
+  - een live **past / past-niet-advies** met de bottleneck (kamers of specialisten) en hoeveel
+    afspraken er overlopen.
 - **Capaciteits- en vraaganalyse** — een analysestrook boven het raster met:
   - *Vraag vs. capaciteit* (weekvraag in uren tegenover beschikbare capaciteit + dekkings-%),
   - *Modaliteitsmix* (aandeel fysiek/telefonisch/beeldbellen),
