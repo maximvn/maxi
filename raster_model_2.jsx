@@ -184,6 +184,98 @@ const SPEC_PRESETS={
 }
 const SPECIALISMEN=Object.keys(SPEC_PRESETS)
 
+// ─── EXCEL-IMPORT VAN SPREEKUURGEGEVENS ────────────────────────────────────────
+// Leest een gewone Excel/CSV met kolommen (in willekeurige volgorde, NL of EN):
+// code/afkorting · naam/omschrijving · categorie · duur · aantal (per week) ·
+// verdeling% · modaliteit · dagen (weekdagen) · dagdelen · onzekerheid.
+const SPREEKUUR_KOLOMMEN=['code','naam','categorie','duur','aantal','verdeling','modaliteit','dagen','dagdelen','onzekerheid']
+const SPREEKUUR_VOORBEELD=[
+  ['NP','Nieuwe patiënt','Nieuw',20,18,'','Fysiek','MA DI WO DO VR','Ochtend Middag','gemiddeld'],
+  ['NPC','Nieuw complex','Nieuw',30,6,'','Fysiek','MA WO VR','Ochtend','onzeker'],
+  ['CO','Controle','Controle',15,30,'','Fysiek','MA DI WO DO VR','Ochtend Middag','zeker'],
+  ['TC','Telefonisch consult','Controle',10,12,'','Telefonisch','DI DO','Middag','zeker'],
+  ['VER','Kleine verrichting','Controle',20,8,'','Fysiek','MA WO','Ochtend','gemiddeld'],
+]
+function parseSpreekuurRows(aoa){
+  if(!aoa||!aoa.length) throw new Error('Het bestand is leeg.')
+  const norm=s=>String(s==null?'':s).toLowerCase().trim()
+  // Vind de kopregel
+  let hIx=-1, kol={}
+  for(let i=0;i<Math.min(15,aoa.length);i++){
+    const cells=(aoa[i]||[]).map(norm)
+    const vind=pats=>cells.findIndex(c=>pats.some(p=>c.includes(p)))
+    const c={
+      code:vind(['code','afkorting','afk']),
+      naam:vind(['naam','omschrijving','consult','afspraak']),
+      categorie:vind(['categor','soort','type patiënt','type patient']),
+      duur:vind(['duur','minuten','tijd']),
+      aantal:vind(['aantal','per week','perweek','volume','frequentie','freq']),
+      verdeling:vind(['verdeling','percentage','aandeel','%']),
+      modaliteit:vind(['modaliteit','consulttype','vorm','kanaal']),
+      dagen:vind(['dagen','weekdag','dag ']),
+      dagdelen:vind(['dagdeel','dagdelen','deel']),
+      onzeker:vind(['onzeker','zekerheid','variab']),
+    }
+    if(c.code>=0 && (c.naam>=0||c.aantal>=0||c.duur>=0)){ hIx=i; kol=c; break }
+  }
+  if(hIx<0) throw new Error('Geen kopregel herkend. Verwacht kolommen als: code, naam, categorie, duur, aantal, modaliteit, dagen, dagdelen, onzekerheid.')
+  const parseWeekdagen=s=>{ const t=norm(s); if(!t) return {MA:true,DI:true,WO:true,DO:true,VR:true}
+    const map={ma:'MA',maan:'MA',di:'DI',dins:'DI',wo:'WO',woe:'WO',do:'DO',dond:'DO',vr:'VR',vrij:'VR'}
+    const out={MA:false,DI:false,WO:false,DO:false,VR:false}; let any=false
+    Object.keys(map).forEach(k=>{ if(new RegExp('\\b'+k).test(t)){out[map[k]]=true;any=true} })
+    return any?out:{MA:true,DI:true,WO:true,DO:true,VR:true} }
+  const parseDagdelen=s=>{ const t=norm(s); if(!t) return {O:true,M:true,A:false}
+    const out={O:false,M:false,A:false}
+    if(/\bo\b|ochtend|voormiddag/.test(t)) out.O=true
+    if(/\bm\b|middag|namiddag/.test(t)) out.M=true
+    if(/\ba\b|avond/.test(t)) out.A=true
+    return (out.O||out.M||out.A)?out:{O:true,M:true,A:false} }
+  const parseMod=s=>{ const t=norm(s)
+    if(/video|beeld/.test(t)) return 'video'
+    if(/tel|bel|foon/.test(t)) return 'telefonisch'
+    if(/digi/.test(t)) return 'telefonisch'
+    return 'fysiek' }
+  const parseOnz=s=>{ const t=norm(s); if(/onzeker|hoog/.test(t))return 'onzeker'; if(/zeker|laag|vast/.test(t)&&!/onzeker/.test(t))return 'zeker'; return 'gemiddeld' }
+  const nieuw=[], ctrl=[]
+  for(let i=hIx+1;i<aoa.length;i++){
+    const r=aoa[i]||[]
+    const code=String(r[kol.code]??'').trim()
+    const naam=kol.naam>=0?String(r[kol.naam]??'').trim():code
+    if(!code && !naam) continue
+    const catCell=kol.categorie>=0?norm(r[kol.categorie]):''
+    const isNieuw = /nieuw|new/.test(catCell) || (!catCell && /^np|nieuw/i.test(code+naam))
+    const mod=kol.modaliteit>=0?parseMod(r[kol.modaliteit]):'fysiek'
+    const aantal=kol.aantal>=0?(parseInt(r[kol.aantal])||0):0
+    const verd=kol.verdeling>=0?(parseFloat(String(r[kol.verdeling]).replace('%','').replace(',','.'))||0):0
+    const row={...defaultRow(1),
+      afspraakcode:code||naam.slice(0,6).toUpperCase(),
+      omschrijving:naam||code,
+      duur:clamp(kol.duur>=0?(parseInt(r[kol.duur])||15):15,5,240),
+      modaliteit:mod, digitaal:mod!=='fysiek',
+      weekdagen:kol.dagen>=0?parseWeekdagen(r[kol.dagen]):{MA:true,DI:true,WO:true,DO:true,VR:true},
+      dagdelen:kol.dagdelen>=0?parseDagdelen(r[kol.dagdelen]):{O:true,M:true,A:false},
+      onzeker:kol.onzeker>=0?parseOnz(r[kol.onzeker]):'gemiddeld',
+      _aantal:aantal, _verd:verd,
+    }
+    ;(isNieuw?nieuw:ctrl).push(row)
+  }
+  if(!nieuw.length && !ctrl.length) throw new Error('Geen afspraakregels gevonden onder de kopregel.')
+  // Bepaal categorie-totalen en verdeling% (largest remainder → som 100)
+  const afronden=(rows)=>{
+    const somAantal=rows.reduce((s,r)=>s+(r._aantal||0),0)
+    const totaal=somAantal>0?somAantal:rows.length // fallback: gelijk verdelen
+    // percentage per rij
+    const raw=rows.map(r=> somAantal>0 ? (r._aantal/somAantal*100) : (r._verd>0?r._verd:100/rows.length))
+    const base=raw.map(Math.floor); let rem=100-base.reduce((a,b)=>a+b,0)
+    const ord=raw.map((v,i)=>({i,f:v-Math.floor(v)})).sort((a,b)=>b.f-a.f)
+    for(let k=0;k<rem && k<ord.length;k++) base[ord[k].i]++
+    rows.forEach((r,i)=>{ r.percentage=Math.max(0,base[i]); delete r._aantal; delete r._verd })
+    return totaal
+  }
+  const newPat=afronden(nieuw), ctrlPat=afronden(ctrl)
+  return {newRows:nieuw, ctrlRows:ctrl, newPat:Math.max(1,newPat), ctrlPat:Math.max(1,ctrlPat)}
+}
+
 // ─── MICRO COMPONENTS ─────────────────────────────────────────────────────────
 const Btn=({children,variant='primary',onClick,disabled,small,style={}})=>{
   const [h,sH]=useState(false)
@@ -1155,6 +1247,56 @@ export default function RasterTool(){
     reader.readAsBinaryString(file)
   }
 
+  // ── SPREEKUURGEGEVENS UIT EXCEL ─────────────────────────────────────────────
+  // Laad een vrij-opgemaakte Excel/CSV met alle spreekuurgegevens (afkorting,
+  // naam, categorie, duur, aantal/week, verdeling, modaliteit, dagen, dagdelen,
+  // onzekerheid). parseSpreekuurRows herkent de kolommen fuzzy en vult de codes.
+  const handleSpreekuur=e=>{
+    const file=e.target.files[0]; if(!file) return
+    e.target.value=''
+    const reader=new FileReader()
+    reader.onload=ev=>{
+      try{
+        const wb=XLSX.read(ev.target.result,{type:'binary'})
+        // Kies het eerste blad met inhoud (sla verborgen hersteldata over)
+        const naam=wb.SheetNames.find(n=>n!=='_rasterdata')||wb.SheetNames[0]
+        const ws=wb.Sheets[naam]
+        if(!ws) throw new Error('Geen werkblad gevonden in dit bestand.')
+        const aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:''})
+        const {newRows:nr,ctrlRows:cr,newPat,ctrlPat}=parseSpreekuurRows(aoa)
+        setNewRows(nr); setCtrlRows(cr)
+        setCfg(c=>({...c,newPat,ctrlPat,newCodes:nr.length,ctrlCodes:cr.length}))
+        setRaster(null)
+        setImportBadge(null)
+        setM1Mode('manual'); setM1Section(2)
+        setActive(0); setVisited(new Set([0,1,2,3]))
+        alert('✅ Spreekuurgegevens geladen!\n\n'
+          +nr.length+' nieuw-code(s) · '+cr.length+' controle-code(s)\n'
+          +'Nieuw: '+newPat+'/week · Controle: '+ctrlPat+'/week\n\n'
+          +'Controleer de codes en ga daarna naar "Tijden" en "Regels".')
+      }catch(err){
+        alert('Laden mislukt:\n\n'+err.message
+          +'\n\nTip: gebruik de knop "Voorbeeld-Excel" voor het juiste kolomformaat.')
+      }
+    }
+    reader.readAsBinaryString(file)
+  }
+  // Genereer en download een voorbeeld-Excel met de verwachte kolommen.
+  const downloadSpreekuurTemplate=()=>{
+    try{
+      const wb=XLSX.utils.book_new()
+      const kop=['Code','Naam','Categorie','Duur (min)','Aantal/week','Verdeling %','Modaliteit','Dagen','Dagdelen','Onzekerheid']
+      const ws=XLSX.utils.aoa_to_sheet([kop,...SPREEKUUR_VOORBEELD])
+      ws['!cols']=[{wch:8},{wch:22},{wch:11},{wch:11},{wch:12},{wch:12},{wch:14},{wch:20},{wch:18},{wch:13}]
+      XLSX.utils.book_append_sheet(wb,ws,'Spreekuurgegevens')
+      const b64=XLSX.write(wb,{bookType:'xlsx',type:'base64'})
+      const a=document.createElement('a')
+      a.href='data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,'+b64
+      a.download='spreekuurgegevens-voorbeeld.xlsx'
+      document.body.appendChild(a); a.click(); document.body.removeChild(a)
+    }catch(err){ alert('Kon voorbeeld niet maken: '+err.message) }
+  }
+
   // ── EXPORT ─────────────────────────────────────────────────────────────────
   const handleExport=useCallback(()=>{
     if(!raster){alert('Genereer eerst een raster.');return}
@@ -1511,6 +1653,41 @@ export default function RasterTool(){
                 background:C.green,borderRadius:10,padding:'10px 18px'}}>Bestand kiezen ↑</span>
             </div>
           </label>
+
+          {/* Spreekuurgegevens uit Excel */}
+          <div style={{background:C.white,border:`1.5px solid ${C.border}`,borderRadius:18,
+            padding:'26px 26px 22px',transition:'all 0.16s',position:'relative',overflow:'hidden'}}
+            onMouseEnter={e=>{e.currentTarget.style.borderColor='#8B5CF6';e.currentTarget.style.boxShadow='0 14px 34px rgba(139,92,246,0.14)';e.currentTarget.style.transform='translateY(-2px)'}}
+            onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.boxShadow='none';e.currentTarget.style.transform='none'}}>
+            <div style={{position:'absolute',right:-40,top:-40,width:130,height:130,borderRadius:'50%',background:'#F1ECFC',opacity:0.7}}/>
+            <div style={{position:'relative'}}>
+              <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
+                <div style={{width:52,height:52,borderRadius:15,background:'linear-gradient(140deg,#A78BFA,#7C3AED)',
+                  display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 8px 18px rgba(124,58,237,0.28)'}}>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/></svg>
+                </div>
+                <div>
+                  <div style={{fontSize:9.5,fontWeight:700,color:'#7C3AED',letterSpacing:'0.16em'}}>SPREEKUURGEGEVENS</div>
+                  <div style={{fontFamily:"'Newsreader',Georgia,serif",fontSize:22,fontWeight:500,color:C.text,letterSpacing:'-0.01em'}}>Excel inladen</div>
+                </div>
+              </div>
+              <div style={{fontSize:12.5,color:C.muted,lineHeight:1.6,marginBottom:14}}>Laad één Excel met alle codes: afkorting, naam, categorie, duur, aantal/week, modaliteit, dagen, dagdelen en onzekerheid — de tool vult je poli automatisch.</div>
+              <div style={{background:C.rowAlt,border:`1px solid ${C.border}`,borderRadius:11,padding:'11px 13px',marginBottom:16}}>
+                <div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:7}}>Verwachte kolommen</div>
+                <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
+                  {['Code','Naam','Categorie','Duur','Aantal/week','Modaliteit','Dagen','Dagdelen','Onzekerheid'].map(k=>(
+                    <span key={k} style={{fontSize:10,fontWeight:600,color:'#6D28D9',background:'#F1ECFC',borderRadius:6,padding:'3px 8px'}}>{k}</span>
+                  ))}
+                </div>
+              </div>
+              <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+                <label htmlFor="spreekuur-file-input" style={{display:'inline-flex',alignItems:'center',gap:8,fontSize:13,fontWeight:700,color:'#fff',
+                  background:'#7C3AED',borderRadius:10,padding:'10px 18px',cursor:'pointer'}}>Excel kiezen ↑</label>
+                <button onClick={downloadSpreekuurTemplate} style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:12.5,fontWeight:700,color:'#7C3AED',
+                  background:'#F1ECFC',border:'1px solid #D9C9F7',borderRadius:10,padding:'10px 16px',cursor:'pointer'}}>⤓ Voorbeeld-Excel</button>
+              </div>
+            </div>
+          </div>
         </div>
         )
       })()}
@@ -1518,6 +1695,9 @@ export default function RasterTool(){
       <input id="import-file-input" type="file" accept=".xlsx"
         style={{position:'absolute',width:1,height:1,opacity:0,overflow:'hidden',clip:'rect(0,0,0,0)',whiteSpace:'nowrap'}}
         onChange={handleImport}/>
+      <input id="spreekuur-file-input" type="file" accept=".xlsx,.xls,.csv"
+        style={{position:'absolute',width:1,height:1,opacity:0,overflow:'hidden',clip:'rect(0,0,0,0)',whiteSpace:'nowrap'}}
+        onChange={handleSpreekuur}/>
 
       {m1Mode==='imported'&&importBadge&&(
         <div style={{background:'#EFF8F2',border:`1px solid #CBE6D5`,borderRadius:10,padding:'13px 16px',marginBottom:18,display:'flex',alignItems:'center',gap:12}}>
@@ -2848,33 +3028,51 @@ export default function RasterTool(){
         )}
         </div>
 
-        {/* ── ENGINE 2.0: quick rules (live — raster past zich direct aan) ── */}
-        <div style={{display:'flex',gap:6,marginBottom:12,flexWrap:'wrap',alignItems:'center',
-          background:C.white,border:`1px solid ${C.border}`,borderRadius:12,padding:'9px 13px'}}>
-          <span style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.08em',marginRight:3}}>Planregels · live</span>
-          {[
-            {k:'shortFirst',l:'Kort eerst'},
-            {k:'spoedFirst',l:'Spoed eerst'},
-            {k:'certainFirst',l:'Zeker eerst'},
-            {k:'baileyWelsh',l:'Bailey-Welsh'},
-          ].map(({k,l})=>(
-            <button key={k} onClick={()=>setRules(p=>({...p,[k]:!p[k]}))}
-              style={{padding:'5px 12px',borderRadius:16,cursor:'pointer',fontSize:11.5,fontWeight:600,transition:'all 0.12s',
-                background:rules[k]?(k==='baileyWelsh'?'#8B5CF6':C.primary):C.white,
-                color:rules[k]?'#fff':C.muted,
-                border:`1px solid ${rules[k]?(k==='baileyWelsh'?'#8B5CF6':C.primary):C.border}`}}>
-              {rules[k]?'✓ ':''}{l}
-            </button>
-          ))}
-          <span style={{width:1,height:18,background:C.border,margin:'0 4px'}}/>
-          {[{v:'end',l:'Buffer: einde'},{v:'spread',l:'Buffer: verspreid'}].map(o=>(
-            <button key={o.v} onClick={()=>setRules(p=>({...p,flexMode:o.v}))}
-              style={{padding:'5px 12px',borderRadius:16,cursor:'pointer',fontSize:11.5,fontWeight:600,
-                background:rules.flexMode===o.v?'#E3F1E7':C.white,color:rules.flexMode===o.v?'#2E6B3A':C.muted,
-                border:`1px solid ${rules.flexMode===o.v?'#9AC9A8':C.border}`}}>{o.l}</button>
-          ))}
-          <span style={{marginLeft:'auto',fontSize:10,color:C.muted,fontStyle:'italic'}}>wijzigingen worden direct doorgerekend</span>
-        </div>
+        {/* ── PLANREGELS · LIVE — met zichtbare & verplaatsbare volgorde ── */}
+        {(()=>{
+          const LBL={spoedFirst:'Spoed eerst',shortFirst:'Kort eerst',certainFirst:'Zeker eerst'}
+          const order=rules.order||['spoedFirst','shortFirst','certainFirst']
+          const move=(idx,dir)=>{const ni=idx+dir;if(ni<0||ni>=order.length)return;const no=[...order];const t=no[idx];no[idx]=no[ni];no[ni]=t;setRules(p=>({...p,order:no}))}
+          const activeSeq=order.filter(k=>rules[k])
+          return(
+            <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap',alignItems:'center',
+              background:C.white,border:`1px solid ${C.border}`,borderRadius:12,padding:'9px 12px'}}>
+              <span style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.08em'}}>Volgorde &amp; regels · live</span>
+              {/* volgorderegels in prioriteitsvolgorde met pijltjes */}
+              {order.map((k,idx)=>{
+                const on=rules[k], prio=activeSeq.indexOf(k)+1
+                return(
+                  <div key={k} style={{display:'flex',alignItems:'center',gap:4,padding:'3px 6px 3px 4px',borderRadius:16,
+                    background:on?C.blueAccent:C.surface2,border:`1px solid ${on?C.primary:C.border}`}}>
+                    <span style={{display:'flex',flexDirection:'column'}}>
+                      <button onClick={()=>move(idx,-1)} disabled={idx===0} title="Eerder in volgorde"
+                        style={{width:15,height:11,border:'none',background:'transparent',cursor:idx===0?'default':'pointer',fontSize:8,lineHeight:1,color:idx===0?C.border:C.muted,padding:0}}>▲</button>
+                      <button onClick={()=>move(idx,1)} disabled={idx===order.length-1} title="Later in volgorde"
+                        style={{width:15,height:11,border:'none',background:'transparent',cursor:idx===order.length-1?'default':'pointer',fontSize:8,lineHeight:1,color:idx===order.length-1?C.border:C.muted,padding:0}}>▼</button>
+                    </span>
+                    <span onClick={()=>setRules(p=>({...p,[k]:!p[k]}))} style={{cursor:'pointer',display:'flex',alignItems:'center',gap:5}}>
+                      <span style={{width:16,height:16,borderRadius:'50%',fontSize:9.5,fontWeight:800,display:'flex',alignItems:'center',justifyContent:'center',
+                        background:on?C.primary:'#fff',color:on?'#fff':C.muted,border:on?'none':`1px solid ${C.border}`}}>{on?prio:'–'}</span>
+                      <span style={{fontSize:11.5,fontWeight:on?700:500,color:on?C.primary:C.text}}>{LBL[k]}</span>
+                    </span>
+                  </div>
+                )
+              })}
+              <span style={{width:1,height:20,background:C.border}}/>
+              <button onClick={()=>setRules(p=>({...p,baileyWelsh:!p.baileyWelsh}))}
+                style={{padding:'6px 12px',borderRadius:16,cursor:'pointer',fontSize:11.5,fontWeight:600,
+                  background:rules.baileyWelsh?'#8B5CF6':C.white,color:rules.baileyWelsh?'#fff':C.muted,border:`1px solid ${rules.baileyWelsh?'#8B5CF6':C.border}`}}>
+                {rules.baileyWelsh?'✓ ':''}Bailey-Welsh</button>
+              {[{v:'end',l:'Buffer: einde'},{v:'spread',l:'Buffer: verspreid'}].map(o=>(
+                <button key={o.v} onClick={()=>setRules(p=>({...p,flexMode:o.v}))}
+                  style={{padding:'6px 12px',borderRadius:16,cursor:'pointer',fontSize:11.5,fontWeight:600,
+                    background:rules.flexMode===o.v?'#E3F1E7':C.white,color:rules.flexMode===o.v?'#2E6B3A':C.muted,
+                    border:`1px solid ${rules.flexMode===o.v?'#9AC9A8':C.border}`}}>{o.l}</button>
+              ))}
+              <span style={{marginLeft:'auto',fontSize:10,color:C.muted,fontStyle:'italic'}}>↑↓ verplaatst de volgorde · nr = prioriteit</span>
+            </div>
+          )
+        })()}
 
         {/* ── VOLLEDIG WEEKOVERZICHT — per dag, per dagdeel de verdeling nieuw/controle ── */}
         {viewMode==='week'&&(()=>{
