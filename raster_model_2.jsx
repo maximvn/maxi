@@ -1463,6 +1463,60 @@ export default function RasterTool(){
             <span style={{color:C.border}}>───</span>
             <span style={{fontWeight:700,color:C.primary}}>2. Afspraakcodes</span>
           </div>
+
+          {/* ── OVERZICHT — alle afspraaktypen in één beeld ── */}
+          {(()=>{
+            const all=[
+              ...newRows.map((r,i)=>({...r,cat:'nieuw',clr:NEW_PALETTE[i%NEW_PALETTE.length]})),
+              ...ctrlRows.map((r,i)=>({...r,cat:'controle',clr:(r.digitaal?{bg:'#D6EAE3',brd:'#94C5B4',fg:'#1A5544'}:CTRL_PALETTE[i%CTRL_PALETTE.length])})),
+            ].filter(r=>r.afspraakcode||r.omschrijving)
+            if(!all.length) return null
+            const withN=all.map(r=>{ const tot=r.cat==='nieuw'?cfg.newPat:cfg.ctrlPat; const n=Math.round(tot*((r.percentage||0)/100)); return {...r,n,min:n*(r.duur||15)} })
+            const totMin=withN.reduce((s,r)=>s+r.min,0)||1
+            const totN=withN.reduce((s,r)=>s+r.n,0)
+            return(
+              <Card style={{marginBottom:22}}>
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12,flexWrap:'wrap',gap:8}}>
+                  <H3 style={{margin:0}}>Overzicht — alle afspraaktypen</H3>
+                  <div style={{display:'flex',gap:14,fontSize:11.5,color:C.muted}}>
+                    <span><b style={{color:C.text}}>{all.length}</b> typen</span>
+                    <span><b style={{color:C.text}}>{totN}</b> afspraken/week</span>
+                    <span><b style={{color:C.text}}>{(totMin/60).toFixed(1)}</b> u zorgvraag</span>
+                  </div>
+                </div>
+                {/* gecombineerde staaf */}
+                <div style={{display:'flex',height:30,borderRadius:8,overflow:'hidden',border:`1px solid ${C.border}`,marginBottom:14}}>
+                  {withN.filter(r=>r.min>0).map((r,i)=>(
+                    <div key={i} title={`${r.afspraakcode||r.omschrijving}: ${r.n}/week · ${r.min} min`}
+                      style={{width:(r.min/totMin*100)+'%',background:r.clr.bg,borderRight:`1px solid ${r.clr.brd}`,
+                        display:'flex',alignItems:'center',justifyContent:'center',color:r.clr.fg,fontSize:9,fontWeight:800,overflow:'hidden'}}>
+                      {(r.min/totMin)>0.06&&(r.afspraakcode||'').slice(0,6)}
+                    </div>
+                  ))}
+                </div>
+                {/* type-kaartjes */}
+                <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(150px,1fr))',gap:8}}>
+                  {withN.map((r,i)=>(
+                    <div key={i} style={{display:'flex',alignItems:'center',gap:9,padding:'8px 10px',borderRadius:9,
+                      background:r.clr.bg,border:`1px solid ${r.clr.brd}`}}>
+                      <span style={{width:9,height:9,borderRadius:'50%',background:r.clr.fg,flexShrink:0}}/>
+                      <div style={{minWidth:0,flex:1}}>
+                        <div style={{fontSize:11.5,fontWeight:800,color:r.clr.fg,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
+                          {r.afspraakcode||'—'} {r.spoed&&<span style={{color:C.danger}}>●</span>}{r.modaliteit&&r.modaliteit!=='fysiek'&&<span>{modInfo(r.modaliteit).ico}</span>}
+                        </div>
+                        <div style={{fontSize:10,color:r.clr.fg,opacity:0.85,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{r.omschrijving||'zonder naam'}</div>
+                      </div>
+                      <div style={{textAlign:'right',flexShrink:0}}>
+                        <div style={{fontSize:12,fontWeight:800,color:r.clr.fg,fontVariantNumeric:'tabular-nums'}}>{r.n}×</div>
+                        <div style={{fontSize:9,color:r.clr.fg,opacity:0.8}}>{r.duur}m</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )
+          })()}
+
           {renderTable(newRows,setNewRows,'Nieuwe patiënten',cfg.newCodes,cfg.newPat,'nieuw')}
           {renderTable(ctrlRows,setCtrlRows,'Controle patiënten',cfg.ctrlCodes,cfg.ctrlPat,'controle')}
         </div>
@@ -2942,37 +2996,60 @@ export default function RasterTool(){
         input[type=number]::-webkit-inner-spin-button{opacity:0.5}
       `}</style>
 
-      {/* ══ ICON RAIL ══ */}
-      <nav style={{width:68,flexShrink:0,background:'linear-gradient(180deg,#12405E,#155888)',
-        display:'flex',flexDirection:'column',alignItems:'center',padding:'14px 0 12px',gap:4,zIndex:50}}>
-        <div style={{width:38,height:38,borderRadius:11,background:'rgba(255,255,255,0.14)',
-          display:'flex',alignItems:'center',justifyContent:'center',marginBottom:16}}>
-          <span style={{color:'#fff',fontFamily:"'Newsreader',Georgia,serif",fontSize:20}}>S</span>
+      {/* ══ ZIJBALK / RAIL ══ */}
+      <nav style={{width:98,flexShrink:0,background:'linear-gradient(180deg,#0E3450 0%,#124D74 55%,#0F5F8C 100%)',
+        display:'flex',flexDirection:'column',alignItems:'stretch',padding:'16px 10px 12px',zIndex:50,
+        boxShadow:'2px 0 18px rgba(9,30,45,0.18)'}}>
+        {/* merk */}
+        <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:7,marginBottom:20}}>
+          <div style={{width:42,height:42,borderRadius:13,background:'linear-gradient(140deg,#39C6AC,#1C8FBF)',
+            display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 6px 16px rgba(11,60,90,0.5)'}}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M9 9v12M15 9v12"/></svg>
+          </div>
+          <div style={{textAlign:'center',lineHeight:1.1}}>
+            <div style={{fontSize:11,fontWeight:800,color:'#EAF6FB',letterSpacing:'-0.01em'}}>PoliRaster</div>
+            <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:7.5,color:'#7FD4C0',letterSpacing:'0.18em'}}>STUDIO 2.1</div>
+          </div>
         </div>
-        {RAIL.map(r=>{
-          const on=active===r.id
-          return(
-            <button key={r.id} onClick={()=>nav(r.id)} title={r.label} style={{
-              width:52,padding:'8px 0 6px',borderRadius:12,border:'none',cursor:'pointer',
-              display:'flex',flexDirection:'column',alignItems:'center',gap:4,
-              background:on?'rgba(255,255,255,0.16)':'transparent',
-              color:on?'#fff':'rgba(255,255,255,0.55)',transition:'all 0.14s'}}
-              onMouseEnter={e=>{if(!on)e.currentTarget.style.color='rgba(255,255,255,0.85)'}}
-              onMouseLeave={e=>{if(!on)e.currentTarget.style.color='rgba(255,255,255,0.55)'}}>
-              {r.icon}
-              <span style={{fontSize:8.5,fontWeight:600,letterSpacing:'0.04em'}}>{r.label}</span>
-            </button>
-          )
-        })}
-        <div style={{flex:1}}/>
-        <button onClick={()=>setShowExport(true)} title="Exporteren" style={{width:44,height:40,borderRadius:11,border:'none',
-          cursor:'pointer',background:'rgba(255,255,255,0.10)',color:'#B9E4C8',display:'flex',alignItems:'center',justifyContent:'center',marginBottom:6}}>
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-        </button>
-        <button onClick={()=>setShowFullReset(true)} title="Opnieuw beginnen" style={{width:44,height:36,borderRadius:11,border:'none',
-          cursor:'pointer',background:'transparent',color:'rgba(255,255,255,0.45)',fontSize:15}}
-          onMouseEnter={e=>e.currentTarget.style.color='#F0A090'}
-          onMouseLeave={e=>e.currentTarget.style.color='rgba(255,255,255,0.45)'}>↺</button>
+        {/* stappen */}
+        <div style={{display:'flex',flexDirection:'column',gap:6,flex:1}}>
+          {RAIL.map((r,i)=>{
+            const on=active===r.id
+            const done = r.id===0?(newRows.some(x=>x.afspraakcode||x.omschrijving)||ctrlRows.some(x=>x.afspraakcode||x.omschrijving))
+              : r.id===3?!!raster : true
+            return(
+              <button key={r.id} onClick={()=>nav(r.id)} title={r.label} style={{
+                position:'relative',padding:'11px 4px 9px',borderRadius:13,border:'none',cursor:'pointer',
+                display:'flex',flexDirection:'column',alignItems:'center',gap:5,
+                background:on?'rgba(255,255,255,0.17)':'transparent',
+                color:on?'#fff':'rgba(255,255,255,0.6)',transition:'all 0.14s'}}
+                onMouseEnter={e=>{if(!on){e.currentTarget.style.background='rgba(255,255,255,0.07)';e.currentTarget.style.color='rgba(255,255,255,0.9)'}}}
+                onMouseLeave={e=>{if(!on){e.currentTarget.style.background='transparent';e.currentTarget.style.color='rgba(255,255,255,0.6)'}}}>
+                {on&&<span style={{position:'absolute',left:0,top:'50%',transform:'translateY(-50%)',width:3,height:22,borderRadius:3,background:'#5ED6BC'}}/>}
+                <div style={{position:'relative'}}>
+                  {r.icon}
+                  <span style={{position:'absolute',top:-5,right:-9,width:13,height:13,borderRadius:'50%',
+                    fontSize:8,fontWeight:800,display:'flex',alignItems:'center',justifyContent:'center',
+                    background:done?'#39C6AC':'rgba(255,255,255,0.22)',color:done?'#04120D':'#EAF6FB'}}>{done?'✓':i+1}</span>
+                </div>
+                <span style={{fontSize:9.5,fontWeight:on?700:600,letterSpacing:'0.02em'}}>{r.label}</span>
+              </button>
+            )
+          })}
+        </div>
+        {/* acties */}
+        <div style={{display:'flex',flexDirection:'column',gap:6,marginTop:8,paddingTop:10,borderTop:'1px solid rgba(255,255,255,0.12)'}}>
+          <button onClick={()=>setShowExport(true)} title="Exporteren naar Excel" style={{display:'flex',alignItems:'center',justifyContent:'center',gap:6,
+            padding:'9px 4px',borderRadius:11,border:'none',cursor:'pointer',background:'rgba(93,214,188,0.18)',color:'#B9F0E2',fontSize:10,fontWeight:700}}
+            onMouseEnter={e=>e.currentTarget.style.background='rgba(93,214,188,0.3)'}
+            onMouseLeave={e=>e.currentTarget.style.background='rgba(93,214,188,0.18)'}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>Export
+          </button>
+          <button onClick={()=>setShowFullReset(true)} title="Opnieuw beginnen" style={{display:'flex',alignItems:'center',justifyContent:'center',gap:6,
+            padding:'7px 4px',borderRadius:11,border:'none',cursor:'pointer',background:'transparent',color:'rgba(255,255,255,0.5)',fontSize:10,fontWeight:600}}
+            onMouseEnter={e=>e.currentTarget.style.color='#F0A090'}
+            onMouseLeave={e=>e.currentTarget.style.color='rgba(255,255,255,0.5)'}>↺ Opnieuw</button>
+        </div>
       </nav>
 
       {/* ══ SETTINGS PANEL (slides away on Raster) ══ */}
