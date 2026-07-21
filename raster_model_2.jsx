@@ -275,6 +275,9 @@ export default function RasterTool(){
   const [raster,setRaster]=useState(null)
   const [calZoom,setCalZoom]=useState(3.0) // px per minute, range 1.5–6
   const [viewMode,setViewMode]=useState('dag') // 'dag' | 'week' (multi-dynamisch overzicht)
+  // Inklapbare rasterpanelen (minimaliseren/maximaliseren)
+  const [openPanels,setOpenPanels]=useState({kpi:true,analyse:true,scenarios:true,capaciteit:true})
+  const togglePanel=k=>setOpenPanels(p=>({...p,[k]:!p[k]}))
   const [drag,setDrag]=useState(null)
   const [showExport,setShowExport]=useState(false)
   const [showReset,setShowReset]=useState(false)
@@ -1676,8 +1679,80 @@ export default function RasterTool(){
     return(
       <div style={{animation:'fadeIn 0.18s ease'}}>
         {miniHero('PLANREGELS','Regels en','strategieën','Kies hoe het rooster automatisch wordt samengesteld — klik op ⓘ bij een regel voor uitleg.')}
-        <p style={{display:'none'}}>
-        </p>
+
+        {/* ── LIVE VOORBEELD-SPREEKUUR — laat zien wat je regels doen met een sessie ── */}
+        {(()=>{
+          const sample=[
+            {code:'NP',cat:'nieuw',duur:20,spoed:false,digitaal:false,onzeker:'onzeker'},
+            {code:'CO',cat:'controle',duur:15,spoed:false,digitaal:false,onzeker:'gemiddeld'},
+            {code:'SP',cat:'nieuw',duur:20,spoed:true,digitaal:false,onzeker:'gemiddeld'},
+            {code:'TC',cat:'controle',duur:10,spoed:false,digitaal:true,onzeker:'zeker'},
+            {code:'CO',cat:'controle',duur:15,spoed:false,digitaal:false,onzeker:'gemiddeld'},
+            {code:'NP',cat:'nieuw',duur:20,spoed:false,digitaal:false,onzeker:'zeker'},
+          ]
+          const uScore=a=>a.onzeker==='zeker'?0:a.onzeker==='onzeker'?2:1
+          const cmp={spoedFirst:(a,b)=>(b.spoed?1:0)-(a.spoed?1:0),shortFirst:(a,b)=>a.duur-b.duur,certainFirst:(a,b)=>uScore(a)-uScore(b)}
+          let rest=sample.map((a,i)=>({...a,_seq:i}))
+          const activeOrder=(rules.order||['spoedFirst','shortFirst','certainFirst']).filter(k=>rules[k]&&cmp[k])
+          if(activeOrder.length) rest.sort((a,b)=>{ for(const k of activeOrder){const c=cmp[k](a,b);if(c!==0)return c} return a._seq-b._seq })
+          if(rules.groupMode==='wave'){ const by={},ord=[]; rest.forEach(a=>{if(!by[a.code]){by[a.code]=[];ord.push(a.code)}by[a.code].push(a)}); rest=ord.flatMap(c=>by[c]) }
+          if(rules.digitalMode==='end') rest=[...rest.filter(a=>!a.digitaal),...rest.filter(a=>a.digitaal)]
+          else if(rules.digitalMode==='cluster'){ const d=rest.filter(a=>a.digitaal),f=rest.filter(a=>!a.digitaal),m=Math.floor(f.length/2); rest=[...f.slice(0,m),...d,...f.slice(m)] }
+          // bouw blokreeks incl. buffers + Bailey-Welsh
+          const seq=[]
+          rest.forEach((a,i)=>{
+            if(i===0&&rules.baileyWelsh) seq.push({...a,_bw:true})
+            seq.push({...a})
+            if(rules.flexMode==='spread'&&i<rest.length-1) seq.push({buffer:true,duur:5})
+          })
+          if(rules.flexMode==='end') seq.push({buffer:true,duur:20,eind:true})
+          const totMin=seq.reduce((s,b)=>s+b.duur,0)||1
+          const clrOf=b=> b.buffer?{bg:'repeating-linear-gradient(45deg,#E3F1E7,#E3F1E7 5px,#F1FBF3 5px,#F1FBF3 10px)',fg:'#2E6B3A',brd:'#9AC9A8'}
+            : b.spoed?{bg:'#FCEEEB',fg:C.danger,brd:'#E7B3A6'}
+            : b.digitaal?{bg:'#D6EAE3',fg:'#1A5544',brd:'#94C5B4'}
+            : b.cat==='nieuw'?NEW_PALETTE[0]:CTRL_PALETTE[0]
+          const actieveRegels=[
+            ...activeOrder.map(k=>PLAN_INFO[k].label),
+            rules.groupMode==='wave'?'Wave-groepering':'Gespreid',
+            rules.digitalMode==='end'?'Digitaal aan het einde':rules.digitalMode==='cluster'?'Digitaal geclusterd':'Digitaal verdeeld',
+            rules.flexMode==='end'?'Buffer aan het einde':'Buffer verspreid',
+            ...(rules.baileyWelsh?['Bailey-Welsh dubbelboeking']:[]),
+          ]
+          return(
+            <Card style={{marginBottom:14}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:4,flexWrap:'wrap',gap:8}}>
+                <H3 style={{margin:0}}>Voorbeeld-spreekuur — zo plant jouw regelset</H3>
+                <span style={{fontSize:11,color:C.muted}}>live voorbeeld van 6 afspraken · verandert mee met je keuzes</span>
+              </div>
+              <p style={{fontSize:11.5,color:C.muted,margin:'0 0 12px',lineHeight:1.5}}>
+                Een denkbeeldig spreekuur met een spoedgeval, een onzekere nieuwe patiënt en een telefonisch consult. Zet regels aan/uit en zie de volgorde direct veranderen.
+              </p>
+              <div style={{display:'flex',gap:3,height:52,borderRadius:9,overflow:'hidden',border:`1px solid ${C.border}`,background:C.surface2,padding:3}}>
+                {seq.map((b,i)=>{
+                  const c=clrOf(b), w=b.duur/totMin*100
+                  return(
+                    <div key={i} title={b.buffer?`Buffer ${b.duur}m`:`${b.code} · ${b.duur}m${b.spoed?' · spoed':''}${b.digitaal?' · telefonisch':''}${b._bw?' · dubbel geboekt':''}`}
+                      style={{width:w+'%',minWidth:b.buffer?10:26,borderRadius:6,background:c.bg||c.bg,color:c.fg,border:`1px solid ${c.brd}`,
+                        display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',position:'relative',overflow:'hidden',
+                        outline:b._bw?'2px solid #8B5CF6':'none',outlineOffset:-2}}>
+                      {!b.buffer&&<>
+                        <span style={{fontSize:10.5,fontWeight:800,lineHeight:1}}>{b.code}{b.spoed&&<span style={{color:C.danger}}>●</span>}</span>
+                        <span style={{fontSize:8.5,opacity:0.8,marginTop:1}}>{b.digitaal?'☎ ':''}{b.duur}m</span>
+                        {b._bw&&<span style={{position:'absolute',top:1,right:2,fontSize:7,fontWeight:800,color:'#8B5CF6'}}>2×</span>}
+                      </>}
+                      {b.buffer&&<span style={{fontSize:8,fontWeight:700,transform:w<6?'rotate(90deg)':'none'}}>flex</span>}
+                    </div>
+                  )
+                })}
+              </div>
+              <div style={{display:'flex',flexWrap:'wrap',gap:6,marginTop:12}}>
+                {actieveRegels.length?actieveRegels.map((l,i)=>(
+                  <span key={i} style={{fontSize:10.5,fontWeight:600,padding:'3px 10px',borderRadius:20,background:C.blueAccent,color:C.primary,border:`1px solid ${C.light}`}}>{l}</span>
+                )):<span style={{fontSize:11,color:C.muted}}>Nog geen volgorderegels actief — afspraken staan in standaardvolgorde.</span>}
+              </div>
+            </Card>
+          )
+        })()}
 
         {/* Sequence rules with PRIORITY ORDER (drives the composite comparator) */}
         <Card style={{marginBottom:14}}>
@@ -2232,6 +2307,21 @@ export default function RasterTool(){
     const rooms=Array.from({length:numRooms},(_,i)=>i)
     const dayHasData=!!raster.days[selDay]
 
+    // Inklapbare paneelkop met minimaliseer/maximaliseer-knop
+    const PanelKop=({id,titel,samenvatting})=>(
+      <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:openPanels[id]?10:0,flexWrap:'wrap'}}>
+        <span style={{fontSize:9.5,fontWeight:700,color:C.primary,letterSpacing:'0.12em',textTransform:'uppercase'}}>{titel}</span>
+        {!openPanels[id]&&samenvatting&&<span style={{fontSize:11.5,color:C.muted}}>{samenvatting}</span>}
+        <button onClick={()=>togglePanel(id)} title={openPanels[id]?'Minimaliseren':'Maximaliseren'}
+          style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:6,fontSize:11,fontWeight:600,color:C.muted,
+            background:C.white,border:`1px solid ${C.border}`,borderRadius:7,padding:'4px 11px',cursor:'pointer',transition:'all 0.12s'}}
+          onMouseEnter={e=>{e.currentTarget.style.borderColor=C.primary;e.currentTarget.style.color=C.primary}}
+          onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.color=C.muted}}>
+          {openPanels[id]?'▲ Minimaliseren':'▼ Maximaliseren'}
+        </button>
+      </div>
+    )
+
     return(
       <div style={{animation:'fadeIn 0.18s ease'}}>
         {renderProg()}
@@ -2338,9 +2428,12 @@ export default function RasterTool(){
           )
         })()}
 
-        {/* ── ENGINE 2.0: KPI dashboard ── */}
+        {/* ── ENGINE 2.0: KPI dashboard (inklapbaar) ── */}
         {raster.kpi&&(
-          <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:10,marginBottom:12}}>
+          <div style={{marginBottom:12}}>
+          <PanelKop id="kpi" titel="Kerncijfers" samenvatting={`${raster.kpi.week.appts} afspr · ${raster.kpi.week.benutting}% benut · ${raster.kpi.week.spreiding}% spreiding`}/>
+          {openPanels.kpi&&(
+          <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:10}}>
             {[
               {l:'Afspraken / week',v:raster.kpi.week.appts,sub:`${raster.kpi.week.planned} min gepland`},
               {l:'Benutting',v:raster.kpi.week.benutting+'%',sub:`van ${raster.kpi.week.capacity} min capaciteit`,
@@ -2360,10 +2453,15 @@ export default function RasterTool(){
               </div>
             ))}
           </div>
+          )}
+          </div>
         )}
 
-        {/* ── ANALYSE 2.1: vraag/capaciteit-balans · modaliteitsmix · advies ── */}
-        <div style={{display:'grid',gridTemplateColumns:'1.15fr 1fr 1.4fr',gap:10,marginBottom:12}}>
+        {/* ── ANALYSE 2.1: vraag/capaciteit-balans · modaliteitsmix · advies (inklapbaar) ── */}
+        <div style={{marginBottom:12}}>
+        <PanelKop id="analyse" titel="Analyse" samenvatting={`dekking ${dekking>999?'∞':dekking+'%'} · ${adviezen.length} advies${adviezen.length===1?'':'punten'}`}/>
+        {openPanels.analyse&&(
+        <div style={{display:'grid',gridTemplateColumns:'1.15fr 1fr 1.4fr',gap:10}}>
           {/* Vraag vs capaciteit */}
           <div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:12,padding:'13px 15px'}}>
             <div style={{fontSize:9.5,fontWeight:700,color:C.muted,letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:9}}>Vraag vs. capaciteit</div>
@@ -2423,13 +2521,15 @@ export default function RasterTool(){
             </div>
           </div>
         </div>
+        )}
+        </div>
 
-        {/* ── 3 SCENARIO'S — kies de best passende opzet, engine rekent live door ── */}
-        <div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:12,padding:'14px 16px',marginBottom:12}}>
-          <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:11,flexWrap:'wrap'}}>
-            <span style={{fontSize:9.5,fontWeight:700,color:C.primary,letterSpacing:'0.12em',textTransform:'uppercase'}}>Scenario's</span>
-            <span style={{fontSize:11.5,color:C.muted}}>Drie kant-en-klare opzetten — één klik past benutting én kamers aan en rekent direct door.</span>
-          </div>
+        {/* ── 3 SCENARIO'S — inklapbaar ── */}
+        <div style={{marginBottom:12}}>
+        <PanelKop id="scenarios" titel="Scenario's" samenvatting="Compact · Gebalanceerd · Ruim — één klik past alles toe"/>
+        {openPanels.scenarios&&(
+        <div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:12,padding:'14px 16px'}}>
+          <div style={{fontSize:11.5,color:C.muted,marginBottom:11}}>Drie kant-en-klare opzetten — één klik past benutting én kamers aan en rekent direct door.</div>
           <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12}}>
             {scenarios.map(s=>{
               const past=s.rooms<=beschRooms
@@ -2460,6 +2560,8 @@ export default function RasterTool(){
               )
             })}
           </div>
+        </div>
+        )}
         </div>
 
         {/* ── ENGINE 2.0: quick rules (live — raster past zich direct aan) ── */}
