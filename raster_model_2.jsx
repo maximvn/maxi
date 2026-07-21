@@ -952,35 +952,59 @@ export default function RasterTool(){
     setRaster(computeRaster(cfg,newRows,ctrlRows,m2,rules,capacity))
   },[cfg,newRows,ctrlRows,m2,rules,capacity,computeRaster])
 
-  // ── SOLVER — draait de ECHTE engine herhaald door met verschillende planregel-
-  //    strategieën en benuttingsniveaus, en kiest per doel (huidige kamers /
-  //    alternatief / kamer erbij) de configuratie die alles het best inplant. ──
+  // ── SOLVER — multidimensionaal: toetst met de ECHTE engine drie assen tegelijk
+  //    (1) planregel-strategie, (2) benutting, (3) VERDELING over dagen/dagdelen —
+  //    bv. nieuw 's ochtends & controle 's middags, of type-specifieke dagen — en
+  //    kiest per doel de combinatie die alles het best & rustigst inplant. ──
   const runSolver=useCallback((cfg,newRows,ctrlRows,m2,rules,capacity,baseRooms)=>{
     const base=rules
-    // Zes strategieën = verschillende combinaties van planregels
+    // (1) Planregel-strategieën
     const STRATS=[
       {naam:'Wave + kort eerst',r:{...base,groupMode:'wave',flexMode:'end',shortFirst:true,certainFirst:false,baileyWelsh:false}},
-      {naam:'Wave + Bailey-Welsh',r:{...base,groupMode:'wave',flexMode:'end',shortFirst:true,baileyWelsh:true}},
-      {naam:'Gespreid + buffer verspreid',r:{...base,groupMode:'spread',flexMode:'spread',shortFirst:false,baileyWelsh:false}},
-      {naam:'Kort eerst + verspreid',r:{...base,groupMode:'spread',flexMode:'spread',shortFirst:true}},
-      {naam:'Digitaal clusteren',r:{...base,digitalMode:'cluster',groupMode:'wave',flexMode:'end'}},
+      {naam:'Gespreid + verspreid',r:{...base,groupMode:'spread',flexMode:'spread',shortFirst:false}},
+      {naam:'Kort eerst + Bailey-Welsh',r:{...base,groupMode:'wave',flexMode:'end',shortFirst:true,baileyWelsh:true}},
       {naam:'Zeker eerst + strak',r:{...base,certainFirst:true,groupMode:'wave',flexMode:'end',shortFirst:true}},
     ]
-    const evalCfg=(rooms,r,benut)=>{
-      const res=computeRaster(cfg,newRows,ctrlRows,{...m2,benutting:benut},r,{mode:'vast',kamers:rooms,specialisten:rooms})
+    // (3) Verdelingsprofielen — geven per profiel gewijzigde codes (dagdelen/weekdagen)
+    // en/of dagdeelverdeling terug. Zo durft de solver dagen/dagdelen te specialiseren.
+    const dd=(O,M)=>({O,M,A:false})
+    const isVerr=r=>/ver|gips|echo|ingreep|scop|behandel/i.test((r.afspraakcode||'')+' '+(r.omschrijving||''))
+    const DISTS=[
+      {naam:'Gelijkmatig',uitleg:'vraag evenwichtig over alle dagen en dagdelen',
+        f:(nr,cr)=>({nr,cr,m2p:{}})},
+      {naam:'Ochtend-zwaar',uitleg:'zwaartepunt in de ochtend',
+        f:(nr,cr)=>({nr,cr,m2p:{verOch:65}})},
+      {naam:'Middag-zwaar',uitleg:'zwaartepunt in de middag',
+        f:(nr,cr)=>({nr,cr,m2p:{verOch:38}})},
+      {naam:'Nieuw ’s ochtends · controle ’s middags',uitleg:'ochtenden voor nieuwe patiënten, middagen voor controles',
+        f:(nr,cr)=>({nr:nr.map(r=>({...r,dagdelen:dd(true,false)})),cr:cr.map(r=>({...r,dagdelen:dd(false,true)})),m2p:{verOch:50}})},
+      {naam:'Digitaal/telefonisch clusteren in de middag',uitleg:'consulten op afstand gebundeld in de middag',
+        f:(nr,cr)=>({nr,cr:cr.map(r=>r.digitaal?({...r,dagdelen:dd(false,true)}):r),m2p:{}})},
+      {naam:'Verrichtingen op vaste ochtenden',uitleg:'verrichtingen gebundeld in ochtendblokken',
+        f:(nr,cr)=>({nr,cr:cr.map(r=>isVerr(r)?({...r,dagdelen:dd(true,false)}):r),m2p:{}})},
+      {naam:'Nieuw en controle op eigen dagen',uitleg:'sommige dagen vooral nieuw, andere vooral controle',
+        f:(nr,cr)=>({nr:nr.map(r=>({...r,weekdagen:{MA:true,DI:false,WO:true,DO:false,VR:true}})),
+                     cr:cr.map(r=>({...r,weekdagen:{MA:false,DI:true,WO:false,DO:true,VR:true}})),m2p:{}})},
+    ]
+    const BENUTS=[78,85,92,97]
+    const evalCfg=(rooms,strat,dist,benut)=>{
+      const t=dist.f(newRows.map(r=>({...r})),ctrlRows.map(r=>({...r})))
+      const res=computeRaster(cfg,t.nr,t.cr,{...m2,...t.m2p,benutting:benut},strat.r,{mode:'vast',kamers:rooms,specialisten:rooms})
       const k=res.kpi.week
-      return {overflow:res.ntp.length,benut,rooms,r,benutting:k.benutting,spreiding:k.spreiding,wissels:k.wissels,flex:k.flex,appts:k.appts}
+      return {overflow:res.ntp.length,benut,rooms,strat:strat.naam,rules:strat.r,
+        distNaam:dist.naam,distUitleg:dist.uitleg,patch:{nr:t.nr,cr:t.cr,m2p:t.m2p},
+        spreiding:k.spreiding,wissels:k.wissels,flex:k.flex}
     }
-    // Per kameraantal: zoek per strategie de LAAGSTE benutting die alles plaatst
     const solveRooms=rooms=>{
-      const cands=STRATS.map(s=>{
+      const cands=[]
+      for(const dist of DISTS) for(const strat of STRATS){
         let hit=null
-        for(let bnt=74;bnt<=98;bnt+=4){ const e=evalCfg(rooms,s.r,bnt); if(e.overflow===0){hit={...e,strat:s.naam};break} }
-        if(!hit){ const e=evalCfg(rooms,s.r,98); hit={...e,strat:s.naam} }
-        return hit
-      })
-      // Score: eerst passend (overflow 0), dan minste typewissels (rust), dan hoogste
-      // spreiding (gelijkmatige week), dan meeste flex (buffer).
+        for(const bnt of BENUTS){ const e=evalCfg(rooms,strat,dist,bnt); if(e.overflow===0){hit=e;break} }
+        if(!hit) hit=evalCfg(rooms,strat,dist,97)
+        cands.push(hit)
+      }
+      // Score: passend eerst, dan minste typewissels (rust), dan hoogste spreiding
+      // (gelijkmatige week), dan meeste flex (buffer).
       cands.sort((a,b)=>(a.overflow-b.overflow)||(a.wissels-b.wissels)||(b.spreiding-a.spreiding)||(b.flex-a.flex))
       return cands
     }
@@ -2289,32 +2313,43 @@ export default function RasterTool(){
       ctrlRows.reduce((s,r)=>s+cfg.ctrlPat*((r.percentage||0)/100),0)) || (nReal+nNtp)
     const mkScen=(c,key,naam,tint)=>{
       const fit=c.overflow===0
-      return {key,naam,tint,rooms:c.rooms,benut:c.benut,fit,rules:c.r,
-        sub:`${c.rooms} kamer${c.rooms===1?'':'s'} · ${c.strat}`,
+      return {key,naam,tint,rooms:c.rooms,benut:c.benut,fit,rules:c.rules,patch:c.patch,distNaam:c.distNaam,
+        sub:`${c.rooms} kamer${c.rooms===1?'':'s'} · ${c.distNaam}`,
         metric:fit?`${demandCount}/${demandCount} geplaatst`:`${Math.max(0,demandCount-c.overflow)}/${demandCount} geplaatst`,
         hoe:fit
-          ? `De solver koos strategie «${c.strat}» bij ${c.benut}% benutting: alle afspraken passen, ${c.wissels} typewissels, spreiding ${c.spreiding}%, ± ${c.flex} min flex over.`
-          : `Beste poging «${c.strat}» (${c.benut}% benutting): ${c.overflow} afspraken passen niet in ${c.rooms} kamer${c.rooms===1?'':'s'}.`}
+          ? `Verdeling «${c.distNaam}» (${c.distUitleg}) met strategie «${c.strat}» bij ${c.benut}% benutting: alles past — ${c.wissels} typewissels, spreiding ${c.spreiding}%, ± ${c.flex} min flex.`
+          : `Beste poging: verdeling «${c.distNaam}» + «${c.strat}» (${c.benut}%). ${c.overflow} afspraken passen niet in ${c.rooms} kamer${c.rooms===1?'':'s'}.`}
     }
-    let scenarios, solverKlaar=false
+    let scenarios, solverKlaar=false, solverTip=null
     if(solver && solver.atR && solver.atR.length && solver.baseRooms===beschRooms){
       solverKlaar=true
       const a=solver.atR, a1=solver.atR1
       const s1=mkScen(a[0],'opt','Optimale planning',C.primary)
-      const alt=a.find(c=>c.strat!==a[0].strat)||a[1]||a[0]
-      const s2=mkScen(alt,'alt','Alternatieve aanpak',C.green)
+      // Alternatief = beste kandidaat met een ANDERE verdeling (echt andere aanpak)
+      const alt=a.find(c=>c.distNaam!==a[0].distNaam)||a[1]||a[0]
+      const s2=mkScen(alt,'alt','Andere verdeling',C.green)
       const s3=mkScen((a1&&a1[0])||a[0],'kamer','Kamer erbij','#8B5CF6')
       scenarios=[s1,s2,s3]
+      // Kritische tip over de beste verdeling
+      if(a[0].distNaam!=='Gelijkmatig' && a[0].overflow===0)
+        solverTip=`De solver ziet dat «${a[0].distNaam}» (${a[0].distUitleg}) hier het rustigst inplant — kies scenario 1 om dat toe te passen.`
     } else {
-      // Analytische fallback zolang de solver nog rekent (eerste render)
       const b1=benutVoorKamers(beschRooms), b3=benutVoorKamers(beschRooms+1)
       scenarios=[
-        {key:'opt',naam:'Optimale planning',sub:`${beschRooms} kamer${beschRooms===1?'':'s'} · solver rekent…`,tint:C.primary,rooms:beschRooms,benut:clampBenut(b1),fit:b1<=100,metric:`${demandCount}/${demandCount}`,hoe:'De solver analyseert de beste planregel-combinatie…'},
-        {key:'alt',naam:'Alternatieve aanpak',sub:`${beschRooms} kamer${beschRooms===1?'':'s'}`,tint:C.green,rooms:beschRooms,benut:clampBenut(Math.max(b1,90)),fit:b1<=100,rules:{baileyWelsh:true},metric:'analyse…',hoe:'De solver zoekt een alternatieve strategie…'},
+        {key:'opt',naam:'Optimale planning',sub:`${beschRooms} kamer${beschRooms===1?'':'s'} · solver rekent…`,tint:C.primary,rooms:beschRooms,benut:clampBenut(b1),fit:b1<=100,metric:`${demandCount}/${demandCount}`,hoe:'De solver toetst strategieën × benutting × verdeling over dagen/dagdelen…'},
+        {key:'alt',naam:'Andere verdeling',sub:`${beschRooms} kamer${beschRooms===1?'':'s'}`,tint:C.green,rooms:beschRooms,benut:clampBenut(Math.max(b1,90)),fit:b1<=100,metric:'analyse…',hoe:'De solver zoekt een alternatieve dag-/dagdeelverdeling…'},
         {key:'kamer',naam:'Kamer erbij',sub:`${beschRooms+1} kamers`,tint:'#8B5CF6',rooms:beschRooms+1,benut:clampBenut(Math.max(b3,70)),fit:b3<=100,metric:`${demandCount}/${demandCount}`,hoe:'De solver rekent de comfortabelste opzet met een extra kamer door…'},
       ]
     }
-    const applyScenario=s=>{ setM2(p=>({...p,benutting:s.benut})); setCapacity({mode:'vast',kamers:s.rooms,specialisten:Math.max(s.rooms,capacity.specialisten)}); if(s.rules) setRules(p=>({...p,...s.rules})) }
+    if(solverTip) adviezen.unshift({t:'ok',m:solverTip})
+    // Toepassen: zet verdeling (codes + dagdeelverdeling), planregels, benutting én kamers
+    const applyScenario=s=>{
+      if(s.patch){ if(s.patch.nr) setNewRows(s.patch.nr); if(s.patch.cr) setCtrlRows(s.patch.cr)
+        setM2(p=>({...p,...(s.patch.m2p||{}),benutting:s.benut})) }
+      else setM2(p=>({...p,benutting:s.benut}))
+      setCapacity({mode:'vast',kamers:s.rooms,specialisten:Math.max(s.rooms,capacity.specialisten)})
+      if(s.rules) setRules(p=>({...p,...s.rules}))
+    }
 
     // ── Time-grid raster (resource calendar: rooms as columns, time on Y) ──────
     const PXMIN=calZoom*0.95 // px per minute for the grid
@@ -2765,7 +2800,7 @@ export default function RasterTool(){
         {openPanels.scenarios&&(
         <div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:12,padding:'14px 16px'}}>
           <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:11,flexWrap:'wrap'}}>
-            <span style={{fontSize:11.5,color:C.muted,flex:1,minWidth:200}}>Een <b style={{color:C.text}}>solver</b> draait op de achtergrond en toetst zes planregel-strategieën × meerdere benuttingsniveaus met de échte engine. Scenario 1 = beste in je huidige kamers, 2 = beste alternatieve aanpak, 3 = met een kamer erbij. Eén klik past strategie, benutting én kamers toe.</span>
+            <span style={{fontSize:11.5,color:C.muted,flex:1,minWidth:200}}>Een <b style={{color:C.text}}>solver</b> draait op de achtergrond en toetst met de échte engine drie assen tegelijk: <b style={{color:C.text}}>planregels × benutting × verdeling over dagen/dagdelen</b> (bv. nieuw 's ochtends & controle 's middags, of type-eigen dagen). Scenario 1 = beste in je huidige kamers, 2 = beste andere verdeling, 3 = met een kamer erbij.</span>
             <span style={{fontSize:10.5,fontWeight:700,padding:'4px 11px',borderRadius:20,display:'inline-flex',alignItems:'center',gap:6,
               background:solving?'#FBF3E2':'#EAF5EE',color:solving?'#B8860B':C.green,border:`1px solid ${solving?'#EFD9B4':'#C9E6D5'}`}}>
               <span style={{width:7,height:7,borderRadius:'50%',background:solving?'#D9860A':C.green,animation:solving?'pmPulse 1s infinite':'none'}}/>
