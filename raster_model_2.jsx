@@ -1691,48 +1691,66 @@ export default function RasterTool(){
         </div>
 
         <Card style={{marginBottom:16}}>
-          <H3>Weekdagverdeling (%)</H3>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14,flexWrap:'wrap',gap:8}}>
+            <H3 style={{margin:0}}>Weekdagverdeling</H3>
+            <span style={{fontSize:11.5,fontWeight:700,padding:'4px 12px',borderRadius:20,
+              background:m2c.dSum===100?'#EAF5EE':'#FCEEEB',color:m2c.dSum===100?C.green:C.danger,
+              border:`1px solid ${m2c.dSum===100?'#C9E6D5':'#F1CFC8'}`}}>
+              {m2c.dSum===100?'✓ ':'⚠ '}Som {m2c.dSum}%{m2c.dSum!==100?' — moet 100%':''}
+            </span>
+          </div>
           <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:10}}>
             {WEEKDAY_KEYS.map((k,i)=>{
-              const v=m2.days[k]||0
+              const v=m2.days[k]||0, mxv=Math.max(1,...WEEKDAY_KEYS.map(x=>m2.days[x]||0))
+              const off=v===0
               return(
-                <div key={k} style={{background:C.rowAlt,borderRadius:9,padding:14,textAlign:'center',border:`1px solid ${C.border}`}}>
-                  <div style={{fontSize:12,fontWeight:700,color:C.primary,marginBottom:8}}>{DAY_ABBR[i]}</div>
-                  <button onClick={()=>setM2(p=>({...p,days:{...p.days,[k]:Math.max(0,p.days[k]-1)}}))}
-                    style={{width:26,height:26,border:`1px solid ${C.border}`,borderRadius:5,background:C.white,cursor:'pointer',fontWeight:700,color:C.primary}}>−</button>
-                  <div style={{fontSize:20,fontWeight:700,color:C.primary,margin:'7px 0'}}>{v}<span style={{fontSize:11,color:C.muted,fontWeight:400}}>%</span></div>
-                  <button onClick={()=>setM2(p=>({...p,days:{...p.days,[k]:p.days[k]+1}}))}
-                    style={{width:26,height:26,border:`1px solid ${C.border}`,borderRadius:5,background:C.white,cursor:'pointer',fontWeight:700,color:C.primary}}>+</button>
-                  <div style={{marginTop:8,height:3,borderRadius:2,background:C.border,overflow:'hidden'}}>
-                    <div style={{height:'100%',width:Math.min(100,v*5)+'%',background:C.light,transition:'width 0.2s'}}/>
+                <div key={k} style={{background:off?C.surface2:C.white,borderRadius:12,padding:'12px 10px',
+                  border:`1px solid ${off?C.border:C.light}`,transition:'all 0.13s'}}>
+                  <div style={{fontSize:11,fontWeight:800,color:off?C.muted:C.primary,textAlign:'center',letterSpacing:'0.05em',marginBottom:8}}>{DAY_ABBR[i]}</div>
+                  {/* verticale vulbar */}
+                  <div style={{height:52,borderRadius:8,background:C.surface2,position:'relative',overflow:'hidden',marginBottom:9,border:`1px solid ${C.border}`}}>
+                    <div style={{position:'absolute',left:0,right:0,bottom:0,height:(v/mxv*100)+'%',
+                      background:`linear-gradient(180deg,${C.light},${C.primary})`,transition:'height 0.25s',borderRadius:'0 0 7px 7px'}}/>
+                    <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
+                      <span style={{fontSize:16,fontWeight:800,color:v/mxv>0.55?'#fff':C.text,fontVariantNumeric:'tabular-nums'}}>{v}<span style={{fontSize:9,fontWeight:600,opacity:0.8}}>%</span></span>
+                    </div>
+                  </div>
+                  <div style={{display:'flex',gap:5}}>
+                    <button onClick={()=>setM2(p=>({...p,days:{...p.days,[k]:Math.max(0,p.days[k]-5)}}))}
+                      style={{flex:1,height:26,border:`1px solid ${C.border}`,borderRadius:7,background:C.surface2,cursor:'pointer',fontWeight:800,color:C.primary,fontSize:14}}>−</button>
+                    <button onClick={()=>setM2(p=>({...p,days:{...p.days,[k]:Math.min(100,p.days[k]+5)}}))}
+                      style={{flex:1,height:26,border:`1px solid ${C.border}`,borderRadius:7,background:C.surface2,cursor:'pointer',fontWeight:800,color:C.primary,fontSize:14}}>+</button>
                   </div>
                 </div>
               )
             })}
           </div>
-          <div style={{textAlign:'center',marginTop:12,fontWeight:700,fontSize:15,color:m2c.dSum===100?C.green:C.danger}}>
-            {m2c.dSum===100?'✓ ':'⚠ '}Som: {m2c.dSum}%{m2c.dSum!==100&&<span style={{fontSize:11,fontWeight:400}}> — moet 100% zijn</span>}
-          </div>
         </Card>
 
-        <div style={{background:C.primary,borderRadius:10,padding:18}}>
-          <div style={{display:'grid',gridTemplateColumns:'repeat(6,1fr)',textAlign:'center'}}>
+        {/* samenvatting — nette stat-tegels */}
+        <div style={{background:'linear-gradient(135deg,#12405E,#1C6EA4)',borderRadius:14,padding:'18px 20px',boxShadow:'0 8px 24px rgba(28,110,164,0.18)'}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:14}}>
+            <span style={{width:18,height:2,background:'#5ED6BC'}}/>
+            <span style={{fontSize:9.5,fontWeight:700,color:'#B9E4EF',letterSpacing:'0.18em'}}>SAMENVATTING SPREEKUURTIJDEN</span>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10}}>
             {[
-              ['Ochtend bruto',m2c.od+' min'],
-              ['Ochtend netto',m2c.nOch+' min'],
-              ['Middag bruto',m2c.md+' min'],
-              ['Middag netto',m2c.nMid+' min'],
-              ['Bruto/week',m2c.bWk+' min'],
-              ['Netto/week',m2c.nWk+' min']
-            ].map(([l,v],i)=>(
-              <div key={l} style={{padding:'0 10px',borderLeft:i>0?'1px solid rgba(255,255,255,0.18)':'none'}}>
-                <div style={{fontSize:9.5,color:'rgba(255,255,255,0.65)',textTransform:'uppercase',letterSpacing:'0.07em',marginBottom:3}}>{l}</div>
-                <div style={{fontSize:18,fontWeight:700,color:'#fff'}}>{v}</div>
+              ['Ochtend',m2c.nOch,m2c.od,C.light],
+              ['Middag',m2c.nMid,m2c.md,'#7FD4C0'],
+              ['Per week (netto)',m2c.nWk,m2c.bWk,'#A9C7D9'],
+            ].map(([l,netto,bruto,ac])=>(
+              <div key={l} style={{background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.12)',borderRadius:11,padding:'12px 14px'}}>
+                <div style={{fontSize:9.5,color:'rgba(255,255,255,0.7)',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:6}}>{l}</div>
+                <div style={{fontSize:22,fontWeight:800,color:'#fff',fontVariantNumeric:'tabular-nums',lineHeight:1}}>{netto}<span style={{fontSize:12,fontWeight:600,color:'rgba(255,255,255,0.7)'}}> min</span></div>
+                <div style={{marginTop:8,height:5,borderRadius:3,background:'rgba(255,255,255,0.15)',overflow:'hidden'}}>
+                  <div style={{height:'100%',width:(bruto>0?netto/bruto*100:0)+'%',background:ac,borderRadius:3}}/>
+                </div>
+                <div style={{fontSize:10,color:'rgba(255,255,255,0.6)',marginTop:5}}>netto van {bruto} min bruto</div>
               </div>
             ))}
           </div>
-          <div style={{marginTop:12,fontSize:11,color:'rgba(255,255,255,0.7)',textAlign:'center'}}>
-            Per spreekuur = één dagdeel · Benutting {m2.benutting}% · Verdeling ochtend {m2.verOch}% / middag {100-m2.verOch}%
+          <div style={{marginTop:12,fontSize:11,color:'rgba(255,255,255,0.75)'}}>
+            Per spreekuur = één dagdeel · Benutting {m2.benutting}% · Verdeling ochtend {m2.verOch}% / middag {100-m2.verOch}%{m2.avondOn?` / avond ${m2.verAvond}%`:''}
           </div>
         </div>
       </div>
@@ -1928,12 +1946,12 @@ export default function RasterTool(){
               return(
                 <div key={opt.v} onClick={()=>setRules(p=>({...p,digitalMode:opt.v}))}
                   style={{flex:1,minWidth:130,display:'flex',alignItems:'center',gap:9,padding:'9px 13px',borderRadius:7,cursor:'pointer',
-                    background:on?C.rowAlt:'transparent',border:`1px solid ${on?C.light:C.border}`,transition:'all 0.13s'}}>
-                  <div style={{width:15,height:15,borderRadius:'50%',border:`2px solid ${on?C.light:C.border}`,
-                    background:on?C.light:'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
-                    {on&&<div style={{width:5,height:5,borderRadius:'50%',background:'#fff'}}/>}
+                    background:on?C.blueAccent:C.white,border:`1.5px solid ${on?C.primary:C.border}`,boxShadow:on?'0 2px 10px rgba(28,110,164,0.12)':'none',transition:'all 0.13s'}}>
+                  <div style={{width:20,height:20,borderRadius:'50%',border:`2px solid ${on?C.primary:C.border}`,
+                    background:on?C.primary:'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,transition:'all 0.13s'}}>
+                    {on&&<span style={{color:'#fff',fontSize:11,fontWeight:800}}>✓</span>}
                   </div>
-                  <span style={{fontSize:12.5,fontWeight:on?600:400,color:on?C.primary:C.text}}>{opt.l}</span>
+                  <span style={{fontSize:12.5,fontWeight:on?700:500,color:on?C.primary:C.text}}>{opt.l}</span>
                 </div>
               )
             })}
@@ -1956,12 +1974,12 @@ export default function RasterTool(){
               return(
                 <div key={opt.v} onClick={()=>setRules(p=>({...p,groupMode:opt.v}))}
                   style={{flex:1,minWidth:160,display:'flex',alignItems:'center',gap:9,padding:'9px 13px',borderRadius:7,cursor:'pointer',
-                    background:on?C.rowAlt:'transparent',border:`1px solid ${on?C.light:C.border}`,transition:'all 0.13s'}}>
-                  <div style={{width:15,height:15,borderRadius:'50%',border:`2px solid ${on?C.light:C.border}`,
-                    background:on?C.light:'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
-                    {on&&<div style={{width:5,height:5,borderRadius:'50%',background:'#fff'}}/>}
+                    background:on?C.blueAccent:C.white,border:`1.5px solid ${on?C.primary:C.border}`,boxShadow:on?'0 2px 10px rgba(28,110,164,0.12)':'none',transition:'all 0.13s'}}>
+                  <div style={{width:20,height:20,borderRadius:'50%',border:`2px solid ${on?C.primary:C.border}`,
+                    background:on?C.primary:'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,transition:'all 0.13s'}}>
+                    {on&&<span style={{color:'#fff',fontSize:11,fontWeight:800}}>✓</span>}
                   </div>
-                  <span style={{fontSize:12.5,fontWeight:on?600:400,color:on?C.primary:C.text}}>{opt.l}</span>
+                  <span style={{fontSize:12.5,fontWeight:on?700:500,color:on?C.primary:C.text}}>{opt.l}</span>
                 </div>
               )
             })}
@@ -1984,12 +2002,12 @@ export default function RasterTool(){
               return(
                 <div key={opt.v} onClick={()=>setRules(p=>({...p,flexMode:opt.v}))}
                   style={{flex:1,minWidth:160,display:'flex',alignItems:'center',gap:9,padding:'9px 13px',borderRadius:7,cursor:'pointer',
-                    background:on?C.rowAlt:'transparent',border:`1px solid ${on?C.light:C.border}`,transition:'all 0.13s'}}>
-                  <div style={{width:15,height:15,borderRadius:'50%',border:`2px solid ${on?C.light:C.border}`,
-                    background:on?C.light:'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
-                    {on&&<div style={{width:5,height:5,borderRadius:'50%',background:'#fff'}}/>}
+                    background:on?C.blueAccent:C.white,border:`1.5px solid ${on?C.primary:C.border}`,boxShadow:on?'0 2px 10px rgba(28,110,164,0.12)':'none',transition:'all 0.13s'}}>
+                  <div style={{width:20,height:20,borderRadius:'50%',border:`2px solid ${on?C.primary:C.border}`,
+                    background:on?C.primary:'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,transition:'all 0.13s'}}>
+                    {on&&<span style={{color:'#fff',fontSize:11,fontWeight:800}}>✓</span>}
                   </div>
-                  <span style={{fontSize:12.5,fontWeight:on?600:400,color:on?C.primary:C.text}}>{opt.l}</span>
+                  <span style={{fontSize:12.5,fontWeight:on?700:500,color:on?C.primary:C.text}}>{opt.l}</span>
                 </div>
               )
             })}
