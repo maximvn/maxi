@@ -1048,14 +1048,14 @@ export default function RasterTool(){
   //    (1) planregel-strategie, (2) benutting, (3) VERDELING over dagen/dagdelen —
   //    bv. nieuw 's ochtends & controle 's middags, of type-specifieke dagen — en
   //    kiest per doel de combinatie die alles het best & rustigst inplant. ──
-  // De solver rekent 3 KRAPTE-NIVEAUS door met de ECHTE engine. Ze verschillen
-  // uitsluitend in speelruimte (benutting + flex + kamers), zodat de scenario's
-  // een duidelijk voelbaar verschil hebben én volledig omkeerbaar zijn: schakelen
-  // tussen 1↔2↔3 verandert alleen benutting/flex/kamers — nooit de codes zelf.
-  // Omdat de uitkomst niet van de huidige capaciteit/benutting afhangt, blijven de
-  // scenario's stabiel: na toepassen van scenario 3 kun je gewoon terug naar 1 of 2.
-  const runSolver=useCallback((cfg,newRows,ctrlRows,m2,rules)=>{
+  // De solver rekent 3 KRAPTE-NIVEAUS door met de ECHTE engine, ALTIJD vanuit de
+  // ingestelde kamers/specialisten (baseRooms). Scenario 1 & 2 gebruiken exact die
+  // ingestelde capaciteit — ze verschillen alléén in speelruimte (benutting + flex):
+  // 1 = maximaal strak, 2 = strak met flexruimte. Scenario 3 = ruim: één kamer erbij.
+  // De codes blijven ongemoeid, dus schakelen tussen 1↔2 is volledig omkeerbaar.
+  const runSolver=useCallback((cfg,newRows,ctrlRows,m2,rules,baseRooms)=>{
     const clampB=b=>Math.max(60,Math.min(98,Math.round(b)))
+    const R0=Math.max(1,baseRooms||1)
     // Eén doorrekening bij (kamers, benutting, flexmodus) — codes blijven ongemoeid.
     const evalAt=(rooms,benut,flexMode)=>{
       const res=computeRaster(cfg,newRows,ctrlRows,{...m2,benutting:benut},
@@ -1064,22 +1064,22 @@ export default function RasterTool(){
       return {rooms,benut,flexMode,overflow:res.ntp.length,
         flex:k.flex,spreiding:k.spreiding,wissels:k.wissels,planned:k.planned,capacity:k.capacity}
     }
-    // Referentie-kamers = het kleinste aantal waarin de vraag bij 90% past.
-    // Onafhankelijk van de gekozen capaciteit → stabiele basis voor de scenario's.
-    let refRooms=1
-    for(let R=1;R<=12;R++){ refRooms=R; if(evalAt(R,90,'end').overflow===0) break }
     // Laagste benutting die in R kamers nog past (= meeste flex terwijl alles past).
     const minFit=R=>{ for(let b=60;b<=98;b+=2){ if(evalAt(R,b,'spread').overflow===0) return b } return 98 }
-    const fitRef=minFit(refRooms)
-    // Kraptes: 1 = maximaal strak (hoog, weinig flex), 2 = krap met flexruimte,
-    // 3 = ruim (kamer erbij, laag → veel flex).
-    const b1=clampB(Math.max(94,fitRef+4))      // strak: nog wat strakker dan strikt nodig
-    const b2=clampB(Math.max(80,Math.min(88,fitRef))) // krap-met-flex: laagste dat past (met marge)
-    const b3=clampB(Math.max(70,minFit(refRooms+1)))  // ruim: laag, in refRooms+1
-    const t1={...evalAt(refRooms,b1,'end'),   key:'strak', naam:'Maximaal strak'}
-    const t2={...evalAt(refRooms,Math.max(b2,fitRef),'spread'), key:'flex',  naam:'Strak met flexruimte'}
-    const t3={...evalAt(refRooms+1,b3,'spread'), key:'ruim',  naam:'Ruim · kamer erbij'}
-    return {refRooms,tiers:[t1,t2,t3]}
+    const fitBase=minFit(R0)          // strakste benutting die nog past in R0
+    const fitPlus=minFit(R0+1)        // idem met een kamer erbij
+    // Kraptes bij de INGESTELDE kamers (R0) voor 1 & 2; R0+1 voor 3. Beide moeten
+    // passen → minimaal fitBase. Als de vraag R0 helemaal vult, schuiven 1 & 2 naar
+    // elkaar toe (dan is er eerlijk gezegd geen flexruimte zonder kamer erbij → 3).
+    // 1 maximaal strak: hoogste benutting, flex aan het einde (afspraken back-to-back).
+    // 2 strak met flex: lagere benutting → meer buffer, verspreid tussen de afspraken.
+    const b1=clampB(Math.max(fitBase,96))                       // strak: maximaal opgevuld
+    const b2=clampB(Math.max(fitBase,74))                       // flex: ruimer, buffers ertussen
+    const b3=clampB(Math.max(fitPlus,72))                       // ruim: laag, met kamer erbij
+    const t1={...evalAt(R0,b1,'end'),      key:'strak', naam:'Maximaal strak'}
+    const t2={...evalAt(R0,b2,'spread'),   key:'flex',  naam:'Strak met flexruimte'}
+    const t3={...evalAt(R0+1,b3,'spread'), key:'ruim',  naam:'Ruim · kamer erbij'}
+    return {baseRooms:R0,tiers:[t1,t2,t3]}
   },[computeRaster])
 
   // Achtergrond-analyse: draait (gedebounced) na elke rasterwijziging, buiten de
@@ -1089,11 +1089,14 @@ export default function RasterTool(){
     if(!raster) return
     setSolving(true)
     const id=setTimeout(()=>{
-      try{ setSolver(runSolver(cfg,newRows,ctrlRows,m2,rules)) }catch(e){ /* solver faalt stil */ }
+      // baseRooms = de INGESTELDE capaciteit (kamers × specialisten, bindend = kleinste),
+      // of het auto-afgeleide aantal kamers. Scenario 1 & 2 gaan hiervan uit.
+      const R=capacity.mode==='vast'?Math.min(capacity.kamers,capacity.specialisten):(raster.numRooms||2)
+      try{ setSolver(runSolver(cfg,newRows,ctrlRows,m2,rules,R)) }catch(e){ /* solver faalt stil */ }
       setSolving(false)
     },240)
     return ()=>clearTimeout(id)
-  },[cfg,newRows,ctrlRows,m2,rules,raster,runSolver])
+  },[cfg,newRows,ctrlRows,m2,rules,capacity,raster,runSolver])
 
   // ENGINE 2.0 — live sync (gedebounced): zodra er een raster is, wordt élke
   // wijziging in gegevens/tijden/regels/capaciteit doorgerekend. De debounce
@@ -3003,7 +3006,7 @@ export default function RasterTool(){
               // Actief = huidige benutting + kamers + flexmodus komen overeen met dit
               // niveau. De drie niveaus hebben unieke (benut,rooms,flexMode) → precies
               // één is actief, ongeacht de volgorde waarin je klikt.
-              const actief=Math.abs(m2.benutting-s.benut)<1.5
+              const actief=Math.abs(m2.benutting-s.benut)<2.5
                 && (capacity.mode==='vast'?Math.min(capacity.kamers,capacity.specialisten):beschRooms)===s.rooms
                 && rules.flexMode===s.flexMode
               const bg=s.tint===C.primary?C.blueAccent:s.tint===C.green?'#EDF7F0':'#F3EEFA'
