@@ -832,7 +832,7 @@ export default function RasterTool(){
     }
 
     // Lay out appointments in a room+dagdeel, honoring flexMode (end vs spread) and Bailey-Welsh.
-    const layoutSlot=(apptsIn, sessStart, dagdeelMin, dd, room)=>{
+    const layoutSlot=(apptsIn, sessStart, dagdeelMin, dd, room, di)=>{
       const appts=apptsIn||[]
       const out=[]
       const usedByAppts=appts.reduce((s,a)=>s+a.duur,0)
@@ -840,17 +840,28 @@ export default function RasterTool(){
       const mkFlex=(start,dur,label)=>({id:'flex_'+dd+'_'+room+'_'+start+'_'+Math.random().toString(36).slice(2,5),
         isFlex:true,dagdeel:dd,room,start,end:start+dur,duur:dur,code:'Flex',
         description:label||'Flexruimte / buffer',category:'flex'})
-      // Push an appointment; if it's the first one and Bailey-Welsh is active, also push a
-      // second OVERBOOKED position at the same start time (visible side-by-side double booking).
+      // Bailey-Welsh — ALLEEN in de ochtend (dd===0). De eerste positie wordt dubbel
+      // geboekt. Staat er nog vraag op de restlijst, dan wordt dáár een échte extra
+      // patiënt geplaatst (die telt dus mee en haalt 1 van de restlijst af); anders
+      // een no-show-compensatie (kopie van de eerste afspraak).
       const pushAppt=(a,idx,t)=>{
-        const isBW=rules.baileyWelsh&&idx===0
+        const isBW=rules.baileyWelsh && idx===0 && dd===0
         out.push({...a,dagdeel:dd,room,start:t,end:t+a.duur,
           baileyWelsh:isBW, _why:explain({...a,baileyWelsh:isBW},idx,appts.length,dd)})
         if(isBW){
-          out.push({...a,id:a.id+'_bw',dagdeel:dd,room,start:t,end:t+a.duur,
-            baileyWelsh:true, overbook:true,
-            description:'Overboeking (Bailey-Welsh)',
-            _why:['Bailey-Welsh: extra (dubbel geboekte) positie op het eerste tijdslot om no-show en startvertraging op te vangen.']})
+          // prefer een restlijst-item van dezelfde dag; anders welke dan ook
+          let ex=null
+          if(res.ntp.length){
+            let ix=res.ntp.findIndex(x=>x.day===di)
+            if(ix<0) ix=0
+            ex=res.ntp.splice(ix,1)[0]
+          }
+          const dur=ex?Math.max(5,ex.duur):a.duur
+          out.push({...(ex||a),id:(ex?ex.id:a.id)+'_bw',dagdeel:dd,room,start:t,end:t+dur,duur:dur,
+            baileyWelsh:true, overbook:true, bwReal:!!ex,
+            description: ex?((ex.description||ex.code)+' · Bailey-Welsh extra'):'Overboeking (Bailey-Welsh)',
+            _why: ex?['Bailey-Welsh: extra patiënt op het eerste ochtendslot — stond anders op de restlijst.']
+                    :['Bailey-Welsh: eerste ochtendslot dubbel geboekt om no-show/startvertraging op te vangen.']})
         }
       }
 
@@ -883,14 +894,14 @@ export default function RasterTool(){
       for(let r=0;r<maxRooms;r++){
         DD.forEach(dd=>{
           const [ss,dm]=sessInfo[dd]
-          slots[ddPrefix[dd]+r]=layoutSlot(built[di][dd][r]||[], ss, dm, ddIndex[dd], r)
+          slots[ddPrefix[dd]+r]=layoutSlot(built[di][dd][r]||[], ss, dm, ddIndex[dd], r, di)
         })
       }
       res.days[di]=slots
     })
 
     // ── ENGINE 2.0: analytics (KPI) + validation ──────────────────────────────
-    const kpi={perDay:{},week:{appts:0,planned:0,capacity:0,flex:0},issues:[]}
+    const kpi={perDay:{},week:{appts:0,planned:0,capacity:0,flex:0,bwExtra:0},issues:[]}
     const sessEndOf=dd=>dd===0?ochEnd:dd===1?midEnd:avondEnd
     ;[0,1,2,3,4].forEach(di=>{
       const slots=res.days[di]
@@ -901,7 +912,7 @@ export default function RasterTool(){
         capacity+= dd===0?ochDur : dd===1?midDur : avDur
         ;(arr||[]).forEach(a=>{
           if(a.isFlex){flex+=a.duur;return}
-          if(a.overbook)return               // overbook is extra capacity, not load
+          if(a.overbook){ if(a.bwReal){appts++;kpi.week.bwExtra++} return } // Bailey-Welsh extra telt mee (concurrent, geen extra minuten)
           appts++;planned+=a.duur
           // validation: block must end within its session
           if(a.end>sessEndOf(dd)+0.01)
@@ -2008,7 +2019,7 @@ export default function RasterTool(){
     const nNtp=(raster.ntp||[]).length
 
     // ── ANALYSE 2.1 — vraag vs. capaciteit + modaliteitsmix + risico's ──────────
-    const realAppts=allAppts.filter(a=>!a.isFlex&&!a.overbook)
+    const realAppts=allAppts.filter(a=>!a.isFlex&&(!a.overbook||a.bwReal))
     const modMix=['fysiek','telefonisch','video'].map(mv=>({
       mv,label:modInfo(mv).l,ico:modInfo(mv).ico,
       n:realAppts.filter(a=>(a.modaliteit||(a.digitaal?'telefonisch':'fysiek'))===mv).length
@@ -2054,6 +2065,18 @@ export default function RasterTool(){
     const flexMin=raster.kpi?raster.kpi.week.flex:0
     const beschRooms=capacity.mode==='vast'?Math.min(capacity.kamers,capacity.specialisten):numRooms
 
+    // Belasting per (dag,dagdeel) — pauzes blijven ongemoeid, alleen flex schuift mee
+    const ddLoads=[]
+    ;[0,1,2,3,4].forEach(di=>{ const slots=raster.days[di]; if(!slots) return
+      ddPres.forEach(pre=>{
+        let min=0; for(let r=0;r<numRooms;r++){(slots[pre+r]||[]).forEach(a=>{if(!a.isFlex&&!a.overbook)min+=a.duur})}
+        min+=ntpMinFor(di,pre)
+        if(min>0) ddLoads.push({min,dur:(ddDurMap[pre]||midDur)})
+      }) })
+    const benutVoorKamers=R=>{ if(R<=0)return 999; let mx=0; ddLoads.forEach(x=>{mx=Math.max(mx,x.min/(x.dur*R))}); return Math.ceil(mx*100) }
+    const overflowAppts=(R,b)=>Math.round(ddLoads.reduce((s,x)=>s+Math.max(0,x.min-x.dur*b/100*R),0)/avgDuur)
+    const clampBenut=b=>Math.max(50,Math.min(98,b))
+
     // Advies-signalen — concreet en met dag/kamer erbij waar mogelijk
     const adviezen=[]
     if(nNtp>0){
@@ -2062,8 +2085,15 @@ export default function RasterTool(){
       else adviezen.push({t:'bad',m:`${nNtp} afspraken passen niet. Ook bij 92% benutting zijn er ${compactRooms} parallelle kamers nodig (nu ${beschRooms}). Voeg een kamer/specialist toe óf verlaag de vraag.`})
     }
     if(zwakkeKamer && zwakkeKamer.cnt>0 && zwakkeKamer.cnt<=3){
-      adviezen.push({t:'warn',m:`Kamer ${zwakkeKamer.r+1} draagt over de hele week maar ${zwakkeKamer.cnt} afspraken — die kamer is nauwelijks rendabel. Overweeg 'm te schrappen en de benutting te verhogen; de vraag past dan efficiënter in ${numRooms-1} kamers.`})
+      adviezen.push({t:'warn',m:`Kamer ${zwakkeKamer.r+1} draagt over de hele week maar ${zwakkeKamer.cnt} afspraken — die kamer is nauwelijks rendabel. Overweeg 'm te schrappen en de flexblokken in te korten (benutting omhoog); de vraag past dan efficiënter in ${numRooms-1} kamers.`})
     }
+    // Bailey-Welsh — alleen ochtend; kan afspraken van de restlijst halen
+    const bwExtra=raster.kpi?raster.kpi.week.bwExtra:0
+    const daysMorning=[0,1,2,3,4].filter(di=>raster.days[di]).length
+    const bwPotential=beschRooms*daysMorning
+    if(rules.baileyWelsh && bwExtra>0) adviezen.push({t:'ok',m:`Bailey-Welsh plaatste ${bwExtra} extra ochtendafspra${bwExtra===1?'ak':'ken'} als dubbelboeking op het eerste slot — die stonden anders op de restlijst.`})
+    if(!rules.baileyWelsh && nNtp>0) adviezen.push({t:'info',m:`Zet Bailey-Welsh aan → tot ${bwPotential} extra ochtendafspraken (dubbelboeking op het eerste slot, alléén 's ochtends) zonder extra kamer. Dat haalt afspraken van de restlijst.`})
+    if(nNtp>0 && capacity.mode==='vast' && benutVoorKamers(beschRooms)>97) adviezen.push({t:'bad',m:`Kritisch: met ${beschRooms} kamer${beschRooms===1?'':'s'} past het ook met minimale flex niet. Kun je geen kamer bijzetten, verruim dan de spreekuurtijden of verlaag de weekvraag — de pauzes blijven ongemoeid.`})
     if(nNtp===0 && flexMin>avgDuur*8 && m2.benutting<90){
       const winst=Math.floor((flexMin - (flexMin*m2.benutting/92))/avgDuur)
       if(winst>=3) adviezen.push({t:'info',m:`Er is ~${flexMin} min flex ingepland. Zou je de benutting naar 92% zetten, dan komt ruimte vrij voor ± ${winst} extra afspraken per week zonder extra kamer.`})
@@ -2073,12 +2103,33 @@ export default function RasterTool(){
     if(pctOnzeker>=30&&rules.flexMode!=='spread') adviezen.push({t:'info',m:`${pctOnzeker}% onzekere afspraken — 'Buffer: verspreid' vangt uitloop beter op.`})
     if(!adviezen.length) adviezen.push({t:'ok',m:'Vraag en capaciteit zijn in balans; geen knelpunten gevonden.'})
 
-    // ── 3 SCENARIO'S — één klik past benutting + kamers aan, engine rekent live door ──
-    const scenarios=[
-      {key:'compact',naam:'Compact',uitleg:'Hoge benutting, korte flex — minste kamers.',benut:Math.min(95,Math.max(m2.benutting,90)),tint:C.primary},
-      {key:'balans',naam:'Gebalanceerd',uitleg:'Werkbare benutting met wat lucht voor uitloop.',benut:85,tint:C.green},
-      {key:'ruim',naam:'Ruim',uitleg:'Lagere benutting, meer buffer — rustige dag.',benut:78,tint:'#8B5CF6'},
-    ].map(s=>({...s,rooms:neededRoomsAt(s.benut)}))
+    // ── 3 KRITISCHE SCENARIO'S ─────────────────────────────────────────────────
+    // S1 — HUIDIGE kamers vasthouden; alleen benutting/flex bijsturen om te halen
+    const b1raw=benutVoorKamers(beschRooms)
+    const s1Fit=b1raw<=97
+    const s1={key:'huidig',naam:`Binnen je ${beschRooms} kamer${beschRooms===1?'':'s'}`,tint:C.primary,rooms:beschRooms,
+      benut:clampBenut(s1Fit?Math.max(b1raw,60):97),fit:s1Fit,
+      uitleg:'Zelfde kamers, alleen de flexblokken korter of langer.',
+      hoe:s1Fit
+        ? (b1raw<=m2.benutting
+            ? `Kan al met ${clampBenut(Math.max(b1raw,60))}% benutting — ruimere flex mogelijk.`
+            : `Zet benutting op ${clampBenut(b1raw)}% (flex per spreekuur inkorten) → alles past in ${beschRooms} kamer${beschRooms===1?'':'s'}.`)
+        : `Ook met flex tot het minimum (97%) blijven ± ${Math.max(1,overflowAppts(beschRooms,97))} afspraken over. Zónder extra kamer niet volledig haalbaar — verlaag dan de vraag of verruim de spreekuurtijden.`}
+
+    // S2 — COMBI: één kamer erbij + passende benutting (comfortabeler)
+    const b2raw=benutVoorKamers(beschRooms+1)
+    const s2={key:'combi',naam:`Eén kamer erbij (${beschRooms+1})`,tint:C.green,rooms:beschRooms+1,
+      benut:clampBenut(Math.max(b2raw,68)),fit:b2raw<=97,
+      uitleg:'Een kamer/specialist extra, benutting terug naar comfort.',
+      hoe:`Met ${beschRooms+1} kamers kan de benutting naar ${clampBenut(Math.max(b2raw,68))}% — meer lucht per spreekuur.${b2raw<45?` Let op: de extra kamer wordt licht benut (${Math.max(b2raw,10)}%), mogelijk niet rendabel.`:''}`}
+
+    // S3 — RUIM: rustige dag, benutting laag, kamers zoals nodig
+    const s3benut=72, s3rooms=neededRoomsAt(s3benut)
+    const s3={key:'ruim',naam:'Ruime dag',tint:'#8B5CF6',rooms:s3rooms,benut:s3benut,fit:true,
+      uitleg:'Lage druk, brede flex voor uitloop en spoed.',
+      hoe:`${s3benut}% benutting met ruime flex; hiervoor ${s3rooms} kamer${s3rooms===1?'':'s'} nodig.${s3rooms>beschRooms?` (${s3rooms-beschRooms} meer dan nu)`:''}`}
+
+    const scenarios=[s1,s2,s3]
     const applyScenario=s=>{ setM2(p=>({...p,benutting:s.benut})); setCapacity({mode:'vast',kamers:s.rooms,specialisten:Math.max(s.rooms,capacity.specialisten)}) }
 
     // ── Time-grid raster (resource calendar: rooms as columns, time on Y) ──────
@@ -2529,32 +2580,36 @@ export default function RasterTool(){
         <PanelKop id="scenarios" titel="Scenario's" samenvatting="Compact · Gebalanceerd · Ruim — één klik past alles toe"/>
         {openPanels.scenarios&&(
         <div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:12,padding:'14px 16px'}}>
-          <div style={{fontSize:11.5,color:C.muted,marginBottom:11}}>Drie kant-en-klare opzetten — één klik past benutting én kamers aan en rekent direct door.</div>
+          <div style={{fontSize:11.5,color:C.muted,marginBottom:11}}>Drie kritische opzetten — <b style={{color:C.text}}>scenario 1 houdt je huidige kamers vast</b> en zoekt of het te halen is; 2 en 3 laten de kamers meebewegen. Eén klik past alles toe.</div>
           <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12}}>
-            {scenarios.map(s=>{
-              const past=s.rooms<=beschRooms
+            {scenarios.map((s,si)=>{
               const actief=Math.abs(m2.benutting-s.benut)<1 && beschRooms===s.rooms
+              const bg=s.tint===C.primary?C.blueAccent:s.tint===C.green?'#EDF7F0':'#F3EEFA'
               return(
-                <div key={s.key} style={{border:`1.5px solid ${actief?s.tint:C.border}`,borderRadius:12,padding:'13px 14px',
-                  background:actief?(s.tint===C.primary?C.blueAccent:s.tint===C.green?'#EDF7F0':'#F3EEFA'):C.white,transition:'all 0.13s'}}>
-                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}}>
-                    <span style={{fontSize:14,fontWeight:800,color:s.tint}}>{s.naam}</span>
-                    {actief&&<span style={{fontSize:9,fontWeight:700,color:'#fff',background:s.tint,borderRadius:10,padding:'2px 7px'}}>ACTIEF</span>}
+                <div key={s.key} style={{border:`1.5px solid ${actief?s.tint:C.border}`,borderRadius:12,padding:'14px 15px',
+                  background:actief?bg:C.white,transition:'all 0.13s',display:'flex',flexDirection:'column'}}>
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:3,gap:6}}>
+                    <span style={{fontSize:13.5,fontWeight:800,color:s.tint,lineHeight:1.2}}>{si+1}. {s.naam}</span>
+                    {actief&&<span style={{fontSize:9,fontWeight:700,color:'#fff',background:s.tint,borderRadius:10,padding:'2px 7px',flexShrink:0}}>ACTIEF</span>}
                   </div>
-                  <div style={{fontSize:11.5,color:C.muted,lineHeight:1.5,marginBottom:10,minHeight:34}}>{s.uitleg}</div>
-                  <div style={{display:'flex',gap:14,marginBottom:10}}>
-                    <div><div style={{fontSize:9,color:C.muted,textTransform:'uppercase',letterSpacing:'0.05em'}}>Benutting</div>
-                      <div style={{fontSize:17,fontWeight:800,color:C.text,fontVariantNumeric:'tabular-nums'}}>{s.benut}%</div></div>
-                    <div><div style={{fontSize:9,color:C.muted,textTransform:'uppercase',letterSpacing:'0.05em'}}>Kamers nodig</div>
-                      <div style={{fontSize:17,fontWeight:800,color:C.text,fontVariantNumeric:'tabular-nums'}}>{s.rooms}</div></div>
+                  <div style={{fontSize:11,color:C.muted,lineHeight:1.5,marginBottom:11}}>{s.uitleg}</div>
+                  <div style={{display:'flex',gap:8,marginBottom:11}}>
+                    <div style={{flex:1,background:C.surface2,borderRadius:8,padding:'7px 9px'}}>
+                      <div style={{fontSize:8.5,color:C.muted,textTransform:'uppercase',letterSpacing:'0.05em'}}>Benutting</div>
+                      <div style={{fontSize:16,fontWeight:800,color:C.text,fontVariantNumeric:'tabular-nums'}}>{s.benut}%</div></div>
+                    <div style={{flex:1,background:C.surface2,borderRadius:8,padding:'7px 9px'}}>
+                      <div style={{fontSize:8.5,color:C.muted,textTransform:'uppercase',letterSpacing:'0.05em'}}>Kamers</div>
+                      <div style={{fontSize:16,fontWeight:800,color:s.rooms>beschRooms?s.tint:C.text,fontVariantNumeric:'tabular-nums'}}>
+                        {s.rooms}{s.rooms>beschRooms&&<span style={{fontSize:10,fontWeight:600}}> (+{s.rooms-beschRooms})</span>}</div></div>
                   </div>
-                  <div style={{fontSize:10.5,fontWeight:700,marginBottom:10,color:past?C.green:C.danger}}>
-                    {past?`✓ Past in ${beschRooms} beschikbare kamer(s)`:`✗ Vraagt ${s.rooms} kamers (${beschRooms} nu beschikbaar)`}
+                  <div style={{fontSize:10.5,color:C.text,lineHeight:1.45,marginBottom:11,minHeight:48,
+                    padding:'8px 10px',borderRadius:8,background:s.fit?'#EDF7F0':'#FCEEEB',border:`1px solid ${s.fit?'#C9E6D5':'#F0C8C3'}`}}>
+                    <b style={{color:s.fit?C.green:C.danger}}>{s.fit?'✓ Haalbaar':'✗ Niet volledig'}</b> — {s.hoe}
                   </div>
                   <button onClick={()=>applyScenario(s)}
-                    style={{width:'100%',padding:'8px 0',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:700,
+                    style={{marginTop:'auto',width:'100%',padding:'9px 0',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:700,
                       border:`1px solid ${s.tint}`,background:actief?s.tint:C.white,color:actief?'#fff':s.tint,transition:'all 0.12s'}}>
-                    {actief?'Toegepast':'Pas dit scenario toe'}
+                    {actief?'✓ Toegepast':'Pas dit scenario toe'}
                   </button>
                 </div>
               )
@@ -2598,7 +2653,7 @@ export default function RasterTool(){
           const catSeg=(di,pre)=>{
             const slots=raster.days[di]; let nieuw=0,ctrlF=0,ctrlT=0,min=0
             if(slots) for(let r=0;r<numRooms;r++){ (slots[pre+r]||[]).forEach(a=>{
-              if(a.isFlex||a.overbook) return; min+=a.duur
+              if(a.isFlex||(a.overbook&&!a.bwReal)) return; if(!a.overbook) min+=a.duur
               if(a.category==='nieuw') nieuw++; else if(a.digitaal) ctrlT++; else ctrlF++ }) }
             return {nieuw,ctrlF,ctrlT,min,tot:nieuw+ctrlF+ctrlT}
           }
