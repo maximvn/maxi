@@ -1653,41 +1653,6 @@ export default function RasterTool(){
                 background:C.green,borderRadius:10,padding:'10px 18px'}}>Bestand kiezen ↑</span>
             </div>
           </label>
-
-          {/* Spreekuurgegevens uit Excel */}
-          <div style={{background:C.white,border:`1.5px solid ${C.border}`,borderRadius:18,
-            padding:'26px 26px 22px',transition:'all 0.16s',position:'relative',overflow:'hidden'}}
-            onMouseEnter={e=>{e.currentTarget.style.borderColor='#8B5CF6';e.currentTarget.style.boxShadow='0 14px 34px rgba(139,92,246,0.14)';e.currentTarget.style.transform='translateY(-2px)'}}
-            onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.boxShadow='none';e.currentTarget.style.transform='none'}}>
-            <div style={{position:'absolute',right:-40,top:-40,width:130,height:130,borderRadius:'50%',background:'#F1ECFC',opacity:0.7}}/>
-            <div style={{position:'relative'}}>
-              <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
-                <div style={{width:52,height:52,borderRadius:15,background:'linear-gradient(140deg,#A78BFA,#7C3AED)',
-                  display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 8px 18px rgba(124,58,237,0.28)'}}>
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/></svg>
-                </div>
-                <div>
-                  <div style={{fontSize:9.5,fontWeight:700,color:'#7C3AED',letterSpacing:'0.16em'}}>SPREEKUURGEGEVENS</div>
-                  <div style={{fontFamily:"'Newsreader',Georgia,serif",fontSize:22,fontWeight:500,color:C.text,letterSpacing:'-0.01em'}}>Excel inladen</div>
-                </div>
-              </div>
-              <div style={{fontSize:12.5,color:C.muted,lineHeight:1.6,marginBottom:14}}>Laad één Excel met alle codes: afkorting, naam, categorie, duur, aantal/week, modaliteit, dagen, dagdelen en onzekerheid — de tool vult je poli automatisch.</div>
-              <div style={{background:C.rowAlt,border:`1px solid ${C.border}`,borderRadius:11,padding:'11px 13px',marginBottom:16}}>
-                <div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:7}}>Verwachte kolommen</div>
-                <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
-                  {['Code','Naam','Categorie','Duur','Aantal/week','Modaliteit','Dagen','Dagdelen','Onzekerheid'].map(k=>(
-                    <span key={k} style={{fontSize:10,fontWeight:600,color:'#6D28D9',background:'#F1ECFC',borderRadius:6,padding:'3px 8px'}}>{k}</span>
-                  ))}
-                </div>
-              </div>
-              <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
-                <label htmlFor="spreekuur-file-input" style={{display:'inline-flex',alignItems:'center',gap:8,fontSize:13,fontWeight:700,color:'#fff',
-                  background:'#7C3AED',borderRadius:10,padding:'10px 18px',cursor:'pointer'}}>Excel kiezen ↑</label>
-                <button onClick={downloadSpreekuurTemplate} style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:12.5,fontWeight:700,color:'#7C3AED',
-                  background:'#F1ECFC',border:'1px solid #D9C9F7',borderRadius:10,padding:'10px 16px',cursor:'pointer'}}>⤓ Voorbeeld-Excel</button>
-              </div>
-            </div>
-          </div>
         </div>
         )
       })()}
@@ -1709,49 +1674,118 @@ export default function RasterTool(){
       )}
 
       {/* STEP 1 — counts */}
-      {m1Mode&&m1Section===1&&(
-        <div style={{maxWidth:760}}>
+      {m1Mode&&m1Section===1&&(()=>{
+        const nP=cfg.newPat||0, cP=cfg.ctrlPat||0, tot=nP+cP
+        const nPct=tot?Math.round(nP/tot*100):50, cPct=100-nPct
+        const perDag=tot?Math.round(tot/5):0
+        const ratio=nP>0?(cP/nP):0
+        return(
+        <div style={{maxWidth:860}}>
           {/* Step indicator */}
           <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:18,fontSize:12,color:C.muted}}>
             <span style={{fontWeight:700,color:C.primary}}>1. Aantallen</span>
             <span style={{color:C.border}}>───</span>
             <span>2. Afspraakcodes</span>
           </div>
-          {[
-            {key:'new',label:'Nieuwe patiënten',color:C.primary,patKey:'newPat',codeKey:'newCodes'},
-            {key:'ctrl',label:'Controle patiënten',color:C.green,patKey:'ctrlPat',codeKey:'ctrlCodes'}
-          ].map(({key,label,color,patKey,codeKey})=>(
-            <div key={key} style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:16,
-              padding:'22px 24px',marginBottom:14}}>
-              <div style={{marginBottom:18}}>
-                <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
-                  <span style={{width:8,height:8,borderRadius:'50%',background:color}}/>
-                  <span style={{fontSize:9.5,fontWeight:700,color,letterSpacing:'0.16em'}}>{key==='new'?'NIEUW':'CONTROLE'}</span>
-                </div>
-                <span style={{fontFamily:"'Newsreader',Georgia,serif",fontWeight:500,fontSize:20,color:C.text,letterSpacing:'-0.01em'}}>{label}</span>
+
+          {/* ── LIVE HERO: verhouding nieuw ↔ controle ── */}
+          <div style={{background:`linear-gradient(135deg,${C.white},${C.blueAccent})`,border:`1px solid ${C.border}`,
+            borderRadius:18,padding:'22px 26px',marginBottom:16,display:'flex',alignItems:'center',gap:28,flexWrap:'wrap'}}>
+            {/* donut */}
+            <div style={{position:'relative',width:118,height:118,flexShrink:0,borderRadius:'50%',
+              background:tot?`conic-gradient(${C.primary} 0 ${nPct}%, ${C.green} ${nPct}% 100%)`:C.surface2,
+              transition:'all 0.35s ease',boxShadow:'0 6px 18px rgba(27,39,51,0.10)'}}>
+              <div style={{position:'absolute',inset:14,borderRadius:'50%',background:C.white,
+                display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center'}}>
+                <span style={{fontFamily:"'Newsreader',Georgia,serif",fontSize:30,fontWeight:600,color:C.text,lineHeight:1}}>{tot}</span>
+                <span style={{fontSize:8.5,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.09em',marginTop:2}}>per week</span>
               </div>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:24}}>
-                {[
-                  {sub:'Afspraken per week',sk:patKey},
-                  {sub:'Aantal afspraakcodes',sk:codeKey}
-                ].map(({sub,sk})=>(
-                  <div key={sk}>
-                    <Lbl>{sub}</Lbl>
-                    <div style={{display:'inline-flex',alignItems:'center',border:`1px solid ${C.border}`,borderRadius:9,overflow:'hidden',marginTop:4}}>
-                      <button onClick={()=>setCfg(p=>({...p,[sk]:Math.max(1,p[sk]-1)}))}
-                        style={{width:40,height:44,border:'none',borderRight:`1px solid ${C.border}`,background:C.surface2,cursor:'pointer',fontSize:20,fontWeight:700,color:C.muted}}>−</button>
-                      <input type="number" min={1} max={999} value={cfg[sk]}
-                        onChange={e=>setCfg(p=>({...p,[sk]:clamp(parseInt(e.target.value)||1,1,999)}))}
-                        style={{width:72,textAlign:'center',border:'none',padding:'10px',
-                          fontSize:20,fontWeight:700,color:C.text,fontFamily:'inherit'}}/>
-                      <button onClick={()=>setCfg(p=>({...p,[sk]:Math.min(999,p[sk]+1)}))}
-                        style={{width:40,height:44,border:'none',borderLeft:`1px solid ${C.border}`,background:C.surface2,cursor:'pointer',fontSize:20,fontWeight:700,color:C.muted}}>+</button>
-                    </div>
+            </div>
+            {/* summary */}
+            <div style={{flex:1,minWidth:240}}>
+              <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:3}}>Zorgvraag van de poli</div>
+              <div style={{fontFamily:"'Newsreader',Georgia,serif",fontSize:21,fontWeight:500,color:C.text,letterSpacing:'-0.01em',marginBottom:12}}>
+                {tot} afspraken per week
+              </div>
+              {/* proportion bar */}
+              <div style={{display:'flex',height:16,borderRadius:8,overflow:'hidden',border:`1px solid ${C.border}`,marginBottom:8}}>
+                <div style={{width:nPct+'%',background:C.primary,transition:'width 0.35s ease',
+                  display:'flex',alignItems:'center',justifyContent:'center',minWidth:nP?24:0}}>
+                  {nPct>=14&&<span style={{fontSize:9.5,fontWeight:800,color:'#fff'}}>{nPct}%</span>}</div>
+                <div style={{flex:1,background:C.green,transition:'all 0.35s ease',
+                  display:'flex',alignItems:'center',justifyContent:'center'}}>
+                  {cPct>=14&&<span style={{fontSize:9.5,fontWeight:800,color:'#fff'}}>{cPct}%</span>}</div>
+              </div>
+              <div style={{display:'flex',gap:16,flexWrap:'wrap',fontSize:11.5}}>
+                <span style={{display:'inline-flex',alignItems:'center',gap:6,color:C.text}}>
+                  <span style={{width:9,height:9,borderRadius:3,background:C.primary}}/>Nieuw <b>{nP}</b></span>
+                <span style={{display:'inline-flex',alignItems:'center',gap:6,color:C.text}}>
+                  <span style={{width:9,height:9,borderRadius:3,background:C.green}}/>Controle <b>{cP}</b></span>
+                <span style={{color:C.muted}}>≈ <b style={{color:C.text}}>{perDag}</b>/dag</span>
+                {nP>0&&<span style={{color:C.muted}}>ratio <b style={{color:C.text}}>1 : {ratio.toFixed(1)}</b></span>}
+              </div>
+            </div>
+          </div>
+
+          {/* ── COUNT CARDS met live aandeel-balk ── */}
+          {[
+            {key:'new',label:'Nieuwe patiënten',color:C.primary,accent:C.blueAccent,patKey:'newPat',codeKey:'newCodes',pct:nPct,val:nP},
+            {key:'ctrl',label:'Controle patiënten',color:C.green,accent:'#E7F3EC',patKey:'ctrlPat',codeKey:'ctrlCodes',pct:cPct,val:cP}
+          ].map(({key,label,color,accent,patKey,codeKey,pct,val})=>(
+            <div key={key} style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:16,
+              padding:'18px 22px',marginBottom:12,position:'relative',overflow:'hidden'}}>
+              {/* zachte aandeel-achtergrond */}
+              <div style={{position:'absolute',left:0,top:0,bottom:0,width:pct+'%',background:accent,
+                opacity:0.55,transition:'width 0.35s ease',pointerEvents:'none'}}/>
+              <div style={{position:'relative',display:'flex',alignItems:'center',justifyContent:'space-between',gap:20,flexWrap:'wrap'}}>
+                <div style={{minWidth:150}}>
+                  <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:2}}>
+                    <span style={{width:8,height:8,borderRadius:'50%',background:color}}/>
+                    <span style={{fontSize:9.5,fontWeight:700,color,letterSpacing:'0.16em'}}>{key==='new'?'NIEUW':'CONTROLE'}</span>
+                    <span style={{fontSize:10,fontWeight:800,color,background:C.white,border:`1px solid ${color}`,borderRadius:20,padding:'1px 8px'}}>{pct}%</span>
                   </div>
-                ))}
+                  <span style={{fontFamily:"'Newsreader',Georgia,serif",fontWeight:500,fontSize:19,color:C.text,letterSpacing:'-0.01em'}}>{label}</span>
+                </div>
+                <div style={{display:'flex',gap:22,flexWrap:'wrap'}}>
+                  {[
+                    {sub:'Afspraken/week',sk:patKey},
+                    {sub:'Afspraakcodes',sk:codeKey}
+                  ].map(({sub,sk})=>(
+                    <div key={sk}>
+                      <Lbl>{sub}</Lbl>
+                      <div style={{display:'inline-flex',alignItems:'center',border:`1px solid ${C.border}`,borderRadius:9,overflow:'hidden',marginTop:4,background:C.white}}>
+                        <button onClick={()=>setCfg(p=>({...p,[sk]:Math.max(1,p[sk]-1)}))}
+                          style={{width:38,height:42,border:'none',borderRight:`1px solid ${C.border}`,background:C.surface2,cursor:'pointer',fontSize:19,fontWeight:700,color:C.muted}}>−</button>
+                        <input type="number" min={1} max={999} value={cfg[sk]}
+                          onChange={e=>setCfg(p=>({...p,[sk]:clamp(parseInt(e.target.value)||1,1,999)}))}
+                          style={{width:66,textAlign:'center',border:'none',padding:'9px',
+                            fontSize:19,fontWeight:700,color:C.text,fontFamily:'inherit',background:'transparent'}}/>
+                        <button onClick={()=>setCfg(p=>({...p,[sk]:Math.min(999,p[sk]+1)}))}
+                          style={{width:38,height:42,border:'none',borderLeft:`1px solid ${C.border}`,background:C.surface2,cursor:'pointer',fontSize:19,fontWeight:700,color:C.muted}}>+</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           ))}
+
+          {/* ── SUBTIEL: alles in één keer uit Excel ── */}
+          <div style={{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap',
+            background:C.rowAlt,border:`1px dashed ${C.border}`,borderRadius:12,padding:'12px 16px',marginBottom:16}}>
+            <span style={{width:30,height:30,borderRadius:9,background:'#F1ECFC',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/></svg>
+            </span>
+            <div style={{flex:1,minWidth:180}}>
+              <div style={{fontSize:12.5,fontWeight:700,color:C.text}}>Al je gegevens al in Excel?</div>
+              <div style={{fontSize:11,color:C.muted}}>Laad codes, aantallen, modaliteit, dagen &amp; onzekerheid in één keer in.</div>
+            </div>
+            <label htmlFor="spreekuur-file-input" style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:12,fontWeight:700,color:'#fff',
+              background:'#7C3AED',borderRadius:9,padding:'8px 14px',cursor:'pointer'}}>⤒ Excel laden</label>
+            <button onClick={downloadSpreekuurTemplate} style={{display:'inline-flex',alignItems:'center',gap:5,fontSize:11.5,fontWeight:700,color:'#7C3AED',
+              background:C.white,border:'1px solid #D9C9F7',borderRadius:9,padding:'8px 12px',cursor:'pointer'}}>⤓ Voorbeeld</button>
+          </div>
+
           <Btn onClick={()=>{
             const resizeRows=(existing,n,cat)=>{
               const next=[...existing]
@@ -1764,7 +1798,8 @@ export default function RasterTool(){
             setM1Section(2)
           }} style={{marginTop:4}}>Volgende: afspraakcodes →</Btn>
         </div>
-      )}
+        )
+      })()}
 
       {/* STEP 2 — codes */}
       {m1Mode&&m1Section===2&&(
