@@ -1349,39 +1349,86 @@ export default function RasterTool(){
     <div style={{animation:'fadeIn 0.18s ease'}}>
       {miniHero('GEGEVENS INVOER','Vul de','spreekuurgegevens',greet+', stel patiëntaantallen en afspraakcodes in — of laad een sessie.')}
 
-      {!m1Mode&&(
-        <div style={{display:'grid',gridTemplateColumns:'1fr',gap:14}}>
-          {/* New — portal-style model card */}
-          <div onClick={()=>setM1Mode('manual')} style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:16,
-            padding:'24px 24px 20px',cursor:'pointer',transition:'all 0.16s'}}
-            onMouseEnter={e=>{e.currentTarget.style.borderColor=C.primary;e.currentTarget.style.boxShadow='0 8px 26px rgba(28,110,164,0.10)'}}
-            onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.boxShadow='none'}}>
-            <div style={{width:48,height:48,borderRadius:14,background:C.blueAccent,
-              display:'flex',alignItems:'center',justifyContent:'center',marginBottom:20}}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={C.primary} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+      {!m1Mode&&(()=>{
+        // decoratieve mini-kalender voor de 'nieuw'-kaart
+        const MiniCal=()=>(
+          <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:3,marginTop:2}}>
+            {Array.from({length:20}).map((_,i)=>{
+              const c=[C.primary,'#2E8B57','#8B5CF6',C.light][i%4]
+              const on=[1,2,3,6,7,11,12,13,16,17,18].includes(i)
+              return <div key={i} style={{height:11,borderRadius:3,background:on?c:C.surface2,opacity:on?0.85:1}}/>
+            })}
+          </div>
+        )
+        const Feat=({children,c})=>(
+          <span style={{display:'inline-flex',alignItems:'center',gap:5,fontSize:11,fontWeight:600,color:c,
+            background:c===C.primary?C.blueAccent:'#E7F3EC',borderRadius:20,padding:'4px 11px'}}>
+            <span style={{width:5,height:5,borderRadius:'50%',background:c}}/>{children}</span>
+        )
+        return(
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(280px,1fr))',gap:16}}>
+          {/* Nieuw raster */}
+          <div onClick={()=>setM1Mode('manual')} style={{background:C.white,border:`1.5px solid ${C.border}`,borderRadius:18,
+            padding:'26px 26px 22px',cursor:'pointer',transition:'all 0.16s',position:'relative',overflow:'hidden'}}
+            onMouseEnter={e=>{e.currentTarget.style.borderColor=C.primary;e.currentTarget.style.boxShadow='0 14px 34px rgba(28,110,164,0.14)';e.currentTarget.style.transform='translateY(-2px)'}}
+            onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.boxShadow='none';e.currentTarget.style.transform='none'}}>
+            <div style={{position:'absolute',right:-40,top:-40,width:130,height:130,borderRadius:'50%',background:C.blueAccent,opacity:0.5}}/>
+            <div style={{position:'relative'}}>
+              <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
+                <div style={{width:52,height:52,borderRadius:15,background:`linear-gradient(140deg,${C.light},${C.primary})`,
+                  display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 8px 18px rgba(28,110,164,0.28)'}}>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                </div>
+                <div>
+                  <div style={{fontSize:9.5,fontWeight:700,color:C.primary,letterSpacing:'0.16em'}}>HANDMATIG STARTEN</div>
+                  <div style={{fontFamily:"'Newsreader',Georgia,serif",fontSize:22,fontWeight:500,color:C.text,letterSpacing:'-0.01em'}}>Nieuw raster</div>
+                </div>
+              </div>
+              <div style={{fontSize:12.5,color:C.muted,lineHeight:1.6,marginBottom:14}}>Bouw je poli van nul op: patiëntaantallen, afspraakcodes en tijden — het raster rekent live mee.</div>
+              <div style={{background:C.rowAlt,border:`1px solid ${C.border}`,borderRadius:11,padding:'11px 13px',marginBottom:16}}>
+                <div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:7}}>Voorbeeld weekraster</div>
+                <MiniCal/>
+              </div>
+              <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:16}}>
+                <Feat c={C.primary}>Patiëntaantallen</Feat><Feat c={C.primary}>Afspraakcodes</Feat><Feat c={C.primary}>Live raster</Feat>
+              </div>
+              <span style={{display:'inline-flex',alignItems:'center',gap:8,fontSize:13,fontWeight:700,color:'#fff',
+                background:C.primary,borderRadius:10,padding:'10px 18px'}}>Beginnen →</span>
             </div>
-            <div style={{fontSize:9.5,fontWeight:700,color:C.primary,letterSpacing:'0.16em',marginBottom:8}}>HANDMATIG</div>
-            <div style={{fontFamily:"'Newsreader',Georgia,serif",fontSize:21,fontWeight:500,color:C.text,marginBottom:6,letterSpacing:'-0.01em'}}>Nieuw raster starten</div>
-            <div style={{fontSize:12.5,color:C.muted,lineHeight:1.6,marginBottom:18}}>Voer handmatig de patiëntaantallen en afspraakcodes in.</div>
-            <span style={{display:'inline-flex',alignItems:'center',gap:7,fontSize:12.5,fontWeight:600,color:C.primary}}>Openen →</span>
           </div>
 
-          {/* Import — portal-style model card */}
-          <label htmlFor="import-file-input" style={{display:'block',background:C.white,border:`1px solid ${C.border}`,borderRadius:16,
-            padding:'24px 24px 20px',cursor:'pointer',transition:'all 0.16s'}}
-            onMouseEnter={e=>{e.currentTarget.style.borderColor=C.green;e.currentTarget.style.boxShadow='0 8px 26px rgba(46,139,87,0.10)'}}
-            onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.boxShadow='none'}}>
-            <div style={{width:48,height:48,borderRadius:14,background:'#E7F3EC',
-              display:'flex',alignItems:'center',justifyContent:'center',marginBottom:20}}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={C.green} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+          {/* Bestaand raster */}
+          <label htmlFor="import-file-input" style={{display:'block',background:C.white,border:`1.5px solid ${C.border}`,borderRadius:18,
+            padding:'26px 26px 22px',cursor:'pointer',transition:'all 0.16s',position:'relative',overflow:'hidden'}}
+            onMouseEnter={e=>{e.currentTarget.style.borderColor=C.green;e.currentTarget.style.boxShadow='0 14px 34px rgba(46,139,87,0.14)';e.currentTarget.style.transform='translateY(-2px)'}}
+            onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.boxShadow='none';e.currentTarget.style.transform='none'}}>
+            <div style={{position:'absolute',right:-40,top:-40,width:130,height:130,borderRadius:'50%',background:'#E7F3EC',opacity:0.6}}/>
+            <div style={{position:'relative'}}>
+              <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
+                <div style={{width:52,height:52,borderRadius:15,background:'linear-gradient(140deg,#4FB77E,#2E8B57)',
+                  display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 8px 18px rgba(46,139,87,0.28)'}}>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                </div>
+                <div>
+                  <div style={{fontSize:9.5,fontWeight:700,color:C.green,letterSpacing:'0.16em'}}>UIT EEN BESTAND</div>
+                  <div style={{fontFamily:"'Newsreader',Georgia,serif",fontSize:22,fontWeight:500,color:C.text,letterSpacing:'-0.01em'}}>Bestaand raster</div>
+                </div>
+              </div>
+              <div style={{fontSize:12.5,color:C.muted,lineHeight:1.6,marginBottom:14}}>Ga verder waar je stopte: laad een eerder geëxporteerd Excel-bestand met al je codes, tijden en regels.</div>
+              <div style={{background:C.rowAlt,border:`1px dashed #9AC9A8`,borderRadius:11,padding:'16px 13px',marginBottom:16,textAlign:'center'}}>
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke={C.green} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{marginBottom:5}}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 15l2 2 4-4"/></svg>
+                <div style={{fontSize:11,color:C.muted}}>Sleep je <b style={{color:C.text}}>.xlsx</b> hierheen of klik om te kiezen</div>
+              </div>
+              <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:16}}>
+                <Feat c={C.green}>Codes hersteld</Feat><Feat c={C.green}>Tijden &amp; regels</Feat><Feat c={C.green}>Direct verder</Feat>
+              </div>
+              <span style={{display:'inline-flex',alignItems:'center',gap:8,fontSize:13,fontWeight:700,color:'#fff',
+                background:C.green,borderRadius:10,padding:'10px 18px'}}>Bestand kiezen ↑</span>
             </div>
-            <div style={{fontSize:9.5,fontWeight:700,color:C.green,letterSpacing:'0.16em',marginBottom:8}}>UIT BESTAND</div>
-            <div style={{fontFamily:"'Newsreader',Georgia,serif",fontSize:21,fontWeight:500,color:C.text,marginBottom:6,letterSpacing:'-0.01em'}}>Bestaand raster inladen</div>
-            <div style={{fontSize:12.5,color:C.muted,lineHeight:1.6,marginBottom:18}}>Upload een eerder geëxporteerd Excel-bestand om verder te gaan.</div>
-            <span style={{display:'inline-flex',alignItems:'center',gap:7,fontSize:12.5,fontWeight:600,color:C.green}}>Openen ↑</span>
           </label>
         </div>
-      )}
+        )
+      })()}
 
       <input id="import-file-input" type="file" accept=".xlsx"
         style={{position:'absolute',width:1,height:1,opacity:0,overflow:'hidden',clip:'rect(0,0,0,0)',whiteSpace:'nowrap'}}
@@ -2175,34 +2222,42 @@ export default function RasterTool(){
     if(pctOnzeker>=30&&rules.flexMode!=='spread') adviezen.push({t:'info',m:`${pctOnzeker}% onzekere afspraken — 'Buffer: verspreid' vangt uitloop beter op.`})
     if(!adviezen.length) adviezen.push({t:'ok',m:'Vraag en capaciteit zijn in balans; geen knelpunten gevonden.'})
 
-    // ── 3 KRITISCHE SCENARIO'S ─────────────────────────────────────────────────
-    // S1 — HUIDIGE kamers vasthouden; alleen benutting/flex bijsturen om te halen
-    const b1raw=benutVoorKamers(beschRooms)
-    const s1Fit=b1raw<=97
-    const s1={key:'huidig',naam:`Binnen je ${beschRooms} kamer${beschRooms===1?'':'s'}`,tint:C.primary,rooms:beschRooms,
-      benut:clampBenut(s1Fit?Math.max(b1raw,60):97),fit:s1Fit,
-      uitleg:'Zelfde kamers, alleen de flexblokken korter of langer.',
-      hoe:s1Fit
-        ? (b1raw<=m2.benutting
-            ? `Kan al met ${clampBenut(Math.max(b1raw,60))}% benutting — ruimere flex mogelijk.`
-            : `Zet benutting op ${clampBenut(b1raw)}% (flex per spreekuur inkorten) → alles past in ${beschRooms} kamer${beschRooms===1?'':'s'}.`)
-        : `Ook met flex tot het minimum (97%) blijven ± ${Math.max(1,overflowAppts(beschRooms,97))} afspraken over. Zónder extra kamer niet volledig haalbaar — verlaag dan de vraag of verruim de spreekuurtijden.`}
+    // ── 3 SCENARIO'S — echte fit-solver op je afspraaktypen ─────────────────────
+    const demandCount=Math.round(
+      newRows.reduce((s,r)=>s+cfg.newPat*((r.percentage||0)/100),0)+
+      ctrlRows.reduce((s,r)=>s+cfg.ctrlPat*((r.percentage||0)/100),0)) || (nReal+nNtp)
+    const demandTot=ddLoads.reduce((s,x)=>s+x.min,0)
+    const capBij=(R,b)=>ddLoads.reduce((s,x)=>s+x.dur*b/100*R,0)
+    const flexBij=(R,b)=>Math.round(Math.max(0,capBij(R,b)-demandTot))
 
-    // S2 — COMBI: één kamer erbij + passende benutting (comfortabeler)
-    const b2raw=benutVoorKamers(beschRooms+1)
-    const s2={key:'combi',naam:`Eén kamer erbij (${beschRooms+1})`,tint:C.green,rooms:beschRooms+1,
-      benut:clampBenut(Math.max(b2raw,68)),fit:b2raw<=97,
-      uitleg:'Een kamer/specialist extra, benutting terug naar comfort.',
-      hoe:`Met ${beschRooms+1} kamers kan de benutting naar ${clampBenut(Math.max(b2raw,68))}% — meer lucht per spreekuur.${b2raw<45?` Let op: de extra kamer wordt licht benut (${Math.max(b2raw,10)}%), mogelijk niet rendabel.`:''}`}
+    // S1 — SOLVER: strakst haalbare planning in de HUIDIGE kamers.
+    // b1 = minimale benutting waarbij álles past (flex tot het minimum).
+    const b1=benutVoorKamers(beschRooms)
+    const s1Feas=b1<=100
+    const s1benut=s1Feas?clampBenut(b1):98
+    const s1over=s1Feas?0:overflowAppts(beschRooms,100)
+    const s1={key:'strak',naam:'Strakste planning',sub:`${beschRooms} kamer${beschRooms===1?'':'s'} · solver`,tint:C.primary,rooms:beschRooms,benut:s1benut,fit:s1Feas,
+      metric:s1Feas?`${demandCount}/${demandCount} geplaatst`:`${Math.max(0,demandCount-s1over)}/${demandCount} geplaatst`,
+      hoe:s1Feas
+        ? `De solver perst alle ${demandCount} afspraken zo strak mogelijk in ${beschRooms} kamer${beschRooms===1?'':'s'} bij ${s1benut}% benutting; ± ${flexBij(beschRooms,s1benut)} min blijft als flex/buffer over. Meer buffer nodig? Verlaag de benutting.`
+        : `Volledig geoptimaliseerd passen ${Math.max(0,demandCount-s1over)} van ${demandCount} in ${beschRooms} kamer${beschRooms===1?'':'s'} (98% benutting, minimale flex). ${s1over} lukt niet zonder extra tijd of kamer — probeer scenario 2 of 3.`}
 
-    // S3 — RUIM: rustige dag, benutting laag, kamers zoals nodig
-    const s3benut=72, s3rooms=neededRoomsAt(s3benut)
-    const s3={key:'ruim',naam:'Ruime dag',tint:'#8B5CF6',rooms:s3rooms,benut:s3benut,fit:true,
-      uitleg:'Lage druk, brede flex voor uitloop en spoed.',
-      hoe:`${s3benut}% benutting met ruime flex; hiervoor ${s3rooms} kamer${s3rooms===1?'':'s'} nodig.${s3rooms>beschRooms?` (${s3rooms-beschRooms} meer dan nu)`:''}`}
+    // S2 — ANDERE OPTIE zonder extra kamer: Bailey-Welsh (ochtend-extra) + verspreide buffer
+    const s2over=Math.max(0, s1over - bwPotential)
+    const s2={key:'slim',naam:'Slimmer benutten',sub:`${beschRooms} kamer${beschRooms===1?'':'s'} · Bailey-Welsh`,tint:C.green,rooms:beschRooms,benut:clampBenut(Math.max(b1,90)),fit:s2over<=0,
+      rules:{baileyWelsh:true,flexMode:'spread'},
+      metric:`+${bwPotential} ochtend-extra`,
+      hoe:`Zelfde ${beschRooms} kamer${beschRooms===1?'':'s'}, maar met Bailey-Welsh: tot ${bwPotential} extra patiënten via dubbelboeking op het eerste ochtendslot, plus verspreide buffer. Haalt afspraken van de restlijst zónder extra kamer.${s2over>0?` Er blijven dan nog ± ${s2over} over.`:''}`}
+
+    // S3 — KAMER ERBIJ: comfortabeler met één extra kamer/specialist
+    const b3=benutVoorKamers(beschRooms+1)
+    const s3benut=clampBenut(Math.max(b3,70))
+    const s3={key:'kamer',naam:'Kamer erbij',sub:`${beschRooms+1} kamers · comfort`,tint:'#8B5CF6',rooms:beschRooms+1,benut:s3benut,fit:b3<=100,
+      metric:`${demandCount}/${demandCount} · rustiger`,
+      hoe:`Eén kamer/specialist extra: de solver kan de benutting comfortabel op ${s3benut}% houden met ruime flex voor uitloop en spoed.${b3<45?` Let op: de extra kamer wordt licht benut (~${Math.max(b3,10)}%).`:''}`}
 
     const scenarios=[s1,s2,s3]
-    const applyScenario=s=>{ setM2(p=>({...p,benutting:s.benut})); setCapacity({mode:'vast',kamers:s.rooms,specialisten:Math.max(s.rooms,capacity.specialisten)}) }
+    const applyScenario=s=>{ setM2(p=>({...p,benutting:s.benut})); setCapacity({mode:'vast',kamers:s.rooms,specialisten:Math.max(s.rooms,capacity.specialisten)}); if(s.rules) setRules(p=>({...p,...s.rules})) }
 
     // ── Time-grid raster (resource calendar: rooms as columns, time on Y) ──────
     const PXMIN=calZoom*0.95 // px per minute for the grid
@@ -2649,22 +2704,25 @@ export default function RasterTool(){
 
         {/* ── 3 SCENARIO'S — inklapbaar ── */}
         <div style={{marginBottom:12}}>
-        <PanelKop id="scenarios" titel="Scenario's" samenvatting="Compact · Gebalanceerd · Ruim — één klik past alles toe"/>
+        <PanelKop id="scenarios" titel="Scenario's" samenvatting="Solver · Slimmer benutten · Kamer erbij"/>
         {openPanels.scenarios&&(
         <div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:12,padding:'14px 16px'}}>
-          <div style={{fontSize:11.5,color:C.muted,marginBottom:11}}>Drie kritische opzetten — <b style={{color:C.text}}>scenario 1 houdt je huidige kamers vast</b> en zoekt of het te halen is; 2 en 3 laten de kamers meebewegen. Eén klik past alles toe.</div>
+          <div style={{fontSize:11.5,color:C.muted,marginBottom:11}}><b style={{color:C.text}}>Scenario 1 is een solver</b> die alle afspraken zo strak mogelijk in je huidige kamers plaatst; scenario 2 zoekt extra ruimte zónder kamer erbij; scenario 3 voegt een kamer toe. Eén klik past alles toe.</div>
           <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12}}>
             {scenarios.map((s,si)=>{
-              const actief=Math.abs(m2.benutting-s.benut)<1 && beschRooms===s.rooms
+              const actief=Math.abs(m2.benutting-s.benut)<1 && beschRooms===s.rooms && (!s.rules||rules.baileyWelsh)
               const bg=s.tint===C.primary?C.blueAccent:s.tint===C.green?'#EDF7F0':'#F3EEFA'
               return(
                 <div key={s.key} style={{border:`1.5px solid ${actief?s.tint:C.border}`,borderRadius:12,padding:'14px 15px',
                   background:actief?bg:C.white,transition:'all 0.13s',display:'flex',flexDirection:'column'}}>
-                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:3,gap:6}}>
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:2,gap:6}}>
                     <span style={{fontSize:13.5,fontWeight:800,color:s.tint,lineHeight:1.2}}>{si+1}. {s.naam}</span>
                     {actief&&<span style={{fontSize:9,fontWeight:700,color:'#fff',background:s.tint,borderRadius:10,padding:'2px 7px',flexShrink:0}}>ACTIEF</span>}
                   </div>
-                  <div style={{fontSize:11,color:C.muted,lineHeight:1.5,marginBottom:11}}>{s.uitleg}</div>
+                  <div style={{fontSize:10,color:C.muted,marginBottom:9,fontFamily:'IBM Plex Mono,monospace',letterSpacing:'0.02em'}}>{s.sub}</div>
+                  <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:10,padding:'6px 10px',borderRadius:8,background:s.tint,color:'#fff'}}>
+                    <span style={{fontSize:14}}>◆</span><span style={{fontSize:12,fontWeight:800}}>{s.metric}</span>
+                  </div>
                   <div style={{display:'flex',gap:8,marginBottom:11}}>
                     <div style={{flex:1,background:C.surface2,borderRadius:8,padding:'7px 9px'}}>
                       <div style={{fontSize:8.5,color:C.muted,textTransform:'uppercase',letterSpacing:'0.05em'}}>Benutting</div>
@@ -2674,7 +2732,7 @@ export default function RasterTool(){
                       <div style={{fontSize:16,fontWeight:800,color:s.rooms>beschRooms?s.tint:C.text,fontVariantNumeric:'tabular-nums'}}>
                         {s.rooms}{s.rooms>beschRooms&&<span style={{fontSize:10,fontWeight:600}}> (+{s.rooms-beschRooms})</span>}</div></div>
                   </div>
-                  <div style={{fontSize:10.5,color:C.text,lineHeight:1.45,marginBottom:11,minHeight:48,
+                  <div style={{fontSize:10.5,color:C.text,lineHeight:1.45,marginBottom:11,minHeight:60,
                     padding:'8px 10px',borderRadius:8,background:s.fit?'#EDF7F0':'#FCEEEB',border:`1px solid ${s.fit?'#C9E6D5':'#F0C8C3'}`}}>
                     <b style={{color:s.fit?C.green:C.danger}}>{s.fit?'✓ Haalbaar':'✗ Niet volledig'}</b> — {s.hoe}
                   </div>
