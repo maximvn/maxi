@@ -118,6 +118,16 @@ const defaultRow=n=>({afspraakcode:'',omschrijving:'',duur:15,digitaal:false,mod
   percentage:n>0?Math.floor(100/n):100,weekdagen:{MA:true,DI:true,WO:true,DO:true,VR:true},
   dagdelen:{O:true,M:true,A:false},onzeker:'gemiddeld'})
 
+// Startersets zodat afspraakcodes meteen een zinvolle naam/code/duur hebben (bewerkbaar).
+const NIEUW_STARTERS=[['NP','Nieuwe patiënt',20],['NP-C','Nieuwe patiënt complex',30],['NP-V','Nieuw na verwijzing',20]]
+const CTRL_STARTERS=[['CO','Controle',15],['TC','Telefonisch consult',10,'telefonisch'],['VER','Verrichting',20],['VCO','Video-controle',15,'video']]
+const starterRow=(cat,i,n)=>{
+  const lst=cat==='nieuw'?NIEUW_STARTERS:CTRL_STARTERS
+  const s=lst[i]||[(cat==='nieuw'?'NP':'CO')+(i+1),(cat==='nieuw'?'Nieuwe patiënt':'Controle')+' '+(i+1),cat==='nieuw'?20:15]
+  const mod=s[3]||'fysiek'
+  return {...defaultRow(n),afspraakcode:s[0],omschrijving:s[1],duur:s[2],modaliteit:mod,digitaal:mod!=='fysiek'}
+}
+
 // Modaliteiten: fysiek consult, telefonisch, of beeldbellen. "digitaal" = niet-fysiek
 // (blijft bestaan voor de engine/kleuren); modaliteit voegt het onderscheid tel/video toe.
 const MODALITEITEN=[
@@ -1199,6 +1209,15 @@ export default function RasterTool(){
                 <input value={row.omschrijving} onChange={e=>upRow(set,i,'omschrijving',e.target.value)}
                   placeholder="Omschrijving van de afspraak…"
                   style={{flex:1,border:`1px solid ${C.border}`,borderRadius:8,padding:'9px 12px',fontSize:13,fontFamily:'inherit',color:C.text}}/>
+                <button onClick={()=>{
+                    const cfgKey=cat==='nieuw'?'newCodes':'ctrlCodes'
+                    set(p=>p.filter((_,j)=>j!==i))
+                    setCfg(c=>({...c,[cfgKey]:Math.max(0,(c[cfgKey]||1)-1)}))
+                  }} title="Deze afspraakcode verwijderen"
+                  style={{width:30,height:30,borderRadius:8,flexShrink:0,cursor:'pointer',border:`1px solid ${C.border}`,
+                    background:C.white,color:C.muted,fontSize:15,display:'flex',alignItems:'center',justifyContent:'center',transition:'all 0.12s'}}
+                  onMouseEnter={e=>{e.currentTarget.style.borderColor=C.danger;e.currentTarget.style.color=C.danger}}
+                  onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.color=C.muted}}>×</button>
               </div>
               {/* Field groups */}
               <div style={{display:'flex',flexWrap:'wrap',gap:'14px 28px',alignItems:'flex-end'}}>
@@ -1286,6 +1305,19 @@ export default function RasterTool(){
               </div>
             </div>
           ))}
+          {/* Dynamische knop: volgende afspraakcode toevoegen */}
+          <button onClick={()=>{
+              const cfgKey=cat==='nieuw'?'newCodes':'ctrlCodes'
+              set(p=>[...p,starterRow(cat,p.length,p.length+1)])
+              setCfg(c=>({...c,[cfgKey]:(c[cfgKey]||0)+1}))
+            }}
+            style={{display:'flex',alignItems:'center',justifyContent:'center',gap:9,padding:'15px 20px',borderRadius:16,cursor:'pointer',
+              background:C.white,border:`2px dashed ${cc}`,color:cc,fontWeight:700,fontSize:13.5,fontFamily:'inherit',transition:'all 0.15s'}}
+            onMouseEnter={e=>{e.currentTarget.style.background=cat==='nieuw'?C.blueAccent:'#E7F3EC';e.currentTarget.style.transform='translateY(-1px)'}}
+            onMouseLeave={e=>{e.currentTarget.style.background=C.white;e.currentTarget.style.transform='none'}}>
+            <span style={{width:24,height:24,borderRadius:'50%',background:cc,color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,lineHeight:1}}>+</span>
+            Volgende afspraakcode toevoegen
+          </button>
         </div>
       </div>
     )
@@ -1395,14 +1427,14 @@ export default function RasterTool(){
             </div>
           ))}
           <Btn onClick={()=>{
-            const resizeRows=(existing,n)=>{
+            const resizeRows=(existing,n,cat)=>{
               const next=[...existing]
-              while(next.length<n) next.push(defaultRow(n))
+              while(next.length<n) next.push(starterRow(cat,next.length,n))
               next.length=n
               return next
             }
-            setNewRows(r=>resizeRows(r,cfg.newCodes))
-            setCtrlRows(r=>resizeRows(r,cfg.ctrlCodes))
+            setNewRows(r=>resizeRows(r,cfg.newCodes,'nieuw'))
+            setCtrlRows(r=>resizeRows(r,cfg.ctrlCodes,'controle'))
             setM1Section(2)
           }} style={{marginTop:4}}>Volgende: afspraakcodes →</Btn>
         </div>
@@ -1449,6 +1481,46 @@ export default function RasterTool(){
     return(
       <div style={{animation:'fadeIn 0.18s ease'}}>
         {miniHero('SPREEKUURTIJDEN','Tijden en','weekindeling','Stel tijden, dagdeelverdeling, benutting en weekpatroon in.')}
+        {/* ── LIVE TIJDLIJN-PREVIEW — beweegt mee, venster verbreedt bij avondspreekuur ── */}
+        {(()=>{
+          const oS=toMin(m2.ochStart),oE=toMin(m2.ochEnd),mS=toMin(m2.midStart),mE=toMin(m2.midEnd)
+          const aS=toMin(m2.avondStart),aE=toMin(m2.avondEnd)
+          const winStart=Math.min(oS,mS)-15
+          const winEnd=(m2.avondOn?Math.max(aE,mE):mE)+15
+          const span=Math.max(60,winEnd-winStart)
+          const pos=t=>(t-winStart)/span*100
+          const blk=(from,to,label,color)=>({l:pos(from),w:Math.max(0,(to-from)/span*100),label,color,from,to})
+          const blks=[blk(oS,oE,'Ochtend',C.primary),blk(mS,mE,'Middag',C.green)]
+          if(m2.avondOn) blks.push(blk(aS,aE,'Avond','#8B5CF6'))
+          const hours=[]; for(let t=Math.ceil(winStart/60)*60;t<=winEnd;t+=60) hours.push(t)
+          const avondBotst=m2.avondOn&&aS<mE
+          const ochBotst=mS<oE
+          return(
+            <Card style={{marginBottom:16}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
+                <H3 style={{margin:0}}>Dagoverzicht — zo ziet de dag eruit</H3>
+                <span style={{fontSize:11,color:C.muted}}>{toTime(winStart+15)}–{toTime(winEnd-15)} · venster {(span/60).toFixed(1)} u</span>
+              </div>
+              <div style={{position:'relative',height:56,background:C.surface2,borderRadius:10,border:`1px solid ${C.border}`,overflow:'hidden'}}>
+                {hours.map(t=>(<div key={t} style={{position:'absolute',left:pos(t)+'%',top:0,bottom:18,width:1,background:C.border}}/>))}
+                {blks.map((b,i)=>(
+                  <div key={i} title={`${b.label}: ${toTime(b.from)}–${toTime(b.to)}`}
+                    style={{position:'absolute',left:b.l+'%',width:b.w+'%',top:6,height:26,borderRadius:6,background:b.color,
+                      display:'flex',alignItems:'center',justifyContent:'center',gap:5,color:'#fff',fontSize:11,fontWeight:700,overflow:'hidden',whiteSpace:'nowrap'}}>
+                    {b.w>7&&<span>{b.label}</span>}{b.w>16&&<span style={{opacity:0.85,fontWeight:500,fontSize:10}}>{toTime(b.from)}–{toTime(b.to)}</span>}
+                  </div>
+                ))}
+                {hours.map(t=>(<div key={'l'+t} style={{position:'absolute',left:pos(t)+'%',bottom:2,transform:'translateX(-50%)',fontSize:9,color:C.muted,fontVariantNumeric:'tabular-nums'}}>{toTime(t)}</div>))}
+              </div>
+              {(avondBotst||ochBotst)&&(
+                <div style={{marginTop:10,fontSize:11.5,color:C.danger,fontWeight:600,display:'flex',alignItems:'center',gap:6}}>
+                  ⚠ {ochBotst?'Ochtend en middag overlappen — de middag begint vóór de ochtend eindigt. ':''}
+                  {avondBotst?'Het avondspreekuur begint vóór de middag eindigt; pas de starttijd aan zodat het in het venster past.':''}
+                </div>
+              )}
+            </Card>
+          )
+        })()}
         <Card style={{marginBottom:16}}>
           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
             <H3 style={{margin:0}}>Tijden per dagdeel</H3>
@@ -1878,15 +1950,61 @@ export default function RasterTool(){
     const onzMix={zeker:0,gemiddeld:0,onzeker:0}
     realAppts.forEach(a=>{onzMix[a.onzeker||'gemiddeld']=(onzMix[a.onzeker||'gemiddeld']||0)+1})
     const pctOnzeker=nReal>0?Math.round(onzMix.onzeker/nReal*100):0
-    // Advies-signalen
+    // ── SLIMME AGENDA-ANALYSE — kijkt naar de werkelijke bezetting per dag/kamer ──
+    const ddDurMap={o:ochDur,m:midDur,a:(raster.avDur||midDur)}
+    const ddPres=['o','m',...(raster.avondOn?['a']:[])]
+    // Vraag per (dag,dagdeel) = geplaatst + wat op de restlijst staat (echte behoefte)
+    const ntpMinFor=(di,pre)=>(raster.ntp||[]).reduce((s,a)=>{
+      const p=a.dd==='O'?'o':a.dd==='M'?'m':a.dd==='A'?'a':null
+      return s+((a.day===di&&p===pre)?(a.duur||0):0)},0)
+    const needFloatAt=(benut)=>{
+      let mx=0.0001
+      ;[0,1,2,3,4].forEach(di=>{ const slots=raster.days[di]; if(!slots) return
+        ddPres.forEach(pre=>{
+          let min=0; for(let r=0;r<numRooms;r++){(slots[pre+r]||[]).forEach(a=>{if(!a.isFlex&&!a.overbook)min+=a.duur})}
+          min+=ntpMinFor(di,pre)
+          const usable=(ddDurMap[pre]||midDur)*(benut/100)
+          if(usable>0) mx=Math.max(mx,min/usable)
+        }) })
+      return mx
+    }
+    const neededRoomsAt=(benut)=>Math.max(1,Math.ceil(needFloatAt(benut)-1e-9))
+    // Onderbenutte kamers opsporen (per kamer over de hele week)
+    const roomLoad=Array.from({length:numRooms},()=>({cnt:0,dagen:0}))
+    ;[0,1,2,3,4].forEach(di=>{ const slots=raster.days[di]; if(!slots) return
+      for(let r=0;r<numRooms;r++){ let c=0; ddPres.forEach(pre=>{(slots[pre+r]||[]).forEach(a=>{if(!a.isFlex&&!a.overbook)c++})})
+        if(c>0){ roomLoad[r].cnt+=c; roomLoad[r].dagen++ } } })
+    const zwakkeKamer=numRooms>1 ? roomLoad.map((l,r)=>({r,gem:l.dagen?l.cnt/l.dagen:0,cnt:l.cnt})).sort((a,b)=>a.cnt-b.cnt)[0] : null
+    const avgDuur=nReal>0?Math.max(5,Math.round(plannedMin/nReal)):15
+    const flexMin=raster.kpi?raster.kpi.week.flex:0
+    const beschRooms=capacity.mode==='vast'?Math.min(capacity.kamers,capacity.specialisten):numRooms
+
+    // Advies-signalen — concreet en met dag/kamer erbij waar mogelijk
     const adviezen=[]
-    if(nNtp>0) adviezen.push({t:'bad',m:`${nNtp} afspraken passen niet — meer kamers, langere spreekuren of minder vraag nodig.`})
-    if(dekking<100&&demandMin>0) adviezen.push({t:'bad',m:`Capaciteit dekt ${dekking}% van de weekvraag (${(demandMin/60).toFixed(1)} u vraag vs ${(capMin/60).toFixed(1)} u). Structureel tekort.`})
-    else if(dekking>145) adviezen.push({t:'warn',m:`Ruim overschot: ${dekking}% capaciteit t.o.v. de vraag. Overweeg spreekuren te schrappen of inhaalzorg te plannen.`})
-    if(pctOnzeker>=30&&rules.flexMode!=='spread') adviezen.push({t:'warn',m:`${pctOnzeker}% onzekere afspraken — zet "Buffer: verspreid" aan om uitloop op te vangen.`})
-    if(pctTel>0&&rules.digitalMode==='spread') adviezen.push({t:'info',m:`${pctTel}% van de controles is op afstand — clusteren of aan het einde plannen houdt de kamer efficiënter bezet.`})
-    if(raster.kpi&&raster.kpi.week.benutting>92) adviezen.push({t:'warn',m:`Benutting ${raster.kpi.week.benutting}% is hoog — weinig lucht voor uitloop.`})
+    if(nNtp>0){
+      const compactRooms=neededRoomsAt(92)
+      if(compactRooms<=beschRooms) adviezen.push({t:'warn',m:`${nNtp} afspraken passen niet, maar er staat ${flexMin} min flex/buffer gereserveerd. Verhoog de benutting naar ~92% (kort de flex per dag in) → past waarschijnlijk in de huidige ${beschRooms} kamer(s).`})
+      else adviezen.push({t:'bad',m:`${nNtp} afspraken passen niet. Ook bij 92% benutting zijn er ${compactRooms} parallelle kamers nodig (nu ${beschRooms}). Voeg een kamer/specialist toe óf verlaag de vraag.`})
+    }
+    if(zwakkeKamer && zwakkeKamer.cnt>0 && zwakkeKamer.cnt<=3){
+      adviezen.push({t:'warn',m:`Kamer ${zwakkeKamer.r+1} draagt over de hele week maar ${zwakkeKamer.cnt} afspraken — die kamer is nauwelijks rendabel. Overweeg 'm te schrappen en de benutting te verhogen; de vraag past dan efficiënter in ${numRooms-1} kamers.`})
+    }
+    if(nNtp===0 && flexMin>avgDuur*8 && m2.benutting<90){
+      const winst=Math.floor((flexMin - (flexMin*m2.benutting/92))/avgDuur)
+      if(winst>=3) adviezen.push({t:'info',m:`Er is ~${flexMin} min flex ingepland. Zou je de benutting naar 92% zetten, dan komt ruimte vrij voor ± ${winst} extra afspraken per week zonder extra kamer.`})
+    }
+    if(dekking<100&&demandMin>0) adviezen.push({t:'bad',m:`Capaciteit dekt ${dekking}% van de weekvraag (${(demandMin/60).toFixed(1)} u vraag vs ${(capMin/60).toFixed(1)} u beschikbaar).`})
+    else if(dekking>150) adviezen.push({t:'warn',m:`Ruim overschot: ${dekking}% capaciteit t.o.v. de vraag. Een kamer of dagdeel minder kan al voldoende zijn.`})
+    if(pctOnzeker>=30&&rules.flexMode!=='spread') adviezen.push({t:'info',m:`${pctOnzeker}% onzekere afspraken — 'Buffer: verspreid' vangt uitloop beter op.`})
     if(!adviezen.length) adviezen.push({t:'ok',m:'Vraag en capaciteit zijn in balans; geen knelpunten gevonden.'})
+
+    // ── 3 SCENARIO'S — één klik past benutting + kamers aan, engine rekent live door ──
+    const scenarios=[
+      {key:'compact',naam:'Compact',uitleg:'Hoge benutting, korte flex — minste kamers.',benut:Math.min(95,Math.max(m2.benutting,90)),tint:C.primary},
+      {key:'balans',naam:'Gebalanceerd',uitleg:'Werkbare benutting met wat lucht voor uitloop.',benut:85,tint:C.green},
+      {key:'ruim',naam:'Ruim',uitleg:'Lagere benutting, meer buffer — rustige dag.',benut:78,tint:'#8B5CF6'},
+    ].map(s=>({...s,rooms:neededRoomsAt(s.benut)}))
+    const applyScenario=s=>{ setM2(p=>({...p,benutting:s.benut})); setCapacity({mode:'vast',kamers:s.rooms,specialisten:Math.max(s.rooms,capacity.specialisten)}) }
 
     // ── Time-grid raster (resource calendar: rooms as columns, time on Y) ──────
     const PXMIN=calZoom*0.95 // px per minute for the grid
@@ -2306,6 +2424,44 @@ export default function RasterTool(){
           </div>
         </div>
 
+        {/* ── 3 SCENARIO'S — kies de best passende opzet, engine rekent live door ── */}
+        <div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:12,padding:'14px 16px',marginBottom:12}}>
+          <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:11,flexWrap:'wrap'}}>
+            <span style={{fontSize:9.5,fontWeight:700,color:C.primary,letterSpacing:'0.12em',textTransform:'uppercase'}}>Scenario's</span>
+            <span style={{fontSize:11.5,color:C.muted}}>Drie kant-en-klare opzetten — één klik past benutting én kamers aan en rekent direct door.</span>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12}}>
+            {scenarios.map(s=>{
+              const past=s.rooms<=beschRooms
+              const actief=Math.abs(m2.benutting-s.benut)<1 && beschRooms===s.rooms
+              return(
+                <div key={s.key} style={{border:`1.5px solid ${actief?s.tint:C.border}`,borderRadius:12,padding:'13px 14px',
+                  background:actief?(s.tint===C.primary?C.blueAccent:s.tint===C.green?'#EDF7F0':'#F3EEFA'):C.white,transition:'all 0.13s'}}>
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}}>
+                    <span style={{fontSize:14,fontWeight:800,color:s.tint}}>{s.naam}</span>
+                    {actief&&<span style={{fontSize:9,fontWeight:700,color:'#fff',background:s.tint,borderRadius:10,padding:'2px 7px'}}>ACTIEF</span>}
+                  </div>
+                  <div style={{fontSize:11.5,color:C.muted,lineHeight:1.5,marginBottom:10,minHeight:34}}>{s.uitleg}</div>
+                  <div style={{display:'flex',gap:14,marginBottom:10}}>
+                    <div><div style={{fontSize:9,color:C.muted,textTransform:'uppercase',letterSpacing:'0.05em'}}>Benutting</div>
+                      <div style={{fontSize:17,fontWeight:800,color:C.text,fontVariantNumeric:'tabular-nums'}}>{s.benut}%</div></div>
+                    <div><div style={{fontSize:9,color:C.muted,textTransform:'uppercase',letterSpacing:'0.05em'}}>Kamers nodig</div>
+                      <div style={{fontSize:17,fontWeight:800,color:C.text,fontVariantNumeric:'tabular-nums'}}>{s.rooms}</div></div>
+                  </div>
+                  <div style={{fontSize:10.5,fontWeight:700,marginBottom:10,color:past?C.green:C.danger}}>
+                    {past?`✓ Past in ${beschRooms} beschikbare kamer(s)`:`✗ Vraagt ${s.rooms} kamers (${beschRooms} nu beschikbaar)`}
+                  </div>
+                  <button onClick={()=>applyScenario(s)}
+                    style={{width:'100%',padding:'8px 0',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:700,
+                      border:`1px solid ${s.tint}`,background:actief?s.tint:C.white,color:actief?'#fff':s.tint,transition:'all 0.12s'}}>
+                    {actief?'Toegepast':'Pas dit scenario toe'}
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
         {/* ── ENGINE 2.0: quick rules (live — raster past zich direct aan) ── */}
         <div style={{display:'flex',gap:6,marginBottom:12,flexWrap:'wrap',alignItems:'center',
           background:C.white,border:`1px solid ${C.border}`,borderRadius:12,padding:'9px 13px'}}>
@@ -2334,61 +2490,80 @@ export default function RasterTool(){
           <span style={{marginLeft:'auto',fontSize:10,color:C.muted,fontStyle:'italic'}}>wijzigingen worden direct doorgerekend</span>
         </div>
 
-        {/* ── ENGINE 2.0: week-overzicht (multi-dynamisch) ── */}
-        {viewMode==='week'&&raster.kpi&&(
-          <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:10,marginBottom:14}}>
-            {DAYS.slice(0,5).map((d,di)=>{
-              const pk=raster.kpi.perDay[di]
-              const slots=raster.days[di]
-              const on=selDay===di
-              if(!pk||!slots) return(
-                <div key={di} style={{background:C.surface2,border:`1px dashed ${C.border}`,borderRadius:12,
-                  padding:'14px 12px',textAlign:'center',color:C.muted,fontSize:11.5}}>
-                  <div style={{fontWeight:700,marginBottom:6}}>{d}</div>Geen spreekuur
-                </div>
-              )
-              // per dagdeel: planned vs capacity
-              const dagdelen=[['o','Ochtend',ochDur],['m','Middag',midDur],...(raster.avondOn?[['a','Avond',raster.avDur||0]]:[])]
-              return(
-                <div key={di} onClick={()=>{setSelDay(di);setViewMode('dag')}}
-                  style={{background:C.white,border:`1.5px solid ${on?C.primary:C.border}`,borderRadius:12,
-                    padding:'12px 13px',cursor:'pointer',transition:'all 0.13s'}}
-                  onMouseEnter={e=>e.currentTarget.style.boxShadow='0 6px 18px rgba(28,110,164,0.10)'}
-                  onMouseLeave={e=>e.currentTarget.style.boxShadow='none'}>
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:9}}>
-                    <span style={{fontSize:12.5,fontWeight:700,color:C.text}}>{d}</span>
-                    <span style={{fontSize:10.5,fontWeight:700,padding:'2px 8px',borderRadius:10,
-                      background:pk.benutting>m2.benutting?'#FCEEEB':'#EAF5EE',
-                      color:pk.benutting>m2.benutting?C.danger:C.green}}>{pk.benutting}%</span>
+        {/* ── VOLLEDIG WEEKOVERZICHT — per dag, per dagdeel de verdeling nieuw/controle ── */}
+        {viewMode==='week'&&raster.kpi&&(()=>{
+          const TEAL='#2E8B57'
+          const catSeg=(di,pre)=>{
+            const slots=raster.days[di]; let nieuw=0,ctrlF=0,ctrlT=0,min=0
+            if(slots) for(let r=0;r<numRooms;r++){ (slots[pre+r]||[]).forEach(a=>{
+              if(a.isFlex||a.overbook) return; min+=a.duur
+              if(a.category==='nieuw') nieuw++; else if(a.digitaal) ctrlT++; else ctrlF++ }) }
+            return {nieuw,ctrlF,ctrlT,min,tot:nieuw+ctrlF+ctrlT}
+          }
+          const dagdelen=[['o','Ochtend',ochDur],['m','Middag',midDur],...(raster.avondOn?[['a','Avond',raster.avDur||0]]:[])]
+          const Bar=({seg,cap})=>{
+            const mx=Math.max(seg.tot,1)
+            return(
+              <div title={`${seg.nieuw} nieuw · ${seg.ctrlF} controle · ${seg.ctrlT} op afstand`}
+                style={{display:'flex',height:20,borderRadius:5,overflow:'hidden',background:C.surface2,border:`1px solid ${C.border}`}}>
+                {[['nieuw',C.primary],['ctrlF',C.green],['ctrlT',TEAL]].map(([k,col])=>seg[k]>0&&(
+                  <div key={k} style={{width:(seg[k]/mx*100)+'%',background:col,display:'flex',alignItems:'center',justifyContent:'center'}}>
+                    {seg[k]>=1&&<span style={{fontSize:9,fontWeight:800,color:'#fff'}}>{seg[k]}</span>}
                   </div>
-                  {dagdelen.map(([pre,lbl,dur])=>{
-                    // aggregate over rooms for this dagdeel
-                    let pl=0,cap=0
-                    for(let r=0;r<numRooms;r++){
-                      const arr=slots[pre+r]||[]
-                      arr.forEach(a=>{if(!a.isFlex&&!a.overbook)pl+=a.duur})
-                      cap+=dur
-                    }
-                    const pct=cap>0?Math.min(100,pl/cap*100):0
-                    return(
-                      <div key={pre} style={{marginBottom:6}}>
-                        <div style={{display:'flex',justifyContent:'space-between',fontSize:9,color:C.muted,marginBottom:2}}>
-                          <span>{lbl}</span><span style={{fontVariantNumeric:'tabular-nums'}}>{pl}/{cap}m</span>
-                        </div>
-                        <div style={{height:6,borderRadius:3,background:C.surface2,overflow:'hidden'}}>
-                          <div style={{height:'100%',width:pct+'%',borderRadius:3,transition:'width 0.4s',
-                            background:pre==='o'?C.primary:pre==='m'?C.green:'#8B5CF6'}}/>
-                        </div>
-                      </div>
-                    )
-                  })}
-                  <div style={{fontSize:10,color:C.muted,marginTop:7}}>{pk.appts} afspraken · {pk.flex}m flex</div>
+                ))}
+              </div>
+            )
+          }
+          return(
+            <div style={{marginBottom:14}}>
+              <div style={{display:'flex',alignItems:'center',gap:14,marginBottom:10,flexWrap:'wrap'}}>
+                <span style={{fontSize:13,fontWeight:700,color:C.text}}>Weekoverzicht — verdeling per dagdeel</span>
+                <div style={{display:'flex',gap:12,fontSize:11,color:C.muted}}>
+                  {[['Nieuw',C.primary],['Controle',C.green],['Op afstand',TEAL]].map(([l,c])=>(
+                    <span key={l} style={{display:'flex',alignItems:'center',gap:5}}><span style={{width:11,height:11,borderRadius:3,background:c}}/>{l}</span>
+                  ))}
                 </div>
-              )
-            })}
-          </div>
-        )}
+                <span style={{marginLeft:'auto',fontSize:11,color:C.muted,fontStyle:'italic'}}>klik een dag om die in detail te openen</span>
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:10}}>
+                {DAYS.slice(0,5).map((d,di)=>{
+                  const pk=raster.kpi.perDay[di], slots=raster.days[di], on=selDay===di
+                  if(!pk||!slots) return(
+                    <div key={di} style={{background:C.surface2,border:`1px dashed ${C.border}`,borderRadius:12,padding:'16px 12px',textAlign:'center',color:C.muted,fontSize:11.5}}>
+                      <div style={{fontWeight:700,marginBottom:6}}>{d}</div>Geen spreekuur</div>)
+                  return(
+                    <div key={di} onClick={()=>{setSelDay(di);setViewMode('dag')}}
+                      style={{background:C.white,border:`1.5px solid ${on?C.primary:C.border}`,borderRadius:12,padding:'13px 13px',cursor:'pointer',transition:'all 0.13s'}}
+                      onMouseEnter={e=>e.currentTarget.style.boxShadow='0 8px 20px rgba(28,110,164,0.12)'}
+                      onMouseLeave={e=>e.currentTarget.style.boxShadow='none'}>
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:11}}>
+                        <span style={{fontSize:13,fontWeight:700,color:C.text}}>{d}</span>
+                        <span style={{fontSize:10.5,fontWeight:700,padding:'2px 8px',borderRadius:10,
+                          background:pk.benutting>m2.benutting?'#FCEEEB':'#EAF5EE',color:pk.benutting>m2.benutting?C.danger:C.green}}>{pk.benutting}%</span>
+                      </div>
+                      {dagdelen.map(([pre,lbl,dur])=>{
+                        const seg=catSeg(di,pre)
+                        return(
+                          <div key={pre} style={{marginBottom:10}}>
+                            <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:C.muted,marginBottom:3,fontWeight:600}}>
+                              <span>{lbl}</span><span style={{fontVariantNumeric:'tabular-nums'}}>{seg.tot} afspr · {seg.min}m</span>
+                            </div>
+                            <Bar seg={seg} cap={dur}/>
+                          </div>
+                        )
+                      })}
+                      <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:C.muted,marginTop:9,paddingTop:8,borderTop:`1px solid ${C.border}`}}>
+                        <span>{pk.appts} afspraken</span><span>{pk.flex}m flex</span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })()}
 
+        {viewMode==='dag'&&(<>
         {/* Day tabs */}
         <div style={{display:'flex',gap:6,marginBottom:14}}>
           {DAYS.slice(0,5).map((d,i)=>{
@@ -2511,6 +2686,7 @@ export default function RasterTool(){
             <span style={{color:nNtp>0?C.danger:C.green}}>⏳ {nNtp} te plannen</span>
           </div>
         </div>
+        </>)}
 
         {/* Floating drag ghost — moved via ref for smooth realtime tracking */}
         {dragItem&&(dragItem.mode==='new'||(dragItem.mode==='move'&&dragItem.fromSlot==='ntp'))&&(()=>{
