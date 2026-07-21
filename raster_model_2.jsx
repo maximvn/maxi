@@ -2877,70 +2877,82 @@ export default function RasterTool(){
         </div>
 
         {/* ── VOLLEDIG WEEKOVERZICHT — per dag, per dagdeel de verdeling nieuw/controle ── */}
-        {viewMode==='week'&&raster.kpi&&(()=>{
-          const TEAL='#2E8B57'
-          const catSeg=(di,pre)=>{
-            const slots=raster.days[di]; let nieuw=0,ctrlF=0,ctrlT=0,min=0
-            if(slots) for(let r=0;r<numRooms;r++){ (slots[pre+r]||[]).forEach(a=>{
-              if(a.isFlex||(a.overbook&&!a.bwReal)) return; if(!a.overbook) min+=a.duur
-              if(a.category==='nieuw') nieuw++; else if(a.digitaal) ctrlT++; else ctrlF++ }) }
-            return {nieuw,ctrlF,ctrlT,min,tot:nieuw+ctrlF+ctrlT}
-          }
-          const dagdelen=[['o','Ochtend',ochDur],['m','Middag',midDur],...(raster.avondOn?[['a','Avond',raster.avDur||0]]:[])]
-          const Bar=({seg,cap})=>{
-            const mx=Math.max(seg.tot,1)
+        {viewMode==='week'&&(()=>{
+          // ── ECHTE WEEK-KALENDER: alle 5 dagen als tijdrooster naast elkaar ──
+          const HEAD=44
+          const WeekBlok=({it,di})=>{
+            if(it.isFlex) return(
+              <div style={{position:'absolute',top:toY(it.start)+0.5,left:1,right:1,height:Math.max(it.duur*PXMIN-1,5),
+                borderRadius:3,background:'repeating-linear-gradient(45deg,#EAF6EC,#EAF6EC 4px,#F4FBF5 4px,#F4FBF5 8px)',
+                border:'1px solid #C6E4CC',zIndex:2}}/>)
+            const clr=getColor(it), h=Math.max(it.duur*PXMIN-1,9)
             return(
-              <div title={`${seg.nieuw} nieuw · ${seg.ctrlF} controle · ${seg.ctrlT} op afstand`}
-                style={{display:'flex',height:20,borderRadius:5,overflow:'hidden',background:C.surface2,border:`1px solid ${C.border}`}}>
-                {[['nieuw',C.primary],['ctrlF',C.green],['ctrlT',TEAL]].map(([k,col])=>seg[k]>0&&(
-                  <div key={k} style={{width:(seg[k]/mx*100)+'%',background:col,display:'flex',alignItems:'center',justifyContent:'center'}}>
-                    {seg[k]>=1&&<span style={{fontSize:9,fontWeight:800,color:'#fff'}}>{seg[k]}</span>}
-                  </div>
-                ))}
+              <div title={`${it.code} · ${it.description||''} · ${toTime(it.start)}–${toTime(it.end)}`}
+                onClick={()=>{setSelDay(di);setViewMode('dag')}}
+                style={{position:'absolute',top:toY(it.start)+0.5,left:1,right:1,height:h,cursor:'pointer',
+                  background:it.overbook?'repeating-linear-gradient(45deg,#F3EEFA,#F3EEFA 5px,#EBE2F7 5px,#EBE2F7 10px)':clr.bg,
+                  color:it.overbook?'#6D28B5':clr.fg,border:`1px solid ${it.overbook?'#8B5CF6':clr.brd}`,
+                  borderLeft:`2.5px solid ${it.overbook?'#8B5CF6':clr.brd}`,borderRadius:4,overflow:'hidden',zIndex:4,
+                  display:'flex',alignItems:'center',gap:2,padding:'0 3px',fontSize:8.5,fontWeight:800,lineHeight:1}}>
+                {h>=13&&<span style={{opacity:0.85,fontVariantNumeric:'tabular-nums',fontWeight:600}}>{toTime(it.start).slice(0,5)}</span>}
+                {it.spoed&&<span style={{color:C.danger}}>●</span>}
+                {it.digitaal&&<span>{modInfo(it.modaliteit||'telefonisch').ico||'☎'}</span>}
+                <span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{it.code}</span>
               </div>
             )
           }
+          const uurLijnen=gridLines.filter(g=>g.hour)
           return(
             <div style={{marginBottom:14}}>
               <div style={{display:'flex',alignItems:'center',gap:14,marginBottom:10,flexWrap:'wrap'}}>
-                <span style={{fontSize:13,fontWeight:700,color:C.text}}>Weekoverzicht — verdeling per dagdeel</span>
+                <span style={{fontSize:13,fontWeight:700,color:C.text}}>Weekraster — de hele week als tijdrooster</span>
                 <div style={{display:'flex',gap:12,fontSize:11,color:C.muted}}>
-                  {[['Nieuw',C.primary],['Controle',C.green],['Op afstand',TEAL]].map(([l,c])=>(
-                    <span key={l} style={{display:'flex',alignItems:'center',gap:5}}><span style={{width:11,height:11,borderRadius:3,background:c}}/>{l}</span>
+                  {[['Nieuw',NEW_PALETTE[0]],['Controle',CTRL_PALETTE[0]],['Op afstand',{bg:'#D6EAE3',brd:'#94C5B4'}]].map(([l,c])=>(
+                    <span key={l} style={{display:'flex',alignItems:'center',gap:5}}><span style={{width:11,height:11,borderRadius:3,background:c.bg,border:`1px solid ${c.brd}`}}/>{l}</span>
                   ))}
+                  <span style={{display:'flex',alignItems:'center',gap:5}}><span style={{width:11,height:11,borderRadius:3,background:'repeating-linear-gradient(45deg,#EAF6EC,#EAF6EC 3px,#F4FBF5 3px,#F4FBF5 6px)',border:'1px solid #C6E4CC'}}/>Flex</span>
                 </div>
-                <span style={{marginLeft:'auto',fontSize:11,color:C.muted,fontStyle:'italic'}}>klik een dag om die in detail te openen</span>
+                <span style={{marginLeft:'auto',fontSize:11,color:C.muted,fontStyle:'italic'}}>klik een afspraak of dag om die dag te openen · zoom past de hoogte aan</span>
               </div>
-              <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:10}}>
-                {DAYS.slice(0,5).map((d,di)=>{
-                  const pk=raster.kpi.perDay[di], slots=raster.days[di], on=selDay===di
-                  if(!pk||!slots) return(
-                    <div key={di} style={{background:C.surface2,border:`1px dashed ${C.border}`,borderRadius:12,padding:'16px 12px',textAlign:'center',color:C.muted,fontSize:11.5}}>
-                      <div style={{fontWeight:700,marginBottom:6}}>{d}</div>Geen spreekuur</div>)
+              <div style={{display:'flex',border:`1px solid ${C.border}`,borderRadius:12,overflow:'auto',background:C.white,boxShadow:C.shadow}}>
+                {/* tijd-as */}
+                <div style={{width:44,flexShrink:0,borderRight:`1.5px solid ${C.border}`,background:C.timeline,position:'sticky',left:0,zIndex:6}}>
+                  <div style={{height:HEAD,borderBottom:`1px solid ${C.border}`}}/>
+                  <div style={{position:'relative',height:gridH}}>
+                    {uurLijnen.map(({t,y},i)=>(<div key={i} style={{position:'absolute',top:y-6,right:5,fontSize:9.5,fontWeight:700,color:C.hour,fontVariantNumeric:'tabular-nums'}}>{toTime(t)}</div>))}
+                  </div>
+                </div>
+                {/* 5 dagkolommen */}
+                {[0,1,2,3,4].map(di=>{
+                  const slots=raster.days[di], pk=raster.kpi?.perDay[di], on=selDay===di
                   return(
-                    <div key={di} onClick={()=>{setSelDay(di);setViewMode('dag')}}
-                      style={{background:C.white,border:`1.5px solid ${on?C.primary:C.border}`,borderRadius:12,padding:'13px 13px',cursor:'pointer',transition:'all 0.13s'}}
-                      onMouseEnter={e=>e.currentTarget.style.boxShadow='0 8px 20px rgba(28,110,164,0.12)'}
-                      onMouseLeave={e=>e.currentTarget.style.boxShadow='none'}>
-                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:11}}>
-                        <span style={{fontSize:13,fontWeight:700,color:C.text}}>{d}</span>
-                        <span style={{fontSize:10.5,fontWeight:700,padding:'2px 8px',borderRadius:10,
-                          background:pk.benutting>m2.benutting?'#FCEEEB':'#EAF5EE',color:pk.benutting>m2.benutting?C.danger:C.green}}>{pk.benutting}%</span>
+                    <div key={di} style={{flex:1,minWidth:150,borderRight:di<4?`1px solid ${C.border}`:'none',background:on?'#F6FBFD':C.white}}>
+                      <div onClick={()=>{setSelDay(di);setViewMode('dag')}}
+                        style={{height:HEAD,borderBottom:`2px solid ${on?C.primary:C.border}`,cursor:'pointer',
+                          display:'flex',alignItems:'center',justifyContent:'space-between',padding:'0 9px',position:'sticky',top:0,background:on?'#EAF4FA':C.surface2,zIndex:5}}>
+                        <span style={{fontSize:12,fontWeight:800,color:on?C.primary:C.text}}>{DAY_ABBR[di]}<span style={{fontWeight:500,color:C.muted,marginLeft:4,fontSize:10}}>{DAYS[di].slice(2)}</span></span>
+                        {pk&&slots&&<span style={{fontSize:9.5,fontWeight:700,padding:'2px 7px',borderRadius:9,background:pk.benutting>m2.benutting?'#FCEEEB':'#EAF5EE',color:pk.benutting>m2.benutting?C.danger:C.green}}>{pk.benutting}%</span>}
                       </div>
-                      {dagdelen.map(([pre,lbl,dur])=>{
-                        const seg=catSeg(di,pre)
-                        return(
-                          <div key={pre} style={{marginBottom:10}}>
-                            <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:C.muted,marginBottom:3,fontWeight:600}}>
-                              <span>{lbl}</span><span style={{fontVariantNumeric:'tabular-nums'}}>{seg.tot} afspr · {seg.min}m</span>
-                            </div>
-                            <Bar seg={seg} cap={dur}/>
+                      {!slots?(
+                        <div style={{height:gridH,display:'flex',alignItems:'center',justifyContent:'center',color:C.muted,fontSize:10.5,textAlign:'center',padding:8}}>Geen<br/>spreekuur</div>
+                      ):(
+                        <div style={{position:'relative',height:gridH}}>
+                          {/* uur/half lijnen */}
+                          {gridLines.map(({t,y,hour,half},i)=>(<div key={i} style={{position:'absolute',top:y,left:0,right:0,height:1,background:hour?'#DBE3EA':half?'#EEF2F6':'transparent',zIndex:0}}/>))}
+                          {/* pauze-banden */}
+                          {regions.slice(1).map((r,i)=>{const prev=regions[i];const pTop=prev.y0+(prev.end-prev.start)*PXMIN;return(
+                            <div key={'p'+i} style={{position:'absolute',top:pTop,left:0,right:0,height:r.y0-pTop,zIndex:1,
+                              background:'repeating-linear-gradient(45deg,#EEF1F5,#EEF1F5 5px,#F7F9FB 5px,#F7F9FB 11px)',borderTop:`1px solid ${C.border}`,borderBottom:`1px solid ${C.border}`}}/>)})}
+                          {/* kamer-subkolommen */}
+                          <div style={{position:'absolute',inset:0,display:'flex'}}>
+                            {rooms.map(r=>(
+                              <div key={r} style={{flex:1,position:'relative',borderRight:r<numRooms-1?`1px dashed ${C.border}`:'none'}}>
+                                {regions.map(reg=>(slots[reg.pre+r]||[]).map(it=><WeekBlok key={it.id} it={it} di={di}/>))}
+                              </div>
+                            ))}
                           </div>
-                        )
-                      })}
-                      <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:C.muted,marginTop:9,paddingTop:8,borderTop:`1px solid ${C.border}`}}>
-                        <span>{pk.appts} afspraken</span><span>{pk.flex}m flex</span>
-                      </div>
+                        </div>
+                      )}
                     </div>
                   )
                 })}
