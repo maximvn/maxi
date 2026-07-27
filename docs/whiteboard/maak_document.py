@@ -193,6 +193,45 @@ def _herstel_zoom(doc):
 
 
 # --------------------------------------------------------------- document
+def deelkop(doc, letter, titel, kleur_hex, kleur):
+    """Een breed gekleurd tussenschot dat een deel van het document opent."""
+    t = doc.add_table(rows=1, cols=1)
+    t.alignment = WD_TABLE_ALIGNMENT.CENTER
+    cel = t.cell(0, 0)
+    cel.width = FIGUURBREEDTE
+    arceer(cel, kleur_hex)
+    p = cel.paragraphs[0]
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.paragraph_format.space_before = Pt(6)
+    p.paragraph_format.space_after = Pt(2)
+    r = p.add_run("DEEL " + letter)
+    r.bold = True
+    r.font.size = Pt(11)
+    r.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+    p2 = cel.add_paragraph()
+    p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p2.paragraph_format.space_after = Pt(6)
+    r2 = p2.add_run(titel)
+    r2.bold = True
+    r2.font.size = Pt(16)
+    r2.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+    _tabelrand(t, kleur_hex, 4)
+    doc.add_paragraph().paragraph_format.space_after = Pt(2)
+    return t
+
+
+def bron(doc, tekst):
+    """Kleine regel onder een hoofdstukkop die naar de bronfoto verwijst."""
+    p = doc.add_paragraph()
+    p.paragraph_format.space_before = Pt(0)
+    p.paragraph_format.space_after = Pt(8)
+    r = p.add_run(tekst)
+    r.font.size = Pt(9)
+    r.italic = True
+    r.font.color.rgb = GRIJS
+    return p
+
+
 def bouw():
     doc = Document()
     _herstel_zoom(doc)
@@ -227,7 +266,7 @@ def bouw():
     t.alignment = WD_TABLE_ALIGNMENT.CENTER
     gegevens = [
         ("Onderwerp", "Acute poort, Hotfloor, scenario's en personele inzet"),
-        ("Bron", "Whiteboard 'Integraal Capaciteits Management' (10 foto's)"),
+        ("Bron", "Whiteboard 'Integraal Capaciteits Management' (foto 6 t/m 16)"),
         ("Betreft afdelingen", "ICU, CCU, SCU, EHH, SEH en kind spoed"),
         ("Status", "Werkdocument - onderdelen zijn nog open"),
     ]
@@ -252,15 +291,36 @@ def bouw():
                 "laten vullen.", 9, GRIJS, cursief=True)
     doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
 
-    # ---------------- 0. leeswijzer ----------------
+    # ---------------- leeswijzer ----------------
     kop(doc, "Leeswijzer", 1, BLAUW)
-    alinea(doc, "Dit document zet de inhoud van het whiteboard om in negen "
-                "samenhangende blokken. Elk blok bestaat uit een visualisatie en "
-                "daaronder de letterlijke inhoud van het bord in tekst. De volgorde "
-                "volgt de logica van de sessie: eerst het vertrekpunt en de planning, "
-                "dan de situatieschets en de scenario's, en tot slot de openstaande "
-                "vragen en het stappenplan.")
-    figuur(doc, "fig01_overzicht.png", "Figuur 1 - Opbouw van het whiteboard in negen blokken")
+    alinea(doc, "De sessie is vastgelegd op twee whiteboards. Dit document volgt de "
+                "volgorde waarin die borden zijn gefotografeerd: eerst het acute-"
+                "zorgbord met de analyse, het stappenplan en de scenario's, daarna het "
+                "capaciteitsbord met de tijdlijn en de plattegrond, en tot slot het "
+                "totaaloverzicht.")
+    alinea(doc, "Elk hoofdstuk bestaat uit een visualisatie en daaronder de inhoud van "
+                "het bord in tekst. Onder elke hoofdstuktitel staat naar welke foto het "
+                "hoofdstuk verwijst.")
+
+    delen = doc.add_table(rows=3, cols=2)
+    delen.alignment = WD_TABLE_ALIGNMENT.CENTER
+    inhoud_delen = [
+        ("DEEL A - Het acute-zorgbord", "hoofdstuk 1 t/m 7   (foto 6, 7, 8, 9, 11, 13, 12)"),
+        ("DEEL B - Het capaciteitsbord", "hoofdstuk 8 en 9   (foto 15, 14)"),
+        ("DEEL C - Totaaloverzicht", "hoofdstuk 10   (foto 16)"),
+    ]
+    for i, (naam, verwijzing) in enumerate(inhoud_delen):
+        delen.cell(i, 0).width = Cm(6.4)
+        delen.cell(i, 1).width = Cm(10.0)
+        arceer(delen.cell(i, 0), "F2F4F7")
+        rk = delen.cell(i, 0).paragraphs[0].add_run(naam)
+        rk.bold = True
+        rk.font.size = Pt(10)
+        rk.font.color.rgb = BLAUW
+        rv = delen.cell(i, 1).paragraphs[0].add_run(verwijzing)
+        rv.font.size = Pt(10)
+    _tabelrand(delen, "D6DCE5", 4)
+    alinea(doc, "")
 
     kader(doc, "Afkortingen op het bord", [
         "SEH - Spoedeisende hulp",
@@ -276,14 +336,122 @@ def bouw():
 
     doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
 
+    # ================= DEEL A =================
+    deelkop(doc, "A", "Het acute-zorgbord", "1F5FA8", BLAUW)
+
     # ---------------- 1 ----------------
-    kop(doc, "1. Vertrekpunt en planning", 1, BLAUW)
-    alinea(doc, "Het bord begint bij de planning. Er zijn vier perioden te "
-                "onderscheiden, en per periode is de vraag anders: wat kan er nu al, "
-                "wat kan pas in de oudbouw, en wat kan pas na de verhuizing?")
-    figuur(doc, "fig02_plan.png", "Figuur 2 - Vier perioden, de ontbrekende randvoorwaarde "
-                                  "en de kernvraag")
+    kop(doc, "1. Overzicht van het acute-zorgbord", 1, BLAUW)
+    bron(doc, "Foto 6 - het hele bord in een opname")
+    alinea(doc, "Het acute-zorgbord bevat negen blokken. Ze horen bij elkaar: links "
+                "staat wat er gepland is en welke scenario's er zijn, in het midden de "
+                "verandering van oud naar nieuw en het stappenplan, en rechts de "
+                "analyse van de twee grote wijzigingen.")
+    figuur(doc, "fig_bordoverzicht.png", "Figuur 1 - Schematische kaart van het "
+                                         "acute-zorgbord, met de hoofdstukken erbij")
+    kop(doc, "Hoe de blokken samenhangen", 2, BLAUW)
+    opsomming(doc, "Rechts staat de conclusie: de acute poort past niet, de Hotfloor "
+                   "past wel (hoofdstuk 2 en 3).")
+    opsomming(doc, "In het midden staat hoe je van daaruit verder komt: het stappenplan "
+                   "(hoofdstuk 4).")
+    opsomming(doc, "Links staat wat er nog open is en welke scenario's er liggen "
+                   "(hoofdstuk 5 en 6).")
+
+    doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
+
+    # ---------------- 2 ----------------
+    kop(doc, "2. Analyse: past de acute poort?", 1, BLAUW)
+    bron(doc, "Foto 7 - rechterkolom van het bord, bovenste deel")
+    alinea(doc, "De eerste grote wijziging is de acute poort: kind spoed, EHH en SEH "
+                "komen samen achter een poort. De analyse laat zien dat dit in de "
+                "huidige opzet niet past.")
+    figuur(doc, "fig_acutepoort.png", "Figuur 2 - Analyse van de acute poort en het doel "
+                                      "dat eronder ligt")
     kop(doc, "Wat staat er op het bord", 2, BLAUW)
+    opsomming(doc, "1 acute poort past niet voor kind, EHH en SEH samen.")
+    opsomming(doc, "Analyse op dag- en uurniveau.")
+    opsomming(doc, "Jaarpatroon in beeld brengen.")
+    opsomming(doc, "Data is beschikbaar; vervolgactie bepalen.")
+    opsomming(doc, "Doel: de zorg past fysiek op de nieuwe SEH.")
+    opsomming(doc, "Fysieke plekken: hoeveel plekken zijn er nodig?")
+
+    doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
+
+    # ---------------- 3 ----------------
+    kop(doc, "3. Analyse: past de Hotfloor? En waar valt de EHH onder?", 1, GROEN)
+    bron(doc, "Foto 8 - rechterkolom van het bord, onderste deel")
+    alinea(doc, "De tweede grote wijziging is de Hotfloor: ICU, CCU en SCU samen. Deze "
+                "analyse valt anders uit dan die van de acute poort. Onderaan het bord "
+                "staat de vraag die beide wijzigingen raakt: waar valt de EHH onder?")
+    figuur(doc, "fig_hotfloor.png", "Figuur 3 - Analyse van de Hotfloor en de EHH-vraag "
+                                    "die beide wijzigingen raakt")
+    kop(doc, "Wat staat er op het bord", 2, GROEN)
+    opsomming(doc, "Hotfloor op 16 bedden past wel.")
+    opsomming(doc, "Openstaand: wat is de weigeringskans?")
+    opsomming(doc, "Openstaand: komt de EHH er apart bij?")
+    opsomming(doc, "2 grote wijzigingen: (1) acute poort, drie stromen naar een poort; "
+                   "(2) Hotfloor, ICU/CCU/SCU samen.")
+    opsomming(doc, "Waar valt de EHH onder, bij 1 of bij 2? Daaruit volgen analyse, "
+                   "knelpunten en acties.")
+
+    doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
+
+    # ---------------- 4 ----------------
+    kop(doc, "4. Stappenplan", 1, PAARS)
+    bron(doc, "Foto 9 - middendeel van het bord")
+    alinea(doc, "Het stappenplan is de rode draad van het bord: het laat zien hoe je "
+                "van een scenario komt tot een rooster dat klopt, en hoe je daarna "
+                "blijft monitoren.")
+    figuur(doc, "fig10_stappenplan.png", "Figuur 4 - Stappenplan van scenario naar "
+                                         "roostersleutel, planning en monitoring")
+    kop(doc, "De stappen", 2, PAARS)
+    genummerd(doc, "Scenario's uitwerken.")
+    genummerd(doc, "Keuze maken op basis van data uit BI.")
+    genummerd(doc, "Uitwerken in een week- en dagplan.")
+    genummerd(doc, "Verwerken in de roostersleutels.")
+    genummerd(doc, "Planning CPP.")
+    genummerd(doc, "Monitoring van instroom, stops en knelpunten, en monitoring van de "
+                   "urenoverzichten.")
+    alinea(doc, "")
+    kader(doc, "Twee uitgangspunten bij het stappenplan", [
+        "Fysiek gaat voor personeel: eerst wat en waar, daarna volgt de personele inzet "
+        "daaruit.",
+        "Scheiden in perioden: nu en heel 2026, oudbouw 2027, de verhuisperiode, en de "
+        "nieuwbouw vanaf juni 2027.",
+    ], "F0EAF8", "6B3FA0", PAARS)
+
+    doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
+
+    # ---------------- 5 ----------------
+    kop(doc, "5. Openstaande vragen", 1, ORANJE)
+    bron(doc, "Foto 11 - linkerdeel van het bord, onderste helft")
+    alinea(doc, "De openstaande vragen op het bord vallen uiteen in twee sporen: vragen "
+                "over de fysieke planning en vragen over de personele inzet.")
+    figuur(doc, "fig09_vragen.png", "Figuur 5 - Openstaande vragen langs twee sporen")
+    kop(doc, "Fysieke planning", 2, BLAUW)
+    genummerd(doc, "Waar komt de recoverypatiënt in avond, nacht en weekend?")
+    genummerd(doc, "Waar komt de cardioversie?")
+    genummerd(doc, "Hoort de EHH bij de SEH of bij de Hotfloor?")
+    genummerd(doc, "Komt de OSAS post-OK patiënt nog op de ICU?")
+    kop(doc, "Personele inzet en opleiden", 2, PAARS)
+    genummerd(doc, "Wat gebeurt er met de scopedienst van de CCU?")
+    genummerd(doc, "Welke norm geldt er voor de Hotfloor?")
+    genummerd(doc, "Inzet van de kinderverpleegkundige op de SEH?")
+    alinea(doc, "")
+    kader(doc, "Actie", [
+        "Deze lijst aanvullen met de vragen van Lonneke en Maxim.",
+    ], "FBEEE3", "D2691E", ORANJE)
+
+    doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
+
+    # ---------------- 6 ----------------
+    kop(doc, "6. Vertrekpunt, planning en scenario's", 1, BLAUW)
+    bron(doc, "Foto 13 - linkerdeel van het bord, bovenste helft")
+    alinea(doc, "Linksboven op het bord staat de planning: vier perioden, met per "
+                "periode een andere vraag. Daaronder staan de vijf scenario's die "
+                "uitgewerkt moeten worden.")
+    figuur(doc, "fig02_plan.png", "Figuur 6 - Vier perioden, de ontbrekende "
+                                  "randvoorwaarde en de kernvraag")
+    kop(doc, "Wat staat er op het bord: plan", 2, BLAUW)
     opsomming(doc, "Plan: nu 2026 - oudbouw jan tot en met mei - verhuis begin juni - "
                    "nieuwbouw eind juni.")
     opsomming(doc, "Er is geen vastgestelde norm en geen vastgestelde roostersleutel.")
@@ -292,69 +460,9 @@ def bouw():
     opsomming(doc, "Elk scenario heeft effect op de benodigde fysieke capaciteit én op "
                    "de personele inzet (norm plus deskundigheid).")
 
-    doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
-
-    # ---------------- 2 ----------------
-    kop(doc, "2. Tijdlijn en berekeningen", 1, PAARS)
-    alinea(doc, "Op de tijdlijn staat wat er tussen september 2026 en de verhuizing "
-                "gereed moet zijn. De maanden oktober tot en met mei zijn op het bord "
-                "omkaderd: dat is de periode waarin de voorbereiding en het werken in "
-                "de oudbouw plaatsvinden.")
-    figuur(doc, "fig03_tijdlijn.png", "Figuur 3 - Tijdlijn van september tot de verhuizing "
-                                      "en de drie berekeningen")
-    kop(doc, "Wat staat er op het bord", 2, PAARS)
-    opsomming(doc, "September 2026: start van de berekeningen.")
-    opsomming(doc, "Aantal bedden op basis van patiëntaanwezigheid gereed.")
-    opsomming(doc, "Norm verpleegkundigen patiëntenzorg gereed, uitgesplitst naar D, L en N.")
-    opsomming(doc, "Indirecte uren per afdeling gereed.")
-    opsomming(doc, "Juni: verhuizing.")
-
-    doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
-
-    # ---------------- 3 ----------------
-    kop(doc, "3. Oud versus nieuw", 1, BLAUW)
-    alinea(doc, "De kern van de verandering: waar de acute en intensieve zorg nu over "
-                "vier plaatsen in het gebouw verdeeld is, komt die straks in twee "
-                "clusters te liggen.")
-    figuur(doc, "fig04_oud_nieuw.png", "Figuur 4 - Van vier verspreide afdelingen naar "
-                                       "acute poort en Hotfloor")
-    kop(doc, "Wat staat er op het bord", 2, BLAUW)
-    opsomming(doc, "Oud: kind spoed bij de kinderafdeling/poli, SEH op de begane grond, "
-                   "ICU op de 2e verdieping, CCU/SCU/EHH op de 1e verdieping.")
-    opsomming(doc, "Nieuw 1: SEH met acute poort, met daarin kind, EHH en SEH.")
-    opsomming(doc, "Nieuw 2: Hotfloor, met daarin ICU en CCU/SCU.")
-    opsomming(doc, "Fysieke plekken: hoeveel plekken zijn er nodig? En zijn dit er 16?")
-
-    doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
-
-    # ---------------- 4 ----------------
-    kop(doc, "4. Plattegrond nieuwbouw en fysieke plekken", 1, GROEN)
-    alinea(doc, "De plattegrond van de nieuwbouw kent drie ruimtes. Alleen voor de "
-                "Hotfloor staat het aantal plekken vast; voor de SEH en de EHH staat "
-                "er nog een vraagteken.")
-    figuur(doc, "fig05_plattegrond.png", "Figuur 5 - Plattegrond, aantallen en wat er per "
-                                         "plek uitgeschreven moet worden")
-    kop(doc, "Wat staat er op het bord", 2, GROEN)
-    opsomming(doc, "Scenario nieuwbouw fysiek: Hotfloor = 16 bedden, SEH = ? plekken, "
-                   "EHH = ? plekken.")
-    opsomming(doc, "Fysieke plekken uitschrijven aan de hand van kamernummer en type, "
-                   "eventueel met middelen en materialen.")
-    opsomming(doc, "Onderscheid tussen fysieke plekken, specifieke plekken en "
-                   "middelen/materialen/apparatuur.")
-    opsomming(doc, "Bijvoorbeeld: kan er overal beademd worden?")
-    opsomming(doc, "Kan elke zorgvraag in elke kamer?")
-    opsomming(doc, "Is er een basisverdeling fysiek voor ICU, CCU en SCU?")
-
-    doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
-
-    # ---------------- 5 ----------------
-    kop(doc, "5. Scenario's", 1, BLAUW)
-    alinea(doc, "Op het bord staan vijf mogelijke scenario's. Ze zijn niet gelijkwaardig: "
-                "scenario 5 is het handhaven van de huidige situatie en dient als "
-                "referentie voor de andere vier.")
-    figuur(doc, "fig06_scenarios.png", "Figuur 6 - De vijf scenario's en het effect dat "
+    figuur(doc, "fig06_scenarios.png", "Figuur 7 - De vijf scenario's en het effect dat "
                                        "elk scenario heeft")
-    kop(doc, "Wat staat er op het bord", 2, BLAUW)
+    kop(doc, "Wat staat er op het bord: scenario's", 2, BLAUW)
     genummerd(doc, "EHH naar SEH? Overdag, of ook in de avond?")
     genummerd(doc, "ICU en SCU samen op de ICU.")
     genummerd(doc, "Recovery ICU naar CCU/SCU.")
@@ -368,34 +476,46 @@ def bouw():
 
     doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
 
-    # ---------------- 6 ----------------
-    kop(doc, "6. Twee grote wijzigingen en de analyse", 1, PAARS)
-    alinea(doc, "Het rechterdeel van het bord bevat de belangrijkste conclusie van de "
-                "sessie: de twee wijzigingen zijn los van elkaar geanalyseerd, en ze "
-                "vallen verschillend uit.")
-    figuur(doc, "fig07_wijzigingen.png", "Figuur 7 - Analyse van de acute poort en de "
-                                         "Hotfloor, en de EHH-vraag die beide raakt")
-    kop(doc, "Wat staat er op het bord", 2, PAARS)
-    opsomming(doc, "Wijziging 1: acute poort - drie stromen worden één poort.")
-    opsomming(doc, "Wijziging 2: Hotfloor - ICU, CCU en SCU samen.")
-    opsomming(doc, "Analyse: één acute poort past niet voor kind, EHH en SEH samen.")
-    opsomming(doc, "Vervolg: analyse op dag- en uurniveau, jaarpatroon, data is "
-                   "beschikbaar, vervolgactie bepalen.")
-    opsomming(doc, "Doel: de zorg past fysiek op de nieuwe SEH.")
-    opsomming(doc, "Analyse: Hotfloor op 16 bedden past wél. Openstaand: weigeringskans "
-                   "en de vraag of de EHH apart komt.")
-    opsomming(doc, "Waar valt de EHH onder - bij 1 of bij 2? Daaruit volgen analyse, "
-                   "knelpunten en acties.")
+    # ---------------- 7 ----------------
+    kop(doc, "7. Oud versus nieuw", 1, BLAUW)
+    bron(doc, "Foto 12 - middendeel van het bord, bovenste helft")
+    alinea(doc, "De kern van de verandering: waar de acute en intensieve zorg nu over "
+                "vier plaatsen in het gebouw verdeeld is, komt die straks in twee "
+                "clusters te liggen.")
+    figuur(doc, "fig04_oud_nieuw.png", "Figuur 8 - Van vier verspreide afdelingen naar "
+                                       "acute poort en Hotfloor")
+    kop(doc, "Wat staat er op het bord", 2, BLAUW)
+    opsomming(doc, "Oud: kind spoed bij de kinderafdeling/poli, SEH op de begane grond, "
+                   "ICU op de 2e verdieping, CCU/SCU/EHH op de 1e verdieping.")
+    opsomming(doc, "Nieuw 1: SEH met acute poort, met daarin kind, EHH en SEH.")
+    opsomming(doc, "Nieuw 2: Hotfloor, met daarin ICU en CCU/SCU.")
+    opsomming(doc, "Fysieke plekken: hoeveel plekken zijn er nodig? En zijn dit er 16?")
 
     doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
 
-    # ---------------- 7 ----------------
-    kop(doc, "7. Patiëntstromen per afdeling", 1, BLAUW)
-    alinea(doc, "Om het aantal bedden te kunnen berekenen, is per afdeling uitgesplitst "
-                "welke patiëntstromen erin zitten.")
-    figuur(doc, "fig08_stromen.png", "Figuur 8 - Patiëntstromen die in de berekening "
+    # ================= DEEL B =================
+    deelkop(doc, "B", "Het capaciteitsbord", "6B3FA0", PAARS)
+
+    # ---------------- 8 ----------------
+    kop(doc, "8. Tijdlijn, berekeningen en patiëntstromen", 1, PAARS)
+    bron(doc, "Foto 15 - onderste helft van het capaciteitsbord")
+    alinea(doc, "Op de tijdlijn staat wat er tussen september 2026 en de verhuizing "
+                "gereed moet zijn. De maanden oktober tot en met mei zijn op het bord "
+                "omkaderd: dat is de periode waarin de voorbereiding en het werken in "
+                "de oudbouw plaatsvinden.")
+    figuur(doc, "fig03_tijdlijn.png", "Figuur 9 - Tijdlijn van september tot de "
+                                      "verhuizing en de drie berekeningen")
+    kop(doc, "Wat staat er op het bord: tijdlijn", 2, PAARS)
+    opsomming(doc, "September 2026: start van de berekeningen.")
+    opsomming(doc, "Aantal bedden op basis van patiëntaanwezigheid gereed.")
+    opsomming(doc, "Norm verpleegkundigen patiëntenzorg gereed, uitgesplitst naar D, L "
+                   "en N.")
+    opsomming(doc, "Indirecte uren per afdeling gereed.")
+    opsomming(doc, "Juni: verhuizing.")
+
+    figuur(doc, "fig08_stromen.png", "Figuur 10 - Patiëntstromen die in de berekening "
                                      "meegenomen worden")
-    kop(doc, "Wat staat er op het bord", 2, BLAUW)
+    kop(doc, "Wat staat er op het bord: patiëntstromen", 2, PAARS)
     opsomming(doc, "ICU: spoed, electief, recovery.")
     opsomming(doc, "CCU: spoed, cardioversie.")
     opsomming(doc, "SCU: spoed.")
@@ -404,12 +524,42 @@ def bouw():
 
     doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
 
-    # ---------------- 8. tabel ----------------
-    kop(doc, "8. Stand van zaken per afdeling", 1, BLAUW)
-    alinea(doc, "De tabel linksboven op het bord laat zien dat de basis nog grotendeels "
-                "ontbreekt: op één afdeling na is er geen jaarplan ingevoerd, en er is "
-                "voor geen enkele afdeling een vastgestelde norm verpleegkundigen.")
+    # ---------------- 9 ----------------
+    kop(doc, "9. Plattegrond nieuwbouw en fysieke plekken", 1, GROEN)
+    bron(doc, "Foto 14 - rechterdeel van het capaciteitsbord")
+    alinea(doc, "De plattegrond van de nieuwbouw kent drie ruimtes. Alleen voor de "
+                "Hotfloor staat het aantal plekken vast; voor de SEH en de EHH staat "
+                "er nog een vraagteken.")
+    figuur(doc, "fig05_plattegrond.png", "Figuur 11 - Plattegrond, aantallen en wat er "
+                                         "per plek uitgeschreven moet worden")
+    kop(doc, "Wat staat er op het bord", 2, GROEN)
+    opsomming(doc, "Scenario nieuwbouw fysiek: Hotfloor = 16 bedden, SEH = ? plekken, "
+                   "EHH = ? plekken.")
+    opsomming(doc, "Fysieke plekken uitschrijven aan de hand van kamernummer en type, "
+                   "eventueel met middelen en materialen.")
+    opsomming(doc, "Onderscheid tussen fysieke plekken, specifieke plekken en "
+                   "middelen/materialen/apparatuur.")
+    opsomming(doc, "Bijvoorbeeld: kan er overal beademd worden?")
+    opsomming(doc, "Kan elke zorgvraag in elke kamer?")
+    opsomming(doc, "Is er een basisverdeling fysiek voor ICU, CCU en SCU?")
 
+    doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
+
+    # ================= DEEL C =================
+    deelkop(doc, "C", "Totaaloverzicht", "0E9A87", GROEN)
+
+    # ---------------- 10 ----------------
+    kop(doc, "10. Totaaloverzicht en stand van zaken per afdeling", 1, BLAUW)
+    bron(doc, "Foto 16 - het capaciteitsbord in een opname")
+    alinea(doc, "Het capaciteitsbord in zijn geheel. Bovenaan staat de tabel met de "
+                "stand van zaken per afdeling; die laat zien dat de basis nog "
+                "grotendeels ontbreekt. Op één afdeling na is er geen jaarplan "
+                "ingevoerd, en er is voor geen enkele afdeling een vastgestelde norm "
+                "verpleegkundigen.")
+    figuur(doc, "fig_capaciteitsbord.png", "Figuur 12 - Schematische kaart van het "
+                                           "capaciteitsbord")
+
+    kop(doc, "Stand van zaken per afdeling", 2, BLAUW)
     kolommen = ["Afdeling", "Aantal", "Jaarplan?", "Norm vpk?", "Huidige inzet",
                 "Omgerekende norm huidig"]
     rijen = [
@@ -427,9 +577,9 @@ def bouw():
         cel = tab.cell(0, j)
         cel.width = breedtes[j]
         arceer(cel, "1F5FA8")
-        p = cel.paragraphs[0]
-        p.paragraph_format.space_after = Pt(2)
-        r = p.add_run(naam)
+        pp = cel.paragraphs[0]
+        pp.paragraph_format.space_after = Pt(2)
+        r = pp.add_run(naam)
         r.bold = True
         r.font.size = Pt(9)
         r.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
@@ -439,9 +589,9 @@ def bouw():
             cel.width = breedtes[j]
             if i % 2 == 1:
                 arceer(cel, "F2F4F7")
-            p = cel.paragraphs[0]
-            p.paragraph_format.space_after = Pt(2)
-            r = p.add_run(waarde)
+            pp = cel.paragraphs[0]
+            pp.paragraph_format.space_after = Pt(2)
+            r = pp.add_run(waarde)
             r.font.size = Pt(9)
             r.bold = (j == 0)
             if waarde in ("?", "nee"):
@@ -456,52 +606,6 @@ def bouw():
         "De gewenste norm (kolom 'gewenste norm Remco' op het bord) moet nog ingevuld "
         "worden voor ICU, CCU/SCU/EHH en SEH.",
     ], "FBEEE3", "D2691E", ORANJE)
-
-    doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
-
-    # ---------------- 9 ----------------
-    kop(doc, "9. Openstaande vragen", 1, ORANJE)
-    alinea(doc, "De openstaande vragen op het bord vallen uiteen in twee sporen: vragen "
-                "over de fysieke planning en vragen over de personele inzet.")
-    figuur(doc, "fig09_vragen.png", "Figuur 9 - Openstaande vragen langs twee sporen")
-    kop(doc, "Fysieke planning", 2, BLAUW)
-    genummerd(doc, "Waar komt de recoverypatiënt in avond, nacht en weekend?")
-    genummerd(doc, "Waar komt de cardioversie?")
-    genummerd(doc, "Hoort de EHH bij de SEH of bij de Hotfloor?")
-    genummerd(doc, "Komt de OSAS post-OK patiënt nog op de ICU?")
-    kop(doc, "Personele inzet en opleiden", 2, PAARS)
-    genummerd(doc, "Wat gebeurt er met de scopedienst van de CCU?")
-    genummerd(doc, "Welke norm geldt er voor de Hotfloor?")
-    genummerd(doc, "Inzet van de kinderverpleegkundige op de SEH?")
-    alinea(doc, "")
-    kader(doc, "Actie", [
-        "Deze lijst aanvullen met de vragen van Lonneke en Maxim.",
-    ], "FBEEE3", "D2691E", ORANJE)
-
-    doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
-
-    # ---------------- 10 ----------------
-    kop(doc, "10. Stappenplan", 1, PAARS)
-    alinea(doc, "Het stappenplan is de rode draad van het bord: het laat zien hoe je "
-                "van een scenario komt tot een rooster dat klopt, en hoe je daarna "
-                "blijft monitoren.")
-    figuur(doc, "fig10_stappenplan.png", "Figuur 10 - Stappenplan van scenario naar "
-                                         "roostersleutel, planning en monitoring")
-    kop(doc, "De stappen", 2, PAARS)
-    genummerd(doc, "Scenario's uitwerken.")
-    genummerd(doc, "Keuze maken op basis van data uit BI.")
-    genummerd(doc, "Uitwerken in een week- en dagplan.")
-    genummerd(doc, "Verwerken in de roostersleutels.")
-    genummerd(doc, "Planning CPP.")
-    genummerd(doc, "Monitoring van instroom, stops en knelpunten, en monitoring van de "
-                   "urenoverzichten.")
-    alinea(doc, "")
-    kader(doc, "Twee uitgangspunten bij het stappenplan", [
-        "Fysiek gaat voor personeel: eerst wat en waar, daarna volgt de personele inzet "
-        "daaruit.",
-        "Scheiden in perioden: nu en heel 2026, oudbouw 2027, de verhuisperiode, en de "
-        "nieuwbouw vanaf juni 2027.",
-    ], "F0EAF8", "6B3FA0", PAARS)
 
     doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
 
@@ -547,13 +651,13 @@ def bouw():
          "Gelezen als 'inzet kinderverpleegkundige op SEH'. Klopt dat?"),
     ]
     for titel, tekst in vragen:
-        p = doc.add_paragraph()
-        p.paragraph_format.space_before = Pt(8)
-        p.paragraph_format.space_after = Pt(2)
-        r = p.add_run(titel)
-        r.bold = True
-        r.font.size = Pt(11)
-        r.font.color.rgb = ORANJE
+        pv = doc.add_paragraph()
+        pv.paragraph_format.space_before = Pt(8)
+        pv.paragraph_format.space_after = Pt(2)
+        rv = pv.add_run(titel)
+        rv.bold = True
+        rv.font.size = Pt(11)
+        rv.font.color.rgb = ORANJE
         alinea(doc, tekst, 10.5, na=2)
 
     doc.save(UIT)

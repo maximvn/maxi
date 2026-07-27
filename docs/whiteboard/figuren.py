@@ -23,33 +23,51 @@ def kop(d, tekst, sub=None, kleur=BLUE):
     return 130 if sub else 100
 
 
+def _blok(d, x, y, w, h, titel, regels, kleur, hoofdstuk):
+    """Een blok op de schematische bordkaart, met verwijzing naar het hoofdstuk."""
+    d.rect(x, y, w, h, fill="#FFFFFF", stroke=kleur, sw=3, rx=12)
+    d.rect(x, y, w, 10, fill=kleur, stroke="none", rx=5)
+    ty = y + 54
+    for r in _wrap(titel, max(8, int((w - 30) / 12.8))):
+        d.text(x + w / 2, ty, r, 23, kleur, "middle", "bold")
+        ty += 30
+    ty += 8
+    for regel in regels:
+        for r in _wrap(regel, max(10, int((w - 30) / 11.0))):
+            d.text(x + w / 2, ty, r, 20, GREY, "middle")
+            ty += 26
+    cy = max(y + h - 54, ty + 4)
+    d.chip(x + w / 2 - 56, cy, 112, 38, "hfst. " + hoofdstuk, "#F2F4F7", kleur, 19)
+
+
 # ---------------------------------------------------------------- figuur 1
-def fig01_overzicht():
+def fig_bordoverzicht():
     d = Svg(W, 900)
-    y = kop(d, "Opbouw van het whiteboard", "Negen blokken - in deze volgorde uitgewerkt in dit document")
-    tiles = [
-        ("1", "Vertrekpunt & planning", "nu 2026 - oudbouw - verhuis - nieuwbouw", BLUE),
-        ("2", "Tijdlijn en berekeningen", "sept 2026 tot en met de verhuizing", PURPLE),
-        ("3", "Oud versus nieuw", "van 4 losse locaties naar 2 clusters", BLUE),
-        ("4", "Plattegrond nieuwbouw", "Hotfloor / EHH / SEH + fysieke plekken", GREEN),
-        ("5", "Scenario's", "5 mogelijke inrichtingsvarianten", BLUE),
-        ("6", "2 grote wijzigingen", "acute poort en Hotfloor - analyse", PURPLE),
-        ("7", "Patiëntstromen", "per afdeling: spoed, electief, recovery", BLUE),
-        ("8", "Openstaande vragen", "fysieke planning en personele inzet", ORANGE),
-        ("9", "Stappenplan", "van scenario naar roostersleutel", PURPLE),
+    y = kop(d, "1. Overzicht van het acute-zorgbord",
+            "Waar staat wat op het bord, en in welk hoofdstuk het is uitgewerkt")
+    d.rect(48, y + 18, 1304, 680, fill="#FAFBFC", stroke="#B9C4D2", sw=6, rx=16)
+    d.rect(56, y + 26, 1288, 664, fill="#FFFFFF", stroke=GREY, sw=3, rx=10)
+
+    blokken = [
+        (86, y + 56, 330, 180, "plan", ["nu 2026 - oudbouw", "verhuis - nieuwbouw"], BLUE, "6"),
+        (86, y + 256, 330, 180, "scenario's", ["vijf mogelijke", "inrichtingsvarianten"], BLUE, "6"),
+        (86, y + 456, 330, 200, "openstaande vragen",
+         ["fysieke planning", "personele inzet"], ORANGE, "5"),
+        (436, y + 56, 300, 290, "OUD  naar  NIEUW",
+         ["huidige locaties", "acute poort", "Hotfloor"], BLUE, "7"),
+        (436, y + 366, 300, 290, "stappenplan",
+         ["scenario, keuze,", "rooster, monitoring"], PURPLE, "4"),
+        (756, y + 56, 180, 600, "fysieke plekken", ["hoeveel?", "welk type?"], GREEN, "9"),
+        (956, y + 56, 388, 180, "analyse acute poort", ["past niet"], RED, "2"),
+        (956, y + 256, 388, 180, "analyse Hotfloor", ["16 bedden past wel"], GREEN, "3"),
+        (956, y + 456, 388, 200, "2 grote wijzigingen",
+         ["acute poort", "Hotfloor"], PURPLE, "3"),
     ]
-    tw, th, gx, gy = 420, 210, 30, 30
-    x0 = (W - (3 * tw + 2 * gx)) / 2
-    for i, (nr, titel, sub, kleur) in enumerate(tiles):
-        r, c = divmod(i, 3)
-        x = x0 + c * (tw + gx)
-        yy = y + 40 + r * (th + gy)
-        d.rect(x, yy, tw, th, fill="#FFFFFF", stroke=kleur, sw=2.5, rx=14)
-        d.rect(x, yy, 10, th, fill=kleur, stroke="none", rx=5)
-        d.badge(x + 62, yy + 52, 26, nr, kleur, size=27)
-        d.text(x + 98, yy + 62, titel, 23, kleur, "start", "bold")
-        d.lines(x + 32, yy + 122, _wrap(sub, 30), 23, GREY)
-    return d, "fig01_overzicht"
+    for b in blokken:
+        _blok(d, *b)
+    d.text(700, y + 740, "Het tweede bord (capaciteit, tijdlijn en plattegrond) "
+                         "staat in hoofdstuk 10.", 24, GREY, "middle", style="italic")
+    return d, "fig_bordoverzicht"
 
 
 def _wrap(tekst, n):
@@ -68,7 +86,7 @@ def _wrap(tekst, n):
 # ---------------------------------------------------------------- figuur 2
 def fig02_plan():
     d = Svg(W, 990)
-    y = kop(d, "1. Vertrekpunt en planning", "Wat staat er vast, wat niet - en welke vraag ligt eronder")
+    y = kop(d, "6a. Vertrekpunt en planning", "Wat staat er vast, wat niet - en welke vraag ligt eronder")
 
     fasen = [
         ("NU", "heel 2026", "huidige situatie,\nhuidige locaties", GREY),
@@ -126,7 +144,7 @@ def fig02_plan():
 
 def fig03_tijdlijn():
     d = Svg(W, 900)
-    y = kop(d, "2. Tijdlijn en berekeningen", "Van start berekeningen (sept 2026) tot verhuizing (juni)")
+    y = kop(d, "8a. Tijdlijn en berekeningen", "Van start berekeningen (sept 2026) tot verhuizing (juni)")
 
     maanden = ["sept", "okt", "nov", "dec", "jan", "feb", "mrt", "apr",
                "mei", "juni", "juli", "aug", "sept", "okt"]
@@ -181,7 +199,7 @@ def fig03_tijdlijn():
 # ---------------------------------------------------------------- figuur 4
 def fig04_oud_nieuw():
     d = Svg(W, 950)
-    y = kop(d, "3. Oud versus nieuw", "Van vier verspreide afdelingen naar twee geclusterde eenheden")
+    y = kop(d, "7. Oud versus nieuw", "Van vier verspreide afdelingen naar twee geclusterde eenheden")
 
     d.text(320, y + 40, "OUD", 40, GREY, "middle", "bold")
     d.text(1050, y + 40, "NIEUW", 40, BLUE, "middle", "bold")
@@ -233,7 +251,7 @@ def fig04_oud_nieuw():
 # ---------------------------------------------------------------- figuur 5
 def fig05_plattegrond():
     d = Svg(W, 860)
-    y = kop(d, "4. Plattegrond nieuwbouw en fysieke plekken",
+    y = kop(d, "9. Plattegrond nieuwbouw en fysieke plekken",
             "Drie ruimtes, en wat er per ruimte uitgeschreven moet worden", GREEN)
 
     # plattegrond
@@ -292,7 +310,7 @@ def fig05_plattegrond():
 # ---------------------------------------------------------------- figuur 6
 def fig06_scenarios():
     d = Svg(W, 880)
-    y = kop(d, "5. Scenario's (mogelijk)", "Vijf inrichtingsvarianten die uitgewerkt moeten worden")
+    y = kop(d, "6b. Scenario's (mogelijk)", "Vijf inrichtingsvarianten die uitgewerkt moeten worden")
 
     scen = [
         ("EHH naar SEH?", "Overdag, of ook in de avond? Beide doorrekenen."),
@@ -330,74 +348,105 @@ def fig06_scenarios():
 
 
 # ---------------------------------------------------------------- figuur 7
-def fig07_wijzigingen():
-    d = Svg(W, 1110)
-    y = kop(d, "6. Twee grote wijzigingen en de analyse", "Acute poort en Hotfloor - wat past wel en wat niet", PURPLE)
+def fig_acutepoort():
+    d = Svg(W, 830)
+    y = kop(d, "2. Analyse: past de acute poort?",
+            "Wijziging 1 - drie stromen komen samen achter een poort")
 
-    d.rect(60, y + 20, 1280, 116, fill=PURPLE_L, stroke=PURPLE, sw=3, rx=14)
-    d.text(110, y + 62, "2 grote", 29, PURPLE, "start", "bold")
-    d.text(110, y + 98, "wijzigingen", 29, PURPLE, "start", "bold")
-    d.chip(320, y + 49, 480, 58, "1   Acute poort: 3 stromen -> 1 poort", "#FFFFFF", BLUE, 21)
-    d.chip(830, y + 49, 460, 58, "2   Hotfloor: ICU/CCU/SCU samen", "#FFFFFF", GREEN, 21)
+    d.rect(60, y + 20, 1280, 76, fill=BLUE, stroke="none", rx=12)
+    d.text(700, y + 68, "WIJZIGING 1 - ACUTE POORT: 3 STROMEN NAAR 1 POORT", 28,
+           "#FFFFFF", "middle", "bold")
 
-    # twee analysekolommen
-    ky = y + 180
-    kw = 620
-    # kolom acute poort
-    d.rect(60, ky, kw, 470, fill="#FFFFFF", stroke=BLUE, sw=3, rx=14)
-    d.rect(60, ky, kw, 56, fill=BLUE, stroke="none", rx=14)
-    d.rect(60, ky + 40, kw, 16, fill=BLUE, stroke="none", rx=0)
-    d.text(60 + kw / 2, ky + 40, "ANALYSE ACUTE POORT", 27, "#FFFFFF", "middle", "bold")
-    d.rect(100, ky + 82, kw - 80, 78, fill=RED_L, stroke=RED, sw=2.5, rx=10)
-    d.text(60 + kw / 2, ky + 116, "1 acute poort past NIET", 28, RED, "middle", "bold")
-    d.text(60 + kw / 2, ky + 148, "voor kind + EHH + SEH samen", 23, INK, "middle")
-    d.arrow(60 + kw / 2, ky + 166, 60 + kw / 2, ky + 196, BLUE, 3)
+    # linkerkolom: de analyse
+    lx, lw = 60, 660
+    d.rect(lx, y + 120, lw, 110, fill=RED_L, stroke=RED, sw=3, rx=12)
+    d.text(lx + lw / 2, y + 168, "1 acute poort past NIET", 30, RED, "middle", "bold")
+    d.text(lx + lw / 2, y + 204, "voor kind, EHH en SEH samen", 24, INK, "middle")
+    d.arrow(lx + lw / 2, y + 234, lx + lw / 2, y + 262, BLUE, 3)
+
     stappen = ["Analyse op dag- en uurniveau", "Jaarpatroon in beeld brengen",
-               "Data is beschikbaar -> vervolgactie bepalen"]
-    for i, s in enumerate(stappen):
-        yy = ky + 200 + i * 62
-        d.rect(100, yy, kw - 80, 52, fill=BLUE_L, stroke=BLUE, sw=2, rx=10)
-        d.text(60 + kw / 2, yy + 34, s, 24, INK, "middle")
-    d.arrow(60 + kw / 2, ky + 388, 60 + kw / 2, ky + 414, BLUE, 3)
-    d.rect(100, ky + 410, kw - 80, 48, fill="#FFFFFF", stroke=BLUE, sw=2.5, rx=10)
-    d.text(60 + kw / 2, ky + 441, "Doel: de zorg past fysiek op de nieuwe SEH", 22, BLUE,
-           "middle", "bold")
+               "Data beschikbaar: vervolgactie bepalen"]
+    for i, t in enumerate(stappen):
+        yy = y + 266 + i * 74
+        d.rect(lx, yy, lw, 58, fill=BLUE_L, stroke=BLUE, sw=2, rx=10)
+        d.badge(lx + 40, yy + 29, 20, str(i + 1), BLUE, size=22)
+        d.text(lx + lw / 2 + 20, yy + 38, t, 24, INK, "middle")
+    d.arrow(lx + lw / 2, y + 492, lx + lw / 2, y + 520, GREEN, 3)
+    d.rect(lx, y + 524, lw, 96, fill=GREEN_L, stroke=GREEN, sw=3, rx=12)
+    d.text(lx + lw / 2, y + 566, "DOEL", 25, GREEN, "middle", "bold")
+    d.text(lx + lw / 2, y + 600, "de zorg past fysiek op de nieuwe SEH", 24, INK, "middle")
 
-    # kolom hotfloor
-    hx = 720
-    d.rect(hx, ky, kw, 470, fill="#FFFFFF", stroke=GREEN, sw=3, rx=14)
-    d.rect(hx, ky, kw, 56, fill=GREEN, stroke="none", rx=14)
-    d.rect(hx, ky + 40, kw, 16, fill=GREEN, stroke="none", rx=0)
-    d.text(hx + kw / 2, ky + 40, "ANALYSE HOTFLOOR", 27, "#FFFFFF", "middle", "bold")
-    d.rect(hx + 40, ky + 82, kw - 80, 78, fill=GREEN_L, stroke=GREEN, sw=2.5, rx=10)
-    d.text(hx + kw / 2, ky + 116, "Hotfloor op 16 bedden past WEL", 28, GREEN, "middle", "bold")
-    d.text(hx + kw / 2, ky + 148, "ICU + CCU/SCU samen", 23, INK, "middle")
-    d.arrow(hx + kw / 2, ky + 166, hx + kw / 2, ky + 196, GREEN, 3)
-    for i, s in enumerate(["Wat is de weigeringskans?",
-                           "Komt de EHH er apart bij of niet?"]):
-        yy = ky + 200 + i * 62
-        d.rect(hx + 40, yy, kw - 80, 52, fill=ORANGE_L, stroke=ORANGE, sw=2, rx=10)
-        d.text(hx + kw / 2, yy + 34, s, 24, INK, "middle")
-    d.text(hx + kw / 2, ky + 380, "open punten", 23, GREY, "middle", style="italic")
+    # rechterkolom: de stromen en de telvraag
+    rx, rw = 780, 560
+    d.rect(rx, y + 120, rw, 500, fill="#FFFFFF", stroke=BLUE, sw=3, rx=14)
+    d.text(rx + rw / 2, y + 168, "De drie stromen achter de poort", 26, BLUE, "middle", "bold")
+    for i, s_ in enumerate(["kind spoed", "EHH", "SEH"]):
+        d.chip(rx + 40, y + 196 + i * 78, rw - 80, 62, s_, BLUE_L, BLUE, 26)
+    d.rect(rx + 40, y + 444, rw - 80, 90, fill=ORANGE_L, stroke=ORANGE, sw=2.5, rx=10)
+    d.text(rx + rw / 2, y + 482, "Telvraag", 24, ORANGE, "middle", "bold")
+    d.text(rx + rw / 2, y + 514, "hoeveel plekken zijn er nodig?", 23, INK, "middle")
+    d.rect(rx + 40, y + 548, rw - 80, 56, fill=GREY_L, stroke=GREY, sw=2, rx=10)
+    d.text(rx + rw / 2, y + 584, "data op dag- en uurniveau is er", 22, INK, "middle")
+    return d, "fig_acutepoort"
 
-    # onderste conclusieblok
-    cy = ky + 510
-    d.rect(60, cy, 1280, 240, fill=ORANGE_L, stroke=ORANGE, sw=3, rx=14)
-    d.text(700, cy + 56, "Waar valt de EHH onder - bij 1 of bij 2?", 32, ORANGE, "middle", "bold")
-    d.text(700, cy + 94, "Deze keuze bepaalt beide analyses", 24, GREY, "middle")
-    d.box(120, cy + 120, 560, 92, title="Analyse + knelpunten",
-          body=["-> welke acties volgen hieruit?"], fill="#FFFFFF", stroke=ORANGE,
+
+# ---------------------------------------------------------------- figuur 7b
+def fig_hotfloor():
+    d = Svg(W, 1000)
+    y = kop(d, "3. Analyse: past de Hotfloor? En waar valt de EHH onder?",
+            "Wijziging 2 - ICU, CCU en SCU samen op een vloer", GREEN)
+
+    d.rect(60, y + 20, 1280, 76, fill=GREEN, stroke="none", rx=12)
+    d.text(700, y + 68, "WIJZIGING 2 - HOTFLOOR: ICU, CCU EN SCU SAMEN", 28,
+           "#FFFFFF", "middle", "bold")
+
+    # linkerkolom: de uitkomst
+    lx, lw = 60, 640
+    d.rect(lx, y + 120, lw, 380, fill="#FFFFFF", stroke=GREEN, sw=3, rx=14)
+    d.rect(lx + 30, y + 150, lw - 60, 110, fill=GREEN_L, stroke=GREEN, sw=3, rx=12)
+    d.text(lx + lw / 2, y + 198, "Hotfloor op 16 bedden past WEL", 28, GREEN, "middle", "bold")
+    d.text(lx + lw / 2, y + 234, "ICU + CCU/SCU samen", 24, INK, "middle")
+    d.arrow(lx + lw / 2, y + 268, lx + lw / 2, y + 296, ORANGE, 3)
+    d.text(lx + lw / 2, y + 330, "Nog open bij deze uitkomst", 24, ORANGE, "middle", "bold")
+    for i, t in enumerate(["Wat is de weigeringskans?", "Komt de EHH er apart bij?"]):
+        yy = y + 350 + i * 72
+        d.rect(lx + 30, yy, lw - 60, 58, fill=ORANGE_L, stroke=ORANGE, sw=2, rx=10)
+        d.text(lx + lw / 2, yy + 38, t, 24, INK, "middle")
+
+    # rechterkolom: de twee wijzigingen naast elkaar
+    rx, rw = 740, 600
+    d.rect(rx, y + 120, rw, 380, fill=PURPLE_L, stroke=PURPLE, sw=3, rx=14)
+    d.text(rx + rw / 2, y + 172, "De twee grote wijzigingen", 28, PURPLE, "middle", "bold")
+    kaarten = [("1", "Acute poort", "3 stromen naar 1 poort", BLUE),
+               ("2", "Hotfloor", "ICU / CCU / SCU samen", GREEN)]
+    for i, (nr, t, sub, kleur) in enumerate(kaarten):
+        yy = y + 200 + i * 130
+        d.rect(rx + 30, yy, rw - 60, 110, fill="#FFFFFF", stroke=kleur, sw=2.5, rx=12)
+        d.badge(rx + 82, yy + 55, 28, nr, kleur)
+        d.text(rx + 126, yy + 48, t, 27, kleur, "start", "bold")
+        d.text(rx + 126, yy + 84, sub, 22, GREY, "start")
+    d.text(rx + rw / 2, y + 480, "beide apart geanalyseerd", 22, GREY, "middle", style="italic")
+
+    # onderste blok: de EHH-vraag
+    cy = y + 530
+    d.rect(60, cy, 1280, 290, fill=ORANGE_L, stroke=ORANGE, sw=3, rx=14)
+    d.text(700, cy + 58, "Waar valt de EHH onder - bij 1 of bij 2?", 32, ORANGE, "middle", "bold")
+    d.text(700, cy + 96, "Deze keuze bepaalt beide analyses", 24, GREY, "middle")
+    d.arrow(420, cy + 116, 420, cy + 146, ORANGE, 3)
+    d.arrow(980, cy + 116, 980, cy + 146, ORANGE, 3)
+    d.box(120, cy + 150, 560, 110, title="Analyse + knelpunten",
+          body=["welke acties volgen hieruit?"], fill="#FFFFFF", stroke=ORANGE,
           tsize=26, bsize=23)
-    d.box(720, cy + 120, 560, 92, title="Analyse + knelpunten",
-          body=["-> of past dit gewoon?"], fill="#FFFFFF", stroke=ORANGE,
+    d.box(720, cy + 150, 560, 110, title="Analyse + knelpunten",
+          body=["of past dit gewoon?"], fill="#FFFFFF", stroke=ORANGE,
           tsize=26, bsize=23)
-    return d, "fig07_wijzigingen"
+    return d, "fig_hotfloor"
 
 
 # ---------------------------------------------------------------- figuur 8
 def fig08_stromen():
     d = Svg(W, 810)
-    y = kop(d, "7. Patiëntstromen per afdeling",
+    y = kop(d, "8b. Patiëntstromen per afdeling",
             "Welke stromen moeten in de berekening worden meegenomen")
 
     afd = [
@@ -429,7 +478,7 @@ def fig08_stromen():
 
 def fig09_vragen():
     d = Svg(W, 900)
-    y = kop(d, "8. Openstaande vragen", "Twee sporen: fysieke planning en personele inzet", ORANGE)
+    y = kop(d, "5. Openstaande vragen", "Twee sporen: fysieke planning en personele inzet", ORANGE)
 
     kw = 620
     # fysieke planning
@@ -479,7 +528,7 @@ def fig09_vragen():
 # ---------------------------------------------------------------- figuur 10
 def fig10_stappenplan():
     d = Svg(W, 1080)
-    y = kop(d, "9. Stappenplan", "Van scenario naar roostersleutel, planning en monitoring", PURPLE)
+    y = kop(d, "4. Stappenplan", "Van scenario naar roostersleutel, planning en monitoring", PURPLE)
 
     stappen = [
         ("Scenario's uitwerken", "de 5 varianten volledig doorrekenen"),
@@ -534,9 +583,49 @@ def fig10_stappenplan():
 
 
 # ---------------------------------------------------------------- run
-FIGUREN = [fig01_overzicht, fig02_plan, fig03_tijdlijn, fig04_oud_nieuw,
-           fig05_plattegrond, fig06_scenarios, fig07_wijzigingen, fig08_stromen,
-           fig09_vragen, fig10_stappenplan]
+# ---------------------------------------------------------------- figuur 11
+def fig_capaciteitsbord():
+    d = Svg(W, 980)
+    y = kop(d, "10. Totaaloverzicht: het capaciteitsbord",
+            "Het tweede bord in een oogopslag, met verwijzing naar de hoofdstukken")
+
+    d.rect(56, y + 20, 1288, 58, fill=BLUE, stroke="none", rx=10)
+    d.text(700, y + 60, "INTEGRAAL CAPACITEITS MANAGEMENT", 28, "#FFFFFF", "middle", "bold")
+    d.rect(48, y + 86, 1304, 620, fill="#FAFBFC", stroke="#B9C4D2", sw=6, rx=16)
+    d.rect(56, y + 94, 1288, 604, fill="#FFFFFF", stroke=GREY, sw=3, rx=10)
+
+    _blok(d, 86, y + 124, 1228, 190, "Stand van zaken per afdeling",
+          ["ICU  -  CCU / SCU / EHH  -  SEH  -  kind spoed",
+           "jaarplan? / norm vpk? / huidige inzet / omgerekende norm / gewenste norm"],
+          BLUE, "10")
+    _blok(d, 86, y + 344, 390, 324, "Tijdlijn en berekeningen",
+          ["sept 2026 tot de verhuizing", "bedden, norm, indirecte uren"], PURPLE, "8")
+    _blok(d, 506, y + 344, 390, 324, "Patiëntstromen per afdeling",
+          ["spoed, electief, recovery,", "cardioversie"], BLUE, "8")
+    _blok(d, 926, y + 344, 388, 324, "Plattegrond nieuwbouw",
+          ["Hotfloor, EHH, SEH", "scenario nieuwbouw fysiek"], GREEN, "9")
+
+    d.rect(56, y + 730, 1288, 80, fill=GREEN_L, stroke=GREEN, sw=2.5, rx=12)
+    d.text(700, y + 764, "Scenario nieuwbouw fysiek", 25, GREEN, "middle", "bold")
+    d.text(700, y + 796, "Hotfloor = 16 bedden   |   SEH = ? plekken   |   EHH = ? plekken",
+           24, INK, "middle")
+    return d, "fig_capaciteitsbord"
+
+
+FIGUREN = [
+    fig_bordoverzicht,      # hoofdstuk 1   - foto 6
+    fig_acutepoort,         # hoofdstuk 2   - foto 7
+    fig_hotfloor,           # hoofdstuk 3   - foto 8
+    fig10_stappenplan,      # hoofdstuk 4   - foto 9
+    fig09_vragen,           # hoofdstuk 5   - foto 11
+    fig02_plan,             # hoofdstuk 6a  - foto 13
+    fig06_scenarios,        # hoofdstuk 6b  - foto 13
+    fig04_oud_nieuw,        # hoofdstuk 7   - foto 12
+    fig03_tijdlijn,         # hoofdstuk 8a  - foto 15
+    fig08_stromen,          # hoofdstuk 8b  - foto 15
+    fig05_plattegrond,      # hoofdstuk 9   - foto 14
+    fig_capaciteitsbord,    # hoofdstuk 10  - foto 16
+]
 
 
 def main():
