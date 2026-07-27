@@ -38,6 +38,9 @@ const CTRL_PALETTE = [
   {bg:'#D8ECE4',brd:'#A0CCBC',fg:'#225A4D'},{bg:'#DDEEDF',brd:'#AAD0B2',fg:'#2B6647'},
 ]
 const BUF_COLOR = {bg:'#F0F3F6',brd:'#D2DBE3',fg:'#6A7A88'}
+// Flexruimte / buffer — licht oranje, duidelijk te onderscheiden van de afspraken
+const FLEX_COLOR = {bg:'#FFF1DE',bg2:'#FFF9F0',brd:'#F0B96B',fg:'#8A5312'}
+const FLEX_STRIPE=(a=6,b=13)=>`repeating-linear-gradient(45deg,${FLEX_COLOR.bg},${FLEX_COLOR.bg} ${a}px,${FLEX_COLOR.bg2} ${a}px,${FLEX_COLOR.bg2} ${b}px)`
 
 const DAYS=['Maandag','Dinsdag','Woensdag','Donderdag','Vrijdag','Zaterdag','Zondag']
 const DAY_ABBR=['MA','DI','WO','DO','VR']
@@ -54,23 +57,23 @@ const MIN_BLOCK_H = 28 // minimum block height in px
 const PLAN_INFO = {
   // ── Planning volgorde ──────────────────────────────────────────────────────
   shortFirst:{label:'Starten met korte afspraken',type:'toggle',
-    desc:'De kortste afspraken worden als eerste ingepland. Dit zorgt voor snelle doorstroom aan het begin van het spreekuur en houdt de wachtkamer kort.'},
+    desc:'De 3 kortste afspraken van ELK spreekuur komen vooraan. De rest behoudt de volgorde uit de andere regels. Dit bevordert snelle doorstroom aan het begin zonder de hele volgorde op duur te sorteren.'},
   spoedFirst:{label:'Spoed afspraken eerst',type:'toggle',
-    desc:'Urgente/spoedafspraken worden als eerste ingepland zodat ze gegarandeerd vroeg in het spreekuur vallen, ongeacht duur of andere regels.'},
+    desc:'Afspraken met het spoedvinkje worden vóór alle andere afspraken van hetzelfde spreekuur geplaatst. Instelbaar per dagdeel (ochtend, middag of beide). Staat "korte afspraken eerst" ook aan, dan worden de spoedafspraken onderling ook op duur gesorteerd.'},
   certainFirst:{label:'Zekere afspraken eerst',type:'toggle',
     desc:'Afspraken met een lage onzekerheid (voorspelbare duur) worden vroeg in het dagdeel gepland; onzekere afspraken komen later, bij voorkeur vlak vóór een buffer, zodat uitloop kan worden opgevangen. Onzekerheid stel je per afspraakcode in bij Gegevens invoer.'},
   // ── Digitale consulten ─────────────────────────────────────────────────────
   digitalMode:{label:'Digitale consulten',type:'radio',
     opts:[{v:'spread',l:'Verdelen over dag'},{v:'cluster',l:'Clusteren in blok'},{v:'end',l:'Aan het einde plannen'}],
-    desc:'Hoe telefonische en digitale consulten worden gegroepeerd binnen het spreekuur.'},
+    desc:'"Verdelen" = digitale afspraken gelijkmatig ingespreid tussen de fysieke afspraken van elke kamer. "Clusteren" = alle digitale afspraken als aaneengesloten blok achteraan de kamer. "Einde" = digitale afspraken in het laatste tijdvenster van het spreekuur (venster instelbaar in minuten).'},
   // ── Groepering afsprakencodes ──────────────────────────────────────────────
   groupMode:{label:'Groepering afsprakencodes',type:'radio',
     opts:[{v:'spread',l:'Gespreid inplannen (afwisselen)'},{v:'wave',l:'Wave planning (per blok)'}],
-    desc:'Gespreid = afspraakcodes worden afwisselend ingepland (A,B,A,B). Wave = alle afspraken van dezelfde code worden aaneengesloten ingepland (A,A,B,B).'},
+    desc:'Gespreid = nieuw en controle worden afgewisseld naar rato van hun aantallen (bij 1:2 → NP,CP,CP,NP,CP,CP…), en binnen elke categorie wisselen de afzonderlijke codes af naar rato van hun aandeel. Wave = alle afspraken van dezelfde code aaneengesloten (A,A,B,B).'},
   // ── Flex-tijd beheer ───────────────────────────────────────────────────────
   flexMode:{label:'Flex-tijd verdeling',type:'radio',
     opts:[{v:'end',l:'Flex-blok aan het einde'},{v:'spread',l:'Flex verspreid tussen afspraken'}],
-    desc:'Bepaalt waar de vrije (flex) tijd in het spreekuur valt. "Aan het einde" = één aaneengesloten vrij blok na de laatste afspraak. "Verspreid" = gelijke gaten tussen alle afspraken.'},
+    desc:'"Aan het einde" = één aaneengesloten flexblok na de laatste afspraak. "Verspreid" = flexblokken van minimaal 10 minuten, gelijkmatig verdeeld over het spreekuur, nooit binnen de eerste N minuten en nooit tussen de laatste afspraak en het einde (dat is het restblok).'},
   // ── Bailey-Welsh ───────────────────────────────────────────────────────────
   baileyWelsh:{label:'Bailey-Welsh regel',type:'toggle',
     desc:'De eerste afspraak van het spreekuur wordt dubbel geboekt (twee patiënten tegelijk). Dit compenseert voor no-shows en start-vertragingen, en verhoogt de gemiddelde benutting.'},
@@ -361,6 +364,9 @@ export default function RasterTool(){
   const [rules,setRules]=useState({
     shortFirst:false, spoedFirst:false, certainFirst:false, baileyWelsh:false,
     digitalMode:'spread', groupMode:'spread', flexMode:'end',
+    spoedDagdeel:'both',      // 'both' | 'och' | 'mid' — in welk dagdeel geldt spoed-eerst
+    flexNoFirstMin:60,        // geen verspreide flex in de eerste N minuten van een spreekuur
+    digitalEndMinutes:30,     // breedte van het digitale eindvenster (digitalMode='end')
     order:['spoedFirst','shortFirst','certainFirst']  // priority order of sequence rules
   })
   const [selDay,setSelDay]=useState(0)
@@ -711,89 +717,168 @@ export default function RasterTool(){
 
     // Uncertainty score: zeker=0, gemiddeld=1, onzeker=2
     const uScore=a=> a.onzeker==='zeker'?0:a.onzeker==='onzeker'?2:1
-    // Per-rule comparators (negative = a before b)
-    const ruleCmp={
-      spoedFirst:(a,b)=>(b.spoed?1:0)-(a.spoed?1:0),
-      shortFirst:(a,b)=>a.duur-b.duur,
-      certainFirst:(a,b)=>uScore(a)-uScore(b),
-    }
-    const ruleActive=k=>rules[k]
 
-    // Order a pool of appointments using a COMPOSITE comparator driven by rule priority order.
-    // Each appointment keeps a stable _seq for reproducible tie-breaking.
-    const orderPool=(pool)=>{
-      let rest=pool.map((a,i)=>({...a,_seq:a._seq??i}))
-      // Active sequence rules in user-defined priority order
-      const activeOrder=(rules.order||['spoedFirst','shortFirst','certainFirst']).filter(k=>ruleActive(k)&&ruleCmp[k])
-      if(activeOrder.length){
-        rest.sort((a,b)=>{
-          for(const k of activeOrder){ const c=ruleCmp[k](a,b); if(c!==0) return c }
-          return a._seq-b._seq   // stable fallback
-        })
-      }
-      // Grouping strategy (wave = contiguous per code; spread = interleave) — preserves rule order (stable)
+    // ══ FASE 1 — STRUCTUUR ═════════════════════════════════════════════════════
+    // De structuurfase (welke afspraak in welke kamer/dagdeel) wordt bepaald door
+    // benutting, weekdag-% en dagdeel-%. Planregels mogen deze fase NOOIT sturen;
+    // ze bepalen uitsluitend de VOLGORDE (fase 2). Enige uitzondering: de
+    // groepering (wave/gespreid) sorteert de dagpool vóór het bin-packen, zodat
+    // elke kamer meteen de juiste mix krijgt zonder afspraken te hoeven verplaatsen.
+
+    // ── STAP 4b — sorteer de pool vóór bin-pack ────────────────────────────────
+    // Gespreid: gewogen round-robin op TWEE niveaus (Bresenham).
+    //   Niveau 1 — verhouding nieuw:controle bepaalt het patroon (1:2 → NP,CP,CP,…).
+    //   Niveau 2 — binnen elke categorie wisselen de losse codes af naar rato van
+    //              hun aandeel (NP-A 60×, NP-B 40× → 3:2).
+    // Wave: alle afspraken van dezelfde code aaneengesloten.
+    const sorteerPool=(pool)=>{
+      if(!pool||!pool.length) return pool
       if(rules.groupMode==='wave'){
-        const byCode={}; const codeOrder=[]
-        rest.forEach(a=>{ if(!byCode[a.code]){byCode[a.code]=[];codeOrder.push(a.code)} byCode[a.code].push(a) })
-        rest=codeOrder.flatMap(c=>byCode[c])
-      } else {
-        const byType={}; const typeOrder=[]
-        rest.forEach(a=>{const k=a.category+'_'+a.ci; if(!byType[k]){byType[k]=[];typeOrder.push(k)} byType[k].push(a)})
-        const types=typeOrder.map(k=>byType[k]), maxL=Math.max(0,...types.map(t=>t.length)), il=[]
-        for(let i=0;i<maxL;i++) types.forEach(t=>{if(i<t.length)il.push(t[i])})
-        rest=il
+        const byCode={}, codeOrder=[]
+        pool.forEach(a=>{ const k=a.code||a.category; if(!byCode[k]){byCode[k]=[];codeOrder.push(k)} byCode[k].push(a) })
+        return codeOrder.flatMap(k=>byCode[k])
       }
-      // Digital ordering (sub-preference)
-      if(rules.digitalMode==='end') rest=[...rest.filter(a=>!a.digitaal),...rest.filter(a=>a.digitaal)]
-      else if(rules.digitalMode==='cluster'){
-        const dig=rest.filter(a=>a.digitaal), phys=rest.filter(a=>!a.digitaal), m=Math.floor(phys.length/2)
-        rest=[...phys.slice(0,m),...dig,...phys.slice(m)]
+      // ── gespreid (Bresenham) ──
+      // Round-robin generator over de codes binnen één categorie: codes met meer
+      // afspraken komen vaker aan de beurt, via een error-accumulator per code.
+      const makeRoundRobin=(items)=>{
+        if(!items.length) return ()=>null
+        const byCode={}, codeOrder=[]
+        items.forEach(a=>{ const k=a.code||a.category; if(!byCode[k]){byCode[k]=[];codeOrder.push(k)} byCode[k].push(a) })
+        const totaal=items.length, errors={}
+        codeOrder.forEach(k=>{errors[k]=0})
+        return ()=>{
+          codeOrder.forEach(k=>{ if(byCode[k].length) errors[k]+=byCode[k].length })
+          let bestK=null,bestErr=-Infinity
+          codeOrder.forEach(k=>{ if(byCode[k].length&&errors[k]>bestErr){bestErr=errors[k];bestK=k} })
+          if(!bestK) return null
+          errors[bestK]-=totaal
+          return byCode[bestK].shift()
+        }
       }
-      return rest
+      const npItems=pool.filter(a=>a.category==='nieuw')
+      const cpItems=pool.filter(a=>a.category==='controle')
+      const ov=pool.filter(a=>a.category!=='nieuw'&&a.category!=='controle')
+      const nextNP=makeRoundRobin(npItems), nextCP=makeRoundRobin(cpItems)
+      const nNP=npItems.length, nCP=cpItems.length, mixed=[]
+      if(nNP===0){ let a=nextCP(); while(a){mixed.push(a);a=nextCP()} }
+      else if(nCP===0){ let a=nextNP(); while(a){mixed.push(a);a=nextNP()} }
+      else {
+        // Gewogen interleave nieuw ↔ controle op basis van hun verhouding.
+        let npErr=0,cpErr=0,npLeft=nNP,cpLeft=nCP
+        const total=nNP+nCP
+        while(npLeft>0||cpLeft>0){
+          if(npLeft>0) npErr+=nNP
+          if(cpLeft>0) cpErr+=nCP
+          if(npLeft>0&&(npErr>=cpErr||cpLeft===0)){ const a=nextNP(); if(a){mixed.push(a);npLeft--} npErr-=total }
+          if(cpLeft>0&&(cpErr>=npErr||npLeft===0)){ const a=nextCP(); if(a){mixed.push(a);cpLeft--} cpErr-=total }
+        }
+      }
+      return [...mixed,...ov]
     }
 
-    // ENGINE 2.0 — cluster-pack plaatsing.
-    // 1) Groepeer de (al door de planregels gesorteerde) afspraken per code.
-    // 2) Pak groepen in kamers via best-fit-decreasing → zelfde codes bij elkaar
-    //    (minder wisselingen), hoge benutting, kamers groeien alleen indien nodig.
-    // 3) Herstel binnen elke kamer de regel-volgorde (pool-index), zodat
-    //    kort/spoed/zeker-eerst de starttijden binnen de kamer blijven bepalen.
-    // cap = maximaal aantal parallelle kamers/spreekuren. Wat niet past → overflow
-    // (belandt op "nog te plannen"). cap=Infinity ⇒ groeit vrij (automatische modus).
-    const fillRooms=(ordered, usable, cap=Infinity)=>{
-      const tagged=ordered.map((a,i)=>({...a,_pi:i}))
-      // code groups in first-appearance order
-      const gmap=new Map()
-      tagged.forEach(a=>{ if(!gmap.has(a.code)) gmap.set(a.code,[]); gmap.get(a.code).push(a) })
-      const groups=[...gmap.values()].map(items=>({items,dur:items.reduce((s,a)=>s+a.duur,0)}))
-      groups.sort((x,y)=>y.dur-x.dur)   // decreasing: big clusters first pack tightest
-      const rooms=[], loads=[], overflow=[]
-      const place=a=>{ // best-fit single item (used when a group must split)
-        let best=-1,bestRem=Infinity
+    // ── STAP 5 — bin-pack per dagdeel ─────────────────────────────────────────
+    // Doorloopt de (al gesorteerde) pool ín volgorde en plaatst elke afspraak in de
+    // minst belaste OPEN kamer die hem nog kan bevatten. Een kamer sluit zodra hij
+    // de ondergrens (minCap) haalt; daardoor blijven wave-blokken bij elkaar terwijl
+    // een gespreide pool automatisch over de kamers wordt uitgesmeerd. Omdat de
+    // volgorde van de pool leidend is, blijft de planregel-mix per kamer intact.
+    // cap = max. aantal parallelle kamers; wat niet meer past → overflow (restlijst).
+    const packRooms=(ordered, usable, dagdeelDur, cap=Infinity)=>{
+      const maxCap=usable
+      const minCap=Math.max(0, usable-Math.round((dagdeelDur||usable)*0.025))
+      const rooms=[], loads=[], closed=[], overflow=[]
+      ordered.forEach(a=>{
+        let best=-1,bestLoad=Infinity
         for(let r=0;r<rooms.length;r++){
-          const rem=usable-loads[r]
-          if(a.duur<=rem&&rem<bestRem){bestRem=rem;best=r}
+          if(!closed[r]&&loads[r]+a.duur<=maxCap&&loads[r]<bestLoad){bestLoad=loads[r];best=r}
         }
         if(best<0){
-          if(rooms.length<cap){rooms.push([]);loads.push(0);best=rooms.length-1}
-          else { overflow.push(a); return }   // geen kamer meer vrij → overloop
+          // geen open kamer: probeer een gesloten kamer die het tóch nog aankan
+          for(let r=0;r<rooms.length;r++){
+            if(loads[r]+a.duur<=maxCap&&loads[r]<bestLoad){bestLoad=loads[r];best=r}
+          }
         }
-        rooms[best].push(a);loads[best]+=a.duur
-      }
-      groups.forEach(g=>{
-        // try to keep the whole group in one room (best fit)
-        let best=-1,bestRem=Infinity
-        for(let r=0;r<rooms.length;r++){
-          const rem=usable-loads[r]
-          if(g.dur<=rem&&rem<bestRem){bestRem=rem;best=r}
+        if(best<0){
+          if(rooms.length<cap && a.duur<=maxCap){ rooms.push([]);loads.push(0);closed.push(false);best=rooms.length-1 }
+          else { overflow.push(a); return }
         }
-        if(best>=0){ rooms[best].push(...g.items); loads[best]+=g.dur }
-        else if(rooms.length<cap && g.dur<=usable){ rooms.push([...g.items]); loads.push(g.dur) }
-        else g.items.forEach(place)   // groep groter dan kamer, of kamers vol: item-gewijs
+        rooms[best].push(a); loads[best]+=a.duur
+        if(loads[best]>=minCap) closed[best]=true
       })
-      // restore rule ordering within each room → correct start times
-      rooms.forEach(r=>r.sort((x,y)=>x._pi-y._pi))
       return {rooms, overflow}
+    }
+
+    // ══ FASE 2 — VOLGORDE (planregels) ═════════════════════════════════════════
+    // Wordt per kamer én per dagdeel toegepast, NADAT de structuur vaststaat. Er
+    // worden nooit afspraken verplaatst tussen kamers, dagdelen of dagen en de
+    // benutting verandert niet — alleen de volgorde bínnen de kamer.
+    //
+    // Pipeline (strikt):
+    //   1. Groepering (wave/gespreid) — fijnafstemming binnen de kamer
+    //   2. Digitale plaatsing (verdelen / clusteren / naar het einde)
+    //   3. Volgorderegels in de door de gebruiker ingestelde PRIORITEIT
+    //      (spoed / kort / zeker) — in omgekeerde volgorde toegepast, zodat
+    //      prioriteit 1 als laatste draait en dus de kop van het spreekuur bepaalt.
+    const applyPlanRules=(room,dd)=>{
+      if(!room||!room.length) return room||[]
+      let pool=[...room]
+
+      // 1 — groepering binnen de kamer
+      if(rules.groupMode==='wave'){
+        const byCode={}, codeOrder=[]
+        pool.forEach(a=>{ const k=a.code||a.category; if(!byCode[k]){byCode[k]=[];codeOrder.push(k)} byCode[k].push(a) })
+        pool=codeOrder.flatMap(k=>byCode[k])
+      } else {
+        const np=pool.filter(a=>a.category==='nieuw')
+        const cp=pool.filter(a=>a.category==='controle')
+        const ov=pool.filter(a=>a.category!=='nieuw'&&a.category!=='controle')
+        const mixed=[], maxL=Math.max(np.length,cp.length)
+        for(let i=0;i<maxL;i++){ if(i<np.length)mixed.push(np[i]); if(i<cp.length)mixed.push(cp[i]) }
+        pool=[...mixed,...ov]
+      }
+
+      // 2 — digitale consulten
+      const dig=pool.filter(a=>a.digitaal), phys=pool.filter(a=>!a.digitaal)
+      if(dig.length){
+        if(rules.digitalMode==='spread'){
+          // gelijkmatig inspreiden tussen de fysieke afspraken van deze kamer
+          const out=[...phys]
+          dig.forEach((d,i)=>out.splice(Math.min(Math.round((i+1)*(out.length+1)/(dig.length+1)),out.length),0,d))
+          pool=out
+        } else if(rules.digitalMode==='cluster'||rules.digitalMode==='end'){
+          // achteraan als aaneengesloten blok ('end' krijgt in layoutSlot z'n tijdvenster)
+          pool=[...phys,...dig]
+        }
+      }
+
+      // 3 — volgorderegels op prioriteit (order[0] = sterkste)
+      const seq=(rules.order||['spoedFirst','shortFirst','certainFirst'])
+        .filter(k=>rules[k]&&['spoedFirst','shortFirst','certainFirst'].includes(k))
+      ;[...seq].reverse().forEach(k=>{
+        if(k==='spoedFirst'){
+          // alleen actief in het ingestelde dagdeel
+          const aan=rules.spoedDagdeel==='both'
+            ||(rules.spoedDagdeel==='och'&&dd===0)
+            ||(rules.spoedDagdeel==='mid'&&dd===1)
+          if(!aan) return
+          const sp=pool.filter(a=>a.spoed), rest=pool.filter(a=>!a.spoed)
+          if(rules.shortFirst) sp.sort((a,b)=>a.duur-b.duur)
+          pool=[...sp,...rest]
+        } else if(k==='shortFirst'){
+          // de 3 KORTSTE vooraan; de rest behoudt zijn volgorde
+          if(pool.length<=1) return
+          const byDur=[...pool].sort((a,b)=>a.duur-b.duur).slice(0,3)
+          const ids=new Set(byDur.map(a=>a.id))
+          pool=[...byDur,...pool.filter(a=>!ids.has(a.id))]
+        } else if(k==='certainFirst'){
+          // stabiele sortering: zeker vroeg, onzeker vlak vóór de buffer
+          pool=pool.map((a,i)=>({...a,_ci2:i}))
+            .sort((a,b)=>(uScore(a)-uScore(b))||(a._ci2-b._ci2))
+            .map(({_ci2,...a})=>a)
+        }
+      })
+      return pool
     }
 
     // Fair integer split of `count` over buckets, proportional to `weights` (largest remainder).
@@ -864,6 +949,7 @@ export default function RasterTool(){
     })
 
     const usableFor=dd=> dd==='O'?mUsable : dd==='M'?aUsable : avUsable
+    const durFor=dd=> dd==='O'?ochDur : dd==='M'?midDur : avDur
     const ddIndex={O:0,M:1,A:2}
     const ddPrefix={O:'o',M:'m',A:'a'}
 
@@ -883,17 +969,19 @@ export default function RasterTool(){
       const g=grouped[di]||{}
       built[di]={}
       DD.forEach(dd=>{
-        const pool=orderPool(g[dd]||[])
+        // FASE 1 — structuur: pool sorteren (stap 4b) en bin-packen (stap 5).
+        const pool=sorteerPool(g[dd]||[])
         // Onbeperkte pak = werkelijk benodigde kamers. In automatische modus IS dit
         // meteen het resultaat (geen tweede pak nodig → sneller). Alleen bij een
         // vaste limiet doen we een tweede, begrensde pak voor de overloop.
-        const full=fillRooms(pool, usableFor(dd), Infinity)
+        const full=packRooms(pool, usableFor(dd), durFor(dd), Infinity)
         const need=full.rooms.length
         neededRooms=Math.max(neededRooms, need)
         let rooms, overflow
         if(maxParallel===Infinity){ rooms=full.rooms; overflow=[] }
-        else { const r=fillRooms(pool, usableFor(dd), maxParallel); rooms=r.rooms; overflow=r.overflow }
-        built[di][dd]=rooms
+        else { const r=packRooms(pool, usableFor(dd), durFor(dd), maxParallel); rooms=r.rooms; overflow=r.overflow }
+        // FASE 2 — volgorde: planregels per kamer, structuur blijft ongemoeid.
+        built[di][dd]=rooms.map(r=>applyPlanRules(r, ddIndex[dd]))
         overflow.forEach(a=>overflowInst.push({...a, day:di, dd, edited:false}))
         maxRooms=Math.max(maxRooms, rooms.length)
         perDagdeelNeed.push({day:di,dd,need,placed:rooms.length,over:overflow.length})
@@ -915,23 +1003,37 @@ export default function RasterTool(){
     const explain=(a, idx, total, dd)=>{
       const why=[]
       if(rules.spoedFirst&&a.spoed) why.push('Spoed: vooraan gepland.')
-      if(rules.shortFirst&&idx<Math.ceil(total/2)&&a.duur<=20) why.push('Korte afspraak: vroeg in het '+ddName(dd)+'-spreekuur.')
+      if(rules.shortFirst&&idx<3) why.push('Korte afspraak: bij de 3 kortste van dit '+ddName(dd)+'-spreekuur, dus vooraan.')
       if(rules.certainFirst){
         if(a.onzeker==='onzeker') why.push('Onzekere afspraak: later geplaatst, vlak vóór de buffer om uitloop op te vangen.')
         else if(a.onzeker==='zeker') why.push('Zekere afspraak: vroeg geplaatst.')
       }
       if(a.baileyWelsh) why.push('Bailey-Welsh: eerste positie is dubbel boekbaar (vangt no-show/startvertraging op).')
       if(rules.groupMode==='wave') why.push('Wave-planning: gelijke afspraakcodes aaneengesloten.')
+      if(a.digitaal&&rules.digitalMode==='end') why.push('Digitaal consult: in het eindvenster van het spreekuur.')
       if(!why.length) why.push('Standaard ingepland op de eerstvolgende vrije positie.')
       return why
     }
 
-    // Lay out appointments in a room+dagdeel, honoring flexMode (end vs spread) and Bailey-Welsh.
+    // ── STAP 8 — TIJDLAYOUT ───────────────────────────────────────────────────
+    // Plaatst de (al door de planregels geordende) afspraken op de tijdas en vult
+    // de resterende ruimte met flexblokken. Harde grens: sessEnd = sessStart+dagdeelMin.
+    // Een LEGE kamer blijft leeg — die wordt nooit met flex opgevuld.
+    const FLEX_BLOK=10   // verspreide flex bestaat uit blokken van 10 min
+    const FLEX_MIN=5     // kleiner dan dit renderen we niet
     const layoutSlot=(apptsIn, sessStart, dagdeelMin, dd, room, di)=>{
       const appts=apptsIn||[]
+      if(!appts.length) return []          // lege kamer → geen flex, geen slot
+      const sessEnd=sessStart+dagdeelMin
       const out=[]
+      const isEndMode=rules.digitalMode==='end'
+      const endWindow=Math.max(5, rules.digitalEndMinutes||30)
+      const digAppts=isEndMode?appts.filter(a=>a.digitaal):[]
+      const physAppts=isEndMode?appts.filter(a=>!a.digitaal):appts
+      const totalDigDur=digAppts.reduce((s,a)=>s+a.duur,0)
       const usedByAppts=appts.reduce((s,a)=>s+a.duur,0)
       const flexTotal=Math.max(0, dagdeelMin-usedByAppts)
+      const flexNoFirst=Math.max(0, rules.flexNoFirstMin??60)
       const mkFlex=(start,dur,label)=>({id:'flex_'+dd+'_'+room+'_'+start+'_'+Math.random().toString(36).slice(2,5),
         isFlex:true,dagdeel:dd,room,start,end:start+dur,duur:dur,code:'Flex',
         description:label||'Flexruimte / buffer',category:'flex'})
@@ -940,8 +1042,9 @@ export default function RasterTool(){
       // patiënt geplaatst (die telt dus mee en haalt 1 van de restlijst af); anders
       // een no-show-compensatie (kopie van de eerste afspraak).
       const pushAppt=(a,idx,t)=>{
+        const end=Math.min(t+a.duur, sessEnd)
         const isBW=rules.baileyWelsh && idx===0 && dd===0
-        out.push({...a,dagdeel:dd,room,start:t,end:t+a.duur,
+        out.push({...a,dagdeel:dd,room,start:t,end,
           baileyWelsh:isBW, _why:explain({...a,baileyWelsh:isBW},idx,appts.length,dd)})
         if(isBW){
           // prefer een restlijst-item van dezelfde dag; anders welke dan ook
@@ -952,32 +1055,74 @@ export default function RasterTool(){
             ex=res.ntp.splice(ix,1)[0]
           }
           const dur=ex?Math.max(5,ex.duur):a.duur
-          out.push({...(ex||a),id:(ex?ex.id:a.id)+'_bw',dagdeel:dd,room,start:t,end:t+dur,duur:dur,
+          out.push({...(ex||a),id:(ex?ex.id:a.id)+'_bw',dagdeel:dd,room,start:t,end:Math.min(t+dur,sessEnd),duur:dur,
             baileyWelsh:true, overbook:true, bwReal:!!ex,
             description: ex?((ex.description||ex.code)+' · Bailey-Welsh extra'):'Overboeking (Bailey-Welsh)',
             _why: ex?['Bailey-Welsh: extra patiënt op het eerste ochtendslot — stond anders op de restlijst.']
                     :['Bailey-Welsh: eerste ochtendslot dubbel geboekt om no-show/startvertraging op te vangen.']})
         }
+        return end
+      }
+      // Digitaal eindvenster: fysiek eerst, dan een flexgat, dan de digitale
+      // consulten zo laat mogelijk (maar binnen het venster van `endWindow` min).
+      const plaatsDigitaalEinde=(t)=>{
+        if(!(isEndMode&&digAppts.length)) return t
+        const afterPhys=t
+        const latestStart=sessEnd-totalDigDur
+        const windowStart=Math.max(sessEnd-endWindow, afterPhys)
+        const digStart=Math.max(afterPhys, Math.min(latestStart, windowStart))
+        if(digStart-afterPhys>=FLEX_MIN) out.push(mkFlex(afterPhys, digStart-afterPhys,'Buffer (vóór digitaal venster)'))
+        let tt=Math.max(afterPhys,digStart)
+        digAppts.forEach((a,i)=>{ if(tt<sessEnd) tt=pushAppt(a, physAppts.length+i, tt) })
+        return tt
       }
 
-      if(rules.flexMode==='spread' && appts.length>0 && flexTotal>=5){
-        // Distribute the flex evenly as buffers AFTER appointments (never at the very start).
-        const gaps=appts.length
-        const perRaw=flexTotal/gaps
-        let placed=0, t=sessStart
-        appts.forEach((a,idx)=>{
-          pushAppt(a,idx,t)
-          t+=a.duur
-          let chunk=Math.round((perRaw*(idx+1)-placed)/5)*5
-          chunk=Math.max(0,Math.min(chunk, flexTotal-placed))
-          if(chunk>=5){ out.push(mkFlex(t,chunk,'Buffer (verspreid)')); t+=chunk; placed+=chunk }
+      let t=sessStart
+      if(rules.flexMode==='spread' && flexTotal>=FLEX_BLOK){
+        // 1) Hoeveel blokjes van 10 min kunnen we verspreiden? Restminuten gaan
+        //    altijd naar het einde (dat is het restblok, geen tussenruimte).
+        const nBlok=Math.floor(flexTotal/FLEX_BLOK)
+        // 2) Beschikbare gaten = het moment ná een afspraak, buiten de no-flex-zone
+        //    aan het begin, en NIET na de laatste afspraak.
+        let simT=sessStart
+        const gaten=[]
+        physAppts.forEach((a,i)=>{
+          simT+=a.duur
+          if(simT-sessStart>=flexNoFirst && i<physAppts.length-1) gaten.push({idx:i,tijdstip:simT})
         })
-        if(flexTotal-placed>=5) out.push(mkFlex(t, flexTotal-placed, 'Buffer (rest)'))
+        // 3) Verdeel de blokjes gelijkmatig over de tijdspanne (eerste gat → sessEnd).
+        //    Per blokje het eerste nog ongebruikte gat op/na het ideale tijdstip;
+        //    is dat er niet, dan het dichtstbijzijnde gat (blokjes mogen stapelen).
+        const blokMap={}
+        if(nBlok>0&&gaten.length>0){
+          const start0=gaten[0].tijdstip
+          const stap=(sessEnd-start0)/nBlok
+          for(let b=0;b<nBlok;b++){
+            const ideaal=start0+(b+0.5)*stap
+            let kand=gaten.find(g=>g.tijdstip>=ideaal&&!(blokMap[g.idx]>0))
+            if(!kand) kand=gaten.reduce((best,g)=>
+              Math.abs(g.tijdstip-ideaal)<Math.abs(best.tijdstip-ideaal)?g:best, gaten[gaten.length-1])
+            if(kand) blokMap[kand.idx]=(blokMap[kand.idx]||0)+1
+          }
+        }
+        // 4) Afspraken + flexblokjes op de tijdas zetten.
+        physAppts.forEach((a,i)=>{
+          t=pushAppt(a,i,t)
+          const n=blokMap[i]||0
+          if(n>0){
+            const fEnd=Math.min(t+n*FLEX_BLOK, sessEnd)
+            if(fEnd-t>=FLEX_BLOK){ out.push(mkFlex(t, fEnd-t,'Buffer (verspreid)')); t=fEnd }
+          }
+        })
+        t=plaatsDigitaalEinde(t)
+        // 5) Restflex aan het einde
+        if(sessEnd-t>=FLEX_MIN) out.push(mkFlex(t, sessEnd-t,'Buffer (rest)'))
       } else {
-        // flexMode 'end' (default): all appointments first, one buffer block at the end
-        let t=sessStart
-        appts.forEach((a,idx)=>{ pushAppt(a,idx,t); t+=a.duur })
-        if(flexTotal>=5) out.push(mkFlex(t, flexTotal, rules.flexMode==='end'?'Buffer (einde sessie)':'Flexruimte'))
+        // flexMode 'end' (of te weinig flex om te verspreiden): alles achter elkaar,
+        // één aaneengesloten flexblok na de laatste afspraak.
+        physAppts.forEach((a,i)=>{ t=pushAppt(a,i,t) })
+        t=plaatsDigitaalEinde(t)
+        if(sessEnd-t>=FLEX_MIN) out.push(mkFlex(t, sessEnd-t,'Buffer (einde spreekuur)'))
       }
       return out
     }
@@ -1128,6 +1273,7 @@ export default function RasterTool(){
       verOch:50,benutting:85,days:{ma:20,di:20,wo:20,do:20,vr:20}})
     setRules({shortFirst:false,spoedFirst:false,certainFirst:false,baileyWelsh:false,
       digitalMode:'spread',groupMode:'spread',flexMode:'end',
+      spoedDagdeel:'both',flexNoFirstMin:60,digitalEndMinutes:30,
       order:['spoedFirst','shortFirst','certainFirst']})
     setSelDay(0); setRaster(null); setDrag(null)
     setShowFullReset(false)
@@ -1174,7 +1320,7 @@ export default function RasterTool(){
   },[m2])
 
   const getColor=appt=>{
-    if(appt.isFlex) return {bg:'#E3F1E7',brd:'#9AC9A8',fg:'#2E6B3A'}
+    if(appt.isFlex) return {bg:FLEX_COLOR.bg,brd:FLEX_COLOR.brd,fg:FLEX_COLOR.fg}
     if(appt.isBuffer) return BUF_COLOR
     if(appt.category==='controle'&&appt.digitaal) return {bg:'#D6EAE3',brd:'#94C5B4',fg:'#1A5544'}
     if(appt.category==='nieuw') return NEW_PALETTE[appt.ci%NEW_PALETTE.length]||NEW_PALETTE[0]
@@ -1206,7 +1352,8 @@ export default function RasterTool(){
         if(state.rules){
           const sr=state.rules
           setRules({shortFirst:false,spoedFirst:false,certainFirst:false,baileyWelsh:false,
-            digitalMode:'spread',groupMode:'spread',flexMode:'end',...sr,
+            digitalMode:'spread',groupMode:'spread',flexMode:'end',
+            spoedDagdeel:'both',flexNoFirstMin:60,digitalEndMinutes:30,...sr,
             order:Array.isArray(sr.order)&&sr.order.length?sr.order:['spoedFirst','shortFirst','certainFirst']})
         }
         // Note: raster is not stored (too large), it will be auto-generated
@@ -2101,32 +2248,59 @@ export default function RasterTool(){
             {code:'CO',cat:'controle',duur:15,spoed:false,digitaal:false,onzeker:'gemiddeld'},
             {code:'NP',cat:'nieuw',duur:20,spoed:false,digitaal:false,onzeker:'zeker'},
           ]
+          // Spiegelt exact de pipeline van applyPlanRules in de engine, zodat dit
+          // voorbeeld laat zien wat de gekozen regels écht doen.
           const uScore=a=>a.onzeker==='zeker'?0:a.onzeker==='onzeker'?2:1
-          const cmp={spoedFirst:(a,b)=>(b.spoed?1:0)-(a.spoed?1:0),shortFirst:(a,b)=>a.duur-b.duur,certainFirst:(a,b)=>uScore(a)-uScore(b)}
-          let rest=sample.map((a,i)=>({...a,_seq:i}))
-          const activeOrder=(rules.order||['spoedFirst','shortFirst','certainFirst']).filter(k=>rules[k]&&cmp[k])
-          if(activeOrder.length) rest.sort((a,b)=>{ for(const k of activeOrder){const c=cmp[k](a,b);if(c!==0)return c} return a._seq-b._seq })
+          let rest=sample.map((a,i)=>({...a,id:'s'+i,category:a.cat}))
+          // 1 — groepering
           if(rules.groupMode==='wave'){ const by={},ord=[]; rest.forEach(a=>{if(!by[a.code]){by[a.code]=[];ord.push(a.code)}by[a.code].push(a)}); rest=ord.flatMap(c=>by[c]) }
-          if(rules.digitalMode==='end') rest=[...rest.filter(a=>!a.digitaal),...rest.filter(a=>a.digitaal)]
-          else if(rules.digitalMode==='cluster'){ const d=rest.filter(a=>a.digitaal),f=rest.filter(a=>!a.digitaal),m=Math.floor(f.length/2); rest=[...f.slice(0,m),...d,...f.slice(m)] }
-          // bouw blokreeks incl. buffers + Bailey-Welsh
+          else { const np=rest.filter(a=>a.cat==='nieuw'),cp=rest.filter(a=>a.cat==='controle'),mx=[]
+            for(let i=0;i<Math.max(np.length,cp.length);i++){ if(i<np.length)mx.push(np[i]); if(i<cp.length)mx.push(cp[i]) }
+            rest=mx }
+          // 2 — digitaal
+          {
+            const dig=rest.filter(a=>a.digitaal), phys=rest.filter(a=>!a.digitaal)
+            if(dig.length){
+              if(rules.digitalMode==='spread'){ const o=[...phys]
+                dig.forEach((d,i)=>o.splice(Math.min(Math.round((i+1)*(o.length+1)/(dig.length+1)),o.length),0,d)); rest=o }
+              else rest=[...phys,...dig]
+            }
+          }
+          // 3 — volgorderegels op prioriteit (order[0] sterkst → als laatste toegepast)
+          const activeOrder=(rules.order||['spoedFirst','shortFirst','certainFirst']).filter(k=>rules[k])
+          ;[...activeOrder].reverse().forEach(k=>{
+            if(k==='spoedFirst'){
+              const aan=rules.spoedDagdeel==='both'||rules.spoedDagdeel==='och'  // voorbeeld = ochtend
+              if(!aan) return
+              const sp=rest.filter(a=>a.spoed), ov=rest.filter(a=>!a.spoed)
+              if(rules.shortFirst) sp.sort((a,b)=>a.duur-b.duur)
+              rest=[...sp,...ov]
+            } else if(k==='shortFirst'){
+              const b3=[...rest].sort((a,b)=>a.duur-b.duur).slice(0,3)
+              const ids=new Set(b3.map(a=>a.id)); rest=[...b3,...rest.filter(a=>!ids.has(a.id))]
+            } else if(k==='certainFirst'){
+              rest=rest.map((a,i)=>({...a,_i:i})).sort((a,b)=>(uScore(a)-uScore(b))||(a._i-b._i))
+            }
+          })
+          // bouw blokreeks incl. buffers + Bailey-Welsh. Verspreide flex: blokjes ná
+          // een afspraak, nooit ná de laatste (dat is het restblok aan het einde).
           const seq=[]
           rest.forEach((a,i)=>{
             if(i===0&&rules.baileyWelsh) seq.push({...a,_bw:true})
             seq.push({...a})
-            if(rules.flexMode==='spread'&&i<rest.length-1) seq.push({buffer:true,duur:5})
+            if(rules.flexMode==='spread'&&i>=1&&i<rest.length-1) seq.push({buffer:true,duur:10})
           })
-          if(rules.flexMode==='end') seq.push({buffer:true,duur:20,eind:true})
+          seq.push({buffer:true,duur:rules.flexMode==='end'?25:10,eind:true})
           const totMin=seq.reduce((s,b)=>s+b.duur,0)||1
-          const clrOf=b=> b.buffer?{bg:'repeating-linear-gradient(45deg,#E3F1E7,#E3F1E7 5px,#F1FBF3 5px,#F1FBF3 10px)',fg:'#2E6B3A',brd:'#9AC9A8'}
+          const clrOf=b=> b.buffer?{bg:FLEX_STRIPE(5,10),fg:FLEX_COLOR.fg,brd:FLEX_COLOR.brd}
             : b.spoed?{bg:'#FCEEEB',fg:C.danger,brd:'#E7B3A6'}
             : b.digitaal?{bg:'#D6EAE3',fg:'#1A5544',brd:'#94C5B4'}
             : b.cat==='nieuw'?NEW_PALETTE[0]:CTRL_PALETTE[0]
           const actieveRegels=[
-            ...activeOrder.map(k=>PLAN_INFO[k].label),
+            ...activeOrder.map((k,i)=>`${i+1}. ${PLAN_INFO[k].label}`),
             rules.groupMode==='wave'?'Wave-groepering':'Gespreid',
-            rules.digitalMode==='end'?'Digitaal aan het einde':rules.digitalMode==='cluster'?'Digitaal geclusterd':'Digitaal verdeeld',
-            rules.flexMode==='end'?'Buffer aan het einde':'Buffer verspreid',
+            rules.digitalMode==='end'?`Digitaal aan het einde (${rules.digitalEndMinutes||30}m venster)`:rules.digitalMode==='cluster'?'Digitaal geclusterd':'Digitaal verdeeld',
+            rules.flexMode==='end'?'Buffer aan het einde':`Buffer verspreid (na ${rules.flexNoFirstMin??60}m)`,
             ...(rules.baileyWelsh?['Bailey-Welsh dubbelboeking']:[]),
           ]
           return(
@@ -2225,6 +2399,27 @@ export default function RasterTool(){
                       ⚠ Geen onzekerheid ingesteld bij de afspraakcodes — stel dit in bij Gegevens invoer, anders heeft deze regel geen effect.
                     </div>
                   )}
+                  {/* Spoed: in welk dagdeel geldt de regel? */}
+                  {key==='spoedFirst'&&on&&(
+                    <div style={{margin:'6px 0 0 34px',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+                      <span style={{fontSize:11,color:C.muted}}>Geldt in:</span>
+                      {[{v:'both',l:'Ochtend + middag'},{v:'och',l:'Alleen ochtend'},{v:'mid',l:'Alleen middag'}].map(o=>{
+                        const sel=(rules.spoedDagdeel||'both')===o.v
+                        return(
+                          <button key={o.v} onClick={()=>setRules(p=>({...p,spoedDagdeel:o.v}))}
+                            style={{padding:'4px 11px',borderRadius:16,cursor:'pointer',fontSize:11,fontWeight:600,
+                              background:sel?C.blueAccent:C.white,color:sel?C.primary:C.muted,
+                              border:`1px solid ${sel?C.primary:C.border}`}}>{sel?'✓ ':''}{o.l}</button>
+                        )
+                      })}
+                    </div>
+                  )}
+                  {/* Kort eerst: expliciete uitleg van de garantie */}
+                  {key==='shortFirst'&&on&&(
+                    <div style={{margin:'6px 0 0 34px',fontSize:11,color:C.muted}}>
+                      De <b style={{color:C.text}}>3 kortste</b> afspraken van elk spreekuur komen vooraan; de rest houdt de volgorde van de andere regels.
+                    </div>
+                  )}
                 </div>
               )
             })
@@ -2284,6 +2479,22 @@ export default function RasterTool(){
               )
             })}
           </div>
+          {rules.digitalMode==='end'&&(
+            <div style={{marginTop:10,display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',
+              background:C.rowAlt,border:`1px solid ${C.border}`,borderRadius:9,padding:'10px 13px'}}>
+              <div style={{flex:1,minWidth:190}}>
+                <div style={{fontSize:12,fontWeight:700,color:C.text}}>Breedte eindvenster</div>
+                <div style={{fontSize:11,color:C.muted}}>Digitale consulten vallen in de laatste <b style={{color:C.text}}>{rules.digitalEndMinutes||30} min</b> van het spreekuur.</div>
+              </div>
+              <div style={{display:'inline-flex',alignItems:'center',border:`1px solid ${C.border}`,borderRadius:8,overflow:'hidden',background:C.white}}>
+                <button onClick={()=>setRules(p=>({...p,digitalEndMinutes:Math.max(10,(p.digitalEndMinutes||30)-10)}))}
+                  style={{width:32,height:32,border:'none',borderRight:`1px solid ${C.border}`,background:C.surface2,cursor:'pointer',fontWeight:700,color:C.muted,fontSize:15}}>−</button>
+                <span style={{width:52,textAlign:'center',fontSize:13,fontWeight:700,color:C.text}}>{rules.digitalEndMinutes||30}m</span>
+                <button onClick={()=>setRules(p=>({...p,digitalEndMinutes:Math.min(180,(p.digitalEndMinutes||30)+10)}))}
+                  style={{width:32,height:32,border:'none',borderLeft:`1px solid ${C.border}`,background:C.surface2,cursor:'pointer',fontWeight:700,color:C.muted,fontSize:15}}>+</button>
+              </div>
+            </div>
+          )}
         </Card>
 
         {/* Radios: Groepering */}
@@ -2340,6 +2551,23 @@ export default function RasterTool(){
               )
             })}
           </div>
+          {rules.flexMode==='spread'&&(
+            <div style={{marginTop:10,display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',
+              background:FLEX_COLOR.bg,border:`1px solid ${FLEX_COLOR.brd}`,borderRadius:9,padding:'10px 13px'}}>
+              <span style={{width:12,height:12,borderRadius:3,background:FLEX_STRIPE(3,6),border:`1px solid ${FLEX_COLOR.brd}`,flexShrink:0}}/>
+              <div style={{flex:1,minWidth:190}}>
+                <div style={{fontSize:12,fontWeight:700,color:FLEX_COLOR.fg}}>Geen flex aan het begin</div>
+                <div style={{fontSize:11,color:C.muted}}>Flexblokken van <b style={{color:C.text}}>min. 10 min</b>, pas ná <b style={{color:C.text}}>{rules.flexNoFirstMin??60} min</b> spreekuur — en nooit direct na de laatste afspraak (dat is het restblok).</div>
+              </div>
+              <div style={{display:'inline-flex',alignItems:'center',border:`1px solid ${FLEX_COLOR.brd}`,borderRadius:8,overflow:'hidden',background:C.white}}>
+                <button onClick={()=>setRules(p=>({...p,flexNoFirstMin:Math.max(0,(p.flexNoFirstMin??60)-10)}))}
+                  style={{width:32,height:32,border:'none',borderRight:`1px solid ${FLEX_COLOR.brd}`,background:FLEX_COLOR.bg2,cursor:'pointer',fontWeight:700,color:FLEX_COLOR.fg,fontSize:15}}>−</button>
+                <span style={{width:52,textAlign:'center',fontSize:13,fontWeight:700,color:C.text}}>{rules.flexNoFirstMin??60}m</span>
+                <button onClick={()=>setRules(p=>({...p,flexNoFirstMin:Math.min(240,(p.flexNoFirstMin??60)+10)}))}
+                  style={{width:32,height:32,border:'none',borderLeft:`1px solid ${FLEX_COLOR.brd}`,background:FLEX_COLOR.bg2,cursor:'pointer',fontWeight:700,color:FLEX_COLOR.fg,fontSize:15}}>+</button>
+              </div>
+            </div>
+          )}
         </Card>
 
         {/* Active summary */}
@@ -2347,14 +2575,19 @@ export default function RasterTool(){
           <div style={{fontSize:10.5,fontWeight:700,color:C.primary,marginBottom:7,textTransform:'uppercase',letterSpacing:'0.06em'}}>Actieve instellingen:</div>
           <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
             <span style={{padding:'3px 10px',background:C.white,borderRadius:20,fontSize:11,border:`1px solid ${C.border}`,color:C.muted}}>
-              Flex: <b>{rules.flexMode==='end'?'Aan het einde':'Verspreid'}</b>
+              Flex: <b>{rules.flexMode==='end'?'Aan het einde':`Verspreid (na ${rules.flexNoFirstMin??60}m)`}</b>
             </span>
             <span style={{padding:'3px 10px',background:C.white,borderRadius:20,fontSize:11,border:`1px solid ${C.border}`,color:C.muted}}>
               Groepering: <b>{rules.groupMode==='wave'?'Wave (blokken)':'Gespreid'}</b>
             </span>
             <span style={{padding:'3px 10px',background:C.white,borderRadius:20,fontSize:11,border:`1px solid ${C.border}`,color:C.muted}}>
-              Digitaal: <b>{rules.digitalMode==='end'?'Einde':rules.digitalMode==='cluster'?'Cluster':'Verdelen'}</b>
+              Digitaal: <b>{rules.digitalMode==='end'?`Einde (${rules.digitalEndMinutes||30}m)`:rules.digitalMode==='cluster'?'Cluster':'Verdelen'}</b>
             </span>
+            {rules.spoedFirst&&(
+              <span style={{padding:'3px 10px',background:C.white,borderRadius:20,fontSize:11,border:`1px solid ${C.border}`,color:C.muted}}>
+                Spoed geldt in: <b>{rules.spoedDagdeel==='och'?'ochtend':rules.spoedDagdeel==='mid'?'middag':'ochtend + middag'}</b>
+              </span>
+            )}
             {TOGGLE_KEYS.filter(k=>rules[k]).map(k=>(
               <span key={k} style={{padding:'3px 10px',background:'#F0FDF4',borderRadius:20,fontSize:11,border:`1px solid ${C.green}`,color:C.green,fontWeight:600}}>
                 ✓ {PLAN_INFO[k]?.label}
@@ -2600,7 +2833,7 @@ export default function RasterTool(){
     // A positioned block (appointment OR flex) with drag + resize handles
     const Block=({it,day,slot})=>{
       const isFlex=it.isFlex
-      const clr=isFlex?{bg:'#E8F5E9',brd:'#7FC08A',fg:'#2E6B3A'}:getColor(it)
+      const clr=isFlex?{bg:FLEX_COLOR.bg,brd:FLEX_COLOR.brd,fg:FLEX_COLOR.fg}:getColor(it)
       const beingDragged=dragItem&&dragItem.appt&&dragItem.appt.id===it.id&&dragItem.mode!=='resize-top'&&dragItem.mode!=='resize-bot'
       const top=toY(it.start)+1
       const h=Math.max((it.duur)*PXMIN-2, 22)
@@ -2611,7 +2844,7 @@ export default function RasterTool(){
           onMouseDown={e=>startDrag(e,{mode:'move',appt:it,fromDay:day,fromSlot:slot})}
           onTouchStart={e=>startDrag(e,{mode:'move',appt:it,fromDay:day,fromSlot:slot})}
           style={{position:'absolute',top,left:`calc(${L}% + 2px)`,width:`calc(${W}% - 4px)`,height:h,
-            background:isFlex?'repeating-linear-gradient(45deg,#E8F5E9,#E8F5E9 6px,#F2FBF3 6px,#F2FBF3 13px)'
+            background:isFlex?FLEX_STRIPE(6,13)
               :it.overbook?'repeating-linear-gradient(45deg,#F3EEFA,#F3EEFA 6px,#EBE2F7 6px,#EBE2F7 13px)':clr.bg,
             color:it.overbook?'#6D28B5':clr.fg,border:`1px solid ${it.overbook?'#8B5CF6':clr.brd}`,
             borderLeft:(isFlex||it.overbook)?`3px dashed ${it.overbook?'#8B5CF6':clr.brd}`:`3px solid ${clr.brd}`,
@@ -2723,7 +2956,7 @@ export default function RasterTool(){
                       {[15,30,45].map(d=>(
                         <button key={d} onClick={()=>addToRoom(selDay,room,{flex:true,duur:d})}
                           style={{flex:1,padding:'7px 4px',borderRadius:7,cursor:'pointer',fontSize:11.5,fontWeight:600,
-                            background:'#E3F1E7',color:'#2E6B3A',border:'1px dashed #9AC9A8'}}>{d} min</button>
+                            background:FLEX_COLOR.bg,color:FLEX_COLOR.fg,border:`1px dashed ${FLEX_COLOR.brd}`}}>{d} min</button>
                       ))}
                     </div>
                   </div>
@@ -3099,8 +3332,8 @@ export default function RasterTool(){
               {[{v:'end',l:'Buffer: einde'},{v:'spread',l:'Buffer: verspreid'}].map(o=>(
                 <button key={o.v} onClick={()=>setRules(p=>({...p,flexMode:o.v}))}
                   style={{padding:'6px 12px',borderRadius:16,cursor:'pointer',fontSize:11.5,fontWeight:600,
-                    background:rules.flexMode===o.v?'#E3F1E7':C.white,color:rules.flexMode===o.v?'#2E6B3A':C.muted,
-                    border:`1px solid ${rules.flexMode===o.v?'#9AC9A8':C.border}`}}>{o.l}</button>
+                    background:rules.flexMode===o.v?FLEX_COLOR.bg:C.white,color:rules.flexMode===o.v?FLEX_COLOR.fg:C.muted,
+                    border:`1px solid ${rules.flexMode===o.v?FLEX_COLOR.brd:C.border}`}}>{o.l}</button>
               ))}
               <span style={{marginLeft:'auto',fontSize:10,color:C.muted,fontStyle:'italic'}}>↑↓ verplaatst de volgorde · nr = prioriteit</span>
             </div>
@@ -3114,8 +3347,8 @@ export default function RasterTool(){
           const WeekBlok=({it,di})=>{
             if(it.isFlex) return(
               <div style={{position:'absolute',top:toY(it.start)+0.5,left:1,right:1,height:Math.max(it.duur*PXMIN-1,5),
-                borderRadius:3,background:'repeating-linear-gradient(45deg,#EAF6EC,#EAF6EC 4px,#F4FBF5 4px,#F4FBF5 8px)',
-                border:'1px solid #C6E4CC',zIndex:2}}/>)
+                borderRadius:3,background:FLEX_STRIPE(4,8),
+                border:`1px solid ${FLEX_COLOR.brd}`,zIndex:2}}/>)
             const clr=getColor(it), h=Math.max(it.duur*PXMIN-1,9)
             return(
               <div title={`${it.code} · ${it.description||''} · ${toTime(it.start)}–${toTime(it.end)}`}
@@ -3141,7 +3374,7 @@ export default function RasterTool(){
                   {[['Nieuw',NEW_PALETTE[0]],['Controle',CTRL_PALETTE[0]],['Op afstand',{bg:'#D6EAE3',brd:'#94C5B4'}]].map(([l,c])=>(
                     <span key={l} style={{display:'flex',alignItems:'center',gap:5}}><span style={{width:11,height:11,borderRadius:3,background:c.bg,border:`1px solid ${c.brd}`}}/>{l}</span>
                   ))}
-                  <span style={{display:'flex',alignItems:'center',gap:5}}><span style={{width:11,height:11,borderRadius:3,background:'repeating-linear-gradient(45deg,#EAF6EC,#EAF6EC 3px,#F4FBF5 3px,#F4FBF5 6px)',border:'1px solid #C6E4CC'}}/>Flex</span>
+                  <span style={{display:'flex',alignItems:'center',gap:5}}><span style={{width:11,height:11,borderRadius:3,background:FLEX_STRIPE(3,6),border:`1px solid ${FLEX_COLOR.brd}`}}/>Flex</span>
                 </div>
                 <span style={{marginLeft:'auto',fontSize:11,color:C.muted,fontStyle:'italic'}}>klik een afspraak of dag om die dag te openen · zoom past de hoogte aan</span>
               </div>
@@ -3306,7 +3539,7 @@ export default function RasterTool(){
               <span style={{width:11,height:11,borderRadius:3,background:CTRL_PALETTE[0].bg,border:`1px solid ${CTRL_PALETTE[0].brd}`}}/>Controle
             </div>
             <div style={{display:'flex',alignItems:'center',gap:5,fontSize:11.5,color:C.muted}}>
-              <span style={{width:11,height:11,borderRadius:3,background:'repeating-linear-gradient(45deg,#E8F5E9,#E8F5E9 2px,#F1FBF2 2px,#F1FBF2 5px)',border:'1px dashed #81C784'}}/>Flex ({100-m2.benutting}%)
+              <span style={{width:11,height:11,borderRadius:3,background:FLEX_STRIPE(2,5),border:`1px dashed ${FLEX_COLOR.brd}`}}/>Flex ({100-m2.benutting}%)
             </div>
           </div>
           <div style={{display:'flex',gap:14,fontSize:12,fontWeight:600}}>
