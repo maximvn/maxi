@@ -38,56 +38,39 @@ const CTRL_PALETTE = [
   {bg:'#D8ECE4',brd:'#A0CCBC',fg:'#225A4D'},{bg:'#DDEEDF',brd:'#AAD0B2',fg:'#2B6647'},
 ]
 const BUF_COLOR = {bg:'#F0F3F6',brd:'#D2DBE3',fg:'#6A7A88'}
-// Flexruimte / buffer — licht oranje, duidelijk te onderscheiden van de afspraken
-const FLEX_COLOR = {bg:'#FFF1DE',bg2:'#FFF9F0',brd:'#F0B96B',fg:'#8A5312'}
-const FLEX_STRIPE=(a=6,b=13)=>`repeating-linear-gradient(45deg,${FLEX_COLOR.bg},${FLEX_COLOR.bg} ${a}px,${FLEX_COLOR.bg2} ${a}px,${FLEX_COLOR.bg2} ${b}px)`
 
 const DAYS=['Maandag','Dinsdag','Woensdag','Donderdag','Vrijdag','Zaterdag','Zondag']
 const DAY_ABBR=['MA','DI','WO','DO','VR']
 const WEEKDAY_KEYS=['ma','di','wo','do','vr']
-// Volgorde: eerst de spreekuurtijden (het kader), dan de gegevens die erin passen.
 const MODULES=[
-  {id:0,title:'Spreekuurtijden',icon:'⏰',short:'Tijden'},
-  {id:1,title:'Gegevens invoer',icon:'📋',short:'Gegevens'},
+  {id:0,title:'Gegevens invoer',icon:'📋',short:'Gegevens'},
+  {id:1,title:'Spreekuurtijden',icon:'⏰',short:'Tijden'},
   {id:2,title:'Planregels',icon:'📐',short:'Planregels'},
   {id:3,title:'Rasterproces',icon:'📅',short:'Raster'}
 ]
 const PX_PER_MIN = 3.0
 const MIN_BLOCK_H = 28 // minimum block height in px
 
-// Per dagdeel: op wélke weekdagen is dat dagdeel van toepassing. Ochtend en middag
-// staan standaard op maandag t/m vrijdag; de avond staat standaard volledig uit.
-const DEF_DD_DAGEN={
-  O:{ma:true, di:true, wo:true, do:true, vr:true},
-  M:{ma:true, di:true, wo:true, do:true, vr:true},
-  A:{ma:false,di:false,wo:false,do:false,vr:false},
-}
-const ddDagenVan=m2=>({
-  O:{...DEF_DD_DAGEN.O, ...(m2?.ddDagen?.O||{})},
-  M:{...DEF_DD_DAGEN.M, ...(m2?.ddDagen?.M||{})},
-  A:{...DEF_DD_DAGEN.A, ...(m2?.ddDagen?.A||{})},
-})
-
 const PLAN_INFO = {
   // ── Planning volgorde ──────────────────────────────────────────────────────
   shortFirst:{label:'Starten met korte afspraken',type:'toggle',
-    desc:'Korte afspraken trekken naar voren: hoe korter de afspraak, hoe meer punten. Dit bevordert snelle doorstroom aan het begin. De regel telt op bij de andere regels in plaats van ze te overschrijven — hoe zwaar hij weegt bepaal je met de prioriteitsvolgorde.'},
+    desc:'De kortste afspraken worden als eerste ingepland. Dit zorgt voor snelle doorstroom aan het begin van het spreekuur en houdt de wachtkamer kort.'},
   spoedFirst:{label:'Spoed afspraken eerst',type:'toggle',
-    desc:'Afspraken met het spoedvinkje krijgen punten om vooraan te komen. Instelbaar per dagdeel (ochtend, middag of beide). Op prioriteit 1 wegen ze zo zwaar dat spoed praktisch altijd vooraan staat.'},
+    desc:'Urgente/spoedafspraken worden als eerste ingepland zodat ze gegarandeerd vroeg in het spreekuur vallen, ongeacht duur of andere regels.'},
   certainFirst:{label:'Zekere afspraken eerst',type:'toggle',
-    desc:'Afspraken met een voorspelbare duur krijgen punten om vroeg te komen; onzekere consulten zakken naar achteren, richting de buffer, zodat uitloop kan worden opgevangen. Onzekerheid stel je per afspraakcode in bij Gegevens invoer.'},
+    desc:'Afspraken met een lage onzekerheid (voorspelbare duur) worden vroeg in het dagdeel gepland; onzekere afspraken komen later, bij voorkeur vlak vóór een buffer, zodat uitloop kan worden opgevangen. Onzekerheid stel je per afspraakcode in bij Gegevens invoer.'},
   // ── Digitale consulten ─────────────────────────────────────────────────────
   digitalMode:{label:'Digitale consulten',type:'radio',
     opts:[{v:'spread',l:'Verdelen over dag'},{v:'cluster',l:'Clusteren in blok'},{v:'end',l:'Aan het einde plannen'}],
-    desc:'"Verdelen" = digitale afspraken gelijkmatig ingespreid tussen de fysieke afspraken van elke kamer. "Clusteren" = alle digitale afspraken als aaneengesloten blok achteraan de kamer. "Einde" = digitale afspraken in het laatste tijdvenster van het spreekuur (venster instelbaar in minuten).'},
+    desc:'Hoe telefonische en digitale consulten worden gegroepeerd binnen het spreekuur.'},
   // ── Groepering afsprakencodes ──────────────────────────────────────────────
   groupMode:{label:'Groepering afsprakencodes',type:'radio',
     opts:[{v:'spread',l:'Gespreid inplannen (afwisselen)'},{v:'wave',l:'Wave planning (per blok)'}],
-    desc:'Gespreid = nieuw en controle worden afgewisseld naar rato van hun aantallen (bij 1:2 → NP,CP,CP,NP,CP,CP…), en binnen elke categorie wisselen de afzonderlijke codes af naar rato van hun aandeel. Wave = alle afspraken van dezelfde code aaneengesloten (A,A,B,B).'},
+    desc:'Gespreid = afspraakcodes worden afwisselend ingepland (A,B,A,B). Wave = alle afspraken van dezelfde code worden aaneengesloten ingepland (A,A,B,B).'},
   // ── Flex-tijd beheer ───────────────────────────────────────────────────────
   flexMode:{label:'Flex-tijd verdeling',type:'radio',
     opts:[{v:'end',l:'Flex-blok aan het einde'},{v:'spread',l:'Flex verspreid tussen afspraken'}],
-    desc:'"Aan het einde" = één aaneengesloten flexblok na de laatste afspraak. "Verspreid" = flexblokken van minimaal 10 minuten, gelijkmatig verdeeld over het spreekuur, nooit binnen de eerste N minuten en nooit tussen de laatste afspraak en het einde (dat is het restblok).'},
+    desc:'Bepaalt waar de vrije (flex) tijd in het spreekuur valt. "Aan het einde" = één aaneengesloten vrij blok na de laatste afspraak. "Verspreid" = gelijke gaten tussen alle afspraken.'},
   // ── Bailey-Welsh ───────────────────────────────────────────────────────────
   baileyWelsh:{label:'Bailey-Welsh regel',type:'toggle',
     desc:'De eerste afspraak van het spreekuur wordt dubbel geboekt (twee patiënten tegelijk). Dit compenseert voor no-shows en start-vertragingen, en verhoogt de gemiddelde benutting.'},
@@ -367,24 +350,17 @@ export default function RasterTool(){
   const [m1Section,setM1Section]=useState(1)
   const [cfg,setCfg]=useState({newPat:10,ctrlPat:20,newCodes:2,ctrlCodes:3})
   const [poli,setPoli]=useState({naam:'',specialisme:''})   // vrij invulbare poli-identiteit
-  // Capaciteitsbasis: 'auto' = groeit vrij; 'vast' = begrensd tot het gekozen aantal kamers
-  const [capacity,setCapacity]=useState({mode:'auto',kamers:3})
+  // Capaciteitsbasis: 'auto' = groeit vrij; 'vast' = begrensd tot gekozen kamers/specialisten
+  const [capacity,setCapacity]=useState({mode:'auto',kamers:3,specialisten:2})
   const [newRows,setNewRows]=useState([])
   const [ctrlRows,setCtrlRows]=useState([])
   const [importBadge,setImportBadge]=useState(null)
   const [m2,setM2]=useState({ochStart:'08:30',ochEnd:'12:00',midStart:'13:00',midEnd:'16:30',
     avondOn:false,avondStart:'17:00',avondEnd:'20:00',verAvond:0,
-    verOch:50,benutting:85,days:{ma:20,di:20,wo:20,do:20,vr:20},
-    ddDagen:{O:{...DEF_DD_DAGEN.O},M:{...DEF_DD_DAGEN.M},A:{...DEF_DD_DAGEN.A}}})
+    verOch:50,benutting:85,days:{ma:20,di:20,wo:20,do:20,vr:20}})
   const [rules,setRules]=useState({
     shortFirst:false, spoedFirst:false, certainFirst:false, baileyWelsh:false,
     digitalMode:'spread', groupMode:'spread', flexMode:'end',
-    spoedDagdeel:'both',      // 'both' | 'och' | 'mid' — in welk dagdeel geldt spoed-eerst
-    flexNoFirstMin:60,        // geen verspreide flex in de eerste N minuten van een spreekuur
-    digitalEndMinutes:30,     // breedte van het digitale eindvenster (digitalMode='end')
-    // Vast spreekuurpatroon: per dagdeel een vaste slotvolgorde die elk spreekuur
-    // van dat dagdeel aanhoudt. Uit = de scorekaart bepaalt de volgorde per kamer.
-    patroon:{aan:false,O:[],M:[],A:[]},
     order:['spoedFirst','shortFirst','certainFirst']  // priority order of sequence rules
   })
   const [selDay,setSelDay]=useState(0)
@@ -735,228 +711,89 @@ export default function RasterTool(){
 
     // Uncertainty score: zeker=0, gemiddeld=1, onzeker=2
     const uScore=a=> a.onzeker==='zeker'?0:a.onzeker==='onzeker'?2:1
+    // Per-rule comparators (negative = a before b)
+    const ruleCmp={
+      spoedFirst:(a,b)=>(b.spoed?1:0)-(a.spoed?1:0),
+      shortFirst:(a,b)=>a.duur-b.duur,
+      certainFirst:(a,b)=>uScore(a)-uScore(b),
+    }
+    const ruleActive=k=>rules[k]
 
-    // ══ FASE 1 — STRUCTUUR ═════════════════════════════════════════════════════
-    // De structuurfase (welke afspraak in welke kamer/dagdeel) wordt bepaald door
-    // benutting, weekdag-% en dagdeel-%. Planregels mogen deze fase NOOIT sturen;
-    // ze bepalen uitsluitend de VOLGORDE (fase 2). Enige uitzondering: de
-    // groepering (wave/gespreid) sorteert de dagpool vóór het bin-packen, zodat
-    // elke kamer meteen de juiste mix krijgt zonder afspraken te hoeven verplaatsen.
-
-    // ── STAP 4b — sorteer de pool vóór bin-pack ────────────────────────────────
-    // Gespreid: gewogen round-robin op TWEE niveaus (Bresenham).
-    //   Niveau 1 — verhouding nieuw:controle bepaalt het patroon (1:2 → NP,CP,CP,…).
-    //   Niveau 2 — binnen elke categorie wisselen de losse codes af naar rato van
-    //              hun aandeel (NP-A 60×, NP-B 40× → 3:2).
-    // Wave: alle afspraken van dezelfde code aaneengesloten.
-    const sorteerPool=(pool)=>{
-      if(!pool||!pool.length) return pool
+    // Order a pool of appointments using a COMPOSITE comparator driven by rule priority order.
+    // Each appointment keeps a stable _seq for reproducible tie-breaking.
+    const orderPool=(pool)=>{
+      let rest=pool.map((a,i)=>({...a,_seq:a._seq??i}))
+      // Active sequence rules in user-defined priority order
+      const activeOrder=(rules.order||['spoedFirst','shortFirst','certainFirst']).filter(k=>ruleActive(k)&&ruleCmp[k])
+      if(activeOrder.length){
+        rest.sort((a,b)=>{
+          for(const k of activeOrder){ const c=ruleCmp[k](a,b); if(c!==0) return c }
+          return a._seq-b._seq   // stable fallback
+        })
+      }
+      // Grouping strategy (wave = contiguous per code; spread = interleave) — preserves rule order (stable)
       if(rules.groupMode==='wave'){
-        const byCode={}, codeOrder=[]
-        pool.forEach(a=>{ const k=a.code||a.category; if(!byCode[k]){byCode[k]=[];codeOrder.push(k)} byCode[k].push(a) })
-        return codeOrder.flatMap(k=>byCode[k])
+        const byCode={}; const codeOrder=[]
+        rest.forEach(a=>{ if(!byCode[a.code]){byCode[a.code]=[];codeOrder.push(a.code)} byCode[a.code].push(a) })
+        rest=codeOrder.flatMap(c=>byCode[c])
+      } else {
+        const byType={}; const typeOrder=[]
+        rest.forEach(a=>{const k=a.category+'_'+a.ci; if(!byType[k]){byType[k]=[];typeOrder.push(k)} byType[k].push(a)})
+        const types=typeOrder.map(k=>byType[k]), maxL=Math.max(0,...types.map(t=>t.length)), il=[]
+        for(let i=0;i<maxL;i++) types.forEach(t=>{if(i<t.length)il.push(t[i])})
+        rest=il
       }
-      // ── gespreid (Bresenham) ──
-      // Round-robin generator over de codes binnen één categorie: codes met meer
-      // afspraken komen vaker aan de beurt, via een error-accumulator per code.
-      const makeRoundRobin=(items)=>{
-        if(!items.length) return ()=>null
-        const byCode={}, codeOrder=[]
-        items.forEach(a=>{ const k=a.code||a.category; if(!byCode[k]){byCode[k]=[];codeOrder.push(k)} byCode[k].push(a) })
-        const totaal=items.length, errors={}
-        codeOrder.forEach(k=>{errors[k]=0})
-        return ()=>{
-          codeOrder.forEach(k=>{ if(byCode[k].length) errors[k]+=byCode[k].length })
-          let bestK=null,bestErr=-Infinity
-          codeOrder.forEach(k=>{ if(byCode[k].length&&errors[k]>bestErr){bestErr=errors[k];bestK=k} })
-          if(!bestK) return null
-          errors[bestK]-=totaal
-          return byCode[bestK].shift()
-        }
+      // Digital ordering (sub-preference)
+      if(rules.digitalMode==='end') rest=[...rest.filter(a=>!a.digitaal),...rest.filter(a=>a.digitaal)]
+      else if(rules.digitalMode==='cluster'){
+        const dig=rest.filter(a=>a.digitaal), phys=rest.filter(a=>!a.digitaal), m=Math.floor(phys.length/2)
+        rest=[...phys.slice(0,m),...dig,...phys.slice(m)]
       }
-      const npItems=pool.filter(a=>a.category==='nieuw')
-      const cpItems=pool.filter(a=>a.category==='controle')
-      const ov=pool.filter(a=>a.category!=='nieuw'&&a.category!=='controle')
-      const nextNP=makeRoundRobin(npItems), nextCP=makeRoundRobin(cpItems)
-      const nNP=npItems.length, nCP=cpItems.length, mixed=[]
-      if(nNP===0){ let a=nextCP(); while(a){mixed.push(a);a=nextCP()} }
-      else if(nCP===0){ let a=nextNP(); while(a){mixed.push(a);a=nextNP()} }
-      else {
-        // Gewogen interleave nieuw ↔ controle op basis van hun verhouding.
-        let npErr=0,cpErr=0,npLeft=nNP,cpLeft=nCP
-        const total=nNP+nCP
-        while(npLeft>0||cpLeft>0){
-          if(npLeft>0) npErr+=nNP
-          if(cpLeft>0) cpErr+=nCP
-          if(npLeft>0&&(npErr>=cpErr||cpLeft===0)){ const a=nextNP(); if(a){mixed.push(a);npLeft--} npErr-=total }
-          if(cpLeft>0&&(cpErr>=npErr||npLeft===0)){ const a=nextCP(); if(a){mixed.push(a);cpLeft--} cpErr-=total }
-        }
-      }
-      return [...mixed,...ov]
+      return rest
     }
 
-    // ── STAP 5 — bin-pack per dagdeel ─────────────────────────────────────────
-    // Doorloopt de (al gesorteerde) pool ín volgorde en plaatst elke afspraak in de
-    // minst belaste OPEN kamer die hem nog kan bevatten. Een kamer sluit zodra hij
-    // de ondergrens (minCap) haalt; daardoor blijven wave-blokken bij elkaar terwijl
-    // een gespreide pool automatisch over de kamers wordt uitgesmeerd. Omdat de
-    // volgorde van de pool leidend is, blijft de planregel-mix per kamer intact.
-    // cap = max. aantal parallelle kamers; wat niet meer past → overflow (restlijst).
-    const packRooms=(ordered, usable, dagdeelDur, cap=Infinity)=>{
-      const maxCap=usable
-      const minCap=Math.max(0, usable-Math.round((dagdeelDur||usable)*0.025))
-      const rooms=[], loads=[], closed=[], overflow=[]
-      ordered.forEach(a=>{
-        let best=-1,bestLoad=Infinity
+    // ENGINE 2.0 — cluster-pack plaatsing.
+    // 1) Groepeer de (al door de planregels gesorteerde) afspraken per code.
+    // 2) Pak groepen in kamers via best-fit-decreasing → zelfde codes bij elkaar
+    //    (minder wisselingen), hoge benutting, kamers groeien alleen indien nodig.
+    // 3) Herstel binnen elke kamer de regel-volgorde (pool-index), zodat
+    //    kort/spoed/zeker-eerst de starttijden binnen de kamer blijven bepalen.
+    // cap = maximaal aantal parallelle kamers/spreekuren. Wat niet past → overflow
+    // (belandt op "nog te plannen"). cap=Infinity ⇒ groeit vrij (automatische modus).
+    const fillRooms=(ordered, usable, cap=Infinity)=>{
+      const tagged=ordered.map((a,i)=>({...a,_pi:i}))
+      // code groups in first-appearance order
+      const gmap=new Map()
+      tagged.forEach(a=>{ if(!gmap.has(a.code)) gmap.set(a.code,[]); gmap.get(a.code).push(a) })
+      const groups=[...gmap.values()].map(items=>({items,dur:items.reduce((s,a)=>s+a.duur,0)}))
+      groups.sort((x,y)=>y.dur-x.dur)   // decreasing: big clusters first pack tightest
+      const rooms=[], loads=[], overflow=[]
+      const place=a=>{ // best-fit single item (used when a group must split)
+        let best=-1,bestRem=Infinity
         for(let r=0;r<rooms.length;r++){
-          if(!closed[r]&&loads[r]+a.duur<=maxCap&&loads[r]<bestLoad){bestLoad=loads[r];best=r}
+          const rem=usable-loads[r]
+          if(a.duur<=rem&&rem<bestRem){bestRem=rem;best=r}
         }
         if(best<0){
-          // geen open kamer: probeer een gesloten kamer die het tóch nog aankan
-          for(let r=0;r<rooms.length;r++){
-            if(loads[r]+a.duur<=maxCap&&loads[r]<bestLoad){bestLoad=loads[r];best=r}
-          }
+          if(rooms.length<cap){rooms.push([]);loads.push(0);best=rooms.length-1}
+          else { overflow.push(a); return }   // geen kamer meer vrij → overloop
         }
-        if(best<0){
-          if(rooms.length<cap && a.duur<=maxCap){ rooms.push([]);loads.push(0);closed.push(false);best=rooms.length-1 }
-          else { overflow.push(a); return }
+        rooms[best].push(a);loads[best]+=a.duur
+      }
+      groups.forEach(g=>{
+        // try to keep the whole group in one room (best fit)
+        let best=-1,bestRem=Infinity
+        for(let r=0;r<rooms.length;r++){
+          const rem=usable-loads[r]
+          if(g.dur<=rem&&rem<bestRem){bestRem=rem;best=r}
         }
-        rooms[best].push(a); loads[best]+=a.duur
-        if(loads[best]>=minCap) closed[best]=true
+        if(best>=0){ rooms[best].push(...g.items); loads[best]+=g.dur }
+        else if(rooms.length<cap && g.dur<=usable){ rooms.push([...g.items]); loads.push(g.dur) }
+        else g.items.forEach(place)   // groep groter dan kamer, of kamers vol: item-gewijs
       })
+      // restore rule ordering within each room → correct start times
+      rooms.forEach(r=>r.sort((x,y)=>x._pi-y._pi))
       return {rooms, overflow}
-    }
-
-    // ══ FASE 2 — VOLGORDE: DE SCOREKAART ═══════════════════════════════════════
-    // Eén ordenaar in plaats van meerdere die elkaar overschrijven. Elke afspraak
-    // krijgt per positie een SCORE; de hoogste score wordt als volgende geplaatst.
-    // Zo stapelen regels op elkaar in plaats van elkaar ongedaan te maken, en
-    // blijft de gewogen mix uit fase 1 overeind (geen staart van gelijke types).
-    //
-    // score = Σ regelgewicht × regelsignaal        (spoed / kort / zeker)
-    //       + mixterm                             (afwisselen of juist clusteren)
-    //       + stabiliteit                          (volg de mix uit fase 1)
-    //
-    // Regelgewicht volgt de PRIORITEIT die de gebruiker instelt: prioriteit 1
-    // weegt het zwaarst. Elke afspraak onthoudt z'n scoreopbouw voor de uitleg.
-    const RULE_W=[100,45,20]              // gewicht per prioriteitsrang
-    const W_MIX=38                        // kracht van afwisselen / clusteren
-    const W_STAB=9                        // trouw aan de volgorde uit fase 1
-    const RULE_LABEL={spoedFirst:'Spoed',shortFirst:'Kort',certainFirst:'Zeker'}
-
-    // Actieve volgorderegels met hun gewicht, in prioriteitsvolgorde.
-    const actieveRegels=dd=>{
-      const spoedAan=rules.spoedDagdeel==='both'
-        ||(rules.spoedDagdeel==='och'&&dd===0)
-        ||(rules.spoedDagdeel==='mid'&&dd===1)
-      return (rules.order||['spoedFirst','shortFirst','certainFirst'])
-        .filter(k=>rules[k]&&RULE_LABEL[k])
-        .filter(k=>k!=='spoedFirst'||spoedAan)
-        .map((k,i)=>({k,w:RULE_W[i]??10}))
-    }
-
-    // ── SPREEKUURPATROON ──────────────────────────────────────────────────────
-    // Een patroon is een vaste slotvolgorde voor een dagdeel. Elk spreekuur van
-    // dat dagdeel houdt hem aan, zodat elke maandagochtend er hetzelfde uitziet.
-    // Afspraken worden IN de slots geplaatst: eerst op exacte code, anders op
-    // dezelfde categorie. Een slot zonder passende afspraak blijft leeg (wordt
-    // flexruimte); afspraken die nergens in pasten komen erachter.
-    const vulPatroon=(room,slots)=>{
-      const rest=[...room], uit=[]
-      slots.forEach(sl=>{
-        let ix=rest.findIndex(a=>a.code===sl.code)
-        let hoe='exacte code'
-        if(ix<0){ ix=rest.findIndex(a=>a.category===sl.category); hoe='zelfde soort' }
-        if(ix<0) return                       // slot blijft leeg → flexruimte
-        const a=rest.splice(ix,1)[0]
-        uit.push({...a,_patroonSlot:sl.code,
-          _opbouw:[{l:'Patroon',v:0}],
-          _patroonHoe:hoe})
-      })
-      rest.forEach(a=>uit.push({...a,_opbouw:[{l:'Buiten patroon',v:0}]}))
-      return uit
-    }
-
-    const applyPlanRules=(room,dd)=>{
-      if(!room||!room.length) return room||[]
-      // Vast patroon actief voor dit dagdeel? Dan bepaalt dat de volgorde.
-      const ddKey=dd===0?'O':dd===1?'M':'A'
-      const pat=rules.patroon
-      if(pat&&pat.aan&&Array.isArray(pat[ddKey])&&pat[ddKey].length) return vulPatroon(room,pat[ddKey])
-      const regels=actieveRegels(dd)
-      // Duurbereik voor de normalisatie van "kort eerst"
-      const durs=room.map(a=>a.duur||15)
-      const dMin=Math.min(...durs), dMax=Math.max(...durs), dSpan=Math.max(1,dMax-dMin)
-      // Signalen per regel, genormaliseerd naar 0..1 (1 = wil zo vroeg mogelijk)
-      const signaal={
-        spoedFirst:a=>a.spoed?1:0,
-        shortFirst:a=>1-((a.duur||15)-dMin)/dSpan,
-        certainFirst:a=>1-uScore(a)/2,
-      }
-      // Digitale consulten die als blok achteraan horen, doen niet mee in de mix.
-      const naarAchter=rules.digitalMode==='cluster'||rules.digitalMode==='end'
-      const meedoen=naarAchter?room.filter(a=>!a.digitaal):[...room]
-      const achteraan=naarAchter?room.filter(a=>a.digitaal):[]
-
-      const n=meedoen.length
-      // Doelaandeel per categorie én per code: de mix moet over het HELE spreekuur
-      // kloppen, niet alleen tussen twee opeenvolgende afspraken. Zonder dit put
-      // strikte afwisseling de kleinste groep vroeg uit en houd je een staart van
-      // één type over (het probleem in de vorige versie).
-      const totCat={}, totCode={}
-      meedoen.forEach(a=>{ totCat[a.category]=(totCat[a.category]||0)+1
-                           totCode[a.code]=(totCode[a.code]||0)+1 })
-      const gedaanCat={}, gedaanCode={}
-      const rest=meedoen.map((a,i)=>({a,i}))
-      const uit=[]
-      let vorige=null
-      while(rest.length){
-        let best=-1, bestScore=-Infinity, bestOpbouw=null
-        for(let j=0;j<rest.length;j++){
-          const {a,i}=rest[j]
-          const opbouw=[]
-          let s=0
-          // (1) volgorderegels — additief, gewogen naar prioriteit
-          regels.forEach(({k,w})=>{
-            const bijdrage=w*signaal[k](a)
-            if(Math.abs(bijdrage)>=0.5) opbouw.push({l:RULE_LABEL[k],v:Math.round(bijdrage)})
-            s+=bijdrage
-          })
-          // (2) mixterm
-          if(rules.groupMode==='wave'){
-            // clusteren: zelfde code als de vorige levert punten op
-            if(vorige){
-              const b=vorige.code===a.code?W_MIX:(vorige.category===a.category?W_MIX*0.3:0)
-              if(b){ opbouw.push({l:'Wave',v:Math.round(b)}); s+=b }
-            }
-          } else {
-            // gespreid: straf een type dat vóórloopt op zijn doelaandeel, zodat de
-            // verhouding (bv. 1 nieuw : 1,6 controle) het hele spreekuur klopt.
-            const doelC=(totCat[a.category]||0)/n
-            const naC=((gedaanCat[a.category]||0)+1)/(uit.length+1)
-            const doelK=(totCode[a.code]||0)/n
-            const naK=((gedaanCode[a.code]||0)+1)/(uit.length+1)
-            let m=-W_MIX*1.8*(naC-doelC) - W_MIX*0.9*(naK-doelK)
-            // lichte extra variatie: liever niet twee keer dezelfde code achter elkaar
-            if(vorige&&vorige.code===a.code) m-=W_MIX*0.30
-            if(Math.abs(m)>=0.5){ opbouw.push({l:'Mix',v:Math.round(m)}); s+=m } else s+=m
-          }
-          // (3) stabiliteit — houd de gewogen mix uit fase 1 aan als basis
-          const st=W_STAB*(1-i/Math.max(1,n-1))
-          s+=st
-          if(s>bestScore){ bestScore=s; best=j; bestOpbouw=opbouw }
-        }
-        const {a}=rest.splice(best,1)[0]
-        uit.push({...a,_score:Math.round(bestScore),_opbouw:bestOpbouw})
-        gedaanCat[a.category]=(gedaanCat[a.category]||0)+1
-        gedaanCode[a.code]=(gedaanCode[a.code]||0)+1
-        vorige=a
-      }
-
-      // Digitale consulten terugvoegen
-      if(!achteraan.length) return uit
-      if(rules.digitalMode==='spread'){ /* niet van toepassing */ }
-      return [...uit,...achteraan.map(a=>({...a,_opbouw:[{l:'Digitaal',v:0}]}))]
     }
 
     // Fair integer split of `count` over buckets, proportional to `weights` (largest remainder).
@@ -971,11 +808,8 @@ export default function RasterTool(){
       return base
     }
 
-    // Per dagdeel: op welke weekdagen dat dagdeel überhaupt open is (module Tijden).
-    // De avond bestaat alleen als er ook daadwerkelijk een dag voor is aangevinkt.
-    const ddDagen=ddDagenVan(m2)
-    const ddOpenOp=(x,di)=>!!ddDagen[x]?.[WEEKDAY_KEYS[di]]
-    const avondOn=WEEKDAY_KEYS.some(k=>ddDagen.A[k])
+    // Which dagdelen exist (from spreekuurtijden) and their distribution weights
+    const avondOn=!!m2.avondOn
     const avondStart=toMin(m2.avondStart||'17:00'), avondEnd=toMin(m2.avondEnd||'20:00')
     const avDur=Math.max(0,avondEnd-avondStart)
     const avUsable=Math.max(15,Math.round(avDur*(m2.benutting/100)))
@@ -985,32 +819,25 @@ export default function RasterTool(){
 
     // Build appointment instances, each tagged with its day + dagdeel, distributed PROPORTIONALLY
     // across allowed days (weighted by weekday %) and allowed dagdelen (weighted by dagdeel %).
-    // Een afspraak kan alleen op een (dag, dagdeel) landen waar dat dagdeel open is.
     const buildAll=(rows,cat,total)=>{
       const out=[]
       rows.forEach((code,ci)=>{
         const weekCount=Math.round(total*((code.percentage||0)/100))
         if(weekCount<=0) return
-        // Dagdelen die deze code mag gebruiken en die in de spreekuurtijden bestaan
+        // Allowed days = code's weekdays that also have a weekday-% > 0
+        const allowedDays=[0,1,2,3,4].filter(di=>code.weekdagen?.[DAY_ABBR[di]] && (m2.days[WEEKDAY_KEYS[di]]||0)>0)
+        if(!allowedDays.length) return
+        const dayCounts=distribute(weekCount, allowedDays.map(di=>m2.days[WEEKDAY_KEYS[di]]||0))
+        // Allowed dagdelen = code's dagdelen that also exist in spreekuurtijden
         const cdd=code.dagdelen||{O:true,M:true,A:false}
         const allowedDd=DD.filter(x=>cdd[x])
         const useDd=allowedDd.length?allowedDd:DD
-        // Toegestane dagen = weekdag van de code, weekdag-% > 0, én minstens één
-        // dagdeel dat op díe dag open staat.
-        const allowedDays=[0,1,2,3,4].filter(di=>
-          code.weekdagen?.[DAY_ABBR[di]] && (m2.days[WEEKDAY_KEYS[di]]||0)>0
-          && useDd.some(x=>ddOpenOp(x,di)))
-        if(!allowedDays.length) return
-        const dayCounts=distribute(weekCount, allowedDays.map(di=>m2.days[WEEKDAY_KEYS[di]]||0))
         allowedDays.forEach((di,idx)=>{
           const dCount=dayCounts[idx]; if(dCount<=0) return
-          // Alleen de dagdelen die op déze dag open staan
-          const dayDd=useDd.filter(x=>ddOpenOp(x,di))
-          if(!dayDd.length) return
-          const w=dayDd.map(x=>ddWeight[x]||0)
+          const w=useDd.map(x=>ddWeight[x]||0)
           const wsum=w.reduce((a,b)=>a+b,0)
-          const ddCounts=distribute(dCount, wsum>0?w:dayDd.map(()=>1))
-          dayDd.forEach((x,j)=>{
+          const ddCounts=distribute(dCount, wsum>0?w:useDd.map(()=>1))
+          useDd.forEach((x,j)=>{
             for(let k=0;k<ddCounts[j];k++) out.push({
               day:di, dd:x,
               id:cat[0]+ci+'_'+di+'_'+x+'_'+k,
@@ -1037,41 +864,36 @@ export default function RasterTool(){
     })
 
     const usableFor=dd=> dd==='O'?mUsable : dd==='M'?aUsable : avUsable
-    const durFor=dd=> dd==='O'?ochDur : dd==='M'?midDur : avDur
     const ddIndex={O:0,M:1,A:2}
     const ddPrefix={O:'o',M:'m',A:'a'}
 
-    // ── CAPACITEIT — het gekozen aantal kamers begrenst het aantal parallelle
-    //    spreekuren per dagdeel.
+    // ── CAPACITEIT — gekozen aantal kamers/specialisten begrenst het aantal
+    //    parallelle spreekuren per dagdeel. De bindende beperking is het kleinste
+    //    van beide (een specialist heeft een kamer nodig, en omgekeerd).
     const capMode=capacity.mode||'auto'
     const maxParallel = capMode==='vast'
-      ? Math.max(1, capacity.kamers||1)
+      ? Math.max(1, Math.min(capacity.kamers||1, capacity.specialisten||1))
       : Infinity
     let maxRooms=1, neededRooms=1
     const overflowInst=[]
     const perDagdeelNeed=[] // {day,dd,need,placed}
     const built={} // built[day][dd] = rooms[]
     ;[0,1,2,3,4].forEach(di=>{
-      // Dag inactief als het weekdag-% 0 is óf als er geen enkel dagdeel open staat.
-      if((m2.days[WEEKDAY_KEYS[di]]||0)===0 || !DD.some(dd=>ddOpenOp(dd,di))){ built[di]=null; return }
+      if((m2.days[WEEKDAY_KEYS[di]]||0)===0){ built[di]=null; return }
       const g=grouped[di]||{}
       built[di]={}
       DD.forEach(dd=>{
-        // Dagdeel gesloten op deze weekdag → geen spreekuur, geen kamers.
-        if(!ddOpenOp(dd,di)){ built[di][dd]=[]; return }
-        // FASE 1 — structuur: pool sorteren (stap 4b) en bin-packen (stap 5).
-        const pool=sorteerPool(g[dd]||[])
+        const pool=orderPool(g[dd]||[])
         // Onbeperkte pak = werkelijk benodigde kamers. In automatische modus IS dit
         // meteen het resultaat (geen tweede pak nodig → sneller). Alleen bij een
         // vaste limiet doen we een tweede, begrensde pak voor de overloop.
-        const full=packRooms(pool, usableFor(dd), durFor(dd), Infinity)
+        const full=fillRooms(pool, usableFor(dd), Infinity)
         const need=full.rooms.length
         neededRooms=Math.max(neededRooms, need)
         let rooms, overflow
         if(maxParallel===Infinity){ rooms=full.rooms; overflow=[] }
-        else { const r=packRooms(pool, usableFor(dd), durFor(dd), maxParallel); rooms=r.rooms; overflow=r.overflow }
-        // FASE 2 — volgorde: planregels per kamer, structuur blijft ongemoeid.
-        built[di][dd]=rooms.map(r=>applyPlanRules(r, ddIndex[dd]))
+        else { const r=fillRooms(pool, usableFor(dd), maxParallel); rooms=r.rooms; overflow=r.overflow }
+        built[di][dd]=rooms
         overflow.forEach(a=>overflowInst.push({...a, day:di, dd, edited:false}))
         maxRooms=Math.max(maxRooms, rooms.length)
         perDagdeelNeed.push({day:di,dd,need,placed:rooms.length,over:overflow.length})
@@ -1082,60 +904,34 @@ export default function RasterTool(){
 
     // Build slot structure with explicit start times + flex blocks
     const res={ numRooms:maxRooms, mUsable, aUsable, avUsable, ochDur, midDur, avDur, avondOn,
-      ochStart, ochEnd, midStart, midEnd, avondStart, avondEnd, days:{}, ntp:[...overflowInst], ddDagen,
-      capacity:{ mode:capMode, kamers:capacity.kamers,
+      ochStart, ochEnd, midStart, midEnd, avondStart, avondEnd, days:{}, ntp:[...overflowInst],
+      capacity:{ mode:capMode, kamers:capacity.kamers, specialisten:capacity.specialisten,
         maxParallel: maxParallel===Infinity?null:maxParallel, needed:neededRooms, used:maxRooms,
         overflow:overflowInst.length, fits: maxParallel===Infinity ? true : neededRooms<=maxParallel } }
     const snap5=t=>Math.round(t/5)*5
 
     const ddName=dd=>dd===0?'ochtend':dd===1?'middag':'avond'
-    // Uitleg per afspraak: toont de SCOREOPBOUW waarmee de plek is bepaald, zodat
-    // je precies ziet welke regel hoeveel heeft bijgedragen.
-    const UITLEG={
-      Spoed:'spoedafspraak — hoort vooraan',
-      Kort:'korte afspraak — bevordert doorstroom aan het begin',
-      Zeker:'voorspelbare duur — vroeg; onzekere consulten schuiven naar achteren',
-      Mix:'mixbewaking — een type dat vóórloopt op zijn aandeel kost punten, zodat de verhouding het hele spreekuur klopt',
-      Wave:'wave — zelfde afspraakcode juist bij elkaar',
-    }
+    // Build a reason list explaining why an appointment sits where it does
     const explain=(a, idx, total, dd)=>{
       const why=[]
-      if(Array.isArray(a._opbouw)&&a._opbouw.length){
-        const som=typeof a._score==='number'?a._score:a._opbouw.reduce((s,x)=>s+x.v,0)
-        why.push(`Positie ${idx+1} van ${total} in dit ${ddName(dd)}-spreekuur · score ${som}`)
-        a._opbouw.filter(x=>x.v!==0).forEach(x=>
-          why.push(`${x.v>0?'+':''}${x.v} ${x.l}${UITLEG[x.l]?' — '+UITLEG[x.l]:''}`))
+      if(rules.spoedFirst&&a.spoed) why.push('Spoed: vooraan gepland.')
+      if(rules.shortFirst&&idx<Math.ceil(total/2)&&a.duur<=20) why.push('Korte afspraak: vroeg in het '+ddName(dd)+'-spreekuur.')
+      if(rules.certainFirst){
+        if(a.onzeker==='onzeker') why.push('Onzekere afspraak: later geplaatst, vlak vóór de buffer om uitloop op te vangen.')
+        else if(a.onzeker==='zeker') why.push('Zekere afspraak: vroeg geplaatst.')
       }
-      if(a._patroonSlot) why.length=0
-      if(a._patroonSlot) why.push(
-        `Vast spreekuurpatroon · slot ${idx+1} (${a._patroonSlot}) — gevuld op ${a._patroonHoe||'code'}.`,
-        'Elk spreekuur van dit dagdeel houdt dezelfde volgorde aan.')
       if(a.baileyWelsh) why.push('Bailey-Welsh: eerste positie is dubbel boekbaar (vangt no-show/startvertraging op).')
-      if(a.digitaal&&rules.digitalMode==='end') why.push('Digitaal consult: in het eindvenster van het spreekuur.')
-      if(a.digitaal&&rules.digitalMode==='cluster') why.push('Digitaal consult: geclusterd achteraan het spreekuur.')
-      if(!why.length) why.push('Geen actieve volgorderegels — ingepland volgens de gewogen mix nieuw/controle.')
+      if(rules.groupMode==='wave') why.push('Wave-planning: gelijke afspraakcodes aaneengesloten.')
+      if(!why.length) why.push('Standaard ingepland op de eerstvolgende vrije positie.')
       return why
     }
 
-    // ── STAP 8 — TIJDLAYOUT ───────────────────────────────────────────────────
-    // Plaatst de (al door de planregels geordende) afspraken op de tijdas en vult
-    // de resterende ruimte met flexblokken. Harde grens: sessEnd = sessStart+dagdeelMin.
-    // Een LEGE kamer blijft leeg — die wordt nooit met flex opgevuld.
-    const FLEX_BLOK=10   // verspreide flex bestaat uit blokken van 10 min
-    const FLEX_MIN=5     // kleiner dan dit renderen we niet
+    // Lay out appointments in a room+dagdeel, honoring flexMode (end vs spread) and Bailey-Welsh.
     const layoutSlot=(apptsIn, sessStart, dagdeelMin, dd, room, di)=>{
       const appts=apptsIn||[]
-      if(!appts.length) return []          // lege kamer → geen flex, geen slot
-      const sessEnd=sessStart+dagdeelMin
       const out=[]
-      const isEndMode=rules.digitalMode==='end'
-      const endWindow=Math.max(5, rules.digitalEndMinutes||30)
-      const digAppts=isEndMode?appts.filter(a=>a.digitaal):[]
-      const physAppts=isEndMode?appts.filter(a=>!a.digitaal):appts
-      const totalDigDur=digAppts.reduce((s,a)=>s+a.duur,0)
       const usedByAppts=appts.reduce((s,a)=>s+a.duur,0)
       const flexTotal=Math.max(0, dagdeelMin-usedByAppts)
-      const flexNoFirst=Math.max(0, rules.flexNoFirstMin??60)
       const mkFlex=(start,dur,label)=>({id:'flex_'+dd+'_'+room+'_'+start+'_'+Math.random().toString(36).slice(2,5),
         isFlex:true,dagdeel:dd,room,start,end:start+dur,duur:dur,code:'Flex',
         description:label||'Flexruimte / buffer',category:'flex'})
@@ -1144,9 +940,8 @@ export default function RasterTool(){
       // patiënt geplaatst (die telt dus mee en haalt 1 van de restlijst af); anders
       // een no-show-compensatie (kopie van de eerste afspraak).
       const pushAppt=(a,idx,t)=>{
-        const end=Math.min(t+a.duur, sessEnd)
         const isBW=rules.baileyWelsh && idx===0 && dd===0
-        out.push({...a,dagdeel:dd,room,start:t,end,
+        out.push({...a,dagdeel:dd,room,start:t,end:t+a.duur,
           baileyWelsh:isBW, _why:explain({...a,baileyWelsh:isBW},idx,appts.length,dd)})
         if(isBW){
           // prefer een restlijst-item van dezelfde dag; anders welke dan ook
@@ -1157,74 +952,32 @@ export default function RasterTool(){
             ex=res.ntp.splice(ix,1)[0]
           }
           const dur=ex?Math.max(5,ex.duur):a.duur
-          out.push({...(ex||a),id:(ex?ex.id:a.id)+'_bw',dagdeel:dd,room,start:t,end:Math.min(t+dur,sessEnd),duur:dur,
+          out.push({...(ex||a),id:(ex?ex.id:a.id)+'_bw',dagdeel:dd,room,start:t,end:t+dur,duur:dur,
             baileyWelsh:true, overbook:true, bwReal:!!ex,
             description: ex?((ex.description||ex.code)+' · Bailey-Welsh extra'):'Overboeking (Bailey-Welsh)',
             _why: ex?['Bailey-Welsh: extra patiënt op het eerste ochtendslot — stond anders op de restlijst.']
                     :['Bailey-Welsh: eerste ochtendslot dubbel geboekt om no-show/startvertraging op te vangen.']})
         }
-        return end
-      }
-      // Digitaal eindvenster: fysiek eerst, dan een flexgat, dan de digitale
-      // consulten zo laat mogelijk (maar binnen het venster van `endWindow` min).
-      const plaatsDigitaalEinde=(t)=>{
-        if(!(isEndMode&&digAppts.length)) return t
-        const afterPhys=t
-        const latestStart=sessEnd-totalDigDur
-        const windowStart=Math.max(sessEnd-endWindow, afterPhys)
-        const digStart=Math.max(afterPhys, Math.min(latestStart, windowStart))
-        if(digStart-afterPhys>=FLEX_MIN) out.push(mkFlex(afterPhys, digStart-afterPhys,'Buffer (vóór digitaal venster)'))
-        let tt=Math.max(afterPhys,digStart)
-        digAppts.forEach((a,i)=>{ if(tt<sessEnd) tt=pushAppt(a, physAppts.length+i, tt) })
-        return tt
       }
 
-      let t=sessStart
-      if(rules.flexMode==='spread' && flexTotal>=FLEX_BLOK){
-        // 1) Hoeveel blokjes van 10 min kunnen we verspreiden? Restminuten gaan
-        //    altijd naar het einde (dat is het restblok, geen tussenruimte).
-        const nBlok=Math.floor(flexTotal/FLEX_BLOK)
-        // 2) Beschikbare gaten = het moment ná een afspraak, buiten de no-flex-zone
-        //    aan het begin, en NIET na de laatste afspraak.
-        let simT=sessStart
-        const gaten=[]
-        physAppts.forEach((a,i)=>{
-          simT+=a.duur
-          if(simT-sessStart>=flexNoFirst && i<physAppts.length-1) gaten.push({idx:i,tijdstip:simT})
+      if(rules.flexMode==='spread' && appts.length>0 && flexTotal>=5){
+        // Distribute the flex evenly as buffers AFTER appointments (never at the very start).
+        const gaps=appts.length
+        const perRaw=flexTotal/gaps
+        let placed=0, t=sessStart
+        appts.forEach((a,idx)=>{
+          pushAppt(a,idx,t)
+          t+=a.duur
+          let chunk=Math.round((perRaw*(idx+1)-placed)/5)*5
+          chunk=Math.max(0,Math.min(chunk, flexTotal-placed))
+          if(chunk>=5){ out.push(mkFlex(t,chunk,'Buffer (verspreid)')); t+=chunk; placed+=chunk }
         })
-        // 3) Verdeel de blokjes gelijkmatig over de tijdspanne (eerste gat → sessEnd).
-        //    Per blokje het eerste nog ongebruikte gat op/na het ideale tijdstip;
-        //    is dat er niet, dan het dichtstbijzijnde gat (blokjes mogen stapelen).
-        const blokMap={}
-        if(nBlok>0&&gaten.length>0){
-          const start0=gaten[0].tijdstip
-          const stap=(sessEnd-start0)/nBlok
-          for(let b=0;b<nBlok;b++){
-            const ideaal=start0+(b+0.5)*stap
-            let kand=gaten.find(g=>g.tijdstip>=ideaal&&!(blokMap[g.idx]>0))
-            if(!kand) kand=gaten.reduce((best,g)=>
-              Math.abs(g.tijdstip-ideaal)<Math.abs(best.tijdstip-ideaal)?g:best, gaten[gaten.length-1])
-            if(kand) blokMap[kand.idx]=(blokMap[kand.idx]||0)+1
-          }
-        }
-        // 4) Afspraken + flexblokjes op de tijdas zetten.
-        physAppts.forEach((a,i)=>{
-          t=pushAppt(a,i,t)
-          const n=blokMap[i]||0
-          if(n>0){
-            const fEnd=Math.min(t+n*FLEX_BLOK, sessEnd)
-            if(fEnd-t>=FLEX_BLOK){ out.push(mkFlex(t, fEnd-t,'Buffer (verspreid)')); t=fEnd }
-          }
-        })
-        t=plaatsDigitaalEinde(t)
-        // 5) Restflex aan het einde
-        if(sessEnd-t>=FLEX_MIN) out.push(mkFlex(t, sessEnd-t,'Buffer (rest)'))
+        if(flexTotal-placed>=5) out.push(mkFlex(t, flexTotal-placed, 'Buffer (rest)'))
       } else {
-        // flexMode 'end' (of te weinig flex om te verspreiden): alles achter elkaar,
-        // één aaneengesloten flexblok na de laatste afspraak.
-        physAppts.forEach((a,i)=>{ t=pushAppt(a,i,t) })
-        t=plaatsDigitaalEinde(t)
-        if(sessEnd-t>=FLEX_MIN) out.push(mkFlex(t, sessEnd-t,'Buffer (einde spreekuur)'))
+        // flexMode 'end' (default): all appointments first, one buffer block at the end
+        let t=sessStart
+        appts.forEach((a,idx)=>{ pushAppt(a,idx,t); t+=a.duur })
+        if(flexTotal>=5) out.push(mkFlex(t, flexTotal, rules.flexMode==='end'?'Buffer (einde sessie)':'Flexruimte'))
       }
       return out
     }
@@ -1295,38 +1048,37 @@ export default function RasterTool(){
   //    (1) planregel-strategie, (2) benutting, (3) VERDELING over dagen/dagdelen —
   //    bv. nieuw 's ochtends & controle 's middags, of type-specifieke dagen — en
   //    kiest per doel de combinatie die alles het best & rustigst inplant. ──
-  // De solver rekent 3 scenario's door met de ECHTE engine, ALTIJD vanuit het
-  // ingestelde aantal kamers (baseRooms). Scenario 1 & 2 gebruiken exact die
-  // capaciteit; scenario 3 zet er één kamer bij.
-  //   1 · Maximaal strak  — hoogste benutting, flex aan het einde
-  //   2 · Jouw instellingen — precies de waarden uit module Tijden (benutting én
-  //       de ochtend/middag-verdeling) plus je eigen flexmodus, doorgerekend in
-  //       jouw kamers. Zo zie je wat je eigen configuratie oplevert.
-  //   3 · Ruim — een kamer erbij en de laagste benutting: de meeste lucht.
-  // Alle drie erven de ochtend/middag-verdeling (verOch) en weekdagverdeling uit
-  // module Tijden; de codes blijven ongemoeid, dus schakelen is omkeerbaar.
+  // De solver rekent 3 KRAPTE-NIVEAUS door met de ECHTE engine, ALTIJD vanuit de
+  // ingestelde kamers/specialisten (baseRooms). Scenario 1 & 2 gebruiken exact die
+  // ingestelde capaciteit — ze verschillen alléén in speelruimte (benutting + flex):
+  // 1 = maximaal strak, 2 = strak met flexruimte. Scenario 3 = ruim: één kamer erbij.
+  // De codes blijven ongemoeid, dus schakelen tussen 1↔2 is volledig omkeerbaar.
   const runSolver=useCallback((cfg,newRows,ctrlRows,m2,rules,baseRooms)=>{
     const clampB=b=>Math.max(60,Math.min(98,Math.round(b)))
     const R0=Math.max(1,baseRooms||1)
-    // Eén doorrekening bij (kamers, benutting, flexmodus). m2 — en dus verOch,
-    // de weekdagverdeling en de spreekuurtijden — gaat onveranderd mee.
+    // Eén doorrekening bij (kamers, benutting, flexmodus) — codes blijven ongemoeid.
     const evalAt=(rooms,benut,flexMode)=>{
       const res=computeRaster(cfg,newRows,ctrlRows,{...m2,benutting:benut},
-        {...rules,flexMode},{mode:'vast',kamers:rooms})
+        {...rules,flexMode},{mode:'vast',kamers:rooms,specialisten:rooms})
       const k=res.kpi.week
-      return {rooms,benut,flexMode,overflow:res.ntp.length,verOch:m2.verOch,
+      return {rooms,benut,flexMode,overflow:res.ntp.length,
         flex:k.flex,spreiding:k.spreiding,wissels:k.wissels,planned:k.planned,capacity:k.capacity}
     }
     // Laagste benutting die in R kamers nog past (= meeste flex terwijl alles past).
     const minFit=R=>{ for(let b=60;b<=98;b+=2){ if(evalAt(R,b,'spread').overflow===0) return b } return 98 }
     const fitBase=minFit(R0)          // strakste benutting die nog past in R0
     const fitPlus=minFit(R0+1)        // idem met een kamer erbij
-    const b1=clampB(Math.max(fitBase,96))          // strak: maximaal opgevuld
-    const bEigen=clampB(m2.benutting)              // JOUW benutting uit module Tijden
-    const b3=clampB(Math.max(fitPlus,72))          // ruim: laag, met kamer erbij
-    const t1={...evalAt(R0,b1,'end'),                       key:'strak', naam:'Maximaal strak'}
-    const t2={...evalAt(R0,bEigen,rules.flexMode||'spread'),key:'eigen', naam:'Jouw instellingen',eigen:true}
-    const t3={...evalAt(R0+1,b3,'spread'),                  key:'ruim',  naam:'Ruim · kamer erbij'}
+    // Kraptes bij de INGESTELDE kamers (R0) voor 1 & 2; R0+1 voor 3. Beide moeten
+    // passen → minimaal fitBase. Als de vraag R0 helemaal vult, schuiven 1 & 2 naar
+    // elkaar toe (dan is er eerlijk gezegd geen flexruimte zonder kamer erbij → 3).
+    // 1 maximaal strak: hoogste benutting, flex aan het einde (afspraken back-to-back).
+    // 2 strak met flex: lagere benutting → meer buffer, verspreid tussen de afspraken.
+    const b1=clampB(Math.max(fitBase,96))                       // strak: maximaal opgevuld
+    const b2=clampB(Math.max(fitBase,74))                       // flex: ruimer, buffers ertussen
+    const b3=clampB(Math.max(fitPlus,72))                       // ruim: laag, met kamer erbij
+    const t1={...evalAt(R0,b1,'end'),      key:'strak', naam:'Maximaal strak'}
+    const t2={...evalAt(R0,b2,'spread'),   key:'flex',  naam:'Strak met flexruimte'}
+    const t3={...evalAt(R0+1,b3,'spread'), key:'ruim',  naam:'Ruim · kamer erbij'}
     return {baseRooms:R0,tiers:[t1,t2,t3]}
   },[computeRaster])
 
@@ -1337,9 +1089,9 @@ export default function RasterTool(){
     if(!raster) return
     setSolving(true)
     const id=setTimeout(()=>{
-      // baseRooms = het INGESTELDE aantal kamers, of het auto-afgeleide aantal.
-      // Scenario 1 & 2 gaan hiervan uit.
-      const R=capacity.mode==='vast'?capacity.kamers:(raster.numRooms||2)
+      // baseRooms = de INGESTELDE capaciteit (kamers × specialisten, bindend = kleinste),
+      // of het auto-afgeleide aantal kamers. Scenario 1 & 2 gaan hiervan uit.
+      const R=capacity.mode==='vast'?Math.min(capacity.kamers,capacity.specialisten):(raster.numRooms||2)
       try{ setSolver(runSolver(cfg,newRows,ctrlRows,m2,rules,R)) }catch(e){ /* solver faalt stil */ }
       setSolving(false)
     },240)
@@ -1369,16 +1121,13 @@ export default function RasterTool(){
     setM1Mode(null); setM1Section(1)
     setCfg({newPat:10,ctrlPat:20,newCodes:2,ctrlCodes:3})
     setPoli({naam:'',specialisme:''})
-    setCapacity({mode:'auto',kamers:3})
+    setCapacity({mode:'auto',kamers:3,specialisten:2})
     setNewRows([]); setCtrlRows([]); setImportBadge(null)
     setM2({ochStart:'08:30',ochEnd:'12:00',midStart:'13:00',midEnd:'16:30',
       avondOn:false,avondStart:'17:00',avondEnd:'20:00',verAvond:0,
-      verOch:50,benutting:85,days:{ma:20,di:20,wo:20,do:20,vr:20},
-    ddDagen:{O:{...DEF_DD_DAGEN.O},M:{...DEF_DD_DAGEN.M},A:{...DEF_DD_DAGEN.A}}})
+      verOch:50,benutting:85,days:{ma:20,di:20,wo:20,do:20,vr:20}})
     setRules({shortFirst:false,spoedFirst:false,certainFirst:false,baileyWelsh:false,
       digitalMode:'spread',groupMode:'spread',flexMode:'end',
-      spoedDagdeel:'both',flexNoFirstMin:60,digitalEndMinutes:30,
-      patroon:{aan:false,O:[],M:[],A:[]},
       order:['spoedFirst','shortFirst','certainFirst']})
     setSelDay(0); setRaster(null); setDrag(null)
     setShowFullReset(false)
@@ -1397,35 +1146,6 @@ export default function RasterTool(){
     setNewRows(nieuw); setCtrlRows(ctrl)
     setM1Mode(m=>m||'manual'); setM1Section(2)
   }
-  // ── SPREEKUURPATROON — afleiden uit het huidige raster ──────────────────────
-  // Neemt per dagdeel het best gevulde spreekuur als blauwdruk. De scorekaart
-  // (optie 1) heeft die volgorde al bepaald, dus het patroon erft die kwaliteit.
-  const leidPatroonAf=()=>{
-    if(!raster) return null
-    const uit={O:[],M:[],A:[]}
-    const preOf={O:'o',M:'m',A:'a'}
-    ;['O','M','A'].forEach(x=>{
-      let beste=null, besteN=0
-      ;[0,1,2,3,4].forEach(di=>{
-        const slots=raster.days[di]; if(!slots) return
-        for(let r=0;r<(raster.numRooms||1);r++){
-          const arr=(slots[preOf[x]+r]||[]).filter(a=>!a.isFlex&&!a.overbook)
-          if(arr.length>besteN){ besteN=arr.length; beste=arr }
-        }
-      })
-      if(beste) uit[x]=beste.map(a=>({code:a.code,duur:a.duur,category:a.category,
-        digitaal:!!a.digitaal,description:a.description}))
-    })
-    return uit
-  }
-  const genereerPatroon=()=>{
-    const p=leidPatroonAf()
-    if(!p||!(p.O.length||p.M.length||p.A.length)){
-      alert('Genereer eerst een raster — daaruit wordt het patroon afgeleid.'); return
-    }
-    setRules(r=>({...r,patroon:{...p,aan:true}}))
-  }
-
   // Zijn er al door de gebruiker ingevoerde codes? (voor de bevestiging bij laden)
   const heeftCodes=()=> (newRows.some(r=>r.afspraakcode||r.omschrijving) || ctrlRows.some(r=>r.afspraakcode||r.omschrijving))
 
@@ -1454,7 +1174,7 @@ export default function RasterTool(){
   },[m2])
 
   const getColor=appt=>{
-    if(appt.isFlex) return {bg:FLEX_COLOR.bg,brd:FLEX_COLOR.brd,fg:FLEX_COLOR.fg}
+    if(appt.isFlex) return {bg:'#E3F1E7',brd:'#9AC9A8',fg:'#2E6B3A'}
     if(appt.isBuffer) return BUF_COLOR
     if(appt.category==='controle'&&appt.digitaal) return {bg:'#D6EAE3',brd:'#94C5B4',fg:'#1A5544'}
     if(appt.category==='nieuw') return NEW_PALETTE[appt.ci%NEW_PALETTE.length]||NEW_PALETTE[0]
@@ -1482,14 +1202,11 @@ export default function RasterTool(){
         if(state.cfg)      setCfg(state.cfg)
         if(state.newRows)  setNewRows(state.newRows.map(migRow))
         if(state.ctrlRows) setCtrlRows(state.ctrlRows.map(migRow))
-        if(state.m2)       setM2({avondOn:false,avondStart:'17:00',avondEnd:'20:00',verAvond:0,...state.m2,
-                             ddDagen:ddDagenVan(state.m2)})
+        if(state.m2)       setM2({avondOn:false,avondStart:'17:00',avondEnd:'20:00',verAvond:0,...state.m2})
         if(state.rules){
           const sr=state.rules
           setRules({shortFirst:false,spoedFirst:false,certainFirst:false,baileyWelsh:false,
-            digitalMode:'spread',groupMode:'spread',flexMode:'end',
-            spoedDagdeel:'both',flexNoFirstMin:60,digitalEndMinutes:30,...sr,
-            patroon:{aan:false,O:[],M:[],A:[],...(sr.patroon||{})},
+            digitalMode:'spread',groupMode:'spread',flexMode:'end',...sr,
             order:Array.isArray(sr.order)&&sr.order.length?sr.order:['spoedFirst','shortFirst','certainFirst']})
         }
         // Note: raster is not stored (too large), it will be auto-generated
@@ -1498,10 +1215,10 @@ export default function RasterTool(){
           filename:file.name,
           date:state.exportDate?new Date(state.exportDate).toLocaleDateString('nl-NL'):'onbekend'
         })
-        // Navigeer naar Gegevens (index 1), sectie 2 (codetabel) zodat de data zichtbaar is
+        // Navigate to module 1 section 2 (codes table) so user sees their data
         setM1Mode('imported')
         setM1Section(state.newRows?.length>0||state.ctrlRows?.length>0 ? 2 : 1)
-        setActive(1)
+        setActive(0)
         setVisited(new Set([0,1,2,3]))
         alert('✅ Sessie hersteld!\n\nGegevens, codes, tijden en planregels zijn ingeladen.\nGa naar "Rasterproces" om het rooster opnieuw te genereren.')
       }catch(err){
@@ -1533,11 +1250,11 @@ export default function RasterTool(){
         setRaster(null)
         setImportBadge(null)
         setM1Mode('manual'); setM1Section(2)
-        setActive(1); setVisited(new Set([0,1,2,3]))
+        setActive(0); setVisited(new Set([0,1,2,3]))
         alert('✅ Spreekuurgegevens geladen!\n\n'
           +nr.length+' nieuw-code(s) · '+cr.length+' controle-code(s)\n'
           +'Nieuw: '+newPat+'/week · Controle: '+ctrlPat+'/week\n\n'
-          +'Controleer de codes en ga daarna naar "Regels".')
+          +'Controleer de codes en ga daarna naar "Tijden" en "Regels".')
       }catch(err){
         alert('Laden mislukt:\n\n'+err.message
           +'\n\nTip: gebruik de knop "Voorbeeld-Excel" voor het juiste kolomformaat.')
@@ -2200,101 +1917,40 @@ export default function RasterTool(){
             </Card>
           )
         })()}
-        {/* ── DAGDELEN — ochtend, middag en avond ONDER ELKAAR, elk met eigen weekdagen ── */}
         <Card style={{marginBottom:16}}>
-          <div style={{marginBottom:14}}>
-            <H3 style={{margin:'0 0 4px'}}>Dagdelen — tijden en weekdagen</H3>
-            <p style={{fontSize:11.5,color:C.muted,margin:0,lineHeight:1.55}}>
-              Stel per dagdeel de start- en eindtijd in en klik de weekdagen aan waarop dat dagdeel
-              van toepassing is. Ochtend en middag staan standaard op maandag t/m vrijdag; de avond
-              staat uit tot je er zelf dagen voor aanzet.
-            </p>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
+            <H3 style={{margin:0}}>Tijden per dagdeel</H3>
+            <button onClick={()=>sf('avondOn',!m2.avondOn)} style={{display:'flex',alignItems:'center',gap:8,
+              padding:'6px 12px',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:600,
+              background:m2.avondOn?C.blueAccent:C.white,color:m2.avondOn?C.primary:C.muted,
+              border:`1px solid ${m2.avondOn?C.primary:C.border}`}}>
+              <span style={{width:30,height:17,borderRadius:9,background:m2.avondOn?C.primary:C.border,position:'relative',transition:'all 0.18s'}}>
+                <span style={{position:'absolute',top:2,left:m2.avondOn?15:2,width:13,height:13,borderRadius:'50%',background:'#fff',transition:'left 0.18s'}}/>
+              </span>
+              Avondspreekuur {m2.avondOn?'aan':'uit'}
+            </button>
           </div>
-          {(()=>{
-            const dagen=ddDagenVan(m2)
-            const zetDag=(x,k)=>setM2(p=>{
-              const cur=ddDagenVan(p)
-              const nieuw={...cur,[x]:{...cur[x],[k]:!cur[x][k]}}
-              // De avond bestaat alleen zolang er een dag voor aan staat.
-              return {...p,ddDagen:nieuw,avondOn:WEEKDAY_KEYS.some(d=>nieuw.A[d])}
-            })
-            const alleDagen=(x,val)=>setM2(p=>{
-              const cur=ddDagenVan(p)
-              const rij={}; WEEKDAY_KEYS.forEach(d=>{rij[d]=val})
-              const nieuw={...cur,[x]:rij}
-              return {...p,ddDagen:nieuw,avondOn:WEEKDAY_KEYS.some(d=>nieuw.A[d])}
-            })
-            const RIJEN=[
-              {x:'O',label:'Ochtend',ico:'☀',s:'ochStart',e:'ochEnd',color:C.primary,accent:C.blueAccent,dur:m2c.od},
-              {x:'M',label:'Middag', ico:'🌤',s:'midStart',e:'midEnd',color:C.green,accent:'#EDF7F0',dur:m2c.md},
-              {x:'A',label:'Avond',  ico:'🌙',s:'avondStart',e:'avondEnd',color:'#8B5CF6',accent:'#F3EEFA',
-                dur:Math.max(0,toMin(m2.avondEnd||'20:00')-toMin(m2.avondStart||'17:00'))},
-            ]
-            return RIJEN.map(({x,label,ico,s,e,color,accent,dur})=>{
-              const rij=dagen[x]
-              const aantal=WEEKDAY_KEYS.filter(k=>rij[k]).length
-              const uit=aantal===0
-              return(
-                <div key={x} style={{border:`1px solid ${uit?C.border:color+'55'}`,borderLeft:`4px solid ${uit?C.border:color}`,
-                  borderRadius:11,padding:'14px 16px',marginBottom:12,background:uit?C.surface2:C.white,transition:'all 0.15s'}}>
-                  <div style={{display:'flex',alignItems:'center',gap:14,flexWrap:'wrap'}}>
-                    {/* naam + status */}
-                    <div style={{minWidth:120}}>
-                      <div style={{display:'flex',alignItems:'center',gap:7}}>
-                        <span style={{fontSize:15,opacity:uit?0.4:1}}>{ico}</span>
-                        <span style={{fontSize:13.5,fontWeight:800,color:uit?C.muted:color,letterSpacing:'0.02em'}}>{label}</span>
-                      </div>
-                      <div style={{fontSize:10.5,color:uit?C.danger:C.muted,marginTop:2,fontWeight:uit?700:500}}>
-                        {uit?'staat uit — geen dagen':`${aantal} ${aantal===1?'dag':'dagen'} actief`}
-                      </div>
+          <div style={{display:'grid',gridTemplateColumns:m2.avondOn?'1fr 1fr 1fr':'1fr 1fr',gap:20}}>
+            {[{label:'Ochtend',s:'ochStart',e:'ochEnd',color:C.primary,dur:m2c.od,show:true},
+              {label:'Middag',s:'midStart',e:'midEnd',color:C.green,dur:m2c.md,show:true},
+              {label:'Avond',s:'avondStart',e:'avondEnd',color:'#8B5CF6',dur:Math.max(0,toMin(m2.avondEnd)-toMin(m2.avondStart)),show:m2.avondOn}
+            ].filter(x=>x.show).map(({label,s,e,color,dur})=>(
+              <div key={s} style={{padding:16,borderRadius:10,border:`1px solid ${C.border}`,borderTop:`3px solid ${color}`}}>
+                <div style={{fontSize:12,fontWeight:700,color:C.text,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:12}}>{label}</div>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
+                  {[{l:'Start',k:s},{l:'Einde',k:e}].map(({l,k})=>(
+                    <div key={k}><Lbl>{l}</Lbl>
+                      <input type="time" value={m2[k]} onChange={ev=>sf(k,ev.target.value)}
+                        style={{width:'100%',border:`1px solid ${C.border}`,borderRadius:7,padding:'8px 10px',fontSize:14,fontFamily:'inherit',fontWeight:600,color:C.text}}/>
                     </div>
-                    {/* start / einde */}
-                    {[{l:'Start',k:s},{l:'Einde',k:e}].map(({l,k})=>(
-                      <div key={k}>
-                        <Lbl>{l}</Lbl>
-                        <input type="time" value={m2[k]} onChange={ev=>sf(k,ev.target.value)}
-                          style={{border:`1px solid ${C.border}`,borderRadius:7,padding:'8px 10px',fontSize:14,
-                            fontFamily:'inherit',fontWeight:600,color:C.text,width:118,background:C.white}}/>
-                      </div>
-                    ))}
-                    {/* duur */}
-                    <div>
-                      <Lbl>Duur</Lbl>
-                      <div style={{padding:'8px 12px',background:uit?C.white:accent,borderRadius:7,
-                        fontSize:13,fontWeight:700,color:uit?C.muted:color,border:`1px solid ${uit?C.border:color+'44'}`,
-                        whiteSpace:'nowrap'}}>{dur} minuten</div>
-                    </div>
-                    {/* weekdagen */}
-                    <div style={{flex:1,minWidth:250}}>
-                      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}}>
-                        <Lbl>Weekdagen</Lbl>
-                        <div style={{display:'flex',gap:5}}>
-                          <button onClick={()=>alleDagen(x,true)} style={{fontSize:9.5,fontWeight:700,padding:'2px 8px',borderRadius:12,
-                            border:`1px solid ${C.border}`,background:C.white,color:C.muted,cursor:'pointer'}}>alles</button>
-                          <button onClick={()=>alleDagen(x,false)} style={{fontSize:9.5,fontWeight:700,padding:'2px 8px',borderRadius:12,
-                            border:`1px solid ${C.border}`,background:C.white,color:C.muted,cursor:'pointer'}}>geen</button>
-                        </div>
-                      </div>
-                      <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-                        {WEEKDAY_KEYS.map((k,i)=>{
-                          const on=!!rij[k]
-                          return(
-                            <button key={k} onClick={()=>zetDag(x,k)} title={DAYS[i]}
-                              style={{minWidth:46,padding:'7px 0',borderRadius:8,cursor:'pointer',
-                                fontSize:11.5,fontWeight:800,letterSpacing:'0.04em',transition:'all 0.12s',
-                                background:on?color:C.white,color:on?'#fff':C.muted,
-                                border:`1px solid ${on?color:C.border}`}}>
-                              {DAY_ABBR[i]}
-                            </button>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  </div>
+                  ))}
                 </div>
-              )
-            })
-          })()}
+                <div style={{padding:'7px 12px',background:C.surface2,borderRadius:6,fontSize:12.5,fontWeight:600,color:C.text}}>
+                  Duur: {dur} minuten
+                </div>
+              </div>
+            ))}
+          </div>
         </Card>
 
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:16}}>
@@ -2445,63 +2101,32 @@ export default function RasterTool(){
             {code:'CO',cat:'controle',duur:15,spoed:false,digitaal:false,onzeker:'gemiddeld'},
             {code:'NP',cat:'nieuw',duur:20,spoed:false,digitaal:false,onzeker:'zeker'},
           ]
-          // Spiegelt exact de SCOREKAART uit de engine, zodat dit voorbeeld laat
-          // zien wat de gekozen regels én hun prioriteit écht doen.
           const uScore=a=>a.onzeker==='zeker'?0:a.onzeker==='onzeker'?2:1
-          const RULE_W=[100,45,20], W_MIX=38, W_STAB=9
-          const bron=sample.map((a,i)=>({...a,id:'s'+i,category:a.cat}))
-          const activeOrder=(rules.order||['spoedFirst','shortFirst','certainFirst'])
-            .filter(k=>rules[k]&&['spoedFirst','shortFirst','certainFirst'].includes(k))
-            .filter(k=>k!=='spoedFirst'||rules.spoedDagdeel!=='mid')   // voorbeeld = ochtend
-          const regels=activeOrder.map((k,i)=>({k,w:RULE_W[i]??10}))
-          const durs=bron.map(a=>a.duur), dMin=Math.min(...durs), dSpan=Math.max(1,Math.max(...durs)-dMin)
-          const sig={spoedFirst:a=>a.spoed?1:0, shortFirst:a=>1-(a.duur-dMin)/dSpan, certainFirst:a=>1-uScore(a)/2}
-          const naarAchter=rules.digitalMode==='cluster'||rules.digitalMode==='end'
-          const mee=naarAchter?bron.filter(a=>!a.digitaal):[...bron]
-          const achter=naarAchter?bron.filter(a=>a.digitaal):[]
-          const n=mee.length
-          const totCat={},totCode={}
-          mee.forEach(a=>{totCat[a.category]=(totCat[a.category]||0)+1; totCode[a.code]=(totCode[a.code]||0)+1})
-          const gCat={},gCode={}
-          const over=mee.map((a,i)=>({a,i})); let rest=[]; let vorige=null
-          while(over.length){
-            let bi=-1,bs=-Infinity
-            over.forEach(({a,i},j)=>{
-              let s=0
-              regels.forEach(({k,w})=>{ s+=w*sig[k](a) })
-              if(rules.groupMode==='wave'){
-                if(vorige) s+= vorige.code===a.code?W_MIX:(vorige.category===a.category?W_MIX*0.3:0)
-              } else {
-                s-= W_MIX*1.8*(((gCat[a.category]||0)+1)/(rest.length+1)-(totCat[a.category]||0)/n)
-                s-= W_MIX*0.9*(((gCode[a.code]||0)+1)/(rest.length+1)-(totCode[a.code]||0)/n)
-                if(vorige&&vorige.code===a.code) s-=W_MIX*0.30
-              }
-              s+= W_STAB*(1-i/Math.max(1,n-1))
-              if(s>bs){bs=s;bi=j}
-            })
-            const {a}=over.splice(bi,1)[0]
-            rest.push(a); gCat[a.category]=(gCat[a.category]||0)+1; gCode[a.code]=(gCode[a.code]||0)+1; vorige=a
-          }
-          rest=[...rest,...achter]
-          // bouw blokreeks incl. buffers + Bailey-Welsh. Verspreide flex: blokjes ná
-          // een afspraak, nooit ná de laatste (dat is het restblok aan het einde).
+          const cmp={spoedFirst:(a,b)=>(b.spoed?1:0)-(a.spoed?1:0),shortFirst:(a,b)=>a.duur-b.duur,certainFirst:(a,b)=>uScore(a)-uScore(b)}
+          let rest=sample.map((a,i)=>({...a,_seq:i}))
+          const activeOrder=(rules.order||['spoedFirst','shortFirst','certainFirst']).filter(k=>rules[k]&&cmp[k])
+          if(activeOrder.length) rest.sort((a,b)=>{ for(const k of activeOrder){const c=cmp[k](a,b);if(c!==0)return c} return a._seq-b._seq })
+          if(rules.groupMode==='wave'){ const by={},ord=[]; rest.forEach(a=>{if(!by[a.code]){by[a.code]=[];ord.push(a.code)}by[a.code].push(a)}); rest=ord.flatMap(c=>by[c]) }
+          if(rules.digitalMode==='end') rest=[...rest.filter(a=>!a.digitaal),...rest.filter(a=>a.digitaal)]
+          else if(rules.digitalMode==='cluster'){ const d=rest.filter(a=>a.digitaal),f=rest.filter(a=>!a.digitaal),m=Math.floor(f.length/2); rest=[...f.slice(0,m),...d,...f.slice(m)] }
+          // bouw blokreeks incl. buffers + Bailey-Welsh
           const seq=[]
           rest.forEach((a,i)=>{
             if(i===0&&rules.baileyWelsh) seq.push({...a,_bw:true})
             seq.push({...a})
-            if(rules.flexMode==='spread'&&i>=1&&i<rest.length-1) seq.push({buffer:true,duur:10})
+            if(rules.flexMode==='spread'&&i<rest.length-1) seq.push({buffer:true,duur:5})
           })
-          seq.push({buffer:true,duur:rules.flexMode==='end'?25:10,eind:true})
+          if(rules.flexMode==='end') seq.push({buffer:true,duur:20,eind:true})
           const totMin=seq.reduce((s,b)=>s+b.duur,0)||1
-          const clrOf=b=> b.buffer?{bg:FLEX_STRIPE(5,10),fg:FLEX_COLOR.fg,brd:FLEX_COLOR.brd}
+          const clrOf=b=> b.buffer?{bg:'repeating-linear-gradient(45deg,#E3F1E7,#E3F1E7 5px,#F1FBF3 5px,#F1FBF3 10px)',fg:'#2E6B3A',brd:'#9AC9A8'}
             : b.spoed?{bg:'#FCEEEB',fg:C.danger,brd:'#E7B3A6'}
             : b.digitaal?{bg:'#D6EAE3',fg:'#1A5544',brd:'#94C5B4'}
             : b.cat==='nieuw'?NEW_PALETTE[0]:CTRL_PALETTE[0]
           const actieveRegels=[
-            ...activeOrder.map((k,i)=>`${i+1}. ${PLAN_INFO[k].label}`),
+            ...activeOrder.map(k=>PLAN_INFO[k].label),
             rules.groupMode==='wave'?'Wave-groepering':'Gespreid',
-            rules.digitalMode==='end'?`Digitaal aan het einde (${rules.digitalEndMinutes||30}m venster)`:rules.digitalMode==='cluster'?'Digitaal geclusterd':'Digitaal verdeeld',
-            rules.flexMode==='end'?'Buffer aan het einde':`Buffer verspreid (na ${rules.flexNoFirstMin??60}m)`,
+            rules.digitalMode==='end'?'Digitaal aan het einde':rules.digitalMode==='cluster'?'Digitaal geclusterd':'Digitaal verdeeld',
+            rules.flexMode==='end'?'Buffer aan het einde':'Buffer verspreid',
             ...(rules.baileyWelsh?['Bailey-Welsh dubbelboeking']:[]),
           ]
           return(
@@ -2600,27 +2225,6 @@ export default function RasterTool(){
                       ⚠ Geen onzekerheid ingesteld bij de afspraakcodes — stel dit in bij Gegevens invoer, anders heeft deze regel geen effect.
                     </div>
                   )}
-                  {/* Spoed: in welk dagdeel geldt de regel? */}
-                  {key==='spoedFirst'&&on&&(
-                    <div style={{margin:'6px 0 0 34px',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-                      <span style={{fontSize:11,color:C.muted}}>Geldt in:</span>
-                      {[{v:'both',l:'Ochtend + middag'},{v:'och',l:'Alleen ochtend'},{v:'mid',l:'Alleen middag'}].map(o=>{
-                        const sel=(rules.spoedDagdeel||'both')===o.v
-                        return(
-                          <button key={o.v} onClick={()=>setRules(p=>({...p,spoedDagdeel:o.v}))}
-                            style={{padding:'4px 11px',borderRadius:16,cursor:'pointer',fontSize:11,fontWeight:600,
-                              background:sel?C.blueAccent:C.white,color:sel?C.primary:C.muted,
-                              border:`1px solid ${sel?C.primary:C.border}`}}>{sel?'✓ ':''}{o.l}</button>
-                        )
-                      })}
-                    </div>
-                  )}
-                  {/* Wat dit gewicht doet op deze prioriteit */}
-                  {on&&(
-                    <div style={{margin:'6px 0 0 34px',fontSize:11,color:C.muted}}>
-                      Weegt mee met <b style={{color:C.text}}>{[100,45,20][prio-1]??10} punten</b> op prioriteit {prio} — regels tellen bij elkaar op.
-                    </div>
-                  )}
                 </div>
               )
             })
@@ -2680,22 +2284,6 @@ export default function RasterTool(){
               )
             })}
           </div>
-          {rules.digitalMode==='end'&&(
-            <div style={{marginTop:10,display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',
-              background:C.rowAlt,border:`1px solid ${C.border}`,borderRadius:9,padding:'10px 13px'}}>
-              <div style={{flex:1,minWidth:190}}>
-                <div style={{fontSize:12,fontWeight:700,color:C.text}}>Breedte eindvenster</div>
-                <div style={{fontSize:11,color:C.muted}}>Digitale consulten vallen in de laatste <b style={{color:C.text}}>{rules.digitalEndMinutes||30} min</b> van het spreekuur.</div>
-              </div>
-              <div style={{display:'inline-flex',alignItems:'center',border:`1px solid ${C.border}`,borderRadius:8,overflow:'hidden',background:C.white}}>
-                <button onClick={()=>setRules(p=>({...p,digitalEndMinutes:Math.max(10,(p.digitalEndMinutes||30)-10)}))}
-                  style={{width:32,height:32,border:'none',borderRight:`1px solid ${C.border}`,background:C.surface2,cursor:'pointer',fontWeight:700,color:C.muted,fontSize:15}}>−</button>
-                <span style={{width:52,textAlign:'center',fontSize:13,fontWeight:700,color:C.text}}>{rules.digitalEndMinutes||30}m</span>
-                <button onClick={()=>setRules(p=>({...p,digitalEndMinutes:Math.min(180,(p.digitalEndMinutes||30)+10)}))}
-                  style={{width:32,height:32,border:'none',borderLeft:`1px solid ${C.border}`,background:C.surface2,cursor:'pointer',fontWeight:700,color:C.muted,fontSize:15}}>+</button>
-              </div>
-            </div>
-          )}
         </Card>
 
         {/* Radios: Groepering */}
@@ -2752,121 +2340,6 @@ export default function RasterTool(){
               )
             })}
           </div>
-          {rules.flexMode==='spread'&&(
-            <div style={{marginTop:10,display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',
-              background:FLEX_COLOR.bg,border:`1px solid ${FLEX_COLOR.brd}`,borderRadius:9,padding:'10px 13px'}}>
-              <span style={{width:12,height:12,borderRadius:3,background:FLEX_STRIPE(3,6),border:`1px solid ${FLEX_COLOR.brd}`,flexShrink:0}}/>
-              <div style={{flex:1,minWidth:190}}>
-                <div style={{fontSize:12,fontWeight:700,color:FLEX_COLOR.fg}}>Geen flex aan het begin</div>
-                <div style={{fontSize:11,color:C.muted}}>Flexblokken van <b style={{color:C.text}}>min. 10 min</b>, pas ná <b style={{color:C.text}}>{rules.flexNoFirstMin??60} min</b> spreekuur — en nooit direct na de laatste afspraak (dat is het restblok).</div>
-              </div>
-              <div style={{display:'inline-flex',alignItems:'center',border:`1px solid ${FLEX_COLOR.brd}`,borderRadius:8,overflow:'hidden',background:C.white}}>
-                <button onClick={()=>setRules(p=>({...p,flexNoFirstMin:Math.max(0,(p.flexNoFirstMin??60)-10)}))}
-                  style={{width:32,height:32,border:'none',borderRight:`1px solid ${FLEX_COLOR.brd}`,background:FLEX_COLOR.bg2,cursor:'pointer',fontWeight:700,color:FLEX_COLOR.fg,fontSize:15}}>−</button>
-                <span style={{width:52,textAlign:'center',fontSize:13,fontWeight:700,color:C.text}}>{rules.flexNoFirstMin??60}m</span>
-                <button onClick={()=>setRules(p=>({...p,flexNoFirstMin:Math.min(240,(p.flexNoFirstMin??60)+10)}))}
-                  style={{width:32,height:32,border:'none',borderLeft:`1px solid ${FLEX_COLOR.brd}`,background:FLEX_COLOR.bg2,cursor:'pointer',fontWeight:700,color:FLEX_COLOR.fg,fontSize:15}}>+</button>
-              </div>
-            </div>
-          )}
-        </Card>
-
-        {/* ── SPREEKUURPATROON — vaste slotvolgorde per dagdeel ── */}
-        <Card style={{marginBottom:14}}>
-          {(()=>{
-            const pat=rules.patroon||{aan:false,O:[],M:[],A:[]}
-            const setPat=fn=>setRules(r=>{
-              const p={aan:false,O:[],M:[],A:[],...(r.patroon||{})}
-              return {...r,patroon:fn(p)}
-            })
-            const alleCodes=[
-              ...newRows.filter(r=>r.afspraakcode||r.omschrijving).map(r=>({code:r.afspraakcode||'NP',oms:r.omschrijving,duur:r.duur||15,category:'nieuw',digitaal:!!r.digitaal})),
-              ...ctrlRows.filter(r=>r.afspraakcode||r.omschrijving).map(r=>({code:r.afspraakcode||'CO',oms:r.omschrijving,duur:r.duur||15,category:'controle',digitaal:!!r.digitaal})),
-            ]
-            const DDL=[{x:'O',l:'Ochtend',c:C.primary},{x:'M',l:'Middag',c:C.green},{x:'A',l:'Avond',c:'#8B5CF6'}]
-            const heeft=DDL.some(d=>(pat[d.x]||[]).length)
-            return(
-            <>
-              <div style={{display:'flex',alignItems:'flex-start',gap:12,marginBottom:12,flexWrap:'wrap'}}>
-                <div style={{flex:1,minWidth:240}}>
-                  <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:5}}>
-                    <span style={{fontWeight:700,fontSize:13.5,color:C.primary}}>🧩 Vast spreekuurpatroon</span>
-                  </div>
-                  <p style={{fontSize:11.5,color:C.muted,margin:0,lineHeight:1.55}}>
-                    Legt de <b style={{color:C.text}}>volgorde van de slots</b> vast per dagdeel. Elk spreekuur van dat dagdeel
-                    houdt hem aan, zodat elke maandagochtend er hetzelfde uitziet — herkenbaar voor balie en zorgverleners.
-                    Afspraken worden in de slots geplaatst (eerst op code, anders op soort); een slot zonder passende afspraak
-                    wordt flexruimte. Staat dit uit, dan bepaalt de scorekaart per kamer de volgorde.
-                  </p>
-                </div>
-                <div style={{display:'flex',alignItems:'center',gap:8}}>
-                  <button onClick={genereerPatroon}
-                    style={{padding:'8px 13px',borderRadius:9,border:`1px solid ${C.primary}`,background:C.white,
-                      color:C.primary,cursor:'pointer',fontSize:12,fontWeight:700}}>⟳ Uit huidige vraag</button>
-                  <div onClick={()=>setPat(p=>({...p,aan:!p.aan}))}
-                    style={{width:38,height:22,borderRadius:11,background:pat.aan?C.primary:C.border,
-                      cursor:'pointer',position:'relative',transition:'background 0.18s',flexShrink:0}}>
-                    <div style={{width:16,height:16,borderRadius:'50%',background:'#fff',position:'absolute',top:3,left:pat.aan?19:3,transition:'left 0.18s'}}/>
-                  </div>
-                </div>
-              </div>
-              {!heeft&&(
-                <div style={{fontSize:11.5,color:C.muted,background:C.rowAlt,border:`1px dashed ${C.border}`,
-                  borderRadius:9,padding:'12px 14px'}}>
-                  Nog geen patroon. Klik op <b style={{color:C.text}}>⟳ Uit huidige vraag</b> — dan wordt per dagdeel het best
-                  gevulde spreekuur als blauwdruk genomen, die je daarna vrij kunt aanpassen.
-                </div>
-              )}
-              {heeft&&DDL.map(({x,l,c})=>{
-                const slots=pat[x]||[]
-                if(!slots.length) return null
-                const tot=slots.reduce((s,q)=>s+(q.duur||0),0)
-                const move=(i,d)=>setPat(p=>{const a=[...(p[x]||[])];const j=i+d;if(j<0||j>=a.length)return p;
-                  const t=a[i];a[i]=a[j];a[j]=t;return {...p,[x]:a}})
-                const del=i=>setPat(p=>({...p,[x]:(p[x]||[]).filter((_,j)=>j!==i)}))
-                const add=code=>{const cd=alleCodes.find(q=>q.code===code); if(!cd)return
-                  setPat(p=>({...p,[x]:[...(p[x]||[]),{code:cd.code,duur:cd.duur,category:cd.category,digitaal:cd.digitaal,description:cd.oms}]}))}
-                return(
-                  <div key={x} style={{marginTop:12,border:`1px solid ${C.border}`,borderLeft:`4px solid ${c}`,borderRadius:10,padding:'12px 14px'}}>
-                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:9,flexWrap:'wrap',gap:8}}>
-                      <span style={{fontSize:12.5,fontWeight:800,color:c}}>{l}</span>
-                      <span style={{fontSize:11,color:C.muted}}>{slots.length} slots · {tot} min gepland</span>
-                    </div>
-                    <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
-                      {slots.map((s,i)=>{
-                        const clr=s.category==='nieuw'?NEW_PALETTE[0]:(s.digitaal?{bg:'#D6EAE3',brd:'#94C5B4',fg:'#1A5544'}:CTRL_PALETTE[0])
-                        return(
-                          <div key={i} style={{display:'flex',alignItems:'center',gap:3,background:clr.bg,border:`1px solid ${clr.brd}`,
-                            borderRadius:8,padding:'4px 4px 4px 9px'}}>
-                            <span style={{fontSize:10,fontWeight:700,color:C.muted,minWidth:14}}>{i+1}</span>
-                            <span style={{fontSize:11.5,fontWeight:800,color:clr.fg}}>{s.digitaal?'☎ ':''}{s.code}</span>
-                            <span style={{fontSize:10,color:clr.fg,opacity:0.75}}>{s.duur}m</span>
-                            <button onClick={()=>move(i,-1)} disabled={i===0} title="Eerder"
-                              style={{width:16,height:18,border:'none',background:'transparent',cursor:i===0?'default':'pointer',
-                                fontSize:9,color:i===0?clr.brd:clr.fg,padding:0}}>◀</button>
-                            <button onClick={()=>move(i,1)} disabled={i===slots.length-1} title="Later"
-                              style={{width:16,height:18,border:'none',background:'transparent',cursor:i===slots.length-1?'default':'pointer',
-                                fontSize:9,color:i===slots.length-1?clr.brd:clr.fg,padding:0}}>▶</button>
-                            <button onClick={()=>del(i)} title="Verwijderen"
-                              style={{width:17,height:18,border:'none',background:'transparent',cursor:'pointer',fontSize:11,color:clr.fg,opacity:0.6,padding:0}}>✕</button>
-                          </div>
-                        )
-                      })}
-                      {alleCodes.length>0&&(
-                        <select value="" onChange={e=>{if(e.target.value)add(e.target.value);e.target.value=''}}
-                          style={{border:`1px dashed ${C.border}`,borderRadius:8,padding:'5px 8px',fontSize:11,
-                            color:C.muted,background:C.white,fontFamily:'inherit',cursor:'pointer'}}>
-                          <option value="">+ slot…</option>
-                          {alleCodes.map((q,i)=><option key={i} value={q.code}>{q.code} · {q.oms||''} ({q.duur}m)</option>)}
-                        </select>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-            </>
-            )
-          })()}
         </Card>
 
         {/* Active summary */}
@@ -2874,19 +2347,14 @@ export default function RasterTool(){
           <div style={{fontSize:10.5,fontWeight:700,color:C.primary,marginBottom:7,textTransform:'uppercase',letterSpacing:'0.06em'}}>Actieve instellingen:</div>
           <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
             <span style={{padding:'3px 10px',background:C.white,borderRadius:20,fontSize:11,border:`1px solid ${C.border}`,color:C.muted}}>
-              Flex: <b>{rules.flexMode==='end'?'Aan het einde':`Verspreid (na ${rules.flexNoFirstMin??60}m)`}</b>
+              Flex: <b>{rules.flexMode==='end'?'Aan het einde':'Verspreid'}</b>
             </span>
             <span style={{padding:'3px 10px',background:C.white,borderRadius:20,fontSize:11,border:`1px solid ${C.border}`,color:C.muted}}>
               Groepering: <b>{rules.groupMode==='wave'?'Wave (blokken)':'Gespreid'}</b>
             </span>
             <span style={{padding:'3px 10px',background:C.white,borderRadius:20,fontSize:11,border:`1px solid ${C.border}`,color:C.muted}}>
-              Digitaal: <b>{rules.digitalMode==='end'?`Einde (${rules.digitalEndMinutes||30}m)`:rules.digitalMode==='cluster'?'Cluster':'Verdelen'}</b>
+              Digitaal: <b>{rules.digitalMode==='end'?'Einde':rules.digitalMode==='cluster'?'Cluster':'Verdelen'}</b>
             </span>
-            {rules.spoedFirst&&(
-              <span style={{padding:'3px 10px',background:C.white,borderRadius:20,fontSize:11,border:`1px solid ${C.border}`,color:C.muted}}>
-                Spoed geldt in: <b>{rules.spoedDagdeel==='och'?'ochtend':rules.spoedDagdeel==='mid'?'middag':'ochtend + middag'}</b>
-              </span>
-            )}
             {TOGGLE_KEYS.filter(k=>rules[k]).map(k=>(
               <span key={k} style={{padding:'3px 10px',background:'#F0FDF4',borderRadius:20,fontSize:11,border:`1px solid ${C.green}`,color:C.green,fontWeight:600}}>
                 ✓ {PLAN_INFO[k]?.label}
@@ -2995,7 +2463,7 @@ export default function RasterTool(){
     const zwakkeKamer=numRooms>1 ? roomLoad.map((l,r)=>({r,gem:l.dagen?l.cnt/l.dagen:0,cnt:l.cnt})).sort((a,b)=>a.cnt-b.cnt)[0] : null
     const avgDuur=nReal>0?Math.max(5,Math.round(plannedMin/nReal)):15
     const flexMin=raster.kpi?raster.kpi.week.flex:0
-    const beschRooms=capacity.mode==='vast'?capacity.kamers:numRooms
+    const beschRooms=capacity.mode==='vast'?Math.min(capacity.kamers,capacity.specialisten):numRooms
 
     // Belasting per (dag,dagdeel) — pauzes blijven ongemoeid, alleen flex schuift mee
     const ddLoads=[]
@@ -3042,21 +2510,20 @@ export default function RasterTool(){
     const demandCount=Math.round(
       newRows.reduce((s,r)=>s+cfg.newPat*((r.percentage||0)/100),0)+
       ctrlRows.reduce((s,r)=>s+cfg.ctrlPat*((r.percentage||0)/100),0)) || (nReal+nNtp)
-    const TINTS={strak:C.primary,eigen:C.green,ruim:'#8B5CF6'}
-    const KRAPTE={strak:'Erg krap',eigen:'Jouw waardes',ruim:'Ruim'}
-    const ddVerd=t=>`ochtend ${t.verOch??m2.verOch}% / middag ${100-(t.verOch??m2.verOch)}%`
+    const TINTS={strak:C.primary,flex:C.green,ruim:'#8B5CF6'}
+    const KRAPTE={strak:'Erg krap',flex:'Krap + flex',ruim:'Ruim'}
     const HOE={
-      strak:t=>`Maximaal opgevuld bij ${t.benut}% benutting in ${t.rooms} kamer${t.rooms===1?'':'s'} — flex aan het einde, slechts ${100-t.benut}% buffer. Verdeling ${ddVerd(t)}. Efficiëntst, maar weinig ademruimte bij uitloop.`,
-      eigen:t=>`Precies jouw instellingen uit module Tijden: ${t.benut}% benutting, verdeling ${ddVerd(t)}, flex ${t.flexMode==='end'?'aan het einde':'verspreid'} — in je ${t.rooms} ingestelde kamer${t.rooms===1?'':'s'}. Dit is wat je eigen configuratie oplevert.`,
-      ruim:t=>`Een kamer erbij (${t.rooms} kamers) bij ${t.benut}% benutting — de meeste lucht met ${100-t.benut}% buffer. Verdeling ${ddVerd(t)}. Comfortabel, maar duurder qua capaciteit.`,
+      strak:t=>`Maximaal opgevuld bij ${t.benut}% benutting in ${t.rooms} kamer${t.rooms===1?'':'s'} — flex aan het einde, slechts ${100-t.benut}% buffer. Efficiëntst, maar weinig ademruimte bij uitloop.`,
+      flex:t=>`Zelfde ${t.rooms} kamer${t.rooms===1?'':'s'}, maar bij ${t.benut}% benutting met ${100-t.benut}% flexruimte verspreid als buffer tussen de afspraken — meer speling voor uitloop en onzekere consulten.`,
+      ruim:t=>`Een kamer erbij (${t.rooms} kamers) bij ${t.benut}% benutting — de meeste lucht met ${100-t.benut}% buffer, ruim verdeeld. Comfortabel, maar duurder qua capaciteit.`,
     }
     const mkTier=t=>{
       const fit=t.overflow===0
       return {key:t.key,naam:t.naam,tint:TINTS[t.key],krapte:KRAPTE[t.key],rooms:t.rooms,benut:t.benut,
-        flexMode:t.flexMode,flex:t.flex,fit,eigen:!!t.eigen,verOch:t.verOch,
-        sub:`${t.rooms} kamer${t.rooms===1?'':'s'} · ${t.benut}% benutting · O ${t.verOch??m2.verOch}/M ${100-(t.verOch??m2.verOch)}`,
+        flexMode:t.flexMode,flex:t.flex,fit,
+        sub:`${t.rooms} kamer${t.rooms===1?'':'s'} · ${t.benut}% benutting · ${100-t.benut}% buffer`,
         metric:fit?`${demandCount}/${demandCount} geplaatst`:`${Math.max(0,demandCount-t.overflow)}/${demandCount} geplaatst`,
-        hoe:fit?HOE[t.key](t):`Past niet volledig: ${t.overflow} afspraken lopen over in ${t.rooms} kamer${t.rooms===1?'':'s'} bij ${t.benut}% (verdeling ${ddVerd(t)}). Kies een ruimer scenario of voeg een kamer toe.`}
+        hoe:fit?HOE[t.key](t):`Past niet volledig: ${t.overflow} afspraken lopen over in ${t.rooms} kamer${t.rooms===1?'':'s'} bij ${t.benut}%. Kies een ruimer scenario of voeg capaciteit toe.`}
     }
     let scenarios
     if(solver && solver.tiers && solver.tiers.length===3){
@@ -3065,9 +2532,9 @@ export default function RasterTool(){
       // Voorlopige weergave zolang de solver nog rekent (stabiele schatting).
       const bRef=beschRooms
       scenarios=[
-        {key:'strak',naam:'Maximaal strak',krapte:KRAPTE.strak,tint:TINTS.strak,rooms:bRef,benut:96,flexMode:'end',flex:0,fit:true,verOch:m2.verOch,sub:`${bRef} kamer${bRef===1?'':'s'} · solver rekent…`,metric:`${demandCount}/${demandCount}`,hoe:'De solver rekent het strakste, meest opgevulde rooster door…'},
-        {key:'eigen',naam:'Jouw instellingen',krapte:KRAPTE.eigen,tint:TINTS.eigen,rooms:bRef,benut:m2.benutting,flexMode:rules.flexMode||'spread',flex:0,fit:true,eigen:true,verOch:m2.verOch,sub:`${bRef} kamer${bRef===1?'':'s'} · solver rekent…`,metric:`${demandCount}/${demandCount}`,hoe:'De solver rekent jouw eigen instellingen uit module Tijden door…'},
-        {key:'ruim',naam:'Ruim · kamer erbij',krapte:KRAPTE.ruim,tint:TINTS.ruim,rooms:bRef+1,benut:74,flexMode:'spread',flex:0,fit:true,verOch:m2.verOch,sub:`${bRef+1} kamers · solver rekent…`,metric:`${demandCount}/${demandCount}`,hoe:'De solver rekent de ruimste opzet met een extra kamer door…'},
+        {key:'strak',naam:'Maximaal strak',krapte:KRAPTE.strak,tint:TINTS.strak,rooms:bRef,benut:96,flexMode:'end',flex:0,fit:true,sub:`${bRef} kamer${bRef===1?'':'s'} · solver rekent…`,metric:`${demandCount}/${demandCount}`,hoe:'De solver rekent het strakste, meest opgevulde rooster door…'},
+        {key:'flex',naam:'Strak met flexruimte',krapte:KRAPTE.flex,tint:TINTS.flex,rooms:bRef,benut:84,flexMode:'spread',flex:0,fit:true,sub:`${bRef} kamer${bRef===1?'':'s'} · solver rekent…`,metric:`${demandCount}/${demandCount}`,hoe:'De solver zoekt de balans met flexblokken als buffer…'},
+        {key:'ruim',naam:'Ruim · kamer erbij',krapte:KRAPTE.ruim,tint:TINTS.ruim,rooms:bRef+1,benut:74,flexMode:'spread',flex:0,fit:true,sub:`${bRef+1} kamers · solver rekent…`,metric:`${demandCount}/${demandCount}`,hoe:'De solver rekent de ruimste opzet met een extra kamer door…'},
       ]
     }
     // Toepassen: alléén benutting, flexmodus en kamers — codes blijven ongemoeid,
@@ -3075,7 +2542,7 @@ export default function RasterTool(){
     const applyScenario=s=>{
       setM2(p=>({...p,benutting:s.benut}))
       setRules(p=>({...p,flexMode:s.flexMode}))
-      setCapacity({mode:'vast',kamers:s.rooms})
+      setCapacity(c=>({mode:'vast',kamers:s.rooms,specialisten:Math.max(s.rooms,c.specialisten)}))
     }
 
     // ── Time-grid raster (resource calendar: rooms as columns, time on Y) ──────
@@ -3133,7 +2600,7 @@ export default function RasterTool(){
     // A positioned block (appointment OR flex) with drag + resize handles
     const Block=({it,day,slot})=>{
       const isFlex=it.isFlex
-      const clr=isFlex?{bg:FLEX_COLOR.bg,brd:FLEX_COLOR.brd,fg:FLEX_COLOR.fg}:getColor(it)
+      const clr=isFlex?{bg:'#E8F5E9',brd:'#7FC08A',fg:'#2E6B3A'}:getColor(it)
       const beingDragged=dragItem&&dragItem.appt&&dragItem.appt.id===it.id&&dragItem.mode!=='resize-top'&&dragItem.mode!=='resize-bot'
       const top=toY(it.start)+1
       const h=Math.max((it.duur)*PXMIN-2, 22)
@@ -3144,7 +2611,7 @@ export default function RasterTool(){
           onMouseDown={e=>startDrag(e,{mode:'move',appt:it,fromDay:day,fromSlot:slot})}
           onTouchStart={e=>startDrag(e,{mode:'move',appt:it,fromDay:day,fromSlot:slot})}
           style={{position:'absolute',top,left:`calc(${L}% + 2px)`,width:`calc(${W}% - 4px)`,height:h,
-            background:isFlex?FLEX_STRIPE(6,13)
+            background:isFlex?'repeating-linear-gradient(45deg,#E8F5E9,#E8F5E9 6px,#F2FBF3 6px,#F2FBF3 13px)'
               :it.overbook?'repeating-linear-gradient(45deg,#F3EEFA,#F3EEFA 6px,#EBE2F7 6px,#EBE2F7 13px)':clr.bg,
             color:it.overbook?'#6D28B5':clr.fg,border:`1px solid ${it.overbook?'#8B5CF6':clr.brd}`,
             borderLeft:(isFlex||it.overbook)?`3px dashed ${it.overbook?'#8B5CF6':clr.brd}`:`3px solid ${clr.brd}`,
@@ -3256,7 +2723,7 @@ export default function RasterTool(){
                       {[15,30,45].map(d=>(
                         <button key={d} onClick={()=>addToRoom(selDay,room,{flex:true,duur:d})}
                           style={{flex:1,padding:'7px 4px',borderRadius:7,cursor:'pointer',fontSize:11.5,fontWeight:600,
-                            background:FLEX_COLOR.bg,color:FLEX_COLOR.fg,border:`1px dashed ${FLEX_COLOR.brd}`}}>{d} min</button>
+                            background:'#E3F1E7',color:'#2E6B3A',border:'1px dashed #9AC9A8'}}>{d} min</button>
                       ))}
                     </div>
                   </div>
@@ -3354,24 +2821,25 @@ export default function RasterTool(){
           </div>
         </div>
 
-        {/* ── CAPACITEITSPLANNING — kies het aantal kamers + past-advies ── */}
+        {/* ── CAPACITEITSPLANNING — kies kamers/specialisten + past-advies ── */}
         {raster.capacity&&(()=>{
           const cap=raster.capacity
-          const besch=capacity.kamers
+          const besch=Math.min(capacity.kamers,capacity.specialisten)
           const nodig=cap.needed
           const past=nodig<=besch
+          const knel=capacity.kamers<capacity.specialisten?'kamers':capacity.specialisten<capacity.kamers?'specialisten':'kamers én specialisten'
           const vast=capacity.mode==='vast'
           const status = vast
             ? (cap.fits
-                ? {t:'ok',ico:'✓',kop:`Past — ${nodig} parallel ${nodig===1?'spreekuur':'spreekuren'} nodig, ${besch} ${besch===1?'kamer':'kamers'} beschikbaar`,
-                   sub:`Er blijft ${Math.max(0,besch-nodig)} ${besch-nodig===1?'kamer':'kamers'} over.`}
-                : {t:'bad',ico:'✗',kop:`Past niet — ${nodig} kamers nodig, ${besch} beschikbaar`,
-                   sub:`${cap.overflow} afspra${cap.overflow===1?'ak staat':'ken staan'} op "nog te plannen". Verhoog het aantal kamers, verleng de spreekuren of verlaag de vraag.`})
+                ? {t:'ok',ico:'✓',kop:`Past — ${nodig} parallel ${nodig===1?'spreekuur':'spreekuren'} nodig, ${besch} beschikbaar`,
+                   sub:`Er blijft ${Math.max(0,besch-nodig)} ${besch-nodig===1?'kamer/specialist':'kamers/specialisten'} over.`}
+                : {t:'bad',ico:'✗',kop:`Past niet — ${nodig} nodig, ${besch} beschikbaar (${knel} beperkend)`,
+                   sub:`${cap.overflow} afspra${cap.overflow===1?'ak staat':'ken staan'} op "nog te plannen". Verhoog ${knel}, verleng spreekuren of verlaag de vraag.`})
             : (nodig<=besch
-                ? {t:'ok',ico:'✓',kop:`Past binnen je capaciteit — ${nodig} van ${besch} ${besch===1?'kamer':'kamers'} benut`,
+                ? {t:'ok',ico:'✓',kop:`Past binnen je capaciteit — ${nodig} van ${besch} beschikbaar benut`,
                    sub:'Automatische modus: het rooster groeit precies tot wat nodig is.'}
                 : {t:'warn',ico:'△',kop:`Rooster gebruikt ${nodig} parallelle spreekuren — meer dan de ${besch} die je opgaf`,
-                   sub:'Zet "Vast aantal" aan om te begrenzen (overschot gaat dan naar "nog te plannen"), of verhoog het aantal kamers.'})
+                   sub:'Zet "Vast aantal" aan om te begrenzen (overschot gaat dan naar "nog te plannen"), of verhoog kamers/specialisten.'})
           const stCol=status.t==='ok'?C.green:status.t==='bad'?C.danger:'#B8860B'
           const stBg=status.t==='ok'?'#EDF7F0':status.t==='bad'?'#FCEEEB':'#FBF3E2'
           const Stepper=({icon,label,val,onCh,min=1,max=20})=>(
@@ -3405,8 +2873,10 @@ export default function RasterTool(){
                 </div>
               </div>
               <Stepper icon="🚪" label="Kamers" val={capacity.kamers} onCh={v=>setCapacity(p=>({...p,kamers:v}))}/>
-              <button onClick={()=>setCapacity(p=>({...p,kamers:Math.max(p.kamers,nodig)}))}
-                title="Stel het aantal kamers in op het minimaal benodigde aantal"
+              <span style={{fontSize:16,color:C.muted,fontWeight:300}}>×</span>
+              <Stepper icon="🩺" label="Specialisten" val={capacity.specialisten} onCh={v=>setCapacity(p=>({...p,specialisten:v}))}/>
+              <button onClick={()=>setCapacity(p=>({...p,kamers:Math.max(p.kamers,nodig),specialisten:Math.max(p.specialisten,nodig)}))}
+                title="Stel kamers én specialisten in op het minimaal benodigde aantal"
                 style={{padding:'8px 12px',borderRadius:9,border:`1px solid ${C.border}`,background:C.surface2,cursor:'pointer',
                   fontSize:11.5,fontWeight:600,color:C.text}}>Stel in op benodigd ({nodig})</button>
               <div style={{flex:1,minWidth:220,display:'flex',alignItems:'center',gap:11,padding:'10px 14px',
@@ -3520,11 +2990,11 @@ export default function RasterTool(){
 
         {/* ── 3 SCENARIO'S — inklapbaar ── */}
         <div style={{marginBottom:12}}>
-        <PanelKop id="scenarios" titel="Scenario's" samenvatting="Maximaal strak · Jouw instellingen · Ruim (kamer erbij)"/>
+        <PanelKop id="scenarios" titel="Scenario's" samenvatting="Maximaal strak · Krap + flex · Ruim (kamer erbij)"/>
         {openPanels.scenarios&&(
         <div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:12,padding:'14px 16px'}}>
           <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:11,flexWrap:'wrap'}}>
-            <span style={{fontSize:11.5,color:C.muted,flex:1,minWidth:200}}>Een <b style={{color:C.text}}>solver</b> rekent met de échte engine drie scenario's door in je <b style={{color:C.text}}>{beschRooms} ingestelde kamer{beschRooms===1?'':'s'}</b>: <b style={{color:C.primary}}>1 · Maximaal strak</b> (alles opgevuld, weinig flex), <b style={{color:C.green}}>2 · Jouw instellingen</b> (exact de benutting én ochtend/middag-verdeling uit module Tijden), <b style={{color:'#8B5CF6'}}>3 · Ruim</b> (kamer erbij, de meeste lucht). Je kunt vrij heen en weer schakelen.</span>
+            <span style={{fontSize:11.5,color:C.muted,flex:1,minWidth:200}}>Een <b style={{color:C.text}}>solver</b> rekent met de échte engine drie <b style={{color:C.text}}>kraptes</b> door — ze verschillen in speelruimte, niet in je codes: <b style={{color:C.primary}}>1 · Maximaal strak</b> (alles opgevuld, weinig flex), <b style={{color:C.green}}>2 · Krap met flexruimte</b> (zelfde kamers, meer buffer), <b style={{color:'#8B5CF6'}}>3 · Ruim</b> (kamer erbij, de meeste lucht). Je kunt vrij heen en weer schakelen.</span>
             <span style={{fontSize:10.5,fontWeight:700,padding:'4px 11px',borderRadius:20,display:'inline-flex',alignItems:'center',gap:6,
               background:solving?'#FBF3E2':'#EAF5EE',color:solving?'#B8860B':C.green,border:`1px solid ${solving?'#EFD9B4':'#C9E6D5'}`}}>
               <span style={{width:7,height:7,borderRadius:'50%',background:solving?'#D9860A':C.green,animation:solving?'pmPulse 1s infinite':'none'}}/>
@@ -3537,7 +3007,7 @@ export default function RasterTool(){
               // niveau. De drie niveaus hebben unieke (benut,rooms,flexMode) → precies
               // één is actief, ongeacht de volgorde waarin je klikt.
               const actief=Math.abs(m2.benutting-s.benut)<2.5
-                && (capacity.mode==='vast'?capacity.kamers:beschRooms)===s.rooms
+                && (capacity.mode==='vast'?Math.min(capacity.kamers,capacity.specialisten):beschRooms)===s.rooms
                 && rules.flexMode===s.flexMode
               const bg=s.tint===C.primary?C.blueAccent:s.tint===C.green?'#EDF7F0':'#F3EEFA'
               // Speelruimte = de gereserveerde buffer (100−benutting), plus een bonus
@@ -3565,7 +3035,7 @@ export default function RasterTool(){
                   <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:10,padding:'6px 10px',borderRadius:8,background:s.tint,color:'#fff'}}>
                     <span style={{fontSize:14}}>◆</span><span style={{fontSize:12,fontWeight:800}}>{s.metric}</span>
                   </div>
-                  <div style={{display:'flex',gap:8,marginBottom:8}}>
+                  <div style={{display:'flex',gap:8,marginBottom:11}}>
                     <div style={{flex:1,background:C.surface2,borderRadius:8,padding:'7px 9px'}}>
                       <div style={{fontSize:8.5,color:C.muted,textTransform:'uppercase',letterSpacing:'0.05em'}}>Benutting</div>
                       <div style={{fontSize:16,fontWeight:800,color:C.text,fontVariantNumeric:'tabular-nums'}}>{s.benut}%</div></div>
@@ -3574,23 +3044,6 @@ export default function RasterTool(){
                       <div style={{fontSize:16,fontWeight:800,color:s.rooms>beschRooms?s.tint:C.text,fontVariantNumeric:'tabular-nums'}}>
                         {s.rooms}{s.rooms>beschRooms&&<span style={{fontSize:10,fontWeight:600}}> (+{s.rooms-beschRooms})</span>}</div></div>
                   </div>
-                  {/* Ochtend/middag-verdeling uit module Tijden */}
-                  <div style={{background:C.surface2,borderRadius:8,padding:'7px 9px',marginBottom:11}}>
-                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
-                      <span style={{fontSize:8.5,color:C.muted,textTransform:'uppercase',letterSpacing:'0.05em'}}>Verdeling ochtend / middag</span>
-                      <span style={{fontSize:9.5,fontWeight:700,color:C.text}}>{s.verOch??m2.verOch}% / {100-(s.verOch??m2.verOch)}%</span>
-                    </div>
-                    <div style={{display:'flex',height:6,borderRadius:3,overflow:'hidden',background:C.border}}>
-                      <div style={{width:(s.verOch??m2.verOch)+'%',background:s.tint}}/>
-                      <div style={{flex:1,background:s.tint,opacity:0.35}}/>
-                    </div>
-                  </div>
-                  {s.eigen&&(
-                    <div style={{fontSize:9.5,fontWeight:700,color:C.green,background:'#EDF7F0',border:'1px solid #C9E6D5',
-                      borderRadius:7,padding:'5px 8px',marginBottom:9,textAlign:'center'}}>
-                      ⚙ Overgenomen uit module Tijden
-                    </div>
-                  )}
                   <div style={{fontSize:10.5,color:C.text,lineHeight:1.45,marginBottom:11,minHeight:60,
                     padding:'8px 10px',borderRadius:8,background:s.fit?'#EDF7F0':'#FCEEEB',border:`1px solid ${s.fit?'#C9E6D5':'#F0C8C3'}`}}>
                     <b style={{color:s.fit?C.green:C.danger}}>{s.fit?'✓ Haalbaar':'✗ Niet volledig'}</b> — {s.hoe}
@@ -3646,8 +3099,8 @@ export default function RasterTool(){
               {[{v:'end',l:'Buffer: einde'},{v:'spread',l:'Buffer: verspreid'}].map(o=>(
                 <button key={o.v} onClick={()=>setRules(p=>({...p,flexMode:o.v}))}
                   style={{padding:'6px 12px',borderRadius:16,cursor:'pointer',fontSize:11.5,fontWeight:600,
-                    background:rules.flexMode===o.v?FLEX_COLOR.bg:C.white,color:rules.flexMode===o.v?FLEX_COLOR.fg:C.muted,
-                    border:`1px solid ${rules.flexMode===o.v?FLEX_COLOR.brd:C.border}`}}>{o.l}</button>
+                    background:rules.flexMode===o.v?'#E3F1E7':C.white,color:rules.flexMode===o.v?'#2E6B3A':C.muted,
+                    border:`1px solid ${rules.flexMode===o.v?'#9AC9A8':C.border}`}}>{o.l}</button>
               ))}
               <span style={{marginLeft:'auto',fontSize:10,color:C.muted,fontStyle:'italic'}}>↑↓ verplaatst de volgorde · nr = prioriteit</span>
             </div>
@@ -3661,8 +3114,8 @@ export default function RasterTool(){
           const WeekBlok=({it,di})=>{
             if(it.isFlex) return(
               <div style={{position:'absolute',top:toY(it.start)+0.5,left:1,right:1,height:Math.max(it.duur*PXMIN-1,5),
-                borderRadius:3,background:FLEX_STRIPE(4,8),
-                border:`1px solid ${FLEX_COLOR.brd}`,zIndex:2}}/>)
+                borderRadius:3,background:'repeating-linear-gradient(45deg,#EAF6EC,#EAF6EC 4px,#F4FBF5 4px,#F4FBF5 8px)',
+                border:'1px solid #C6E4CC',zIndex:2}}/>)
             const clr=getColor(it), h=Math.max(it.duur*PXMIN-1,9)
             return(
               <div title={`${it.code} · ${it.description||''} · ${toTime(it.start)}–${toTime(it.end)}`}
@@ -3688,7 +3141,7 @@ export default function RasterTool(){
                   {[['Nieuw',NEW_PALETTE[0]],['Controle',CTRL_PALETTE[0]],['Op afstand',{bg:'#D6EAE3',brd:'#94C5B4'}]].map(([l,c])=>(
                     <span key={l} style={{display:'flex',alignItems:'center',gap:5}}><span style={{width:11,height:11,borderRadius:3,background:c.bg,border:`1px solid ${c.brd}`}}/>{l}</span>
                   ))}
-                  <span style={{display:'flex',alignItems:'center',gap:5}}><span style={{width:11,height:11,borderRadius:3,background:FLEX_STRIPE(3,6),border:`1px solid ${FLEX_COLOR.brd}`}}/>Flex</span>
+                  <span style={{display:'flex',alignItems:'center',gap:5}}><span style={{width:11,height:11,borderRadius:3,background:'repeating-linear-gradient(45deg,#EAF6EC,#EAF6EC 3px,#F4FBF5 3px,#F4FBF5 6px)',border:'1px solid #C6E4CC'}}/>Flex</span>
                 </div>
                 <span style={{marginLeft:'auto',fontSize:11,color:C.muted,fontStyle:'italic'}}>klik een afspraak of dag om die dag te openen · zoom past de hoogte aan</span>
               </div>
@@ -3853,7 +3306,7 @@ export default function RasterTool(){
               <span style={{width:11,height:11,borderRadius:3,background:CTRL_PALETTE[0].bg,border:`1px solid ${CTRL_PALETTE[0].brd}`}}/>Controle
             </div>
             <div style={{display:'flex',alignItems:'center',gap:5,fontSize:11.5,color:C.muted}}>
-              <span style={{width:11,height:11,borderRadius:3,background:FLEX_STRIPE(2,5),border:`1px dashed ${FLEX_COLOR.brd}`}}/>Flex ({100-m2.benutting}%)
+              <span style={{width:11,height:11,borderRadius:3,background:'repeating-linear-gradient(45deg,#E8F5E9,#E8F5E9 2px,#F1FBF2 2px,#F1FBF2 5px)',border:'1px dashed #81C784'}}/>Flex ({100-m2.benutting}%)
             </div>
           </div>
           <div style={{display:'flex',gap:14,fontSize:12,fontWeight:600}}>
@@ -3933,14 +3386,13 @@ export default function RasterTool(){
   }
 
 
-  // Index 0 = Tijden (renderMod1), index 1 = Gegevens (renderMod0)
-  const mods=[renderMod1,renderMod0,renderMod2,renderMod3]
+  const mods=[renderMod0,renderMod1,renderMod2,renderMod3]
 
   // ─── LAYOUT — POLIRASTER STUDIO (live workspace: rail + panel + canvas) ────
   const clockStr=now.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'})
   const RAIL=[
-    {id:0,label:'Tijden',icon:<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>},
-    {id:1,label:'Gegevens',icon:<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>},
+    {id:0,label:'Gegevens',icon:<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>},
+    {id:1,label:'Tijden',icon:<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>},
     {id:2,label:'Regels',icon:<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2" fill="currentColor"/><circle cx="15" cy="12" r="2" fill="currentColor"/><circle cx="7" cy="18" r="2" fill="currentColor"/></svg>},
     {id:3,label:'Raster',icon:<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M9 9v12M15 9v12"/></svg>},
   ]
@@ -3982,7 +3434,7 @@ export default function RasterTool(){
         <div style={{display:'flex',flexDirection:'column',gap:6,flex:1}}>
           {RAIL.map((r,i)=>{
             const on=active===r.id
-            const done = r.id===1?(newRows.some(x=>x.afspraakcode||x.omschrijving)||ctrlRows.some(x=>x.afspraakcode||x.omschrijving))
+            const done = r.id===0?(newRows.some(x=>x.afspraakcode||x.omschrijving)||ctrlRows.some(x=>x.afspraakcode||x.omschrijving))
               : r.id===3?!!raster : true
             return(
               <button key={r.id} onClick={()=>nav(r.id)} title={r.label} style={{
@@ -4028,7 +3480,7 @@ export default function RasterTool(){
             <div>
               <div style={{fontSize:9,fontWeight:700,color:C.primary,letterSpacing:'0.2em',marginBottom:3}}>INSTELLINGEN</div>
               <div style={{fontFamily:"'Newsreader',Georgia,serif",fontSize:21,fontWeight:500,color:C.text}}>
-                {active===0?'Spreekuurtijden':active===1?'Gegevens invoer':'Planregels'}
+                {active===0?'Gegevens invoer':active===1?'Spreekuurtijden':'Planregels'}
               </div>
             </div>
             <button onClick={()=>nav(3)} title="Paneel sluiten — volledig raster"
