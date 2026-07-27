@@ -45,14 +45,28 @@ const FLEX_STRIPE=(a=6,b=13)=>`repeating-linear-gradient(45deg,${FLEX_COLOR.bg},
 const DAYS=['Maandag','Dinsdag','Woensdag','Donderdag','Vrijdag','Zaterdag','Zondag']
 const DAY_ABBR=['MA','DI','WO','DO','VR']
 const WEEKDAY_KEYS=['ma','di','wo','do','vr']
+// Volgorde: eerst de spreekuurtijden (het kader), dan de gegevens die erin passen.
 const MODULES=[
-  {id:0,title:'Gegevens invoer',icon:'📋',short:'Gegevens'},
-  {id:1,title:'Spreekuurtijden',icon:'⏰',short:'Tijden'},
+  {id:0,title:'Spreekuurtijden',icon:'⏰',short:'Tijden'},
+  {id:1,title:'Gegevens invoer',icon:'📋',short:'Gegevens'},
   {id:2,title:'Planregels',icon:'📐',short:'Planregels'},
   {id:3,title:'Rasterproces',icon:'📅',short:'Raster'}
 ]
 const PX_PER_MIN = 3.0
 const MIN_BLOCK_H = 28 // minimum block height in px
+
+// Per dagdeel: op wélke weekdagen is dat dagdeel van toepassing. Ochtend en middag
+// staan standaard op maandag t/m vrijdag; de avond staat standaard volledig uit.
+const DEF_DD_DAGEN={
+  O:{ma:true, di:true, wo:true, do:true, vr:true},
+  M:{ma:true, di:true, wo:true, do:true, vr:true},
+  A:{ma:false,di:false,wo:false,do:false,vr:false},
+}
+const ddDagenVan=m2=>({
+  O:{...DEF_DD_DAGEN.O, ...(m2?.ddDagen?.O||{})},
+  M:{...DEF_DD_DAGEN.M, ...(m2?.ddDagen?.M||{})},
+  A:{...DEF_DD_DAGEN.A, ...(m2?.ddDagen?.A||{})},
+})
 
 const PLAN_INFO = {
   // ── Planning volgorde ──────────────────────────────────────────────────────
@@ -360,7 +374,8 @@ export default function RasterTool(){
   const [importBadge,setImportBadge]=useState(null)
   const [m2,setM2]=useState({ochStart:'08:30',ochEnd:'12:00',midStart:'13:00',midEnd:'16:30',
     avondOn:false,avondStart:'17:00',avondEnd:'20:00',verAvond:0,
-    verOch:50,benutting:85,days:{ma:20,di:20,wo:20,do:20,vr:20}})
+    verOch:50,benutting:85,days:{ma:20,di:20,wo:20,do:20,vr:20},
+    ddDagen:{O:{...DEF_DD_DAGEN.O},M:{...DEF_DD_DAGEN.M},A:{...DEF_DD_DAGEN.A}}})
   const [rules,setRules]=useState({
     shortFirst:false, spoedFirst:false, certainFirst:false, baileyWelsh:false,
     digitalMode:'spread', groupMode:'spread', flexMode:'end',
@@ -893,8 +908,11 @@ export default function RasterTool(){
       return base
     }
 
-    // Which dagdelen exist (from spreekuurtijden) and their distribution weights
-    const avondOn=!!m2.avondOn
+    // Per dagdeel: op welke weekdagen dat dagdeel überhaupt open is (module Tijden).
+    // De avond bestaat alleen als er ook daadwerkelijk een dag voor is aangevinkt.
+    const ddDagen=ddDagenVan(m2)
+    const ddOpenOp=(x,di)=>!!ddDagen[x]?.[WEEKDAY_KEYS[di]]
+    const avondOn=WEEKDAY_KEYS.some(k=>ddDagen.A[k])
     const avondStart=toMin(m2.avondStart||'17:00'), avondEnd=toMin(m2.avondEnd||'20:00')
     const avDur=Math.max(0,avondEnd-avondStart)
     const avUsable=Math.max(15,Math.round(avDur*(m2.benutting/100)))
@@ -904,25 +922,32 @@ export default function RasterTool(){
 
     // Build appointment instances, each tagged with its day + dagdeel, distributed PROPORTIONALLY
     // across allowed days (weighted by weekday %) and allowed dagdelen (weighted by dagdeel %).
+    // Een afspraak kan alleen op een (dag, dagdeel) landen waar dat dagdeel open is.
     const buildAll=(rows,cat,total)=>{
       const out=[]
       rows.forEach((code,ci)=>{
         const weekCount=Math.round(total*((code.percentage||0)/100))
         if(weekCount<=0) return
-        // Allowed days = code's weekdays that also have a weekday-% > 0
-        const allowedDays=[0,1,2,3,4].filter(di=>code.weekdagen?.[DAY_ABBR[di]] && (m2.days[WEEKDAY_KEYS[di]]||0)>0)
-        if(!allowedDays.length) return
-        const dayCounts=distribute(weekCount, allowedDays.map(di=>m2.days[WEEKDAY_KEYS[di]]||0))
-        // Allowed dagdelen = code's dagdelen that also exist in spreekuurtijden
+        // Dagdelen die deze code mag gebruiken en die in de spreekuurtijden bestaan
         const cdd=code.dagdelen||{O:true,M:true,A:false}
         const allowedDd=DD.filter(x=>cdd[x])
         const useDd=allowedDd.length?allowedDd:DD
+        // Toegestane dagen = weekdag van de code, weekdag-% > 0, én minstens één
+        // dagdeel dat op díe dag open staat.
+        const allowedDays=[0,1,2,3,4].filter(di=>
+          code.weekdagen?.[DAY_ABBR[di]] && (m2.days[WEEKDAY_KEYS[di]]||0)>0
+          && useDd.some(x=>ddOpenOp(x,di)))
+        if(!allowedDays.length) return
+        const dayCounts=distribute(weekCount, allowedDays.map(di=>m2.days[WEEKDAY_KEYS[di]]||0))
         allowedDays.forEach((di,idx)=>{
           const dCount=dayCounts[idx]; if(dCount<=0) return
-          const w=useDd.map(x=>ddWeight[x]||0)
+          // Alleen de dagdelen die op déze dag open staan
+          const dayDd=useDd.filter(x=>ddOpenOp(x,di))
+          if(!dayDd.length) return
+          const w=dayDd.map(x=>ddWeight[x]||0)
           const wsum=w.reduce((a,b)=>a+b,0)
-          const ddCounts=distribute(dCount, wsum>0?w:useDd.map(()=>1))
-          useDd.forEach((x,j)=>{
+          const ddCounts=distribute(dCount, wsum>0?w:dayDd.map(()=>1))
+          dayDd.forEach((x,j)=>{
             for(let k=0;k<ddCounts[j];k++) out.push({
               day:di, dd:x,
               id:cat[0]+ci+'_'+di+'_'+x+'_'+k,
@@ -964,10 +989,13 @@ export default function RasterTool(){
     const perDagdeelNeed=[] // {day,dd,need,placed}
     const built={} // built[day][dd] = rooms[]
     ;[0,1,2,3,4].forEach(di=>{
-      if((m2.days[WEEKDAY_KEYS[di]]||0)===0){ built[di]=null; return }
+      // Dag inactief als het weekdag-% 0 is óf als er geen enkel dagdeel open staat.
+      if((m2.days[WEEKDAY_KEYS[di]]||0)===0 || !DD.some(dd=>ddOpenOp(dd,di))){ built[di]=null; return }
       const g=grouped[di]||{}
       built[di]={}
       DD.forEach(dd=>{
+        // Dagdeel gesloten op deze weekdag → geen spreekuur, geen kamers.
+        if(!ddOpenOp(dd,di)){ built[di][dd]=[]; return }
         // FASE 1 — structuur: pool sorteren (stap 4b) en bin-packen (stap 5).
         const pool=sorteerPool(g[dd]||[])
         // Onbeperkte pak = werkelijk benodigde kamers. In automatische modus IS dit
@@ -991,7 +1019,7 @@ export default function RasterTool(){
 
     // Build slot structure with explicit start times + flex blocks
     const res={ numRooms:maxRooms, mUsable, aUsable, avUsable, ochDur, midDur, avDur, avondOn,
-      ochStart, ochEnd, midStart, midEnd, avondStart, avondEnd, days:{}, ntp:[...overflowInst],
+      ochStart, ochEnd, midStart, midEnd, avondStart, avondEnd, days:{}, ntp:[...overflowInst], ddDagen,
       capacity:{ mode:capMode, kamers:capacity.kamers,
         maxParallel: maxParallel===Infinity?null:maxParallel, needed:neededRooms, used:maxRooms,
         overflow:overflowInst.length, fits: maxParallel===Infinity ? true : neededRooms<=maxParallel } }
@@ -1270,7 +1298,8 @@ export default function RasterTool(){
     setNewRows([]); setCtrlRows([]); setImportBadge(null)
     setM2({ochStart:'08:30',ochEnd:'12:00',midStart:'13:00',midEnd:'16:30',
       avondOn:false,avondStart:'17:00',avondEnd:'20:00',verAvond:0,
-      verOch:50,benutting:85,days:{ma:20,di:20,wo:20,do:20,vr:20}})
+      verOch:50,benutting:85,days:{ma:20,di:20,wo:20,do:20,vr:20},
+    ddDagen:{O:{...DEF_DD_DAGEN.O},M:{...DEF_DD_DAGEN.M},A:{...DEF_DD_DAGEN.A}}})
     setRules({shortFirst:false,spoedFirst:false,certainFirst:false,baileyWelsh:false,
       digitalMode:'spread',groupMode:'spread',flexMode:'end',
       spoedDagdeel:'both',flexNoFirstMin:60,digitalEndMinutes:30,
@@ -1348,7 +1377,8 @@ export default function RasterTool(){
         if(state.cfg)      setCfg(state.cfg)
         if(state.newRows)  setNewRows(state.newRows.map(migRow))
         if(state.ctrlRows) setCtrlRows(state.ctrlRows.map(migRow))
-        if(state.m2)       setM2({avondOn:false,avondStart:'17:00',avondEnd:'20:00',verAvond:0,...state.m2})
+        if(state.m2)       setM2({avondOn:false,avondStart:'17:00',avondEnd:'20:00',verAvond:0,...state.m2,
+                             ddDagen:ddDagenVan(state.m2)})
         if(state.rules){
           const sr=state.rules
           setRules({shortFirst:false,spoedFirst:false,certainFirst:false,baileyWelsh:false,
@@ -1362,10 +1392,10 @@ export default function RasterTool(){
           filename:file.name,
           date:state.exportDate?new Date(state.exportDate).toLocaleDateString('nl-NL'):'onbekend'
         })
-        // Navigate to module 1 section 2 (codes table) so user sees their data
+        // Navigeer naar Gegevens (index 1), sectie 2 (codetabel) zodat de data zichtbaar is
         setM1Mode('imported')
         setM1Section(state.newRows?.length>0||state.ctrlRows?.length>0 ? 2 : 1)
-        setActive(0)
+        setActive(1)
         setVisited(new Set([0,1,2,3]))
         alert('✅ Sessie hersteld!\n\nGegevens, codes, tijden en planregels zijn ingeladen.\nGa naar "Rasterproces" om het rooster opnieuw te genereren.')
       }catch(err){
@@ -1397,11 +1427,11 @@ export default function RasterTool(){
         setRaster(null)
         setImportBadge(null)
         setM1Mode('manual'); setM1Section(2)
-        setActive(0); setVisited(new Set([0,1,2,3]))
+        setActive(1); setVisited(new Set([0,1,2,3]))
         alert('✅ Spreekuurgegevens geladen!\n\n'
           +nr.length+' nieuw-code(s) · '+cr.length+' controle-code(s)\n'
           +'Nieuw: '+newPat+'/week · Controle: '+ctrlPat+'/week\n\n'
-          +'Controleer de codes en ga daarna naar "Tijden" en "Regels".')
+          +'Controleer de codes en ga daarna naar "Regels".')
       }catch(err){
         alert('Laden mislukt:\n\n'+err.message
           +'\n\nTip: gebruik de knop "Voorbeeld-Excel" voor het juiste kolomformaat.')
@@ -2064,40 +2094,101 @@ export default function RasterTool(){
             </Card>
           )
         })()}
+        {/* ── DAGDELEN — ochtend, middag en avond ONDER ELKAAR, elk met eigen weekdagen ── */}
         <Card style={{marginBottom:16}}>
-          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
-            <H3 style={{margin:0}}>Tijden per dagdeel</H3>
-            <button onClick={()=>sf('avondOn',!m2.avondOn)} style={{display:'flex',alignItems:'center',gap:8,
-              padding:'6px 12px',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:600,
-              background:m2.avondOn?C.blueAccent:C.white,color:m2.avondOn?C.primary:C.muted,
-              border:`1px solid ${m2.avondOn?C.primary:C.border}`}}>
-              <span style={{width:30,height:17,borderRadius:9,background:m2.avondOn?C.primary:C.border,position:'relative',transition:'all 0.18s'}}>
-                <span style={{position:'absolute',top:2,left:m2.avondOn?15:2,width:13,height:13,borderRadius:'50%',background:'#fff',transition:'left 0.18s'}}/>
-              </span>
-              Avondspreekuur {m2.avondOn?'aan':'uit'}
-            </button>
+          <div style={{marginBottom:14}}>
+            <H3 style={{margin:'0 0 4px'}}>Dagdelen — tijden en weekdagen</H3>
+            <p style={{fontSize:11.5,color:C.muted,margin:0,lineHeight:1.55}}>
+              Stel per dagdeel de start- en eindtijd in en klik de weekdagen aan waarop dat dagdeel
+              van toepassing is. Ochtend en middag staan standaard op maandag t/m vrijdag; de avond
+              staat uit tot je er zelf dagen voor aanzet.
+            </p>
           </div>
-          <div style={{display:'grid',gridTemplateColumns:m2.avondOn?'1fr 1fr 1fr':'1fr 1fr',gap:20}}>
-            {[{label:'Ochtend',s:'ochStart',e:'ochEnd',color:C.primary,dur:m2c.od,show:true},
-              {label:'Middag',s:'midStart',e:'midEnd',color:C.green,dur:m2c.md,show:true},
-              {label:'Avond',s:'avondStart',e:'avondEnd',color:'#8B5CF6',dur:Math.max(0,toMin(m2.avondEnd)-toMin(m2.avondStart)),show:m2.avondOn}
-            ].filter(x=>x.show).map(({label,s,e,color,dur})=>(
-              <div key={s} style={{padding:16,borderRadius:10,border:`1px solid ${C.border}`,borderTop:`3px solid ${color}`}}>
-                <div style={{fontSize:12,fontWeight:700,color:C.text,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:12}}>{label}</div>
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
-                  {[{l:'Start',k:s},{l:'Einde',k:e}].map(({l,k})=>(
-                    <div key={k}><Lbl>{l}</Lbl>
-                      <input type="time" value={m2[k]} onChange={ev=>sf(k,ev.target.value)}
-                        style={{width:'100%',border:`1px solid ${C.border}`,borderRadius:7,padding:'8px 10px',fontSize:14,fontFamily:'inherit',fontWeight:600,color:C.text}}/>
+          {(()=>{
+            const dagen=ddDagenVan(m2)
+            const zetDag=(x,k)=>setM2(p=>{
+              const cur=ddDagenVan(p)
+              const nieuw={...cur,[x]:{...cur[x],[k]:!cur[x][k]}}
+              // De avond bestaat alleen zolang er een dag voor aan staat.
+              return {...p,ddDagen:nieuw,avondOn:WEEKDAY_KEYS.some(d=>nieuw.A[d])}
+            })
+            const alleDagen=(x,val)=>setM2(p=>{
+              const cur=ddDagenVan(p)
+              const rij={}; WEEKDAY_KEYS.forEach(d=>{rij[d]=val})
+              const nieuw={...cur,[x]:rij}
+              return {...p,ddDagen:nieuw,avondOn:WEEKDAY_KEYS.some(d=>nieuw.A[d])}
+            })
+            const RIJEN=[
+              {x:'O',label:'Ochtend',ico:'☀',s:'ochStart',e:'ochEnd',color:C.primary,accent:C.blueAccent,dur:m2c.od},
+              {x:'M',label:'Middag', ico:'🌤',s:'midStart',e:'midEnd',color:C.green,accent:'#EDF7F0',dur:m2c.md},
+              {x:'A',label:'Avond',  ico:'🌙',s:'avondStart',e:'avondEnd',color:'#8B5CF6',accent:'#F3EEFA',
+                dur:Math.max(0,toMin(m2.avondEnd||'20:00')-toMin(m2.avondStart||'17:00'))},
+            ]
+            return RIJEN.map(({x,label,ico,s,e,color,accent,dur})=>{
+              const rij=dagen[x]
+              const aantal=WEEKDAY_KEYS.filter(k=>rij[k]).length
+              const uit=aantal===0
+              return(
+                <div key={x} style={{border:`1px solid ${uit?C.border:color+'55'}`,borderLeft:`4px solid ${uit?C.border:color}`,
+                  borderRadius:11,padding:'14px 16px',marginBottom:12,background:uit?C.surface2:C.white,transition:'all 0.15s'}}>
+                  <div style={{display:'flex',alignItems:'center',gap:14,flexWrap:'wrap'}}>
+                    {/* naam + status */}
+                    <div style={{minWidth:120}}>
+                      <div style={{display:'flex',alignItems:'center',gap:7}}>
+                        <span style={{fontSize:15,opacity:uit?0.4:1}}>{ico}</span>
+                        <span style={{fontSize:13.5,fontWeight:800,color:uit?C.muted:color,letterSpacing:'0.02em'}}>{label}</span>
+                      </div>
+                      <div style={{fontSize:10.5,color:uit?C.danger:C.muted,marginTop:2,fontWeight:uit?700:500}}>
+                        {uit?'staat uit — geen dagen':`${aantal} ${aantal===1?'dag':'dagen'} actief`}
+                      </div>
                     </div>
-                  ))}
+                    {/* start / einde */}
+                    {[{l:'Start',k:s},{l:'Einde',k:e}].map(({l,k})=>(
+                      <div key={k}>
+                        <Lbl>{l}</Lbl>
+                        <input type="time" value={m2[k]} onChange={ev=>sf(k,ev.target.value)}
+                          style={{border:`1px solid ${C.border}`,borderRadius:7,padding:'8px 10px',fontSize:14,
+                            fontFamily:'inherit',fontWeight:600,color:C.text,width:118,background:C.white}}/>
+                      </div>
+                    ))}
+                    {/* duur */}
+                    <div>
+                      <Lbl>Duur</Lbl>
+                      <div style={{padding:'8px 12px',background:uit?C.white:accent,borderRadius:7,
+                        fontSize:13,fontWeight:700,color:uit?C.muted:color,border:`1px solid ${uit?C.border:color+'44'}`,
+                        whiteSpace:'nowrap'}}>{dur} minuten</div>
+                    </div>
+                    {/* weekdagen */}
+                    <div style={{flex:1,minWidth:250}}>
+                      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}}>
+                        <Lbl>Weekdagen</Lbl>
+                        <div style={{display:'flex',gap:5}}>
+                          <button onClick={()=>alleDagen(x,true)} style={{fontSize:9.5,fontWeight:700,padding:'2px 8px',borderRadius:12,
+                            border:`1px solid ${C.border}`,background:C.white,color:C.muted,cursor:'pointer'}}>alles</button>
+                          <button onClick={()=>alleDagen(x,false)} style={{fontSize:9.5,fontWeight:700,padding:'2px 8px',borderRadius:12,
+                            border:`1px solid ${C.border}`,background:C.white,color:C.muted,cursor:'pointer'}}>geen</button>
+                        </div>
+                      </div>
+                      <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                        {WEEKDAY_KEYS.map((k,i)=>{
+                          const on=!!rij[k]
+                          return(
+                            <button key={k} onClick={()=>zetDag(x,k)} title={DAYS[i]}
+                              style={{minWidth:46,padding:'7px 0',borderRadius:8,cursor:'pointer',
+                                fontSize:11.5,fontWeight:800,letterSpacing:'0.04em',transition:'all 0.12s',
+                                background:on?color:C.white,color:on?'#fff':C.muted,
+                                border:`1px solid ${on?color:C.border}`}}>
+                              {DAY_ABBR[i]}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div style={{padding:'7px 12px',background:C.surface2,borderRadius:6,fontSize:12.5,fontWeight:600,color:C.text}}>
-                  Duur: {dur} minuten
-                </div>
-              </div>
-            ))}
-          </div>
+              )
+            })
+          })()}
         </Card>
 
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:16}}>
@@ -3634,13 +3725,14 @@ export default function RasterTool(){
   }
 
 
-  const mods=[renderMod0,renderMod1,renderMod2,renderMod3]
+  // Index 0 = Tijden (renderMod1), index 1 = Gegevens (renderMod0)
+  const mods=[renderMod1,renderMod0,renderMod2,renderMod3]
 
   // ─── LAYOUT — POLIRASTER STUDIO (live workspace: rail + panel + canvas) ────
   const clockStr=now.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'})
   const RAIL=[
-    {id:0,label:'Gegevens',icon:<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>},
-    {id:1,label:'Tijden',icon:<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>},
+    {id:0,label:'Tijden',icon:<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>},
+    {id:1,label:'Gegevens',icon:<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>},
     {id:2,label:'Regels',icon:<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2" fill="currentColor"/><circle cx="15" cy="12" r="2" fill="currentColor"/><circle cx="7" cy="18" r="2" fill="currentColor"/></svg>},
     {id:3,label:'Raster',icon:<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M9 9v12M15 9v12"/></svg>},
   ]
@@ -3682,7 +3774,7 @@ export default function RasterTool(){
         <div style={{display:'flex',flexDirection:'column',gap:6,flex:1}}>
           {RAIL.map((r,i)=>{
             const on=active===r.id
-            const done = r.id===0?(newRows.some(x=>x.afspraakcode||x.omschrijving)||ctrlRows.some(x=>x.afspraakcode||x.omschrijving))
+            const done = r.id===1?(newRows.some(x=>x.afspraakcode||x.omschrijving)||ctrlRows.some(x=>x.afspraakcode||x.omschrijving))
               : r.id===3?!!raster : true
             return(
               <button key={r.id} onClick={()=>nav(r.id)} title={r.label} style={{
@@ -3728,7 +3820,7 @@ export default function RasterTool(){
             <div>
               <div style={{fontSize:9,fontWeight:700,color:C.primary,letterSpacing:'0.2em',marginBottom:3}}>INSTELLINGEN</div>
               <div style={{fontFamily:"'Newsreader',Georgia,serif",fontSize:21,fontWeight:500,color:C.text}}>
-                {active===0?'Gegevens invoer':active===1?'Spreekuurtijden':'Planregels'}
+                {active===0?'Spreekuurtijden':active===1?'Gegevens invoer':'Planregels'}
               </div>
             </div>
             <button onClick={()=>nav(3)} title="Paneel sluiten — volledig raster"
