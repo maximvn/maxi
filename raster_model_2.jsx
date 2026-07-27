@@ -353,8 +353,8 @@ export default function RasterTool(){
   const [m1Section,setM1Section]=useState(1)
   const [cfg,setCfg]=useState({newPat:10,ctrlPat:20,newCodes:2,ctrlCodes:3})
   const [poli,setPoli]=useState({naam:'',specialisme:''})   // vrij invulbare poli-identiteit
-  // Capaciteitsbasis: 'auto' = groeit vrij; 'vast' = begrensd tot gekozen kamers/specialisten
-  const [capacity,setCapacity]=useState({mode:'auto',kamers:3,specialisten:2})
+  // Capaciteitsbasis: 'auto' = groeit vrij; 'vast' = begrensd tot het gekozen aantal kamers
+  const [capacity,setCapacity]=useState({mode:'auto',kamers:3})
   const [newRows,setNewRows]=useState([])
   const [ctrlRows,setCtrlRows]=useState([])
   const [importBadge,setImportBadge]=useState(null)
@@ -953,12 +953,11 @@ export default function RasterTool(){
     const ddIndex={O:0,M:1,A:2}
     const ddPrefix={O:'o',M:'m',A:'a'}
 
-    // ── CAPACITEIT — gekozen aantal kamers/specialisten begrenst het aantal
-    //    parallelle spreekuren per dagdeel. De bindende beperking is het kleinste
-    //    van beide (een specialist heeft een kamer nodig, en omgekeerd).
+    // ── CAPACITEIT — het gekozen aantal kamers begrenst het aantal parallelle
+    //    spreekuren per dagdeel.
     const capMode=capacity.mode||'auto'
     const maxParallel = capMode==='vast'
-      ? Math.max(1, Math.min(capacity.kamers||1, capacity.specialisten||1))
+      ? Math.max(1, capacity.kamers||1)
       : Infinity
     let maxRooms=1, neededRooms=1
     const overflowInst=[]
@@ -993,7 +992,7 @@ export default function RasterTool(){
     // Build slot structure with explicit start times + flex blocks
     const res={ numRooms:maxRooms, mUsable, aUsable, avUsable, ochDur, midDur, avDur, avondOn,
       ochStart, ochEnd, midStart, midEnd, avondStart, avondEnd, days:{}, ntp:[...overflowInst],
-      capacity:{ mode:capMode, kamers:capacity.kamers, specialisten:capacity.specialisten,
+      capacity:{ mode:capMode, kamers:capacity.kamers,
         maxParallel: maxParallel===Infinity?null:maxParallel, needed:neededRooms, used:maxRooms,
         overflow:overflowInst.length, fits: maxParallel===Infinity ? true : neededRooms<=maxParallel } }
     const snap5=t=>Math.round(t/5)*5
@@ -1193,37 +1192,38 @@ export default function RasterTool(){
   //    (1) planregel-strategie, (2) benutting, (3) VERDELING over dagen/dagdelen —
   //    bv. nieuw 's ochtends & controle 's middags, of type-specifieke dagen — en
   //    kiest per doel de combinatie die alles het best & rustigst inplant. ──
-  // De solver rekent 3 KRAPTE-NIVEAUS door met de ECHTE engine, ALTIJD vanuit de
-  // ingestelde kamers/specialisten (baseRooms). Scenario 1 & 2 gebruiken exact die
-  // ingestelde capaciteit — ze verschillen alléén in speelruimte (benutting + flex):
-  // 1 = maximaal strak, 2 = strak met flexruimte. Scenario 3 = ruim: één kamer erbij.
-  // De codes blijven ongemoeid, dus schakelen tussen 1↔2 is volledig omkeerbaar.
+  // De solver rekent 3 scenario's door met de ECHTE engine, ALTIJD vanuit het
+  // ingestelde aantal kamers (baseRooms). Scenario 1 & 2 gebruiken exact die
+  // capaciteit; scenario 3 zet er één kamer bij.
+  //   1 · Maximaal strak  — hoogste benutting, flex aan het einde
+  //   2 · Jouw instellingen — precies de waarden uit module Tijden (benutting én
+  //       de ochtend/middag-verdeling) plus je eigen flexmodus, doorgerekend in
+  //       jouw kamers. Zo zie je wat je eigen configuratie oplevert.
+  //   3 · Ruim — een kamer erbij en de laagste benutting: de meeste lucht.
+  // Alle drie erven de ochtend/middag-verdeling (verOch) en weekdagverdeling uit
+  // module Tijden; de codes blijven ongemoeid, dus schakelen is omkeerbaar.
   const runSolver=useCallback((cfg,newRows,ctrlRows,m2,rules,baseRooms)=>{
     const clampB=b=>Math.max(60,Math.min(98,Math.round(b)))
     const R0=Math.max(1,baseRooms||1)
-    // Eén doorrekening bij (kamers, benutting, flexmodus) — codes blijven ongemoeid.
+    // Eén doorrekening bij (kamers, benutting, flexmodus). m2 — en dus verOch,
+    // de weekdagverdeling en de spreekuurtijden — gaat onveranderd mee.
     const evalAt=(rooms,benut,flexMode)=>{
       const res=computeRaster(cfg,newRows,ctrlRows,{...m2,benutting:benut},
-        {...rules,flexMode},{mode:'vast',kamers:rooms,specialisten:rooms})
+        {...rules,flexMode},{mode:'vast',kamers:rooms})
       const k=res.kpi.week
-      return {rooms,benut,flexMode,overflow:res.ntp.length,
+      return {rooms,benut,flexMode,overflow:res.ntp.length,verOch:m2.verOch,
         flex:k.flex,spreiding:k.spreiding,wissels:k.wissels,planned:k.planned,capacity:k.capacity}
     }
     // Laagste benutting die in R kamers nog past (= meeste flex terwijl alles past).
     const minFit=R=>{ for(let b=60;b<=98;b+=2){ if(evalAt(R,b,'spread').overflow===0) return b } return 98 }
     const fitBase=minFit(R0)          // strakste benutting die nog past in R0
     const fitPlus=minFit(R0+1)        // idem met een kamer erbij
-    // Kraptes bij de INGESTELDE kamers (R0) voor 1 & 2; R0+1 voor 3. Beide moeten
-    // passen → minimaal fitBase. Als de vraag R0 helemaal vult, schuiven 1 & 2 naar
-    // elkaar toe (dan is er eerlijk gezegd geen flexruimte zonder kamer erbij → 3).
-    // 1 maximaal strak: hoogste benutting, flex aan het einde (afspraken back-to-back).
-    // 2 strak met flex: lagere benutting → meer buffer, verspreid tussen de afspraken.
-    const b1=clampB(Math.max(fitBase,96))                       // strak: maximaal opgevuld
-    const b2=clampB(Math.max(fitBase,74))                       // flex: ruimer, buffers ertussen
-    const b3=clampB(Math.max(fitPlus,72))                       // ruim: laag, met kamer erbij
-    const t1={...evalAt(R0,b1,'end'),      key:'strak', naam:'Maximaal strak'}
-    const t2={...evalAt(R0,b2,'spread'),   key:'flex',  naam:'Strak met flexruimte'}
-    const t3={...evalAt(R0+1,b3,'spread'), key:'ruim',  naam:'Ruim · kamer erbij'}
+    const b1=clampB(Math.max(fitBase,96))          // strak: maximaal opgevuld
+    const bEigen=clampB(m2.benutting)              // JOUW benutting uit module Tijden
+    const b3=clampB(Math.max(fitPlus,72))          // ruim: laag, met kamer erbij
+    const t1={...evalAt(R0,b1,'end'),                       key:'strak', naam:'Maximaal strak'}
+    const t2={...evalAt(R0,bEigen,rules.flexMode||'spread'),key:'eigen', naam:'Jouw instellingen',eigen:true}
+    const t3={...evalAt(R0+1,b3,'spread'),                  key:'ruim',  naam:'Ruim · kamer erbij'}
     return {baseRooms:R0,tiers:[t1,t2,t3]}
   },[computeRaster])
 
@@ -1234,9 +1234,9 @@ export default function RasterTool(){
     if(!raster) return
     setSolving(true)
     const id=setTimeout(()=>{
-      // baseRooms = de INGESTELDE capaciteit (kamers × specialisten, bindend = kleinste),
-      // of het auto-afgeleide aantal kamers. Scenario 1 & 2 gaan hiervan uit.
-      const R=capacity.mode==='vast'?Math.min(capacity.kamers,capacity.specialisten):(raster.numRooms||2)
+      // baseRooms = het INGESTELDE aantal kamers, of het auto-afgeleide aantal.
+      // Scenario 1 & 2 gaan hiervan uit.
+      const R=capacity.mode==='vast'?capacity.kamers:(raster.numRooms||2)
       try{ setSolver(runSolver(cfg,newRows,ctrlRows,m2,rules,R)) }catch(e){ /* solver faalt stil */ }
       setSolving(false)
     },240)
@@ -1266,7 +1266,7 @@ export default function RasterTool(){
     setM1Mode(null); setM1Section(1)
     setCfg({newPat:10,ctrlPat:20,newCodes:2,ctrlCodes:3})
     setPoli({naam:'',specialisme:''})
-    setCapacity({mode:'auto',kamers:3,specialisten:2})
+    setCapacity({mode:'auto',kamers:3})
     setNewRows([]); setCtrlRows([]); setImportBadge(null)
     setM2({ochStart:'08:30',ochEnd:'12:00',midStart:'13:00',midEnd:'16:30',
       avondOn:false,avondStart:'17:00',avondEnd:'20:00',verAvond:0,
@@ -2696,7 +2696,7 @@ export default function RasterTool(){
     const zwakkeKamer=numRooms>1 ? roomLoad.map((l,r)=>({r,gem:l.dagen?l.cnt/l.dagen:0,cnt:l.cnt})).sort((a,b)=>a.cnt-b.cnt)[0] : null
     const avgDuur=nReal>0?Math.max(5,Math.round(plannedMin/nReal)):15
     const flexMin=raster.kpi?raster.kpi.week.flex:0
-    const beschRooms=capacity.mode==='vast'?Math.min(capacity.kamers,capacity.specialisten):numRooms
+    const beschRooms=capacity.mode==='vast'?capacity.kamers:numRooms
 
     // Belasting per (dag,dagdeel) — pauzes blijven ongemoeid, alleen flex schuift mee
     const ddLoads=[]
@@ -2743,20 +2743,21 @@ export default function RasterTool(){
     const demandCount=Math.round(
       newRows.reduce((s,r)=>s+cfg.newPat*((r.percentage||0)/100),0)+
       ctrlRows.reduce((s,r)=>s+cfg.ctrlPat*((r.percentage||0)/100),0)) || (nReal+nNtp)
-    const TINTS={strak:C.primary,flex:C.green,ruim:'#8B5CF6'}
-    const KRAPTE={strak:'Erg krap',flex:'Krap + flex',ruim:'Ruim'}
+    const TINTS={strak:C.primary,eigen:C.green,ruim:'#8B5CF6'}
+    const KRAPTE={strak:'Erg krap',eigen:'Jouw waardes',ruim:'Ruim'}
+    const ddVerd=t=>`ochtend ${t.verOch??m2.verOch}% / middag ${100-(t.verOch??m2.verOch)}%`
     const HOE={
-      strak:t=>`Maximaal opgevuld bij ${t.benut}% benutting in ${t.rooms} kamer${t.rooms===1?'':'s'} — flex aan het einde, slechts ${100-t.benut}% buffer. Efficiëntst, maar weinig ademruimte bij uitloop.`,
-      flex:t=>`Zelfde ${t.rooms} kamer${t.rooms===1?'':'s'}, maar bij ${t.benut}% benutting met ${100-t.benut}% flexruimte verspreid als buffer tussen de afspraken — meer speling voor uitloop en onzekere consulten.`,
-      ruim:t=>`Een kamer erbij (${t.rooms} kamers) bij ${t.benut}% benutting — de meeste lucht met ${100-t.benut}% buffer, ruim verdeeld. Comfortabel, maar duurder qua capaciteit.`,
+      strak:t=>`Maximaal opgevuld bij ${t.benut}% benutting in ${t.rooms} kamer${t.rooms===1?'':'s'} — flex aan het einde, slechts ${100-t.benut}% buffer. Verdeling ${ddVerd(t)}. Efficiëntst, maar weinig ademruimte bij uitloop.`,
+      eigen:t=>`Precies jouw instellingen uit module Tijden: ${t.benut}% benutting, verdeling ${ddVerd(t)}, flex ${t.flexMode==='end'?'aan het einde':'verspreid'} — in je ${t.rooms} ingestelde kamer${t.rooms===1?'':'s'}. Dit is wat je eigen configuratie oplevert.`,
+      ruim:t=>`Een kamer erbij (${t.rooms} kamers) bij ${t.benut}% benutting — de meeste lucht met ${100-t.benut}% buffer. Verdeling ${ddVerd(t)}. Comfortabel, maar duurder qua capaciteit.`,
     }
     const mkTier=t=>{
       const fit=t.overflow===0
       return {key:t.key,naam:t.naam,tint:TINTS[t.key],krapte:KRAPTE[t.key],rooms:t.rooms,benut:t.benut,
-        flexMode:t.flexMode,flex:t.flex,fit,
-        sub:`${t.rooms} kamer${t.rooms===1?'':'s'} · ${t.benut}% benutting · ${100-t.benut}% buffer`,
+        flexMode:t.flexMode,flex:t.flex,fit,eigen:!!t.eigen,verOch:t.verOch,
+        sub:`${t.rooms} kamer${t.rooms===1?'':'s'} · ${t.benut}% benutting · O ${t.verOch??m2.verOch}/M ${100-(t.verOch??m2.verOch)}`,
         metric:fit?`${demandCount}/${demandCount} geplaatst`:`${Math.max(0,demandCount-t.overflow)}/${demandCount} geplaatst`,
-        hoe:fit?HOE[t.key](t):`Past niet volledig: ${t.overflow} afspraken lopen over in ${t.rooms} kamer${t.rooms===1?'':'s'} bij ${t.benut}%. Kies een ruimer scenario of voeg capaciteit toe.`}
+        hoe:fit?HOE[t.key](t):`Past niet volledig: ${t.overflow} afspraken lopen over in ${t.rooms} kamer${t.rooms===1?'':'s'} bij ${t.benut}% (verdeling ${ddVerd(t)}). Kies een ruimer scenario of voeg een kamer toe.`}
     }
     let scenarios
     if(solver && solver.tiers && solver.tiers.length===3){
@@ -2765,9 +2766,9 @@ export default function RasterTool(){
       // Voorlopige weergave zolang de solver nog rekent (stabiele schatting).
       const bRef=beschRooms
       scenarios=[
-        {key:'strak',naam:'Maximaal strak',krapte:KRAPTE.strak,tint:TINTS.strak,rooms:bRef,benut:96,flexMode:'end',flex:0,fit:true,sub:`${bRef} kamer${bRef===1?'':'s'} · solver rekent…`,metric:`${demandCount}/${demandCount}`,hoe:'De solver rekent het strakste, meest opgevulde rooster door…'},
-        {key:'flex',naam:'Strak met flexruimte',krapte:KRAPTE.flex,tint:TINTS.flex,rooms:bRef,benut:84,flexMode:'spread',flex:0,fit:true,sub:`${bRef} kamer${bRef===1?'':'s'} · solver rekent…`,metric:`${demandCount}/${demandCount}`,hoe:'De solver zoekt de balans met flexblokken als buffer…'},
-        {key:'ruim',naam:'Ruim · kamer erbij',krapte:KRAPTE.ruim,tint:TINTS.ruim,rooms:bRef+1,benut:74,flexMode:'spread',flex:0,fit:true,sub:`${bRef+1} kamers · solver rekent…`,metric:`${demandCount}/${demandCount}`,hoe:'De solver rekent de ruimste opzet met een extra kamer door…'},
+        {key:'strak',naam:'Maximaal strak',krapte:KRAPTE.strak,tint:TINTS.strak,rooms:bRef,benut:96,flexMode:'end',flex:0,fit:true,verOch:m2.verOch,sub:`${bRef} kamer${bRef===1?'':'s'} · solver rekent…`,metric:`${demandCount}/${demandCount}`,hoe:'De solver rekent het strakste, meest opgevulde rooster door…'},
+        {key:'eigen',naam:'Jouw instellingen',krapte:KRAPTE.eigen,tint:TINTS.eigen,rooms:bRef,benut:m2.benutting,flexMode:rules.flexMode||'spread',flex:0,fit:true,eigen:true,verOch:m2.verOch,sub:`${bRef} kamer${bRef===1?'':'s'} · solver rekent…`,metric:`${demandCount}/${demandCount}`,hoe:'De solver rekent jouw eigen instellingen uit module Tijden door…'},
+        {key:'ruim',naam:'Ruim · kamer erbij',krapte:KRAPTE.ruim,tint:TINTS.ruim,rooms:bRef+1,benut:74,flexMode:'spread',flex:0,fit:true,verOch:m2.verOch,sub:`${bRef+1} kamers · solver rekent…`,metric:`${demandCount}/${demandCount}`,hoe:'De solver rekent de ruimste opzet met een extra kamer door…'},
       ]
     }
     // Toepassen: alléén benutting, flexmodus en kamers — codes blijven ongemoeid,
@@ -2775,7 +2776,7 @@ export default function RasterTool(){
     const applyScenario=s=>{
       setM2(p=>({...p,benutting:s.benut}))
       setRules(p=>({...p,flexMode:s.flexMode}))
-      setCapacity(c=>({mode:'vast',kamers:s.rooms,specialisten:Math.max(s.rooms,c.specialisten)}))
+      setCapacity({mode:'vast',kamers:s.rooms})
     }
 
     // ── Time-grid raster (resource calendar: rooms as columns, time on Y) ──────
@@ -3054,25 +3055,24 @@ export default function RasterTool(){
           </div>
         </div>
 
-        {/* ── CAPACITEITSPLANNING — kies kamers/specialisten + past-advies ── */}
+        {/* ── CAPACITEITSPLANNING — kies het aantal kamers + past-advies ── */}
         {raster.capacity&&(()=>{
           const cap=raster.capacity
-          const besch=Math.min(capacity.kamers,capacity.specialisten)
+          const besch=capacity.kamers
           const nodig=cap.needed
           const past=nodig<=besch
-          const knel=capacity.kamers<capacity.specialisten?'kamers':capacity.specialisten<capacity.kamers?'specialisten':'kamers én specialisten'
           const vast=capacity.mode==='vast'
           const status = vast
             ? (cap.fits
-                ? {t:'ok',ico:'✓',kop:`Past — ${nodig} parallel ${nodig===1?'spreekuur':'spreekuren'} nodig, ${besch} beschikbaar`,
-                   sub:`Er blijft ${Math.max(0,besch-nodig)} ${besch-nodig===1?'kamer/specialist':'kamers/specialisten'} over.`}
-                : {t:'bad',ico:'✗',kop:`Past niet — ${nodig} nodig, ${besch} beschikbaar (${knel} beperkend)`,
-                   sub:`${cap.overflow} afspra${cap.overflow===1?'ak staat':'ken staan'} op "nog te plannen". Verhoog ${knel}, verleng spreekuren of verlaag de vraag.`})
+                ? {t:'ok',ico:'✓',kop:`Past — ${nodig} parallel ${nodig===1?'spreekuur':'spreekuren'} nodig, ${besch} ${besch===1?'kamer':'kamers'} beschikbaar`,
+                   sub:`Er blijft ${Math.max(0,besch-nodig)} ${besch-nodig===1?'kamer':'kamers'} over.`}
+                : {t:'bad',ico:'✗',kop:`Past niet — ${nodig} kamers nodig, ${besch} beschikbaar`,
+                   sub:`${cap.overflow} afspra${cap.overflow===1?'ak staat':'ken staan'} op "nog te plannen". Verhoog het aantal kamers, verleng de spreekuren of verlaag de vraag.`})
             : (nodig<=besch
-                ? {t:'ok',ico:'✓',kop:`Past binnen je capaciteit — ${nodig} van ${besch} beschikbaar benut`,
+                ? {t:'ok',ico:'✓',kop:`Past binnen je capaciteit — ${nodig} van ${besch} ${besch===1?'kamer':'kamers'} benut`,
                    sub:'Automatische modus: het rooster groeit precies tot wat nodig is.'}
                 : {t:'warn',ico:'△',kop:`Rooster gebruikt ${nodig} parallelle spreekuren — meer dan de ${besch} die je opgaf`,
-                   sub:'Zet "Vast aantal" aan om te begrenzen (overschot gaat dan naar "nog te plannen"), of verhoog kamers/specialisten.'})
+                   sub:'Zet "Vast aantal" aan om te begrenzen (overschot gaat dan naar "nog te plannen"), of verhoog het aantal kamers.'})
           const stCol=status.t==='ok'?C.green:status.t==='bad'?C.danger:'#B8860B'
           const stBg=status.t==='ok'?'#EDF7F0':status.t==='bad'?'#FCEEEB':'#FBF3E2'
           const Stepper=({icon,label,val,onCh,min=1,max=20})=>(
@@ -3106,10 +3106,8 @@ export default function RasterTool(){
                 </div>
               </div>
               <Stepper icon="🚪" label="Kamers" val={capacity.kamers} onCh={v=>setCapacity(p=>({...p,kamers:v}))}/>
-              <span style={{fontSize:16,color:C.muted,fontWeight:300}}>×</span>
-              <Stepper icon="🩺" label="Specialisten" val={capacity.specialisten} onCh={v=>setCapacity(p=>({...p,specialisten:v}))}/>
-              <button onClick={()=>setCapacity(p=>({...p,kamers:Math.max(p.kamers,nodig),specialisten:Math.max(p.specialisten,nodig)}))}
-                title="Stel kamers én specialisten in op het minimaal benodigde aantal"
+              <button onClick={()=>setCapacity(p=>({...p,kamers:Math.max(p.kamers,nodig)}))}
+                title="Stel het aantal kamers in op het minimaal benodigde aantal"
                 style={{padding:'8px 12px',borderRadius:9,border:`1px solid ${C.border}`,background:C.surface2,cursor:'pointer',
                   fontSize:11.5,fontWeight:600,color:C.text}}>Stel in op benodigd ({nodig})</button>
               <div style={{flex:1,minWidth:220,display:'flex',alignItems:'center',gap:11,padding:'10px 14px',
@@ -3223,11 +3221,11 @@ export default function RasterTool(){
 
         {/* ── 3 SCENARIO'S — inklapbaar ── */}
         <div style={{marginBottom:12}}>
-        <PanelKop id="scenarios" titel="Scenario's" samenvatting="Maximaal strak · Krap + flex · Ruim (kamer erbij)"/>
+        <PanelKop id="scenarios" titel="Scenario's" samenvatting="Maximaal strak · Jouw instellingen · Ruim (kamer erbij)"/>
         {openPanels.scenarios&&(
         <div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:12,padding:'14px 16px'}}>
           <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:11,flexWrap:'wrap'}}>
-            <span style={{fontSize:11.5,color:C.muted,flex:1,minWidth:200}}>Een <b style={{color:C.text}}>solver</b> rekent met de échte engine drie <b style={{color:C.text}}>kraptes</b> door — ze verschillen in speelruimte, niet in je codes: <b style={{color:C.primary}}>1 · Maximaal strak</b> (alles opgevuld, weinig flex), <b style={{color:C.green}}>2 · Krap met flexruimte</b> (zelfde kamers, meer buffer), <b style={{color:'#8B5CF6'}}>3 · Ruim</b> (kamer erbij, de meeste lucht). Je kunt vrij heen en weer schakelen.</span>
+            <span style={{fontSize:11.5,color:C.muted,flex:1,minWidth:200}}>Een <b style={{color:C.text}}>solver</b> rekent met de échte engine drie scenario's door in je <b style={{color:C.text}}>{beschRooms} ingestelde kamer{beschRooms===1?'':'s'}</b>: <b style={{color:C.primary}}>1 · Maximaal strak</b> (alles opgevuld, weinig flex), <b style={{color:C.green}}>2 · Jouw instellingen</b> (exact de benutting én ochtend/middag-verdeling uit module Tijden), <b style={{color:'#8B5CF6'}}>3 · Ruim</b> (kamer erbij, de meeste lucht). Je kunt vrij heen en weer schakelen.</span>
             <span style={{fontSize:10.5,fontWeight:700,padding:'4px 11px',borderRadius:20,display:'inline-flex',alignItems:'center',gap:6,
               background:solving?'#FBF3E2':'#EAF5EE',color:solving?'#B8860B':C.green,border:`1px solid ${solving?'#EFD9B4':'#C9E6D5'}`}}>
               <span style={{width:7,height:7,borderRadius:'50%',background:solving?'#D9860A':C.green,animation:solving?'pmPulse 1s infinite':'none'}}/>
@@ -3240,7 +3238,7 @@ export default function RasterTool(){
               // niveau. De drie niveaus hebben unieke (benut,rooms,flexMode) → precies
               // één is actief, ongeacht de volgorde waarin je klikt.
               const actief=Math.abs(m2.benutting-s.benut)<2.5
-                && (capacity.mode==='vast'?Math.min(capacity.kamers,capacity.specialisten):beschRooms)===s.rooms
+                && (capacity.mode==='vast'?capacity.kamers:beschRooms)===s.rooms
                 && rules.flexMode===s.flexMode
               const bg=s.tint===C.primary?C.blueAccent:s.tint===C.green?'#EDF7F0':'#F3EEFA'
               // Speelruimte = de gereserveerde buffer (100−benutting), plus een bonus
@@ -3268,7 +3266,7 @@ export default function RasterTool(){
                   <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:10,padding:'6px 10px',borderRadius:8,background:s.tint,color:'#fff'}}>
                     <span style={{fontSize:14}}>◆</span><span style={{fontSize:12,fontWeight:800}}>{s.metric}</span>
                   </div>
-                  <div style={{display:'flex',gap:8,marginBottom:11}}>
+                  <div style={{display:'flex',gap:8,marginBottom:8}}>
                     <div style={{flex:1,background:C.surface2,borderRadius:8,padding:'7px 9px'}}>
                       <div style={{fontSize:8.5,color:C.muted,textTransform:'uppercase',letterSpacing:'0.05em'}}>Benutting</div>
                       <div style={{fontSize:16,fontWeight:800,color:C.text,fontVariantNumeric:'tabular-nums'}}>{s.benut}%</div></div>
@@ -3277,6 +3275,23 @@ export default function RasterTool(){
                       <div style={{fontSize:16,fontWeight:800,color:s.rooms>beschRooms?s.tint:C.text,fontVariantNumeric:'tabular-nums'}}>
                         {s.rooms}{s.rooms>beschRooms&&<span style={{fontSize:10,fontWeight:600}}> (+{s.rooms-beschRooms})</span>}</div></div>
                   </div>
+                  {/* Ochtend/middag-verdeling uit module Tijden */}
+                  <div style={{background:C.surface2,borderRadius:8,padding:'7px 9px',marginBottom:11}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+                      <span style={{fontSize:8.5,color:C.muted,textTransform:'uppercase',letterSpacing:'0.05em'}}>Verdeling ochtend / middag</span>
+                      <span style={{fontSize:9.5,fontWeight:700,color:C.text}}>{s.verOch??m2.verOch}% / {100-(s.verOch??m2.verOch)}%</span>
+                    </div>
+                    <div style={{display:'flex',height:6,borderRadius:3,overflow:'hidden',background:C.border}}>
+                      <div style={{width:(s.verOch??m2.verOch)+'%',background:s.tint}}/>
+                      <div style={{flex:1,background:s.tint,opacity:0.35}}/>
+                    </div>
+                  </div>
+                  {s.eigen&&(
+                    <div style={{fontSize:9.5,fontWeight:700,color:C.green,background:'#EDF7F0',border:'1px solid #C9E6D5',
+                      borderRadius:7,padding:'5px 8px',marginBottom:9,textAlign:'center'}}>
+                      ⚙ Overgenomen uit module Tijden
+                    </div>
+                  )}
                   <div style={{fontSize:10.5,color:C.text,lineHeight:1.45,marginBottom:11,minHeight:60,
                     padding:'8px 10px',borderRadius:8,background:s.fit?'#EDF7F0':'#FCEEEB',border:`1px solid ${s.fit?'#C9E6D5':'#F0C8C3'}`}}>
                     <b style={{color:s.fit?C.green:C.danger}}>{s.fit?'✓ Haalbaar':'✗ Niet volledig'}</b> — {s.hoe}
