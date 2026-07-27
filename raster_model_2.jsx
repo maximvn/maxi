@@ -382,6 +382,9 @@ export default function RasterTool(){
     spoedDagdeel:'both',      // 'both' | 'och' | 'mid' — in welk dagdeel geldt spoed-eerst
     flexNoFirstMin:60,        // geen verspreide flex in de eerste N minuten van een spreekuur
     digitalEndMinutes:30,     // breedte van het digitale eindvenster (digitalMode='end')
+    // Vast spreekuurpatroon: per dagdeel een vaste slotvolgorde die elk spreekuur
+    // van dat dagdeel aanhoudt. Uit = de scorekaart bepaalt de volgorde per kamer.
+    patroon:{aan:false,O:[],M:[],A:[]},
     order:['spoedFirst','shortFirst','certainFirst']  // priority order of sequence rules
   })
   const [selDay,setSelDay]=useState(0)
@@ -852,8 +855,34 @@ export default function RasterTool(){
         .map((k,i)=>({k,w:RULE_W[i]??10}))
     }
 
+    // ── SPREEKUURPATROON ──────────────────────────────────────────────────────
+    // Een patroon is een vaste slotvolgorde voor een dagdeel. Elk spreekuur van
+    // dat dagdeel houdt hem aan, zodat elke maandagochtend er hetzelfde uitziet.
+    // Afspraken worden IN de slots geplaatst: eerst op exacte code, anders op
+    // dezelfde categorie. Een slot zonder passende afspraak blijft leeg (wordt
+    // flexruimte); afspraken die nergens in pasten komen erachter.
+    const vulPatroon=(room,slots)=>{
+      const rest=[...room], uit=[]
+      slots.forEach(sl=>{
+        let ix=rest.findIndex(a=>a.code===sl.code)
+        let hoe='exacte code'
+        if(ix<0){ ix=rest.findIndex(a=>a.category===sl.category); hoe='zelfde soort' }
+        if(ix<0) return                       // slot blijft leeg → flexruimte
+        const a=rest.splice(ix,1)[0]
+        uit.push({...a,_patroonSlot:sl.code,
+          _opbouw:[{l:'Patroon',v:0}],
+          _patroonHoe:hoe})
+      })
+      rest.forEach(a=>uit.push({...a,_opbouw:[{l:'Buiten patroon',v:0}]}))
+      return uit
+    }
+
     const applyPlanRules=(room,dd)=>{
       if(!room||!room.length) return room||[]
+      // Vast patroon actief voor dit dagdeel? Dan bepaalt dat de volgorde.
+      const ddKey=dd===0?'O':dd===1?'M':'A'
+      const pat=rules.patroon
+      if(pat&&pat.aan&&Array.isArray(pat[ddKey])&&pat[ddKey].length) return vulPatroon(room,pat[ddKey])
       const regels=actieveRegels(dd)
       // Duurbereik voor de normalisatie van "kort eerst"
       const durs=room.map(a=>a.duur||15)
@@ -1077,6 +1106,10 @@ export default function RasterTool(){
         a._opbouw.filter(x=>x.v!==0).forEach(x=>
           why.push(`${x.v>0?'+':''}${x.v} ${x.l}${UITLEG[x.l]?' — '+UITLEG[x.l]:''}`))
       }
+      if(a._patroonSlot) why.length=0
+      if(a._patroonSlot) why.push(
+        `Vast spreekuurpatroon · slot ${idx+1} (${a._patroonSlot}) — gevuld op ${a._patroonHoe||'code'}.`,
+        'Elk spreekuur van dit dagdeel houdt dezelfde volgorde aan.')
       if(a.baileyWelsh) why.push('Bailey-Welsh: eerste positie is dubbel boekbaar (vangt no-show/startvertraging op).')
       if(a.digitaal&&rules.digitalMode==='end') why.push('Digitaal consult: in het eindvenster van het spreekuur.')
       if(a.digitaal&&rules.digitalMode==='cluster') why.push('Digitaal consult: geclusterd achteraan het spreekuur.')
@@ -1345,6 +1378,7 @@ export default function RasterTool(){
     setRules({shortFirst:false,spoedFirst:false,certainFirst:false,baileyWelsh:false,
       digitalMode:'spread',groupMode:'spread',flexMode:'end',
       spoedDagdeel:'both',flexNoFirstMin:60,digitalEndMinutes:30,
+      patroon:{aan:false,O:[],M:[],A:[]},
       order:['spoedFirst','shortFirst','certainFirst']})
     setSelDay(0); setRaster(null); setDrag(null)
     setShowFullReset(false)
@@ -1363,6 +1397,35 @@ export default function RasterTool(){
     setNewRows(nieuw); setCtrlRows(ctrl)
     setM1Mode(m=>m||'manual'); setM1Section(2)
   }
+  // ── SPREEKUURPATROON — afleiden uit het huidige raster ──────────────────────
+  // Neemt per dagdeel het best gevulde spreekuur als blauwdruk. De scorekaart
+  // (optie 1) heeft die volgorde al bepaald, dus het patroon erft die kwaliteit.
+  const leidPatroonAf=()=>{
+    if(!raster) return null
+    const uit={O:[],M:[],A:[]}
+    const preOf={O:'o',M:'m',A:'a'}
+    ;['O','M','A'].forEach(x=>{
+      let beste=null, besteN=0
+      ;[0,1,2,3,4].forEach(di=>{
+        const slots=raster.days[di]; if(!slots) return
+        for(let r=0;r<(raster.numRooms||1);r++){
+          const arr=(slots[preOf[x]+r]||[]).filter(a=>!a.isFlex&&!a.overbook)
+          if(arr.length>besteN){ besteN=arr.length; beste=arr }
+        }
+      })
+      if(beste) uit[x]=beste.map(a=>({code:a.code,duur:a.duur,category:a.category,
+        digitaal:!!a.digitaal,description:a.description}))
+    })
+    return uit
+  }
+  const genereerPatroon=()=>{
+    const p=leidPatroonAf()
+    if(!p||!(p.O.length||p.M.length||p.A.length)){
+      alert('Genereer eerst een raster — daaruit wordt het patroon afgeleid.'); return
+    }
+    setRules(r=>({...r,patroon:{...p,aan:true}}))
+  }
+
   // Zijn er al door de gebruiker ingevoerde codes? (voor de bevestiging bij laden)
   const heeftCodes=()=> (newRows.some(r=>r.afspraakcode||r.omschrijving) || ctrlRows.some(r=>r.afspraakcode||r.omschrijving))
 
@@ -1426,6 +1489,7 @@ export default function RasterTool(){
           setRules({shortFirst:false,spoedFirst:false,certainFirst:false,baileyWelsh:false,
             digitalMode:'spread',groupMode:'spread',flexMode:'end',
             spoedDagdeel:'both',flexNoFirstMin:60,digitalEndMinutes:30,...sr,
+            patroon:{aan:false,O:[],M:[],A:[],...(sr.patroon||{})},
             order:Array.isArray(sr.order)&&sr.order.length?sr.order:['spoedFirst','shortFirst','certainFirst']})
         }
         // Note: raster is not stored (too large), it will be auto-generated
@@ -2705,6 +2769,104 @@ export default function RasterTool(){
               </div>
             </div>
           )}
+        </Card>
+
+        {/* ── SPREEKUURPATROON — vaste slotvolgorde per dagdeel ── */}
+        <Card style={{marginBottom:14}}>
+          {(()=>{
+            const pat=rules.patroon||{aan:false,O:[],M:[],A:[]}
+            const setPat=fn=>setRules(r=>{
+              const p={aan:false,O:[],M:[],A:[],...(r.patroon||{})}
+              return {...r,patroon:fn(p)}
+            })
+            const alleCodes=[
+              ...newRows.filter(r=>r.afspraakcode||r.omschrijving).map(r=>({code:r.afspraakcode||'NP',oms:r.omschrijving,duur:r.duur||15,category:'nieuw',digitaal:!!r.digitaal})),
+              ...ctrlRows.filter(r=>r.afspraakcode||r.omschrijving).map(r=>({code:r.afspraakcode||'CO',oms:r.omschrijving,duur:r.duur||15,category:'controle',digitaal:!!r.digitaal})),
+            ]
+            const DDL=[{x:'O',l:'Ochtend',c:C.primary},{x:'M',l:'Middag',c:C.green},{x:'A',l:'Avond',c:'#8B5CF6'}]
+            const heeft=DDL.some(d=>(pat[d.x]||[]).length)
+            return(
+            <>
+              <div style={{display:'flex',alignItems:'flex-start',gap:12,marginBottom:12,flexWrap:'wrap'}}>
+                <div style={{flex:1,minWidth:240}}>
+                  <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:5}}>
+                    <span style={{fontWeight:700,fontSize:13.5,color:C.primary}}>🧩 Vast spreekuurpatroon</span>
+                  </div>
+                  <p style={{fontSize:11.5,color:C.muted,margin:0,lineHeight:1.55}}>
+                    Legt de <b style={{color:C.text}}>volgorde van de slots</b> vast per dagdeel. Elk spreekuur van dat dagdeel
+                    houdt hem aan, zodat elke maandagochtend er hetzelfde uitziet — herkenbaar voor balie en zorgverleners.
+                    Afspraken worden in de slots geplaatst (eerst op code, anders op soort); een slot zonder passende afspraak
+                    wordt flexruimte. Staat dit uit, dan bepaalt de scorekaart per kamer de volgorde.
+                  </p>
+                </div>
+                <div style={{display:'flex',alignItems:'center',gap:8}}>
+                  <button onClick={genereerPatroon}
+                    style={{padding:'8px 13px',borderRadius:9,border:`1px solid ${C.primary}`,background:C.white,
+                      color:C.primary,cursor:'pointer',fontSize:12,fontWeight:700}}>⟳ Uit huidige vraag</button>
+                  <div onClick={()=>setPat(p=>({...p,aan:!p.aan}))}
+                    style={{width:38,height:22,borderRadius:11,background:pat.aan?C.primary:C.border,
+                      cursor:'pointer',position:'relative',transition:'background 0.18s',flexShrink:0}}>
+                    <div style={{width:16,height:16,borderRadius:'50%',background:'#fff',position:'absolute',top:3,left:pat.aan?19:3,transition:'left 0.18s'}}/>
+                  </div>
+                </div>
+              </div>
+              {!heeft&&(
+                <div style={{fontSize:11.5,color:C.muted,background:C.rowAlt,border:`1px dashed ${C.border}`,
+                  borderRadius:9,padding:'12px 14px'}}>
+                  Nog geen patroon. Klik op <b style={{color:C.text}}>⟳ Uit huidige vraag</b> — dan wordt per dagdeel het best
+                  gevulde spreekuur als blauwdruk genomen, die je daarna vrij kunt aanpassen.
+                </div>
+              )}
+              {heeft&&DDL.map(({x,l,c})=>{
+                const slots=pat[x]||[]
+                if(!slots.length) return null
+                const tot=slots.reduce((s,q)=>s+(q.duur||0),0)
+                const move=(i,d)=>setPat(p=>{const a=[...(p[x]||[])];const j=i+d;if(j<0||j>=a.length)return p;
+                  const t=a[i];a[i]=a[j];a[j]=t;return {...p,[x]:a}})
+                const del=i=>setPat(p=>({...p,[x]:(p[x]||[]).filter((_,j)=>j!==i)}))
+                const add=code=>{const cd=alleCodes.find(q=>q.code===code); if(!cd)return
+                  setPat(p=>({...p,[x]:[...(p[x]||[]),{code:cd.code,duur:cd.duur,category:cd.category,digitaal:cd.digitaal,description:cd.oms}]}))}
+                return(
+                  <div key={x} style={{marginTop:12,border:`1px solid ${C.border}`,borderLeft:`4px solid ${c}`,borderRadius:10,padding:'12px 14px'}}>
+                    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:9,flexWrap:'wrap',gap:8}}>
+                      <span style={{fontSize:12.5,fontWeight:800,color:c}}>{l}</span>
+                      <span style={{fontSize:11,color:C.muted}}>{slots.length} slots · {tot} min gepland</span>
+                    </div>
+                    <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+                      {slots.map((s,i)=>{
+                        const clr=s.category==='nieuw'?NEW_PALETTE[0]:(s.digitaal?{bg:'#D6EAE3',brd:'#94C5B4',fg:'#1A5544'}:CTRL_PALETTE[0])
+                        return(
+                          <div key={i} style={{display:'flex',alignItems:'center',gap:3,background:clr.bg,border:`1px solid ${clr.brd}`,
+                            borderRadius:8,padding:'4px 4px 4px 9px'}}>
+                            <span style={{fontSize:10,fontWeight:700,color:C.muted,minWidth:14}}>{i+1}</span>
+                            <span style={{fontSize:11.5,fontWeight:800,color:clr.fg}}>{s.digitaal?'☎ ':''}{s.code}</span>
+                            <span style={{fontSize:10,color:clr.fg,opacity:0.75}}>{s.duur}m</span>
+                            <button onClick={()=>move(i,-1)} disabled={i===0} title="Eerder"
+                              style={{width:16,height:18,border:'none',background:'transparent',cursor:i===0?'default':'pointer',
+                                fontSize:9,color:i===0?clr.brd:clr.fg,padding:0}}>◀</button>
+                            <button onClick={()=>move(i,1)} disabled={i===slots.length-1} title="Later"
+                              style={{width:16,height:18,border:'none',background:'transparent',cursor:i===slots.length-1?'default':'pointer',
+                                fontSize:9,color:i===slots.length-1?clr.brd:clr.fg,padding:0}}>▶</button>
+                            <button onClick={()=>del(i)} title="Verwijderen"
+                              style={{width:17,height:18,border:'none',background:'transparent',cursor:'pointer',fontSize:11,color:clr.fg,opacity:0.6,padding:0}}>✕</button>
+                          </div>
+                        )
+                      })}
+                      {alleCodes.length>0&&(
+                        <select value="" onChange={e=>{if(e.target.value)add(e.target.value);e.target.value=''}}
+                          style={{border:`1px dashed ${C.border}`,borderRadius:8,padding:'5px 8px',fontSize:11,
+                            color:C.muted,background:C.white,fontFamily:'inherit',cursor:'pointer'}}>
+                          <option value="">+ slot…</option>
+                          {alleCodes.map((q,i)=><option key={i} value={q.code}>{q.code} · {q.oms||''} ({q.duur}m)</option>)}
+                        </select>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </>
+            )
+          })()}
         </Card>
 
         {/* Active summary */}
