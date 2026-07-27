@@ -401,6 +401,7 @@ export default function RasterTool(){
   const [expOk,setExpOk]=useState(false)
   const [exporting,setExporting]=useState(false)
   const [exportLink,setExportLink]=useState(null) // {href, filename}
+  const [tplLink,setTplLink]=useState(null)       // voorbeeld-Excel {href, filename}
   const calRef=useRef(null)
   const fileRef=useRef(null)
 
@@ -1448,10 +1449,13 @@ export default function RasterTool(){
       ws['!cols']=[{wch:8},{wch:22},{wch:11},{wch:11},{wch:12},{wch:12},{wch:14},{wch:20},{wch:18},{wch:13}]
       XLSX.utils.book_append_sheet(wb,ws,'Spreekuurgegevens')
       const b64=XLSX.write(wb,{bookType:'xlsx',type:'base64'})
-      const a=document.createElement('a')
-      a.href='data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,'+b64
-      a.download='spreekuurgegevens-voorbeeld.xlsx'
-      document.body.appendChild(a); a.click(); document.body.removeChild(a)
+      // Een SYNTHETISCHE a.click() wordt geblokkeerd zodra de tool in een
+      // afgeschermde iframe draait (zoals bij een gedeelde link). Daarom tonen we
+      // — net als bij de raster-export — een echte downloadlink die de gebruiker
+      // zelf aanklikt. Dat werkt in alle omgevingen.
+      setTplLink({
+        href:'data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,'+b64,
+        filename:'spreekuurgegevens-voorbeeld.xlsx'})
     }catch(err){ alert('Kon voorbeeld niet maken: '+err.message) }
   }
 
@@ -1940,8 +1944,13 @@ export default function RasterTool(){
             </div>
             <label htmlFor="spreekuur-file-input" style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:12,fontWeight:700,color:'#fff',
               background:'#7C3AED',borderRadius:9,padding:'8px 14px',cursor:'pointer'}}>⤒ Excel laden</label>
-            <button onClick={downloadSpreekuurTemplate} style={{display:'inline-flex',alignItems:'center',gap:5,fontSize:11.5,fontWeight:700,color:'#7C3AED',
-              background:C.white,border:'1px solid #D9C9F7',borderRadius:9,padding:'8px 12px',cursor:'pointer'}}>⤓ Voorbeeld</button>
+            {!tplLink
+              ?<button onClick={downloadSpreekuurTemplate} style={{display:'inline-flex',alignItems:'center',gap:5,fontSize:11.5,fontWeight:700,color:'#7C3AED',
+                background:C.white,border:'1px solid #D9C9F7',borderRadius:9,padding:'8px 12px',cursor:'pointer'}}>⤓ Voorbeeld</button>
+              :<a href={tplLink.href} download={tplLink.filename} onClick={()=>setTimeout(()=>setTplLink(null),1500)}
+                style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:11.5,fontWeight:700,color:'#fff',
+                  background:'#7C3AED',border:'1px solid #7C3AED',borderRadius:9,padding:'8px 12px',
+                  textDecoration:'none',whiteSpace:'nowrap'}}>⬇ Download voorbeeld.xlsx</a>}
           </div>
 
           <Btn onClick={()=>{
