@@ -82,8 +82,8 @@ const PLAN_INFO = {
     desc:'"Verdelen" = digitale afspraken gelijkmatig ingespreid tussen de fysieke afspraken van elke kamer. "Clusteren" = alle digitale afspraken als aaneengesloten blok achteraan de kamer. "Einde" = digitale afspraken in het laatste tijdvenster van het spreekuur (venster instelbaar in minuten).'},
   // ── Kamerverdeling ─────────────────────────────────────────────────────────
   kamerVerdeling:{label:'Verdeling over kamers en dagdelen',type:'radio',
-    opts:[{v:'vullen',l:'Vullen tot de benutting'},{v:'gelijk',l:'Gelijk verdelen'}],
-    desc:'"Vullen" = een kamer/dagdeel wordt eerst tot de ingestelde benutting gevuld voordat het volgende opengaat. De restvraag concentreert zich zo in één dagdeel in plaats van dun over twee — een dagdeel dat niet nodig is blijft leeg en wordt flexruimte. "Gelijk verdelen" = de vraag wordt gelijkmatig over alle benodigde kamers en dagdelen uitgesmeerd, zodat elke kamer een vergelijkbare belasting en mix krijgt.'},
+    opts:[{v:'kamer',l:'Kamer voor kamer vol'},{v:'dagdeel',l:'Dagdeel voor dagdeel vol'},{v:'gelijk',l:'Gelijk verdelen'}],
+    desc:'Bepaalt waar de RESTVRAAG belandt. "Kamer voor kamer" vult kamer 1 in alle dagdelen tot de benutting, dan kamer 2, enz.; wat overblijft komt in de laatste kamer en daarbinnen in het eerste dagdeel — kamers 1 t/m 3 dus volledig, kamer 4 alleen een ochtend met een lege middag. "Dagdeel voor dagdeel" vult eerst alle kamers van de ochtend en dan de middag. "Gelijk verdelen" smeert de vraag gelijkmatig over alle benodigde kamers en dagdelen uit.'},
   // ── Groepering afsprakencodes ──────────────────────────────────────────────
   groupMode:{label:'Groepering afsprakencodes',type:'radio',
     opts:[{v:'spread',l:'Gespreid inplannen (afwisselen)'},{v:'wave',l:'Wave planning (per blok)'}],
@@ -383,7 +383,7 @@ export default function RasterTool(){
   const [rules,setRules]=useState({
     shortFirst:false, spoedFirst:false, certainFirst:false, baileyWelsh:false,
     digitalMode:'spread', groupMode:'spread', flexMode:'end',
-    kamerVerdeling:'vullen',  // 'vullen' = kamers/dagdelen vol tot de benutting | 'gelijk' = gelijkmatig
+    kamerVerdeling:'kamer',   // 'kamer' = kamer voor kamer vol | 'dagdeel' = dagdeel voor dagdeel | 'gelijk'
     spoedDagdeel:'both',      // 'both' | 'och' | 'mid' — in welk dagdeel geldt spoed-eerst
     flexNoFirstMin:60,        // geen verspreide flex in de eerste N minuten van een spreekuur
     digitalEndMinutes:30,     // breedte van het digitale eindvenster (digitalMode='end')
@@ -1039,7 +1039,8 @@ export default function RasterTool(){
       if(!openDd.length) return {perDd:uit, over:poolIn}
       // Dagdeelvolgorde: het zwaarst gewogen dagdeel (ochtend/middag-%) eerst vol.
       const ddVolg=[...openDd].sort((a,b)=>(ddWeight[b]||0)-(ddWeight[a]||0)||DD.indexOf(a)-DD.indexOf(b))
-      const gelijk=rules.kamerVerdeling==='gelijk'
+      const modus=rules.kamerVerdeling||'kamer'
+      const gelijk=modus==='gelijk'
       const over=[]
       // Hoeveel kamers zijn er deze dag nodig? In automatische modus leiden we dat
       // af uit de vraag, zodat er niet eindeloos kamers in één dagdeel opengaan.
@@ -1049,13 +1050,21 @@ export default function RasterTool(){
         ? Math.max(1,Math.ceil(dagMin/Math.max(1,capPerKamer)))
         : maxParallel
 
-      // Slotlijst DAGDEEL-MAJOR: eerst alle kamers van het eerste dagdeel, dan het
-      // volgende dagdeel. Zo concentreert de restvraag zich in één dagdeel in
-      // plaats van dun over twee dagdelen te worden uitgesmeerd — precies het
-      // verschil tussen "3 afspraken 's ochtends én 3 's middags" en "6 's ochtends,
-      // middag dicht".
+      // ── SLOTVOLGORDE — bepaalt waar de RESTVRAAG terechtkomt ────────────────
+      // 'kamer'   KAMER-MAJOR: kamer 1 in álle dagdelen vol, dan kamer 2, enz.
+      //           De restvraag belandt zo in de LAATSTE kamer, en daarbinnen in
+      //           het eerste dagdeel — dus kamers 1-3 volledig op benutting en
+      //           kamer 4 alleen een ochtend, met een lege middag.
+      // 'dagdeel' DAGDEEL-MAJOR: eerst alle kamers van de ochtend, dan de middag.
+      //           De restvraag concentreert zich in één dagdeel over de kamers heen.
+      // 'gelijk'  gelijkmatig over alle benodigde kamers en dagdelen.
+      const mk=(dd,r)=>({dd,r,items:[],used:0,cap:usableFor(dd)})
       const slots=[]
-      ddVolg.forEach(dd=>{ for(let r=0;r<kap;r++) slots.push({dd,r,items:[],used:0,cap:usableFor(dd)}) })
+      if(modus==='dagdeel'){
+        ddVolg.forEach(dd=>{ for(let r=0;r<kap;r++) slots.push(mk(dd,r)) })
+      } else {
+        for(let r=0;r<kap;r++) ddVolg.forEach(dd=>slots.push(mk(dd,r)))
+      }
 
       // Bij 'gelijk' beperken we het aantal slots tot wat echt nodig is, zodat de
       // vraag over precies dát aantal gelijkmatig wordt uitgesmeerd.
@@ -1432,7 +1441,7 @@ export default function RasterTool(){
     ddDagen:{O:{...DEF_DD_DAGEN.O},M:{...DEF_DD_DAGEN.M},A:{...DEF_DD_DAGEN.A}}})
     setRules({shortFirst:false,spoedFirst:false,certainFirst:false,baileyWelsh:false,
       digitalMode:'spread',groupMode:'spread',flexMode:'end',
-      kamerVerdeling:'vullen',spoedDagdeel:'both',flexNoFirstMin:60,digitalEndMinutes:30,
+      kamerVerdeling:'kamer',spoedDagdeel:'both',flexNoFirstMin:60,digitalEndMinutes:30,
       order:['spoedFirst','shortFirst','certainFirst']})
     setSelDay(0); setRaster(null); setDrag(null)
     setShowFullReset(false)
@@ -1513,7 +1522,7 @@ export default function RasterTool(){
           const sr=state.rules
           setRules({shortFirst:false,spoedFirst:false,certainFirst:false,baileyWelsh:false,
             digitalMode:'spread',groupMode:'spread',flexMode:'end',
-            kamerVerdeling:'vullen',spoedDagdeel:'both',flexNoFirstMin:60,digitalEndMinutes:30,...sr,
+            kamerVerdeling:'kamer',spoedDagdeel:'both',flexNoFirstMin:60,digitalEndMinutes:30,...sr,
             order:Array.isArray(sr.order)&&sr.order.length?sr.order:['spoedFirst','shortFirst','certainFirst']})
         }
         // Note: raster is not stored (too large), it will be auto-generated
@@ -2743,12 +2752,14 @@ export default function RasterTool(){
           <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
             {PLAN_INFO.kamerVerdeling.opts.map(opt=>{
               const on=(rules.kamerVerdeling||'vullen')===opt.v
-              const sub=opt.v==='vullen'
-                ? `Ochtend eerst vol tot ${m2.benutting}%, de rest naar het volgende dagdeel. Niet-benodigde dagdelen blijven leeg.`
+              const sub=opt.v==='kamer'
+                ? `Kamer 1 in alle dagdelen vol tot ${m2.benutting}%, dan kamer 2. De restvraag komt in de laatste kamer, daarbinnen in het eerste dagdeel — de rest blijft leeg.`
+                : opt.v==='dagdeel'
+                ? `Eerst alle kamers van het eerste dagdeel vol tot ${m2.benutting}%, dan het volgende dagdeel.`
                 : 'Elke kamer en elk dagdeel krijgt een vergelijkbare belasting en mix.'
               return(
                 <div key={opt.v} onClick={()=>setRules(p=>({...p,kamerVerdeling:opt.v}))}
-                  style={{flex:1,minWidth:230,display:'flex',alignItems:'flex-start',gap:9,padding:'11px 13px',borderRadius:7,cursor:'pointer',
+                  style={{flex:1,minWidth:190,display:'flex',alignItems:'flex-start',gap:9,padding:'11px 13px',borderRadius:7,cursor:'pointer',
                     background:on?C.blueAccent:C.white,border:`1.5px solid ${on?C.primary:C.border}`,boxShadow:on?'0 2px 10px rgba(28,110,164,0.12)':'none',transition:'all 0.13s'}}>
                   <div style={{width:20,height:20,borderRadius:'50%',border:`2px solid ${on?C.primary:C.border}`,marginTop:1,
                     background:on?C.primary:'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,transition:'all 0.13s'}}>
@@ -2835,6 +2846,62 @@ export default function RasterTool(){
               </div>
             </div>
           )}
+        </Card>
+
+        {/* ── SAMENSPEL VAN DE REGELS — wat versterkt elkaar, wat botst ── */}
+        <Card style={{marginBottom:14}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
+            <span style={{fontWeight:700,fontSize:13.5,color:C.primary}}>🧭 Samenspel van je regels</span>
+          </div>
+          <p style={{fontSize:11.5,color:C.muted,marginBottom:12,lineHeight:1.55}}>
+            Regels werken op verschillende <b style={{color:C.text}}>assen</b>. Regels op verschillende assen versterken
+            elkaar; regels op dezelfde as sluiten elkaar uit en zijn daarom een keuze. Hieronder zie je wat jouw
+            combinatie oplevert en waar twee regels om dezelfde ruimte vechten.
+          </p>
+          {(()=>{
+            const seq=(rules.order||[]).filter(k=>rules[k]&&['spoedFirst','shortFirst','certainFirst'].includes(k))
+            const ASSEN=[
+              {as:'Structuur',uitleg:'wie in welke kamer en welk dagdeel',
+               waarde:rules.kamerVerdeling==='kamer'?'Kamer voor kamer vol':rules.kamerVerdeling==='dagdeel'?'Dagdeel voor dagdeel vol':'Gelijk verdelen'},
+              {as:'Prioriteit',uitleg:'wat vooraan komt',
+               waarde:seq.length?seq.map((k,i)=>`${i+1}. ${PLAN_INFO[k].label}`).join(' · '):'geen volgorderegel actief'},
+              {as:'Groepering',uitleg:'clusteren of afwisselen',
+               waarde:rules.groupMode==='wave'?'Wave — gelijke codes aaneengesloten':'Gespreid — gewogen mix'},
+              {as:'Plaatsing',uitleg:'digitaal en flexruimte op de tijdas',
+               waarde:`Digitaal ${rules.digitalMode==='end'?'in het eindvenster':rules.digitalMode==='cluster'?'geclusterd achteraan':'verdeeld over de dag'} · flex ${rules.flexMode==='end'?'aan het einde':'verspreid'}`},
+            ]
+            const sig=[]
+            if(rules.spoedFirst&&rules.groupMode==='wave') sig.push({t:'ok',m:'Spoed eerst + wave: het spoedblok staat vooraan en dáárna volgen de codeblokken. Ze versterken elkaar.'})
+            if(rules.shortFirst&&rules.groupMode==='wave') sig.push({t:'ok',m:'Kort eerst + wave: het codeblok met de kortste afspraken opent het spreekuur.'})
+            if(rules.shortFirst&&rules.certainFirst) sig.push({t:'info',m:`Kort eerst en zeker eerst kunnen elkaar tegenspreken (een kort consult kan onzeker zijn). De prioriteitsvolgorde beslist: nu weegt "${PLAN_INFO[seq[0]]?.label||'—'}" het zwaarst.`})
+            if(rules.digitalMode==='spread'&&rules.groupMode==='wave') sig.push({t:'warn',m:'Digitaal verdelen botst met wave: het spreiden van digitale consulten breekt juist de codeblokken open. Kies "geclusterd" of "eindvenster" als je de wave intact wilt houden.'})
+            if(rules.digitalMode==='end'&&rules.flexMode==='spread') sig.push({t:'info',m:'Digitaal in het eindvenster + flex verspreid: de flexblokjes gaan tussen de fysieke afspraken, het digitale venster wordt daarna aan het einde gelegd. Dit gaat samen.'})
+            if(rules.kamerVerdeling==='gelijk'&&rules.flexMode==='end') sig.push({t:'info',m:'Gelijk verdelen zorgt bewust voor gelijkmatige kamers, maar levert per kamer méér flex aan het einde op dan "kamer voor kamer vol".'})
+            if(rules.baileyWelsh&&rules.kamerVerdeling==='gelijk') sig.push({t:'info',m:'Bailey-Welsh dubbelboekt het eerste ochtendslot van elke kamer — bij gelijk verdelen zijn dat er meer dan bij kamer-voor-kamer.'})
+            if(!sig.length) sig.push({t:'ok',m:'Je huidige combinatie heeft geen tegenstrijdigheden — alle actieve regels werken op verschillende assen.'})
+            return(<>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(210px,1fr))',gap:8,marginBottom:12}}>
+                {ASSEN.map(a=>(
+                  <div key={a.as} style={{background:C.rowAlt,border:`1px solid ${C.border}`,borderRadius:9,padding:'9px 11px'}}>
+                    <div style={{fontSize:9,fontWeight:700,color:C.primary,textTransform:'uppercase',letterSpacing:'0.08em'}}>{a.as}</div>
+                    <div style={{fontSize:9.5,color:C.muted,marginBottom:4}}>{a.uitleg}</div>
+                    <div style={{fontSize:11.5,fontWeight:700,color:C.text,lineHeight:1.35}}>{a.waarde}</div>
+                  </div>
+                ))}
+              </div>
+              {sig.map((x,i)=>{
+                const col=x.t==='ok'?C.green:x.t==='warn'?'#B8860B':C.primary
+                const bg=x.t==='ok'?'#EDF7F0':x.t==='warn'?'#FBF3E2':C.blueAccent
+                return(
+                  <div key={i} style={{display:'flex',gap:9,alignItems:'flex-start',background:bg,border:`1px solid ${col}33`,
+                    borderRadius:9,padding:'9px 12px',marginBottom:6}}>
+                    <span style={{color:col,fontWeight:800,fontSize:12,flexShrink:0}}>{x.t==='ok'?'✓':x.t==='warn'?'⚠':'ℹ'}</span>
+                    <span style={{fontSize:11.5,color:C.text,lineHeight:1.5}}>{x.m}</span>
+                  </div>
+                )
+              })}
+            </>)
+          })()}
         </Card>
 
         {/* Active summary */}
