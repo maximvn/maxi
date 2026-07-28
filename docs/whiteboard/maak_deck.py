@@ -421,9 +421,9 @@ def s_transitie(prs):
 
     for i, (label, kleur) in enumerate([("naar de acute poort", BLAUW),
                                         ("naar de Hotfloor", CYAAN)]):
-        lx2 = 5.72 + i * 2.5
-        spot(d, lx2, INHOUD_Y + 0.06, kleur, 0.13, False)
-        tekst(d, lx2 + 0.15, INHOUD_Y - 0.06, 2.3, 0.26,
+        ly2 = 2.14 + i * 0.3
+        spot(d, 5.02, ly2 + 0.09, kleur, 0.12, False)
+        tekst(d, 5.18, ly2, 2.2, 0.26,
               [{"tekst": label, "size": 9.5, "vet": True, "kleur": kleur, "na": 0,
                 "spatie": 0.6}], autofit=False)
     return d
@@ -432,40 +432,34 @@ def s_transitie(prs):
 # =========================================================== 10. nieuwbouw
 def s_nieuwbouw(prs):
     d = nieuw(prs, "Deel 03  ·  Wat verandert er", "De nieuwbouw fysiek",
-              "Twee clusters — en per onderdeel de vraag hoeveel plekken erin passen",
-              CYAAN)
+              "Twee clusters — met per onderdeel het aantal plekken, voor zover "
+              "bekend", CYAAN)
     pw = (KOL - 0.4) / 2
     ph = 3.5
     clusters = [
-        (MARGE, "Acute poort", BLAUW, "totaal aantal plekken nog te bepalen",
-         [("SEH", "? plekken"), ("Kind", "? plekken"), ("EHH", "? plekken")], None),
+        (MARGE, "Acute poort", BLAUW, "23 kamers bekend, kind nog niet benoemd",
+         [("SEH", "18 kamers", CYAAN), ("EHH", "5 kamers", CYAAN),
+          ("Kind", "? kamers", AMBER)], "23", "KAMERS BEKEND"),
         (MARGE + pw + 0.4, "Hotfloor", CYAAN, "16 bedden vastgesteld",
-         [("ICU", "? plekken"), ("CCU / SCU", "? plekken")], "16"),
+         [("ICU", "? plekken", AMBER), ("CCU / SCU", "? plekken", AMBER)], "16",
+         "BEDDEN"),
     ]
-    for x, naam, kleur, sub, delen, totaal in clusters:
+    for x, naam, kleur, sub, delen, totaal, eenheid in clusters:
         accentpaneel(d, x, INHOUD_Y, pw, ph, kleur, 0.09, 0.04)
-        tekst(d, x + 0.34, INHOUD_Y + 0.26, pw - 1.8, 0.42,
+        tekst(d, x + 0.34, INHOUD_Y + 0.26, pw - 2.1, 0.42,
               [{"tekst": naam, "size": 22, "vet": True, "kleur": kleur, "na": 0}],
               autofit=False)
-        tekst(d, x + 0.34, INHOUD_Y + 0.72, pw - 1.8, 0.26,
+        tekst(d, x + 0.34, INHOUD_Y + 0.72, pw - 2.1, 0.26,
               [{"tekst": sub, "size": 10.5, "kleur": GRIJS, "na": 0}], autofit=False)
-        if totaal:
-            tekst(d, x + pw - 1.7, INHOUD_Y + 0.16, 1.36, 0.72,
-                  [{"tekst": totaal, "size": 40, "vet": True, "kleur": kleur,
-                    "na": 0, "uit": "right"}], autofit=False)
-            tekst(d, x + pw - 1.7, INHOUD_Y + 0.78, 1.36, 0.22,
-                  [{"tekst": "BEDDEN", "size": 8.5, "vet": True, "kleur": DIM,
-                    "na": 0, "uit": "right", "spatie": 1.4}], autofit=False)
-        else:
-            tekst(d, x + pw - 1.7, INHOUD_Y + 0.16, 1.36, 0.72,
-                  [{"tekst": "?", "size": 40, "vet": True, "kleur": AMBER,
-                    "na": 0, "uit": "right"}], autofit=False)
-            tekst(d, x + pw - 1.7, INHOUD_Y + 0.78, 1.36, 0.22,
-                  [{"tekst": "PLEKKEN", "size": 8.5, "vet": True, "kleur": DIM,
-                    "na": 0, "uit": "right", "spatie": 1.4}], autofit=False)
+        tekst(d, x + pw - 1.9, INHOUD_Y + 0.16, 1.56, 0.72,
+              [{"tekst": totaal, "size": 40, "vet": True, "kleur": kleur, "na": 0,
+                "uit": "right"}], autofit=False)
+        tekst(d, x + pw - 1.9, INHOUD_Y + 0.78, 1.56, 0.22,
+              [{"tekst": eenheid, "size": 8.5, "vet": True, "kleur": DIM, "na": 0,
+                "uit": "right", "spatie": 1.4}], autofit=False)
         haarlijn(d, x + 0.34, INHOUD_Y + 1.12, pw - 0.68, meng(kleur, BG2, 0.55), 1)
         dh = 0.6
-        for j, (onderdeel, vraag) in enumerate(delen):
+        for j, (onderdeel, waarde, waardekleur) in enumerate(delen):
             by = INHOUD_Y + 1.32 + j * (dh + 0.14)
             vlak(d, x + 0.34, by, pw - 0.68, dh, PAPIER, meng(kleur, BG2, 0.6),
                  1.0, 0.08)
@@ -473,13 +467,95 @@ def s_nieuwbouw(prs):
                   [{"tekst": onderdeel, "size": 14, "vet": True, "kleur": INKT,
                     "na": 0}], anchor="midden", autofit=False)
             tekst(d, x + pw - 0.34 - 2.2, by + 0.04, 1.96, dh - 0.08,
-                  [{"tekst": vraag, "size": 12, "vet": True, "kleur": AMBER,
+                  [{"tekst": waarde, "size": 12, "vet": True, "kleur": waardekleur,
                     "na": 0, "uit": "right"}], anchor="midden", autofit=False)
 
     melding(d, ONDER - 0.86, "Wat er nog bepaald moet worden",
-            "Voor de Hotfloor staat het totaal op zestien bedden, maar de verdeling "
-            "over ICU en CCU/SCU niet. Voor de acute poort is noch het totaal noch "
-            "de verdeling over SEH, kind en EHH bekend.", AMBER, 0.86)
+            "Voor de acute poort staan de SEH op achttien en de EHH op vijf kamers; "
+            "voor kind is nog geen aantal benoemd. Voor de Hotfloor staat het totaal "
+            "op zestien bedden, maar de verdeling over ICU en CCU/SCU niet.",
+            AMBER, 0.86)
+    return d
+
+
+# ================================================= 11. de acute poort in kamers
+def s_kamers(prs):
+    d = nieuw(prs, "Deel 03  ·  Wat verandert er", "De acute poort in kamers",
+              "Achttien SEH-kamers en vijf EHH-kamers — maar niet alle achttien "
+              "zijn opnamekamers", BLAUW)
+    lw, ph = 7.35, 3.6
+    paneel(d, MARGE, INHOUD_Y, lw, ph)
+    tekst(d, MARGE + 0.34, INHOUD_Y + 0.24, 3.0, 0.4,
+          [{"tekst": "SEH", "size": 22, "vet": True, "kleur": BLAUW, "na": 0}],
+          autofit=False)
+    tekst(d, MARGE + 0.34, INHOUD_Y + 0.68, 3.0, 0.26,
+          [{"tekst": "18 KAMERS", "size": 10, "vet": True, "kleur": GRIJS, "na": 0,
+            "spatie": 1.6}], autofit=False)
+
+    soorten = [(12, BLAUW, "reguliere behandelkamers",
+                "patiënten worden hier opgenomen"),
+               (3, CYAAN, "fasttrack", "bepaalde patiënten met fracturen"),
+               (1, VIOLET, "triage", "patiënten worden gezien, niet opgenomen"),
+               (2, AMBER, "acute opvang", "korte periode, geen verblijf")]
+    zijde, tussen, kolommen = 0.5, 0.12, 6
+    bx, by = MARGE + 0.36, INHOUD_Y + 1.06
+    i = 0
+    for aantal, kleur, _, _ in soorten:
+        for _ in range(aantal):
+            r, c = divmod(i, kolommen)
+            v = vlak(d, bx + c * (zijde + tussen), by + r * (zijde + tussen),
+                     zijde, zijde, kleur, kleur, 1.25, 0.14)
+            from deck_lib import _alpha
+            _alpha(v.fill.fore_color, 92)
+            i += 1
+
+    lx = bx + kolommen * (zijde + tussen) + 0.24
+    ly = INHOUD_Y + 1.02
+    for aantal, kleur, naam, uitleg in soorten:
+        vlak(d, lx, ly + 0.08, 0.22, 0.22, kleur, None, 0, 0.3)
+        tekst(d, lx + 0.36, ly, 0.5, 0.28,
+              [{"tekst": str(aantal), "size": 13, "vet": True, "kleur": kleur,
+                "na": 0}], autofit=False)
+        tekst(d, lx + 0.72, ly, 2.14, 0.28,
+              [{"tekst": naam, "size": 11, "vet": True, "kleur": INKT, "na": 0}])
+        tekst(d, lx + 0.36, ly + 0.28, 2.46, 0.3,
+              [{"tekst": uitleg, "size": 9.5, "kleur": GRIJS, "na": 0, "lh": 1.18}])
+        ly += 0.64
+
+    rx = MARGE + lw + 0.34
+    rw = BREED - MARGE - rx
+    paneel(d, rx, INHOUD_Y, rw, ph)
+    tekst(d, rx + 0.32, INHOUD_Y + 0.24, 3.0, 0.4,
+          [{"tekst": "EHH", "size": 22, "vet": True, "kleur": NAVY, "na": 0}],
+          autofit=False)
+    tekst(d, rx + 0.32, INHOUD_Y + 0.68, 3.0, 0.26,
+          [{"tekst": "5 KAMERS", "size": 10, "vet": True, "kleur": GRIJS, "na": 0,
+            "spatie": 1.6}], autofit=False)
+    for j in range(5):
+        v = vlak(d, rx + 0.34 + j * (zijde + tussen), INHOUD_Y + 1.06, zijde,
+                 zijde, NAVY, NAVY, 1.25, 0.14)
+        from deck_lib import _alpha
+        _alpha(v.fill.fore_color, 92)
+    tekst(d, rx + 0.32, INHOUD_Y + 1.72, rw - 0.64, 0.3,
+          [{"tekst": "eerste hart hulp, verhuist mee naar de acute poort",
+            "size": 9.5, "kleur": GRIJS, "na": 0, "lh": 1.18}])
+
+    haarlijn(d, rx + 0.32, INHOUD_Y + 2.12, rw - 0.64, RAND, 1)
+    tekst(d, rx + 0.32, INHOUD_Y + 2.3, 3.0, 0.34,
+          [{"tekst": "Kind", "size": 18, "vet": True, "kleur": AMBER, "na": 0}],
+          autofit=False)
+    tekst(d, rx + 0.32, INHOUD_Y + 2.7, rw - 0.64, 0.3,
+          [{"tekst": "aantal kamers nog niet benoemd", "size": 10.5, "kleur": AMBER,
+            "na": 0}], autofit=False)
+    tekst(d, rx + 0.32, INHOUD_Y + 3.02, rw - 0.64, 0.3,
+          [{"tekst": "de derde stroom achter de poort", "size": 9.5, "kleur": DIM,
+            "na": 0}], autofit=False)
+
+    melding(d, ONDER - 0.9, "Wat dit betekent voor de capaciteit",
+            "Van de achttien SEH-kamers zijn er zes geen reguliere opnamekamer: "
+            "drie fasttrack, één triage en twee acute kamers waar patiënten niet "
+            "blijven liggen. Er blijven twaalf reguliere behandelkamers over.",
+            KORAAL, 0.9)
     return d
 
 
@@ -788,22 +864,22 @@ def s_besluiten(prs):
               "Drie ervan blokkeren de onderbouwing van de personele inzet", KORAAL)
     besluiten = [
         ("Waar valt de EHH onder?", "acute poort of Hotfloor",
-         "blokkeert beide analyses en de personele inzet", KORAAL, "blokkerend", "15"),
+         "blokkeert beide analyses en de personele inzet", KORAAL, "blokkerend", "16"),
         ("Hoeveel plekken krijgt de acute poort?", "kind, EHH en SEH samen",
          "de analyse zegt nu: drie stromen passen niet achter een poort", KORAAL,
-         "blokkerend", "13"),
+         "blokkerend", "14"),
         ("Wie stelt de norm verpleegkundigen vast?", "Remco, of wij met een voorstel",
          "geen enkele afdeling heeft een vastgestelde norm", KORAAL, "blokkerend",
          "3 en 7"),
         ("Welk scenario kiezen we?", "vijf varianten liggen er",
          "de keuze gebeurt op basis van BIC-data; tot die tijd staat het rooster stil",
-         AMBER, "urgent", "11"),
+         AMBER, "urgent", "12"),
         ("Wat is de weigerkans bij 16 bedden?", "Hotfloor",
          "de Hotfloor past wel, maar het risico is niet becijferd", AMBER, "urgent",
          "15"),
         ("Wat doen we met de knelpunten?", "uit beide analyses",
          "de analyses zijn gedeeld, de vervolgacties zijn niet belegd", AMBER,
-         "urgent", "13 en 22"),
+         "urgent", "14 en 23"),
     ]
     for i, (besluit, waar, waarom, kleur, status, dia_nr) in enumerate(besluiten):
         y = INHOUD_Y + 0.06 + i * 0.76
@@ -874,6 +950,7 @@ def bouw():
             "Vijf scenario's, twee analyses en één keuze die alles bepaalt"], BLAUW)
     s_transitie(prs)
     s_nieuwbouw(prs)
+    s_kamers(prs)
     s_scenarios(prs)
     s_stappen(prs)
     s_oordeel(prs, "Deel 03  ·  Analyse 1", "De acute poort",

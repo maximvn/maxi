@@ -226,12 +226,22 @@ def taart(dia, cx, cy, r, segmenten, start=-90, rand=PAPIER, dikte=2.5,
     hoek = start
     for fractie, kleur, label in segmenten:
         span = 360.0 * fractie / totaal
-        punten = _boog(cx, cy, r, hoek, hoek + span)
-        if binnen:
-            punten += _boog(cx, cy, r * binnen, hoek + span, hoek)
+        if span >= 359.9:
+            # een enkel segment is gewoon een cirkel; een taartpunt zou hier
+            # een zichtbare naad geven
+            vol = _vorm(dia, MSO_SHAPE.OVAL, cx - r, cy - r, 2 * r, 2 * r)
+            vol.fill.solid()
+            vol.fill.fore_color.rgb = rgb(kleur)
+            vol.line.fill.background()
+            vol.shadow.inherit = False
+            vol.text_frame.text = ""
         else:
-            punten.append((cx, cy))
-        _vlakvorm(dia, punten, kleur, rand, dikte)
+            punten = _boog(cx, cy, r, hoek, hoek + span)
+            if binnen:
+                punten += _boog(cx, cy, r * binnen, hoek + span, hoek)
+            else:
+                punten.append((cx, cy))
+            _vlakvorm(dia, punten, kleur, rand, dikte)
         if label:
             if span >= 359:
                 lx, ly = cx, cy
