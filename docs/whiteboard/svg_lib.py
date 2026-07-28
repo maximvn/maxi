@@ -53,11 +53,16 @@ def _font(size, gewicht):
 
 
 def meet(tekst, size, gewicht="normal", ls=0.0):
-    """Breedte van een tekstregel in pixels."""
+    """Breedte van een tekstregel in pixels (voortloopbreedte, inclusief spaties)."""
     if not tekst:
         return 0.0
-    b = _font(size, gewicht).getbbox(tekst)
-    return (b[2] - b[0]) + ls * max(0, len(tekst) - 1)
+    f = _font(size, gewicht)
+    try:
+        breedte = f.getlength(tekst)
+    except AttributeError:
+        b = f.getbbox(tekst)
+        breedte = b[2] - b[0]
+    return breedte + ls * max(0, len(tekst) - 1)
 
 
 def afbreken(tekst, size, max_breedte, gewicht="normal", ls=0.0):

@@ -52,3 +52,17 @@ python3 preview.py          # controleert op overloop en tekent de dia's
 
 LibreOffice draait niet in deze omgeving, dus `preview.py` tekent de dia's zelf
 uit de pptx-geometrie en meldt tekst die niet in zijn kader past.
+
+## Ontwerpsysteem PULSE
+
+De presentatie is opnieuw ontworpen: donker canvas als een monitorscherm, een
+lichtgevende pulslijn als terugkerend motief, en signaalkleuren die alleen
+worden ingezet waar iets klemt. De tellingen zijn echte datavisualisatie —
+blokjes per kamer, meters per berekening, stippen per bed — geen opsommingen.
+
+| Bestand | Wat het is |
+|---|---|
+| `deck_lib.py` | Het ontwerpsysteem: palet, panelen, pulslijn, meters, tabellen |
+| `maak_deck.py` | Bouwt de 26 dia's |
+
+Alles is een echte PowerPoint-vorm of tabel; er zit geen enkele afbeelding in.
