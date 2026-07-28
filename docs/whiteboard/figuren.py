@@ -104,7 +104,8 @@ def fig_01_startsituatie():
                                ("ontbreekt", RED), ("onbekend", SLATE)])
 
     ty = ry + 46
-    tegels = [("25", "kamers in beeld", "ICU 10 + CCU/SCU/EHH 15; SEH en kind spoed nog niet", BLUE),
+    tegels = [("apart", "vier afdelingen, vier berekeningen",
+               "ICU 10 en CCU/SCU/EHH 15 zijn verschillende kamers; niet optellen", BLUE),
               ("0 van 4", "afdelingen met norm", "voor geen enkele afdeling is de norm vpk vastgesteld", RED),
               ("1 van 4", "afdelingen met jaarplan", "en dat jaarplan is niet ingevoerd", AMBER)]
     tw = (KOL - 2 * 20) / 3

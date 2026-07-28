@@ -333,11 +333,14 @@ def bouw():
               "Voordat er gerekend kan worden moet per afdeling vastliggen wat de norm "
               "is. Op dit moment ligt die voor geen enkele afdeling vast.",
               "fig_01_startsituatie.png", NAVY)
-    kader(doc, "Nog te bevestigen",
-          "Bij de SEH is niet af te lezen of er een jaarplan ligt, en bij kind spoed "
-          "ontbreken de gegevens vrijwel helemaal. De kamertallen 10 (ICU) en 15 "
-          "(CCU/SCU/EHH) zijn de huidige aantallen kamers.",
-          "64748B", "F4F7FB", LEI)
+    kader(doc, "Let op bij de aantallen",
+          "10 en 15 zijn de kamers die ICU en CCU/SCU/EHH nu hebben. Het zijn "
+          "verschillende kamers voor verschillende specialismen, dus ze zijn niet bij "
+          "elkaar op te tellen. De berekeningen zijn per specialisme apart gemaakt, op "
+          "de huidige gescheiden situatie; in de nieuwbouwscenario's waarin afdelingen "
+          "samengaan moet opnieuw geteld worden. Bij de SEH is niet af te lezen of er "
+          "een jaarplan ligt, en bij kind spoed ontbreken de gegevens vrijwel helemaal.",
+          "C4392D", "FBEDEB", ROOD)
 
     hoofdstuk(doc, 2, "Tijdpad",
               "Het rekenwerk start in september 2026. Van oktober 2026 tot en met mei "
