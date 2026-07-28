@@ -1020,60 +1020,6 @@ export default function RasterTool(){
     const usableFor=dd=> dd==='O'?mUsable : dd==='M'?aUsable : avUsable
     const durFor2=dd=> dd==='O'?ochDur : dd==='M'?midDur : avDur
 
-    // ══ RESTVRAAG SAMENVOEGEN OP ÉÉN DAG ══════════════════════════════════════
-    // Zonder dit krijgt elke dag een laatste kamer met maar een paar afspraken
-    // (bv. 3 op maandag t/m vrijdag) en staat die kamer verder leeg. Efficiënter is
-    // om die restjes te bundelen: één dag waarop die kamer wél tot de benutting
-    // gevuld raakt, en de overige dagen die kamer helemaal niet nodig hebben.
-    // rules.restDag: 'uit' | 'auto' (drukste toegestane dag) | 'ma'..'vr'.
-    const concentreerRest=()=>{
-      const keuze=rules.restDag||'uit'
-      if(keuze==='uit') return
-      const dagOpen=di=>(m2.days[WEEKDAY_KEYS[di]]||0)>0 && DD.some(x=>ddOpenOp(x,di))
-      const capDag=di=>DD.filter(x=>ddOpenOp(x,di)).reduce((t,x)=>t+usableFor(x),0)
-      const dagen=[0,1,2,3,4].filter(dagOpen)
-      if(dagen.length<2) return
-      // Doeldag bepalen
-      let doel = keuze==='auto'
-        ? dagen.slice().sort((a,b)=>((grouped[b]||[]).reduce((t,x)=>t+x.duur,0))-((grouped[a]||[]).reduce((t,x)=>t+x.duur,0)))[0]
-        : WEEKDAY_KEYS.indexOf(keuze)
-      if(!(doel>=0)||!dagOpen(doel)) doel=dagen[0]
-      const capDoel=capDag(doel)
-      if(capDoel<=0) return
-      // Verplaats de DUNNE LAATSTE KAMER van elke andere dag volledig naar de
-      // doeldag, en herhaal dat tot er niets meer te verplaatsen valt. Eén ronde
-      // is niet genoeg: zodra een dag afspraken kwijtraakt verandert zijn eigen
-      // restvraag, waardoor er anders alsnog 2 à 3 losse afspraken blijven staan.
-      const drempel=0.6
-      for(let ronde=0;ronde<8;ronde++){
-        let bewogen=false
-        dagen.filter(di=>di!==doel).forEach(di=>{
-          const pool=grouped[di]||[]
-          if(!pool.length) return
-          const capSrc=capDag(di); if(capSrc<=0) return
-          const tot=pool.reduce((t,x)=>t+x.duur,0)
-          const kamers=Math.ceil(tot/capSrc)
-          // Een dag die maar één kamer nodig heeft laten we met rust — anders
-          // zouden we hele dagen leeghalen in plaats van losse restjes bundelen.
-          if(kamers<=1) return
-          const laatste=tot-(kamers-1)*capSrc            // belasting laatste kamer
-          if(laatste>=drempel*capSrc) return             // die kamer is vol genoeg
-          let te=laatste, blijf=[], mee=[]
-          for(let i=pool.length-1;i>=0;i--){
-            const a=pool[i]
-            const mag=!a.dagOpties||a.dagOpties.includes(doel)
-            if(te>0&&mag){ mee.push(a); te-=a.duur } else blijf.unshift(a)
-          }
-          if(mee.length){
-            grouped[di]=blijf
-            grouped[doel]=[...(grouped[doel]||[]),...mee.map(a=>({...a,day:doel,_verhuisd:di}))]
-            bewogen=true
-          }
-        })
-        if(!bewogen) break
-      }
-    }
-    concentreerRest()
     const durFor=dd=> dd==='O'?ochDur : dd==='M'?midDur : avDur
     const ddIndex={O:0,M:1,A:2}
     const ddPrefix={O:'o',M:'m',A:'a'}
@@ -1199,6 +1145,53 @@ export default function RasterTool(){
       })
       return {perDd:uit, over}
     }
+
+    // ══ RESTVRAAG SAMENVOEGEN OP ÉÉN DAG ══════════════════════════════════════
+    // Kijkt naar de WERKELIJKE vulling (via vulDag), niet naar een theoretische
+    // schatting. Door bin-packing-verlies gebruikt een dag vaak één kamer méér dan
+    // vraag ÷ capaciteit suggereert; die extra kamer bevat dan een paar losse
+    // afspraken. Precies die kamer verhuist hier naar de gekozen dag, zodat hij op
+    // de andere dagen helemaal dicht kan.
+    const concentreerRest=()=>{
+      const keuze=rules.restDag||'uit'
+      if(keuze==='uit') return
+      const dagOpen=di=>(m2.days[WEEKDAY_KEYS[di]]||0)>0 && DD.some(x=>ddOpenOp(x,di))
+      const dagen=[0,1,2,3,4].filter(dagOpen)
+      if(dagen.length<2) return
+      let doel = keuze==='auto'
+        ? dagen.slice().sort((x,y)=>((grouped[y]||[]).reduce((t,q)=>t+q.duur,0))-((grouped[x]||[]).reduce((t,q)=>t+q.duur,0)))[0]
+        : WEEKDAY_KEYS.indexOf(keuze)
+      if(!(doel>=0)||!dagOpen(doel)) doel=dagen[0]
+      const capKamer=di=>DD.filter(x=>ddOpenOp(x,di)).reduce((t,x)=>t+usableFor(x),0)
+      const drempel=0.6
+      for(let ronde=0;ronde<10;ronde++){
+        let bewogen=false
+        dagen.filter(di=>di!==doel).forEach(di=>{
+          const pool=grouped[di]||[]
+          if(!pool.length) return
+          const cap=capKamer(di); if(cap<=0) return
+          const res=vulDag(di,pool)
+          // hoogste kamerindex die deze dag daadwerkelijk gebruikt
+          let maxIx=-1
+          DD.forEach(x=>{ const rs=res.perDd[x]||[]; if(rs.length-1>maxIx) maxIx=rs.length-1 })
+          if(maxIx<1) return                       // dag gebruikt maar één kamer: laat staan
+          // werkelijke belasting van die laatste kamer, over alle dagdelen
+          const items=[]
+          DD.forEach(x=>{ const rs=res.perDd[x]||[]; if(rs[maxIx]) items.push(...rs[maxIx]) })
+          const load=items.reduce((t,q)=>t+q.duur,0)
+          if(!items.length||load>=drempel*cap) return   // die kamer is vol genoeg
+          // alleen verplaatsen wat op de doeldag mág
+          const mee=items.filter(q=>!q.dagOpties||q.dagOpties.includes(doel))
+          if(!mee.length) return
+          const ids=new Set(mee.map(q=>q.id))
+          grouped[di]=pool.filter(q=>!ids.has(q.id))
+          grouped[doel]=[...(grouped[doel]||[]),...mee.map(q=>({...q,day:doel,_verhuisd:di}))]
+          bewogen=true
+        })
+        if(!bewogen) break
+      }
+    }
+    concentreerRest()
 
     ;[0,1,2,3,4].forEach(di=>{
       // Dag inactief als het weekdag-% 0 is óf als er geen enkel dagdeel open staat.
