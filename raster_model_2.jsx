@@ -1116,8 +1116,13 @@ export default function RasterTool(){
       // af uit de vraag, zodat er niet eindeloos kamers in één dagdeel opengaan.
       const dagMin=poolIn.reduce((s,a)=>s+a.duur,0)
       const capPerKamer=ddVolg.reduce((s,x)=>s+usableFor(x),0)
+      // In automatische modus geven we speling bovenop de rekenkundige schatting:
+      // afspraken hebben vaste duren, dus een kamer raakt zelden exact tot de
+      // benutting gevuld (bv. 170 van 179 min). Zonder die speling vielen de
+      // laatste afspraken buiten de boot en belandden ze op "nog te plannen",
+      // terwijl er in het raster nog zichtbaar ruimte was.
       const kap=maxParallel===Infinity
-        ? Math.max(1,Math.ceil(dagMin/Math.max(1,capPerKamer)))
+        ? Math.max(1,Math.ceil(dagMin/Math.max(1,capPerKamer))+2)
         : maxParallel
 
       // ── SLOTVOLGORDE — bepaalt waar de RESTVRAAG terechtkomt ────────────────
