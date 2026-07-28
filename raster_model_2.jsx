@@ -1327,41 +1327,51 @@ export default function RasterTool(){
         const clusterAan=rules.digitalMode==='cluster'
         let clusterVanaf=physAppts.length
         if(clusterAan){ while(clusterVanaf>0 && physAppts[clusterVanaf-1].digitaal) clusterVanaf-- }
-        let simT=sessStart
-        const gaten=[]
-        physAppts.forEach((a,i)=>{
-          simT+=a.duur
-          const binnenCluster=clusterAan && i>=clusterVanaf
-          if(simT-sessStart>=flexNoFirst && i<physAppts.length-1 && !binnenCluster) gaten.push(i)
-        })
-        // 2) Aantal blokjes = wat de flex toelaat, maar nooit meer dan er gaten zijn.
-        const nBlok=Math.min(Math.floor(flexTotal/blokMin), gaten.length)
-        // 3) Kies gelijkmatig gespreide gaten (geen twee blokjes op hetzelfde gat).
-        const gekozen=new Set()
-        if(nBlok>0){
-          for(let b=0;b<nBlok;b++){
-            const pos=Math.round((b+0.5)*gaten.length/nBlok - 0.5)
-            let g=gaten[Math.max(0,Math.min(gaten.length-1,pos))]
-            // schuif door tot een nog ongebruikt gat
-            let stap=0
-            while(gekozen.has(g)&&stap<gaten.length){
-              const ix=(gaten.indexOf(g)+1)%gaten.length
-              g=gaten[ix]; stap++
-            }
-            gekozen.add(g)
-          }
+        const verzamelGaten=(naMin)=>{
+          let sim=sessStart; const g=[]
+          physAppts.forEach((a,i)=>{
+            sim+=a.duur
+            const binnenCluster=clusterAan && i>=clusterVanaf
+            if(sim-sessStart>=naMin && i<physAppts.length-1 && !binnenCluster) g.push(i)
+          })
+          return g
         }
-        // 4) Afspraken + gelijke flexblokjes op de tijdas zetten.
+        let gaten=verzamelGaten(flexNoFirst)
+        // Levert de no-flex-zone geen enkel gat op (kort spreekuur), dan zou alle
+        // flex alsnog achteraan belanden — precies wat deze regel wil voorkomen.
+        // In dat geval laten we de startzone wijken: niet eindigen op flex weegt
+        // zwaarder dan niet beginnen met flex.
+        if(!gaten.length) gaten=verzamelGaten(0)
+        // 2) Verdeel ALLE flex over de beschikbare gaten. Bij "flex verspreid" mag
+        //    het spreekuur NIET op een flexblok eindigen — de laatste afspraak sluit
+        //    het spreekuur af. Blijft er meer flex over dan het ingestelde blokje,
+        //    dan worden de tussenblokken navenant groter in plaats van dat de rest
+        //    achteraan wordt geparkeerd.
+        const bedrag={}
+        if(gaten.length){
+          const n=gaten.length
+          let geplaatst=0
+          gaten.forEach((g,i)=>{
+            // cumulatief doel, op 5 minuten afgerond → geen drift, som klopt exact
+            const doel=Math.round(flexTotal*(i+1)/n/5)*5
+            const chunk=Math.max(0,Math.min(flexTotal-geplaatst, doel-geplaatst))
+            bedrag[g]=chunk; geplaatst+=chunk
+          })
+          if(geplaatst<flexTotal) bedrag[gaten[n-1]]=(bedrag[gaten[n-1]]||0)+(flexTotal-geplaatst)
+        }
+        // 3) Afspraken + flexblokken op de tijdas zetten.
         physAppts.forEach((a,i)=>{
           t=pushAppt(a,i,t)
-          if(gekozen.has(i)){
-            const fEnd=Math.min(t+blokMin, sessEnd)
-            if(fEnd-t>=blokMin){ out.push(mkFlex(t, fEnd-t, `Buffer ${blokMin} min (verspreid)`)); t=fEnd }
+          const m=bedrag[i]||0
+          if(m>=FLEX_MIN){
+            const fEnd=Math.min(t+m, sessEnd)
+            if(fEnd-t>=FLEX_MIN){ out.push(mkFlex(t, fEnd-t,'Buffer (tussen afspraken)')); t=fEnd }
           }
         })
         t=plaatsDigitaalEinde(t)
-        // 5) De rest als één aaneengesloten rustblok aan het einde.
-        if(sessEnd-t>=FLEX_MIN) out.push(mkFlex(t, sessEnd-t,'Buffer (einde spreekuur)'))
+        // 4) Alleen als er GEEN enkel gat beschikbaar was (bv. één afspraak, of alles
+        //    valt binnen de no-flex-zone) blijft er ruimte over aan het einde.
+        if(sessEnd-t>=FLEX_MIN) out.push(mkFlex(t, sessEnd-t,'Buffer (geen tussenruimte beschikbaar)'))
       } else {
         // flexMode 'end' (of te weinig flex om te verspreiden): alles achter elkaar,
         // één aaneengesloten flexblok na de laatste afspraak.
@@ -2937,7 +2947,7 @@ export default function RasterTool(){
               <span style={{width:12,height:12,borderRadius:3,background:FLEX_STRIPE(3,6),border:`1px solid ${FLEX_COLOR.brd}`,flexShrink:0}}/>
               <div style={{flex:1,minWidth:190}}>
                 <div style={{fontSize:12,fontWeight:700,color:FLEX_COLOR.fg}}>Geen flex aan het begin</div>
-                <div style={{fontSize:11,color:C.muted}}>Elk tussenblokje is exact <b style={{color:C.text}}>{rules.flexBlokMin??10} min</b>, pas ná <b style={{color:C.text}}>{rules.flexNoFirstMin??60} min</b> spreekuur — nooit direct na de laatste afspraak. Wat niet tussen de afspraken past, komt als één rustblok aan het einde.</div>
+                <div style={{fontSize:11,color:C.muted}}>Flex komt <b style={{color:C.text}}>uitsluitend tussen de afspraken</b>, pas ná <b style={{color:C.text}}>{rules.flexNoFirstMin??60} min</b> spreekuur. Het spreekuur eindigt nooit op een flexblok — de laatste afspraak sluit af. Richtmaat per blok is <b style={{color:C.text}}>{rules.flexBlokMin??10} min</b>; is er meer flex dan dat, dan worden de tussenblokken groter in plaats van dat de rest achteraan komt.</div>
               </div>
               <div style={{display:'inline-flex',alignItems:'center',border:`1px solid ${FLEX_COLOR.brd}`,borderRadius:8,overflow:'hidden',background:C.white}}>
                 <button onClick={()=>setRules(p=>({...p,flexNoFirstMin:Math.max(0,(p.flexNoFirstMin??60)-10)}))}
