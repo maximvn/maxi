@@ -1,25 +1,32 @@
-# Whiteboard Integraal Capaciteitsmanagement
+# Acute poort en Hotfloor
 
-Uitwerking van de whiteboardsessie over de acute poort en de Hotfloor naar een
-Word-document met visualisaties.
+Uitwerking van de whiteboardsessie tot een visueel document: twaalf platen die
+elk op zichzelf te lezen zijn, met korte tekst eromheen.
 
 ## Bestanden
 
 | Bestand | Wat het is |
 |---|---|
-| `Integraal-Capaciteitsmanagement-whiteboard.docx` | Het eindresultaat |
-| `figuren/` | De gegenereerde visualisaties (SVG + PNG) |
-| `svg_lib.py` | Kleine SVG-helper (vormen, pijlen, tekst, kleurenpalet) |
-| `figuren.py` | Tekent de tien figuren |
+| `Acute-poort-en-Hotfloor.docx` | Het eindresultaat |
+| `figuren/` | De twaalf visualisaties (SVG + PNG) |
+| `svg_lib.py` | Tekenlaag met echte tekstmeting (PIL) en het kleurenpalet |
+| `figuren.py` | Tekent de twaalf figuren |
 | `maak_document.py` | Bouwt het Word-document uit de figuren |
+
+## Waarom tekst altijd past
+
+`svg_lib.py` meet elke regel met PIL op tegen de werkelijke letters voordat er
+getekend wordt. Een regel wordt eerst op woordgrens afgebroken; past hij dan nog
+niet, dan wordt de lettergrootte stapsgewijs verkleind tot hij wel past. Daardoor
+kan tekst niet buiten een kaart of kolom vallen.
 
 ## Opnieuw genereren
 
 ```bash
-pip install python-docx cairosvg
+pip install python-docx cairosvg pillow
 python3 figuren.py         # schrijft figuren/*.svg en *.png
 python3 maak_document.py   # schrijft het .docx
 ```
 
-Tekst aanpassen doe je in `figuren.py` (in de figuren) of in `maak_document.py`
-(de lopende tekst), waarna je beide scripts opnieuw draait.
+Inhoud aanpassen doe je in `figuren.py` (in de platen) of in `maak_document.py`
+(de lopende tekst en de vragenlijsten), waarna je beide scripts opnieuw draait.
