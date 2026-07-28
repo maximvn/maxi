@@ -465,7 +465,10 @@ export default function RasterTool(){
       const yEnd=r.y0+(r.end-r.start)*g.PXMIN
       if(y>=r.y0-1 && y<=yEnd+g.pauseH){ best=r; if(y<=yEnd) break }
     }
-    return best.start + Math.max(0,(y-best.y0))/g.PXMIN
+    // Klem binnen het dagdeel: de grijze marges vóór en ná zijn gesloten, daar
+    // kan niets naartoe gesleept worden.
+    const rt=best.start + Math.max(0,(y-best.y0))/g.PXMIN
+    return Math.max(best.start, Math.min(best.end, rt))
   }
   const snap5=t=>Math.round(t/5)*5
 
@@ -3379,7 +3382,27 @@ export default function RasterTool(){
                   padding:'3px 5px',borderRadius:5,cursor:'text'}}
                 onFocus={e=>{e.target.style.background='#fff';e.target.style.borderColor=C.border}}
                 onBlur={e=>{e.target.style.background='transparent';e.target.style.borderColor='transparent'}}/>
-              <div style={{fontSize:9,color:C.muted,fontFamily:'monospace',paddingLeft:5}}>{regData.map(r=>r.used+'m').join(' · ')}</div>
+              {/* Vulling per dagdeel, met de benutting uit module Tijden als doel.
+                  Groen = op of boven doel, oranje = eronder — zo zie je direct of
+                  het spreekuur de ingestelde benutting haalt. */}
+              <div style={{display:'flex',gap:5,paddingLeft:5,flexWrap:'wrap'}}>
+                {regData.map(r=>{
+                  const bruto=r.end-r.start
+                  const pct=bruto>0?Math.round(r.used/bruto*100):0
+                  const doel=m2.benutting||85
+                  const haalt=pct>=doel-3
+                  return(
+                    <span key={r.pre} title={`${r.label}: ${r.used} van ${bruto} min · doel ${doel}%`}
+                      style={{fontSize:9,fontFamily:'monospace',fontWeight:700,
+                        color:r.used===0?C.muted:(haalt?'#2E6B3A':FLEX_COLOR.fg),
+                        background:r.used===0?'transparent':(haalt?'#EDF7F0':FLEX_COLOR.bg),
+                        border:`1px solid ${r.used===0?'transparent':(haalt?'#C9E6D5':FLEX_COLOR.brd)}`,
+                        borderRadius:5,padding:'1px 5px'}}>
+                      {r.used}m · {pct}%
+                    </span>
+                  )
+                })}
+              </div>
             </div>
             <div style={{position:'relative'}}>
               <button onClick={()=>setAddMenu(addMenu&&addMenu.room===room?null:{room})}
@@ -3433,6 +3456,13 @@ export default function RasterTool(){
           </div>
           {/* Body */}
           <div data-roombody={`${selDay}_o${room}`} style={{position:'relative',height:gridH,background:C.white}}>
+            {/* Gesloten marges vóór en ná het spreekuur — grijs, niet planbaar */}
+            <div style={{position:'absolute',top:0,left:0,right:0,height:LEAD,zIndex:2,pointerEvents:'none',
+              background:'repeating-linear-gradient(45deg,#EDF0F4,#EDF0F4 6px,#F5F7F9 6px,#F5F7F9 12px)',
+              borderBottom:`1px solid ${C.border}`}}/>
+            <div style={{position:'absolute',bottom:0,left:0,right:0,height:LEAD,zIndex:2,pointerEvents:'none',
+              background:'repeating-linear-gradient(45deg,#EDF0F4,#EDF0F4 6px,#F5F7F9 6px,#F5F7F9 12px)',
+              borderTop:`1px solid ${C.border}`}}/>
             {gridLines.map(({t,y,hour},idx)=>(
               <div key={idx} style={{position:'absolute',top:y,left:0,right:0,height:1,
                 background:hour?'#D8E0E8':'#EEF2F6',zIndex:0}}/>
@@ -3882,6 +3912,10 @@ export default function RasterTool(){
                         <div style={{height:gridH,display:'flex',alignItems:'center',justifyContent:'center',color:C.muted,fontSize:10.5,textAlign:'center',padding:8}}>Geen<br/>spreekuur</div>
                       ):(
                         <div style={{position:'relative',height:gridH}}>
+                          <div style={{position:'absolute',top:0,left:0,right:0,height:LEAD,zIndex:3,pointerEvents:'none',
+                            background:'repeating-linear-gradient(45deg,#EDF0F4,#EDF0F4 5px,#F5F7F9 5px,#F5F7F9 10px)'}}/>
+                          <div style={{position:'absolute',bottom:0,left:0,right:0,height:LEAD,zIndex:3,pointerEvents:'none',
+                            background:'repeating-linear-gradient(45deg,#EDF0F4,#EDF0F4 5px,#F5F7F9 5px,#F5F7F9 10px)'}}/>
                           {/* uur/half lijnen */}
                           {gridLines.map(({t,y,hour,half},i)=>(<div key={i} style={{position:'absolute',top:y,left:0,right:0,height:1,background:hour?'#DBE3EA':half?'#EEF2F6':'transparent',zIndex:0}}/>))}
                           {/* pauze-banden */}
