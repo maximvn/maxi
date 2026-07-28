@@ -386,6 +386,7 @@ export default function RasterTool(){
     kamerVerdeling:'kamer',   // 'kamer' = kamer voor kamer vol | 'dagdeel' = dagdeel voor dagdeel | 'gelijk'
     spoedDagdeel:'both',      // 'both' | 'och' | 'mid' — in welk dagdeel geldt spoed-eerst
     flexNoFirstMin:60,        // geen verspreide flex in de eerste N minuten van een spreekuur
+    flexBlokMin:10,           // grootte van één verspreid flexblokje (5/10/15/20 min)
     digitalEndMinutes:30,     // breedte van het digitale eindvenster (digitalMode='end')
     order:['spoedFirst','shortFirst','certainFirst']  // priority order of sequence rules
   })
@@ -1196,6 +1197,7 @@ export default function RasterTool(){
       const usedByAppts=appts.reduce((s,a)=>s+a.duur,0)
       const flexTotal=Math.max(0, dagdeelMin-usedByAppts)
       const flexNoFirst=Math.max(0, rules.flexNoFirstMin??60)
+      const blokMin=Math.max(5, rules.flexBlokMin??10)   // grootte van één tussenblokje
       const mkFlex=(start,dur,label)=>({id:'flex_'+dd+'_'+room+'_'+start+'_'+Math.random().toString(36).slice(2,5),
         isFlex:true,dagdeel:dd,room,start,end:start+dur,duur:dur,code:'Flex',
         description:label||'Flexruimte / buffer',category:'flex'})
@@ -1240,45 +1242,49 @@ export default function RasterTool(){
       }
 
       let t=sessStart
-      if(rules.flexMode==='spread' && flexTotal>=FLEX_BLOK){
-        // 1) Hoeveel blokjes van 10 min kunnen we verspreiden? Restminuten gaan
-        //    altijd naar het einde (dat is het restblok, geen tussenruimte).
-        const nBlok=Math.floor(flexTotal/FLEX_BLOK)
-        // 2) Beschikbare gaten = het moment ná een afspraak, buiten de no-flex-zone
-        //    aan het begin, en NIET na de laatste afspraak.
+      if(rules.flexMode==='spread' && flexTotal>=blokMin){
+        // Elk gat krijgt HOOGSTENS ÉÉN blokje van exact de ingestelde grootte.
+        // Vroeger stapelden blokjes op hetzelfde gat zodra er meer flex dan gaten
+        // was — dat leverde één blok van twee uur op met daarachter nog één losse
+        // afspraak. Nu is elk tussenblokje even groot en gaat wat niet tussen de
+        // afspraken past als één rustblok naar het einde.
+        //
+        // 1) Beschikbare gaten = ná een afspraak, buiten de no-flex-zone aan het
+        //    begin, en NOOIT direct na de laatste afspraak.
         let simT=sessStart
         const gaten=[]
         physAppts.forEach((a,i)=>{
           simT+=a.duur
-          if(simT-sessStart>=flexNoFirst && i<physAppts.length-1) gaten.push({idx:i,tijdstip:simT})
+          if(simT-sessStart>=flexNoFirst && i<physAppts.length-1) gaten.push(i)
         })
-        // 3) Verdeel de blokjes gelijkmatig over de tijdspanne (eerste gat → sessEnd).
-        //    Per blokje het eerste nog ongebruikte gat op/na het ideale tijdstip;
-        //    is dat er niet, dan het dichtstbijzijnde gat (blokjes mogen stapelen).
-        const blokMap={}
-        if(nBlok>0&&gaten.length>0){
-          const start0=gaten[0].tijdstip
-          const stap=(sessEnd-start0)/nBlok
+        // 2) Aantal blokjes = wat de flex toelaat, maar nooit meer dan er gaten zijn.
+        const nBlok=Math.min(Math.floor(flexTotal/blokMin), gaten.length)
+        // 3) Kies gelijkmatig gespreide gaten (geen twee blokjes op hetzelfde gat).
+        const gekozen=new Set()
+        if(nBlok>0){
           for(let b=0;b<nBlok;b++){
-            const ideaal=start0+(b+0.5)*stap
-            let kand=gaten.find(g=>g.tijdstip>=ideaal&&!(blokMap[g.idx]>0))
-            if(!kand) kand=gaten.reduce((best,g)=>
-              Math.abs(g.tijdstip-ideaal)<Math.abs(best.tijdstip-ideaal)?g:best, gaten[gaten.length-1])
-            if(kand) blokMap[kand.idx]=(blokMap[kand.idx]||0)+1
+            const pos=Math.round((b+0.5)*gaten.length/nBlok - 0.5)
+            let g=gaten[Math.max(0,Math.min(gaten.length-1,pos))]
+            // schuif door tot een nog ongebruikt gat
+            let stap=0
+            while(gekozen.has(g)&&stap<gaten.length){
+              const ix=(gaten.indexOf(g)+1)%gaten.length
+              g=gaten[ix]; stap++
+            }
+            gekozen.add(g)
           }
         }
-        // 4) Afspraken + flexblokjes op de tijdas zetten.
+        // 4) Afspraken + gelijke flexblokjes op de tijdas zetten.
         physAppts.forEach((a,i)=>{
           t=pushAppt(a,i,t)
-          const n=blokMap[i]||0
-          if(n>0){
-            const fEnd=Math.min(t+n*FLEX_BLOK, sessEnd)
-            if(fEnd-t>=FLEX_BLOK){ out.push(mkFlex(t, fEnd-t,'Buffer (verspreid)')); t=fEnd }
+          if(gekozen.has(i)){
+            const fEnd=Math.min(t+blokMin, sessEnd)
+            if(fEnd-t>=blokMin){ out.push(mkFlex(t, fEnd-t, `Buffer ${blokMin} min (verspreid)`)); t=fEnd }
           }
         })
         t=plaatsDigitaalEinde(t)
-        // 5) Restflex aan het einde
-        if(sessEnd-t>=FLEX_MIN) out.push(mkFlex(t, sessEnd-t,'Buffer (rest)'))
+        // 5) De rest als één aaneengesloten rustblok aan het einde.
+        if(sessEnd-t>=FLEX_MIN) out.push(mkFlex(t, sessEnd-t,'Buffer (einde spreekuur)'))
       } else {
         // flexMode 'end' (of te weinig flex om te verspreiden): alles achter elkaar,
         // één aaneengesloten flexblok na de laatste afspraak.
@@ -1441,7 +1447,7 @@ export default function RasterTool(){
     ddDagen:{O:{...DEF_DD_DAGEN.O},M:{...DEF_DD_DAGEN.M},A:{...DEF_DD_DAGEN.A}}})
     setRules({shortFirst:false,spoedFirst:false,certainFirst:false,baileyWelsh:false,
       digitalMode:'spread',groupMode:'spread',flexMode:'end',
-      kamerVerdeling:'kamer',spoedDagdeel:'both',flexNoFirstMin:60,digitalEndMinutes:30,
+      kamerVerdeling:'kamer',spoedDagdeel:'both',flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30,
       order:['spoedFirst','shortFirst','certainFirst']})
     setSelDay(0); setRaster(null); setDrag(null)
     setShowFullReset(false)
@@ -1522,7 +1528,7 @@ export default function RasterTool(){
           const sr=state.rules
           setRules({shortFirst:false,spoedFirst:false,certainFirst:false,baileyWelsh:false,
             digitalMode:'spread',groupMode:'spread',flexMode:'end',
-            kamerVerdeling:'kamer',spoedDagdeel:'both',flexNoFirstMin:60,digitalEndMinutes:30,...sr,
+            kamerVerdeling:'kamer',spoedDagdeel:'both',flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30,...sr,
             order:Array.isArray(sr.order)&&sr.order.length?sr.order:['spoedFirst','shortFirst','certainFirst']})
         }
         // Note: raster is not stored (too large), it will be auto-generated
@@ -2835,7 +2841,7 @@ export default function RasterTool(){
               <span style={{width:12,height:12,borderRadius:3,background:FLEX_STRIPE(3,6),border:`1px solid ${FLEX_COLOR.brd}`,flexShrink:0}}/>
               <div style={{flex:1,minWidth:190}}>
                 <div style={{fontSize:12,fontWeight:700,color:FLEX_COLOR.fg}}>Geen flex aan het begin</div>
-                <div style={{fontSize:11,color:C.muted}}>Flexblokken van <b style={{color:C.text}}>min. 10 min</b>, pas ná <b style={{color:C.text}}>{rules.flexNoFirstMin??60} min</b> spreekuur — en nooit direct na de laatste afspraak (dat is het restblok).</div>
+                <div style={{fontSize:11,color:C.muted}}>Elk tussenblokje is exact <b style={{color:C.text}}>{rules.flexBlokMin??10} min</b>, pas ná <b style={{color:C.text}}>{rules.flexNoFirstMin??60} min</b> spreekuur — nooit direct na de laatste afspraak. Wat niet tussen de afspraken past, komt als één rustblok aan het einde.</div>
               </div>
               <div style={{display:'inline-flex',alignItems:'center',border:`1px solid ${FLEX_COLOR.brd}`,borderRadius:8,overflow:'hidden',background:C.white}}>
                 <button onClick={()=>setRules(p=>({...p,flexNoFirstMin:Math.max(0,(p.flexNoFirstMin??60)-10)}))}
@@ -2843,6 +2849,18 @@ export default function RasterTool(){
                 <span style={{width:52,textAlign:'center',fontSize:13,fontWeight:700,color:C.text}}>{rules.flexNoFirstMin??60}m</span>
                 <button onClick={()=>setRules(p=>({...p,flexNoFirstMin:Math.min(240,(p.flexNoFirstMin??60)+10)}))}
                   style={{width:32,height:32,border:'none',borderLeft:`1px solid ${FLEX_COLOR.brd}`,background:FLEX_COLOR.bg2,cursor:'pointer',fontWeight:700,color:FLEX_COLOR.fg,fontSize:15}}>+</button>
+              </div>
+              <div style={{width:'100%',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginTop:2}}>
+                <span style={{fontSize:11,fontWeight:700,color:FLEX_COLOR.fg}}>Grootte van een flexblokje:</span>
+                {[5,10,15,20,30].map(v=>{
+                  const on=(rules.flexBlokMin??10)===v
+                  return(
+                    <button key={v} onClick={()=>setRules(p=>({...p,flexBlokMin:v}))}
+                      style={{padding:'5px 12px',borderRadius:16,cursor:'pointer',fontSize:11.5,fontWeight:700,
+                        background:on?FLEX_COLOR.brd:C.white,color:on?'#fff':FLEX_COLOR.fg,
+                        border:`1px solid ${FLEX_COLOR.brd}`}}>{v} min</button>
+                  )
+                })}
               </div>
             </div>
           )}
