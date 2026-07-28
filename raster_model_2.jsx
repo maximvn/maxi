@@ -384,6 +384,7 @@ export default function RasterTool(){
     shortFirst:false, spoedFirst:false, certainFirst:false, baileyWelsh:false,
     digitalMode:'spread', groupMode:'spread', flexMode:'end',
     kamerVerdeling:'kamer',   // 'kamer' = kamer voor kamer vol | 'dagdeel' = dagdeel voor dagdeel | 'gelijk'
+    restDag:'uit',            // 'uit' | 'auto' | 'ma'..'vr' — restvraag samenvoegen op één dag
     spoedDagdeel:'both',      // 'both' | 'och' | 'mid' — in welk dagdeel geldt spoed-eerst
     flexNoFirstMin:60,        // geen verspreide flex in de eerste N minuten van een spreekuur
     flexBlokMin:10,           // grootte van één verspreid flexblokje (5/10/15/20 min)
@@ -993,7 +994,7 @@ export default function RasterTool(){
           const dayDd=useDd.filter(x=>ddOpenOp(x,di))
           if(!dayDd.length) return
           for(let k=0;k<dCount;k++) out.push({
-            day:di, ddOpties:dayDd, dd:dayDd[0],
+            day:di, ddOpties:dayDd, dd:dayDd[0], dagOpties:allowedDays,
             id:cat[0]+ci+'_'+di+'_'+k,
             code:code.afspraakcode||(cat==='nieuw'?'NP'+(ci+1):'CP'+(ci+1)),
             description:code.omschrijving||(cat==='nieuw'?'Nieuwe patiënt':'Controle'),
@@ -1014,6 +1015,49 @@ export default function RasterTool(){
     allInst.forEach(it=>{ (grouped[it.day]=grouped[it.day]||[]).push(it) })
 
     const usableFor=dd=> dd==='O'?mUsable : dd==='M'?aUsable : avUsable
+    const durFor2=dd=> dd==='O'?ochDur : dd==='M'?midDur : avDur
+
+    // ══ RESTVRAAG SAMENVOEGEN OP ÉÉN DAG ══════════════════════════════════════
+    // Zonder dit krijgt elke dag een laatste kamer met maar een paar afspraken
+    // (bv. 3 op maandag t/m vrijdag) en staat die kamer verder leeg. Efficiënter is
+    // om die restjes te bundelen: één dag waarop die kamer wél tot de benutting
+    // gevuld raakt, en de overige dagen die kamer helemaal niet nodig hebben.
+    // rules.restDag: 'uit' | 'auto' (drukste toegestane dag) | 'ma'..'vr'.
+    const concentreerRest=()=>{
+      const keuze=rules.restDag||'uit'
+      if(keuze==='uit') return
+      const dagOpen=di=>(m2.days[WEEKDAY_KEYS[di]]||0)>0 && DD.some(x=>ddOpenOp(x,di))
+      const capDag=di=>DD.filter(x=>ddOpenOp(x,di)).reduce((t,x)=>t+usableFor(x),0)
+      const dagen=[0,1,2,3,4].filter(dagOpen)
+      if(dagen.length<2) return
+      // Doeldag bepalen
+      let doel = keuze==='auto'
+        ? dagen.slice().sort((a,b)=>((grouped[b]||[]).reduce((t,x)=>t+x.duur,0))-((grouped[a]||[]).reduce((t,x)=>t+x.duur,0)))[0]
+        : WEEKDAY_KEYS.indexOf(keuze)
+      if(!(doel>=0)||!dagOpen(doel)) doel=dagen[0]
+      const capDoel=capDag(doel)
+      if(capDoel<=0) return
+      // Verzamel per andere dag de restvraag: het deel dat in een laatste, dun
+      // gevulde kamer zou belanden (< 60% van een volle kamerdag).
+      const drempel=0.6
+      const verhuisd=[]
+      dagen.filter(di=>di!==doel).forEach(di=>{
+        const pool=grouped[di]||[]
+        const tot=pool.reduce((t,x)=>t+x.duur,0)
+        const rest=tot%capDoel
+        if(rest<=0||rest>=drempel*capDoel) return           // kamer is vol genoeg
+        // neem van achteren afspraken die op de doeldag mógen, tot 'rest' minuten
+        let te=rest, blijf=[], mee=[]
+        for(let i=pool.length-1;i>=0;i--){
+          const a=pool[i]
+          const magDoel=!a.dagOpties||a.dagOpties.includes(doel)
+          if(te>0&&magDoel&&a.duur<=te+5){ mee.push(a); te-=a.duur } else blijf.unshift(a)
+        }
+        if(mee.length){ grouped[di]=blijf; verhuisd.push(...mee.map(a=>({...a,day:doel,_verhuisd:di}))) }
+      })
+      if(verhuisd.length) grouped[doel]=[...(grouped[doel]||[]),...verhuisd]
+    }
+    concentreerRest()
     const durFor=dd=> dd==='O'?ochDur : dd==='M'?midDur : avDur
     const ddIndex={O:0,M:1,A:2}
     const ddPrefix={O:'o',M:'m',A:'a'}
@@ -1464,7 +1508,7 @@ export default function RasterTool(){
     ddDagen:{O:{...DEF_DD_DAGEN.O},M:{...DEF_DD_DAGEN.M},A:{...DEF_DD_DAGEN.A}}})
     setRules({shortFirst:false,spoedFirst:false,certainFirst:false,baileyWelsh:false,
       digitalMode:'spread',groupMode:'spread',flexMode:'end',
-      kamerVerdeling:'kamer',spoedDagdeel:'both',flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30,
+      kamerVerdeling:'kamer',restDag:'uit',spoedDagdeel:'both',flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30,
       order:['spoedFirst','shortFirst','certainFirst']})
     setSelDay(0); setRaster(null); setDrag(null)
     setShowFullReset(false)
@@ -1545,7 +1589,7 @@ export default function RasterTool(){
           const sr=state.rules
           setRules({shortFirst:false,spoedFirst:false,certainFirst:false,baileyWelsh:false,
             digitalMode:'spread',groupMode:'spread',flexMode:'end',
-            kamerVerdeling:'kamer',spoedDagdeel:'both',flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30,...sr,
+            kamerVerdeling:'kamer',restDag:'uit',spoedDagdeel:'both',flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30,...sr,
             order:Array.isArray(sr.order)&&sr.order.length?sr.order:['spoedFirst','shortFirst','certainFirst']})
         }
         // Note: raster is not stored (too large), it will be auto-generated
@@ -2796,6 +2840,25 @@ export default function RasterTool(){
               )
             })}
           </div>
+          <div style={{marginTop:11,background:C.rowAlt,border:`1px solid ${C.border}`,borderRadius:9,padding:'11px 13px'}}>
+            <div style={{fontSize:12,fontWeight:700,color:C.text,marginBottom:3}}>Restvraag samenvoegen op één dag</div>
+            <div style={{fontSize:11,color:C.muted,lineHeight:1.5,marginBottom:8}}>
+              Blijft er elke dag maar een handjevol afspraken over voor de laatste kamer, dan staat die kamer vijf dagen
+              half leeg. Met deze optie worden die restjes gebundeld op één dag: daar raakt de kamer wél tot de benutting
+              gevuld en op de overige dagen is hij niet nodig. Afspraken verhuizen alleen naar een dag die hun code toestaat.
+            </div>
+            <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+              {[{v:'uit',l:'Uit'},{v:'auto',l:'Automatisch'},...WEEKDAY_KEYS.map((k,i)=>({v:k,l:DAY_ABBR[i]}))].map(o=>{
+                const on=(rules.restDag||'uit')===o.v
+                return(
+                  <button key={o.v} onClick={()=>setRules(p=>({...p,restDag:o.v}))}
+                    style={{padding:'6px 13px',borderRadius:16,cursor:'pointer',fontSize:11.5,fontWeight:700,
+                      background:on?C.primary:C.white,color:on?'#fff':C.muted,
+                      border:`1px solid ${on?C.primary:C.border}`}}>{o.l}</button>
+                )
+              })}
+            </div>
+          </div>
         </Card>
 
         {/* Radios: Groepering */}
@@ -3166,8 +3229,12 @@ export default function RasterTool(){
     const PAUSE_H=Math.max(36,(midStart-ochEnd)*PXMIN*0.32)
     const PAUSE_H2=avondOn?Math.max(36,(avondStart-midEnd)*PXMIN*0.32):0
     // Build dagdeel regions with their y-offsets
-    const regions=[{dd:'O',pre:'o',label:'Ochtend',start:ochStart,end:ochEnd,y0:0}]
-    let yAcc=(ochEnd-ochStart)*PXMIN+PAUSE_H
+    // Marge van een uur vóór en ná het spreekuur: puur ter oriëntatie, je kunt er
+    // niet plannen. Zo staan de begin- en eindtijd niet meer tegen de rand geklemd.
+    const LEAD_MIN=60
+    const LEAD=LEAD_MIN*PXMIN
+    const regions=[{dd:'O',pre:'o',label:'Ochtend',start:ochStart,end:ochEnd,y0:LEAD}]
+    let yAcc=LEAD+(ochEnd-ochStart)*PXMIN+PAUSE_H
     regions.push({dd:'M',pre:'m',label:'Middag',start:midStart,end:midEnd,y0:yAcc})
     yAcc+=(midEnd-midStart)*PXMIN
     if(avondOn){
@@ -3175,7 +3242,7 @@ export default function RasterTool(){
       regions.push({dd:'A',pre:'a',label:'Avond',start:avondStart,end:avondEnd,y0:yAcc})
       yAcc+=(avondEnd-avondStart)*PXMIN
     }
-    const gridH=yAcc
+    const gridH=yAcc+LEAD
     const regionOf=t=>{
       for(let i=regions.length-1;i>=0;i--){ if(t>=regions[i].start) return regions[i] }
       return regions[0]
@@ -3188,6 +3255,12 @@ export default function RasterTool(){
 
     const gridLines=[]
     regions.forEach(r=>{ for(let t=r.start;t<=r.end;t+=15) gridLines.push({t,y:toY(t),hour:t%60===0,half:t%30===0}) })
+    // Tijdlabels in de marges, zodat je ziet waar de dag begint en eindigt.
+    const eersteT=regions[0].start, laatsteT=regions[regions.length-1].end
+    for(let k=1;k<=Math.floor(LEAD_MIN/30);k++){
+      const tv=eersteT-k*30; if(tv>=0) gridLines.push({t:tv,y:toY(eersteT)-k*30*PXMIN,hour:tv%60===0,half:true,buiten:true})
+      const tn=laatsteT+k*30;  gridLines.push({t:tn,y:toY(laatsteT)+k*30*PXMIN,hour:tn%60===0,half:true,buiten:true})
+    }
 
     const isDragging=!!dragItem
 
