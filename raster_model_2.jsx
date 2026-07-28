@@ -1037,25 +1037,38 @@ export default function RasterTool(){
       if(!(doel>=0)||!dagOpen(doel)) doel=dagen[0]
       const capDoel=capDag(doel)
       if(capDoel<=0) return
-      // Verzamel per andere dag de restvraag: het deel dat in een laatste, dun
-      // gevulde kamer zou belanden (< 60% van een volle kamerdag).
+      // Verplaats de DUNNE LAATSTE KAMER van elke andere dag volledig naar de
+      // doeldag, en herhaal dat tot er niets meer te verplaatsen valt. Eén ronde
+      // is niet genoeg: zodra een dag afspraken kwijtraakt verandert zijn eigen
+      // restvraag, waardoor er anders alsnog 2 à 3 losse afspraken blijven staan.
       const drempel=0.6
-      const verhuisd=[]
-      dagen.filter(di=>di!==doel).forEach(di=>{
-        const pool=grouped[di]||[]
-        const tot=pool.reduce((t,x)=>t+x.duur,0)
-        const rest=tot%capDoel
-        if(rest<=0||rest>=drempel*capDoel) return           // kamer is vol genoeg
-        // neem van achteren afspraken die op de doeldag mógen, tot 'rest' minuten
-        let te=rest, blijf=[], mee=[]
-        for(let i=pool.length-1;i>=0;i--){
-          const a=pool[i]
-          const magDoel=!a.dagOpties||a.dagOpties.includes(doel)
-          if(te>0&&magDoel&&a.duur<=te+5){ mee.push(a); te-=a.duur } else blijf.unshift(a)
-        }
-        if(mee.length){ grouped[di]=blijf; verhuisd.push(...mee.map(a=>({...a,day:doel,_verhuisd:di}))) }
-      })
-      if(verhuisd.length) grouped[doel]=[...(grouped[doel]||[]),...verhuisd]
+      for(let ronde=0;ronde<8;ronde++){
+        let bewogen=false
+        dagen.filter(di=>di!==doel).forEach(di=>{
+          const pool=grouped[di]||[]
+          if(!pool.length) return
+          const capSrc=capDag(di); if(capSrc<=0) return
+          const tot=pool.reduce((t,x)=>t+x.duur,0)
+          const kamers=Math.ceil(tot/capSrc)
+          // Een dag die maar één kamer nodig heeft laten we met rust — anders
+          // zouden we hele dagen leeghalen in plaats van losse restjes bundelen.
+          if(kamers<=1) return
+          const laatste=tot-(kamers-1)*capSrc            // belasting laatste kamer
+          if(laatste>=drempel*capSrc) return             // die kamer is vol genoeg
+          let te=laatste, blijf=[], mee=[]
+          for(let i=pool.length-1;i>=0;i--){
+            const a=pool[i]
+            const mag=!a.dagOpties||a.dagOpties.includes(doel)
+            if(te>0&&mag){ mee.push(a); te-=a.duur } else blijf.unshift(a)
+          }
+          if(mee.length){
+            grouped[di]=blijf
+            grouped[doel]=[...(grouped[doel]||[]),...mee.map(a=>({...a,day:doel,_verhuisd:di}))]
+            bewogen=true
+          }
+        })
+        if(!bewogen) break
+      }
     }
     concentreerRest()
     const durFor=dd=> dd==='O'?ochDur : dd==='M'?midDur : avDur
