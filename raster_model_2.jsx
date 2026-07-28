@@ -886,24 +886,33 @@ export default function RasterTool(){
         const totCat={}, totCode={}
         lst.forEach(a=>{ totCat[a.category]=(totCat[a.category]||0)+1
                          totCode[a.code]=(totCode[a.code]||0)+1 })
-        // Voorsorteren op de volgorderegels bepaalt wie bij gelijke stand voorgaat.
-        let bron=lst.map((a,i)=>({a,i}))
-        ;[...seq].reverse().forEach(k=>{
-          if(k==='shortFirst') bron=[...bron].sort((x,y)=>(x.a.duur-y.a.duur)||(x.i-y.i))
-          else if(k==='certainFirst') bron=[...bron].sort((x,y)=>(uScore(x.a)-uScore(y.a))||(x.i-y.i))
-        })
-        const rest=bron.map(x=>x.a)
+        // De volgorderegels krijgen een GEWICHT naar prioriteit dat zwaarder weegt
+        // dan de mixbewaking. Zo bepaalt "kort eerst" op prioriteit 1 écht de kop
+        // van het spreekuur, terwijl de mix nog steeds spreidt bij gelijke stand.
+        // Zonder dit overstemde de mix de regel en leek "kort eerst" niets te doen.
+        const W_REGEL=[3.2,1.5,0.7]
+        const regelW=seq.map((k,i)=>({k,w:W_REGEL[i]??0.3}))
+        const durs=lst.map(a=>a.duur||15)
+        const dMin=Math.min(...durs), dSpan=Math.max(1,Math.max(...durs)-dMin)
+        const sig={
+          shortFirst:a=>1-((a.duur||15)-dMin)/dSpan,   // 1 = kortste
+          certainFirst:a=>1-uScore(a)/2,               // 1 = meest zeker
+        }
+        const rest=[...lst]
         const gCat={}, gCode={}, uit=[]
         let vorige=null
         while(rest.length){
           let best=0, bestS=-Infinity
           for(let j=0;j<rest.length;j++){
             const a=rest[j]
-            // straf een categorie/code die vóórloopt op zijn aandeel
-            let s=-1.8*((( gCat[a.category]||0)+1)/(uit.length+1)-(totCat[a.category]||0)/n)
-                  -0.9*((((gCode[a.code]||0)+1)/(uit.length+1))-(totCode[a.code]||0)/n)
+            let s=0
+            // (1) volgorderegels, gewogen naar prioriteit — dominant
+            regelW.forEach(({k,w})=>{ if(sig[k]) s+=w*sig[k](a) })
+            // (2) mixbewaking: straf een categorie/code die vóórloopt op zijn aandeel
+            s+=-1.8*((((gCat[a.category]||0)+1)/(uit.length+1))-(totCat[a.category]||0)/n)
+               -0.9*((((gCode[a.code]||0)+1)/(uit.length+1))-(totCode[a.code]||0)/n)
             if(vorige&&vorige.code===a.code) s-=0.30
-            s+=0.12*(1-j/Math.max(1,rest.length-1))   // stabiel: behoud de voorsortering
+            s+=0.10*(1-j/Math.max(1,rest.length-1))   // stabiele tiebreak
             if(s>bestS){ bestS=s; best=j }
           }
           const a=rest.splice(best,1)[0]
@@ -1251,11 +1260,19 @@ export default function RasterTool(){
         //
         // 1) Beschikbare gaten = ná een afspraak, buiten de no-flex-zone aan het
         //    begin, en NOOIT direct na de laatste afspraak.
+        // Staat "digitaal clusteren" aan, dan mag er GEEN flex tussen de digitale
+        // consulten komen — anders wordt het cluster juist opengebroken (consult,
+        // flexblok, consult). We bepalen waar de aaneengesloten digitale staart
+        // begint en slaan de gaten binnen dat cluster over.
+        const clusterAan=rules.digitalMode==='cluster'
+        let clusterVanaf=physAppts.length
+        if(clusterAan){ while(clusterVanaf>0 && physAppts[clusterVanaf-1].digitaal) clusterVanaf-- }
         let simT=sessStart
         const gaten=[]
         physAppts.forEach((a,i)=>{
           simT+=a.duur
-          if(simT-sessStart>=flexNoFirst && i<physAppts.length-1) gaten.push(i)
+          const binnenCluster=clusterAan && i>=clusterVanaf
+          if(simT-sessStart>=flexNoFirst && i<physAppts.length-1 && !binnenCluster) gaten.push(i)
         })
         // 2) Aantal blokjes = wat de flex toelaat, maar nooit meer dan er gaten zijn.
         const nBlok=Math.min(Math.floor(flexTotal/blokMin), gaten.length)
@@ -2861,6 +2878,17 @@ export default function RasterTool(){
                         border:`1px solid ${FLEX_COLOR.brd}`}}>{v} min</button>
                   )
                 })}
+                <span style={{fontSize:11,color:C.muted}}>of eigen waarde:</span>
+                <div style={{display:'inline-flex',alignItems:'center',border:`1px solid ${FLEX_COLOR.brd}`,borderRadius:8,overflow:'hidden',background:C.white}}>
+                  <button onClick={()=>setRules(p=>({...p,flexBlokMin:Math.max(5,(p.flexBlokMin??10)-5)}))}
+                    style={{width:28,height:28,border:'none',borderRight:`1px solid ${FLEX_COLOR.brd}`,background:FLEX_COLOR.bg2,cursor:'pointer',fontWeight:700,color:FLEX_COLOR.fg}}>−</button>
+                  <input type="number" min={5} max={240} step={5} value={rules.flexBlokMin??10}
+                    onChange={e=>setRules(p=>({...p,flexBlokMin:Math.max(5,Math.min(240,parseInt(e.target.value)||5))}))}
+                    style={{width:56,textAlign:'center',border:'none',padding:'5px 2px',fontSize:12.5,fontWeight:700,color:C.text,fontFamily:'inherit'}}/>
+                  <button onClick={()=>setRules(p=>({...p,flexBlokMin:Math.min(240,(p.flexBlokMin??10)+5)}))}
+                    style={{width:28,height:28,border:'none',borderLeft:`1px solid ${FLEX_COLOR.brd}`,background:FLEX_COLOR.bg2,cursor:'pointer',fontWeight:700,color:FLEX_COLOR.fg}}>+</button>
+                  <span style={{fontSize:10.5,color:C.muted,padding:'0 8px'}}>min</span>
+                </div>
               </div>
             </div>
           )}
