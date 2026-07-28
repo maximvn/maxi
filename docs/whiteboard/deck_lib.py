@@ -1,9 +1,9 @@
-"""Ontwerpsysteem 'PULSE' voor de presentatie.
+"""Ontwerpsysteem 'PULSE' voor de presentatie, lichte uitvoering.
 
-Donker canvas als een monitorscherm, met een lichtgevende pulslijn als
-terugkerend motief en felle signaalkleuren die alleen worden ingezet waar iets
-klemt. Alles wordt als echte PowerPoint-vorm geplaatst, dus elke tekst blijft
-selecteerbaar en aanpasbaar.
+Wit papier met veel lucht, een dunne pulslijn als terugkerend motief en
+verzadigde signaalkleuren die alleen worden ingezet waar iets klemt. Panelen
+krijgen een zachte slagschaduw zodat ze van het papier af komen. Alles wordt
+als echte PowerPoint-vorm geplaatst, dus elke tekst blijft selecteerbaar.
 """
 from pptx import Presentation
 from pptx.dml.color import RGBColor
@@ -16,22 +16,25 @@ from pptx.util import Emu, Inches, Pt
 from pptx_lib import passende_maat, regelhoogte
 
 # ------------------------------------------------------------------- palet
-BG1 = "05101E"        # bovenkant achtergrond
-BG2 = "0C2138"        # onderkant achtergrond
-KAART = "0F2440"      # paneel
-KAART_OP = "16314F"   # opgetild paneel
-RAND = "1D3B5E"       # paneelrand
-RAND_OP = "2A5480"
+BG1 = "FFFFFF"        # bovenkant achtergrond
+BG2 = "F1F6FC"        # onderkant achtergrond
+PAPIER = "FFFFFF"
+KAART = "FFFFFF"      # paneel
+KAART_OP = "F6F9FD"   # opgetild paneel
+RAND = "E2E9F1"       # paneelrand
+RAND_OP = "C6D6E6"
 
-CYAAN = "35E0C4"      # signaal, positief, het accent
-BLAUW = "4A9BE8"
-VIOLET = "A98BFF"
-AMBER = "FFB547"
-KORAAL = "FF6B5A"
+CYAAN = "0E9A87"      # signaal, positief, het accent
+BLAUW = "1F6FB2"
+VIOLET = "6B4BA8"
+AMBER = "C87E12"
+KORAAL = "C4392D"
+NAVY = "123A63"
 
-WIT = "EAF2FA"
-GRIJS = "8BA5C0"
-DIM = "5F7B9A"
+INKT = "0D1B2A"       # hoofdtekst
+GRIJS = "55677C"      # bijschrift
+DIM = "8B9AAA"        # terzijde
+WIT = "FFFFFF"        # tekst op een gevulde kleur
 
 LETTER = "Calibri"
 
@@ -56,6 +59,20 @@ def meng(h, doel, f):
 def zacht(h, f=0.22):
     """Donkere variant van een accentkleur, voor vlakken op het canvas."""
     return meng(h, BG2, 1 - f)
+
+
+def schaduw(vorm, blur=70000, afstand=22000, alpha=9):
+    """Zachte slagschaduw, zodat een paneel van het witte papier af komt."""
+    spPr = vorm._element.spPr
+    for oud in spPr.findall(qn("a:effectLst")):
+        spPr.remove(oud)
+    el = parse_xml(
+        f'<a:effectLst {nsdecls("a")}><a:outerShdw blurRad="{blur}" '
+        f'dist="{afstand}" dir="5400000" rotWithShape="0">'
+        f'<a:srgbClr val="1B3A5C"><a:alpha val="{alpha * 1000}"/></a:srgbClr>'
+        f'</a:outerShdw></a:effectLst>')
+    spPr.insert_element_before(el, "a:scene3d", "a:sp3d", "a:extLst")
+    return vorm
 
 
 def _alpha(kleurformaat, procent):
@@ -113,14 +130,14 @@ def canvas(prs):
     achter.fill.gradient()
     achter.fill.gradient_stops[0].color.rgb = rgb(BG1)
     achter.fill.gradient_stops[1].color.rgb = rgb(BG2)
-    achter.fill.gradient_angle = 60.0
+    achter.fill.gradient_angle = 45.0
     achter.line.fill.background()
     achter.shadow.inherit = False
     achter.text_frame.text = ""
     return dia
 
 
-def gloed(dia, cx, cy, straal, kleur=CYAAN, lagen=5, sterkte=5.0):
+def gloed(dia, cx, cy, straal, kleur=CYAAN, lagen=5, sterkte=3.2):
     """Zachte lichtvlek, opgebouwd uit doorschijnende cirkels."""
     for i in range(lagen, 0, -1):
         d = straal * 2 * i / lagen
@@ -211,7 +228,7 @@ def tekst(dia, x, y, w, h, blokken, anchor="top", marge=0.0, autofit=True):
             r.font.size = Pt(b.get("size", 14))
             r.font.bold = b.get("vet", False)
             r.font.name = LETTER
-            r.font.color.rgb = rgb(b.get("kleur", WIT))
+            r.font.color.rgb = rgb(b.get("kleur", INKT))
             if b.get("alpha") is not None:
                 _alpha(r.font.color, b["alpha"])
             if b.get("spatie"):
@@ -228,7 +245,7 @@ def kicker(dia, x, y, w, label, kleur=CYAAN, size=10.5):
 def diakop(dia, label, titel, sub=None, kleur=CYAAN):
     kicker(dia, MARGE, 0.62, KOL, label, kleur)
     tekst(dia, MARGE, 0.94, KOL, 0.62,
-          [{"tekst": titel, "size": 34, "vet": True, "kleur": WIT, "na": 0}],
+          [{"tekst": titel, "size": 34, "vet": True, "kleur": INKT, "na": 0}],
           autofit=False)
     if sub:
         tekst(dia, MARGE, 1.48, KOL * 0.72, 0.3,
@@ -250,14 +267,14 @@ def voet(dia, nummer, label="Acute poort en Hotfloor"):
 # ------------------------------------------------------- bouwstenen / viz
 def paneel(dia, x, y, w, h, vul=KAART, rand=RAND, radius=0.03, dikte=1.0,
            alpha=None):
-    return vlak(dia, x, y, w, h, vul, rand, dikte, radius, alpha)
+    return schaduw(vlak(dia, x, y, w, h, vul, rand, dikte, radius, alpha))
 
 
 def accentpaneel(dia, x, y, w, h, kleur, sterkte=0.16, radius=0.03):
     """Paneel dat zijn kleur draagt zonder schreeuwerig te worden."""
-    v = vlak(dia, x, y, w, h, zacht(kleur, sterkte), meng(kleur, BG2, 0.55),
+    v = vlak(dia, x, y, w, h, zacht(kleur, sterkte), meng(kleur, BG2, 0.62),
              1.25, radius)
-    return v
+    return schaduw(v, 60000, 18000, 7)
 
 
 def stat(dia, x, y, w, waarde, label, uitleg=None, kleur=CYAAN, groot=54):
@@ -279,7 +296,7 @@ def spot(dia, cx, cy, kleur, d=0.16, halo=True):
         h = _vorm(dia, MSO_SHAPE.OVAL, cx - d, cy - d, d * 2, d * 2)
         h.fill.solid()
         h.fill.fore_color.rgb = rgb(kleur)
-        _alpha(h.fill.fore_color, 18)
+        _alpha(h.fill.fore_color, 14)
         h.line.fill.background()
         h.shadow.inherit = False
     k = _vorm(dia, MSO_SHAPE.OVAL, cx - d / 2, cy - d / 2, d, d)
@@ -299,7 +316,7 @@ def eenheidsblokken(dia, x, y, aantal, kolommen, zijde, gat, kleur, gevuld=True)
         v = vlak(dia, bx, by, zijde, zijde,
                  kleur if gevuld else None, kleur, 1.25, 0.14)
         if gevuld:
-            _alpha(v.fill.fore_color, 88)
+            _alpha(v.fill.fore_color, 92)
     rijen = (aantal + kolommen - 1) // kolommen
     return y + rijen * (zijde + gat) - gat
 
@@ -311,8 +328,8 @@ def meter(dia, x, y, w, h, deel, kleur, spoor=None):
     return y + h
 
 
-def pil(dia, x, y, w, h, label, kleur, vul=None, size=11, vet=True, alpha=18):
-    v = vlak(dia, x, y, w, h, vul or kleur, meng(kleur, BG2, 0.45), 1.0, 0.5,
+def pil(dia, x, y, w, h, label, kleur, vul=None, size=11, vet=True, alpha=11):
+    v = vlak(dia, x, y, w, h, vul or kleur, meng(kleur, BG2, 0.5), 1.0, 0.5,
              alpha if vul is None else None)
     tf = v.text_frame
     tf.word_wrap = True
@@ -334,7 +351,7 @@ def penning(dia, cx, cy, d, label, kleur, tekstkleur=None, size=None):
     v = _vorm(dia, MSO_SHAPE.OVAL, cx - d / 2, cy - d / 2, d, d)
     v.fill.solid()
     v.fill.fore_color.rgb = rgb(kleur)
-    _alpha(v.fill.fore_color, 16)
+    _alpha(v.fill.fore_color, 10)
     v.line.color.rgb = rgb(kleur)
     v.line.width = Pt(1.25)
     v.shadow.inherit = False
@@ -366,12 +383,12 @@ def pijl(dia, x, y, w, h, kleur, richting="rechts", alpha=None):
 
 
 def melding(dia, y, label, boodschap, kleur=AMBER, h=0.9):
-    accentpaneel(dia, MARGE, y, KOL, h, kleur, 0.18)
+    accentpaneel(dia, MARGE, y, KOL, h, kleur, 0.10)
     vlak(dia, MARGE, y, 0.055, h, kleur, None, 0, 0.5)
-    tekst(dia, MARGE + 0.34, y + 0.09, KOL - 0.68, h - 0.18,
+    tekst(dia, MARGE + 0.36, y + 0.09, KOL - 1.0, h - 0.18,
           [{"tekst": label.upper(), "size": 9.5, "vet": True, "kleur": kleur,
             "na": 3, "spatie": 1.8},
-           {"tekst": boodschap, "size": 12.5, "vet": True, "kleur": WIT, "na": 0,
+           {"tekst": boodschap, "size": 12.5, "vet": True, "kleur": INKT, "na": 0,
             "lh": 1.2}], anchor="midden")
     return y + h
 
@@ -417,11 +434,11 @@ def tabel(dia, x, y, w, breedtes, koppen, rijen, size=11, kopsize=9.5,
     for j, k in enumerate(koppen):
         maat = passende_maat(str(k), breedtes[j] - 0.22, kophoogte, kopsize, 7, True)
         cel_vullen(tbl.cell(0, j), str(k).upper(), True, kopkleur, maat,
-                   uitlijningen[j], BG1)
+                   uitlijningen[j], PAPIER)
     for i, rij in enumerate(rijen):
         tbl.rows[i + 1].height = Inches(hoogtes[i])
         for j, waarde in enumerate(rij):
-            kleur = WIT if j == 0 else GRIJS
+            kleur = INKT if j == 0 else GRIJS
             if kleuren and kleuren[i][j]:
                 kleur = kleuren[i][j]
             regels = str(waarde).split("\n")
@@ -443,7 +460,7 @@ def _tabelranden(tbl):
                 for oud in tcPr.findall(qn(tag)):
                     tcPr.remove(oud)
             for tag, kleur in (("a:lnL", None), ("a:lnR", None),
-                               ("a:lnT", None), ("a:lnB", RAND)):
+                               ("a:lnT", None), ("a:lnB", "E2E9F1")):
                 if kleur is None:
                     ln = parse_xml(f'<{tag} {nsdecls("a")} w="0"><a:noFill/></{tag}>')
                 else:

@@ -3,9 +3,9 @@
 import os
 
 from deck_lib import (AMBER, BG1, BG2, BLAUW, BREED, CYAAN, DIM, GRIJS, HOOG,
-                      INHOUD_Y, KAART, KAART_OP, KOL, KORAAL, MARGE, ONDER, RAND,
-                      RAND_OP, VIOLET, WIT, accentpaneel, canvas, diakop,
-                      eenheidsblokken, gloed, haarlijn, kicker, meng, melding,
+                      INHOUD_Y, INKT, KAART, KAART_OP, KOL, KORAAL, MARGE, ONDER, RAND,
+                      NAVY, RAND_OP, VIOLET, WIT, accentpaneel, canvas, diakop,
+                      eenheidsblokken, haarlijn, kicker, meng, melding,
                       meter, paneel, penning, pijl, pil, presentatie, pulslijn,
                       spot, stat, tabel, tekst, verbinding, vlak, voet, zacht)
 from pptx_lib import regelhoogte
@@ -29,7 +29,6 @@ def nieuw(prs, label=None, titel=None, sub=None, kleur=CYAAN):
 def s_titel(prs):
     d = canvas(prs)
     N["i"] += 1
-    gloed(d, 2.0, 2.2, 2.6, CYAAN, 5, 4.5)
     for i, r in enumerate([2.9, 2.15, 1.4]):
         ring = d.shapes.add_shape(9, __import__("pptx.util", fromlist=["Inches"])
                                   .Inches(10.35 - r), __import__(
@@ -41,13 +40,13 @@ def s_titel(prs):
             .RGBColor.from_string(CYAAN)
         ring.line.width = __import__("pptx.util", fromlist=["Pt"]).Pt(1.0)
         from deck_lib import _alpha
-        _alpha(ring.line.color, [12, 20, 30][i])
+        _alpha(ring.line.color, [10, 16, 24][i])
         ring.shadow.inherit = False
         ring.text_frame.text = ""
 
     kicker(d, MARGE, 1.62, 8.0, "Integraal capaciteitsmanagement", CYAAN, 11)
     tekst(d, MARGE, 1.98, 8.6, 2.0,
-          [{"tekst": "Acute poort", "size": 62, "vet": True, "kleur": WIT, "na": 0,
+          [{"tekst": "Acute poort", "size": 62, "vet": True, "kleur": INKT, "na": 0,
             "lh": 1.0},
            {"tekst": "en Hotfloor", "size": 62, "vet": True, "kleur": CYAAN, "na": 0,
             "lh": 1.0}], autofit=False)
@@ -68,20 +67,19 @@ def s_titel(prs):
               [{"tekst": label.upper(), "size": 9.5, "vet": True, "kleur": GRIJS,
                 "na": 0, "spatie": 1.4}], autofit=False)
         x += 3.35
-    pulslijn(d, 0, 6.92, BREED, 0.42, CYAAN, 1.5, 4, alpha=26)
+    pulslijn(d, 0, 6.92, BREED, 0.42, CYAAN, 1.5, 4, alpha=40)
     return d
 
 
 def s_deel(prs, nummer, titel, punten, kleur=CYAAN):
     d = canvas(prs)
     N["i"] += 1
-    gloed(d, 11.2, 5.4, 2.4, kleur, 5, 4.0)
     tekst(d, 6.9, 0.5, 6.0, 3.4,
-          [{"tekst": nummer, "size": 210, "vet": True, "kleur": WIT, "na": 0,
-            "alpha": 6, "uit": "right", "lh": 1.0}], autofit=False)
+          [{"tekst": nummer, "size": 210, "vet": True, "kleur": kleur, "na": 0,
+            "alpha": 9, "uit": "right", "lh": 1.0}], autofit=False)
     kicker(d, MARGE, 2.5, 6.0, f"deel {nummer}", kleur, 11)
     tekst(d, MARGE, 2.76, 7.6, 1.44,
-          [{"tekst": titel, "size": 46, "vet": True, "kleur": WIT, "na": 0,
+          [{"tekst": titel, "size": 46, "vet": True, "kleur": INKT, "na": 0,
             "lh": 1.05}], autofit=False)
     haarlijn(d, MARGE, 3.92, 2.6, kleur, 2.0)
     y = 4.2
@@ -90,7 +88,7 @@ def s_deel(prs, nummer, titel, punten, kleur=CYAAN):
         tekst(d, MARGE + 0.32, y, 8.4, 0.3,
               [{"tekst": p, "size": 13.5, "kleur": GRIJS, "na": 0}], autofit=False)
         y += 0.42
-    pulslijn(d, 0, 6.92, BREED, 0.36, kleur, 1.25, 4, alpha=22)
+    pulslijn(d, 0, 6.92, BREED, 0.36, kleur, 1.25, 4, alpha=36)
     voet(d, N["i"])
     return d
 
@@ -112,10 +110,10 @@ def s_start(prs):
          "in te vullen"],
     ]
     kleuren = [
-        [WIT, WIT, KORAAL, KORAAL, CYAAN, AMBER, AMBER],
-        [WIT, WIT, AMBER, KORAAL, CYAAN, AMBER, AMBER],
-        [WIT, DIM, DIM, KORAAL, CYAAN, AMBER, AMBER],
-        [WIT, DIM, KORAAL, DIM, DIM, DIM, AMBER],
+        [INKT, WIT, KORAAL, KORAAL, CYAAN, AMBER, AMBER],
+        [INKT, INKT, AMBER, KORAAL, CYAAN, AMBER, AMBER],
+        [INKT, DIM, DIM, KORAAL, CYAAN, AMBER, AMBER],
+        [INKT, DIM, KORAAL, DIM, DIM, DIM, AMBER],
     ]
     tabel(d, MARGE, INHOUD_Y, KOL, breedtes, koppen, rijen, 11, 9.5,
           rijhoogte=0.44, kophoogte=0.36, kleuren=kleuren)
@@ -137,7 +135,7 @@ def s_start(prs):
               [{"tekst": waarde, "size": 34, "vet": True, "kleur": kleur, "na": 0}],
               autofit=False)
         tekst(d, x + 0.26, ty + 0.76, tb - 0.52, 0.24,
-              [{"tekst": label.upper(), "size": 9.5, "vet": True, "kleur": WIT,
+              [{"tekst": label.upper(), "size": 9.5, "vet": True, "kleur": INKT,
                 "na": 0, "spatie": 1.3}], autofit=False)
         tekst(d, x + 0.26, ty + 1.02, tb - 0.52, 0.3,
               [{"tekst": uitleg, "size": 10, "kleur": GRIJS, "na": 0, "lh": 1.18}])
@@ -192,7 +190,7 @@ def nieuw_niet_optellen(prs):
         x = MARGE + i * (gw + 0.3)
         vlak(d, x, gy, gw, 0.56, None, RAND, 1.0, 0.08)
         tekst(d, x + 0.28, gy + 0.04, 2.4, 0.48,
-              [{"tekst": naam, "size": 14, "vet": True, "kleur": WIT, "na": 0}],
+              [{"tekst": naam, "size": 14, "vet": True, "kleur": INKT, "na": 0}],
               anchor="midden", autofit=False)
         tekst(d, x + gw - 3.4, gy + 0.04, 3.12, 0.48,
               [{"tekst": "aantal kamers nog niet in beeld", "size": 10.5,
@@ -235,7 +233,7 @@ def s_tijdpad(prs):
         vlak(d, x + cw / 2 - 0.005, ry + 0.14, 0.01, 0.1, RAND_OP, None, 0, None)
         tekst(d, x, ry + 0.3, cw, 0.26,
               [{"tekst": m, "size": 10.5, "vet": i in (0, 9), "na": 0,
-                "kleur": WIT if i in (0, 9) else GRIJS, "uit": "center"}],
+                "kleur": INKT if i in (0, 9) else GRIJS, "uit": "center"}],
               autofit=False)
 
     for mi, titel, regel, kleur in [
@@ -282,7 +280,7 @@ def s_berekeningen(prs):
               [{"tekst": nr, "size": 42, "vet": True, "kleur": kleur, "na": 0,
                 "alpha": 26, "uit": "right"}], autofit=False)
         tekst(d, x + 0.3, INHOUD_Y + 0.3, b - 1.6, 0.64,
-              [{"tekst": titel, "size": 17, "vet": True, "kleur": WIT, "na": 0,
+              [{"tekst": titel, "size": 17, "vet": True, "kleur": INKT, "na": 0,
                 "lh": 1.14}])
         tekst(d, x + 0.3, INHOUD_Y + 1.0, b - 0.6, 0.28,
               [{"tekst": sub, "size": 11, "kleur": kleur, "na": 0}], autofit=False)
@@ -350,7 +348,7 @@ def s_oudnieuw(prs):
         y = INHOUD_Y + 0.36 + i * 0.87
         paneel(d, MARGE, y, lw, 0.72)
         tekst(d, MARGE + 0.24, y + 0.05, lw - 0.48, 0.52,
-              [{"tekst": naam, "size": 13.5, "vet": True, "kleur": WIT, "na": 1},
+              [{"tekst": naam, "size": 13.5, "vet": True, "kleur": INKT, "na": 1},
                {"tekst": plek, "size": 10, "kleur": DIM, "na": 0}], anchor="midden")
 
     nx = MARGE + lw + 1.5
@@ -375,7 +373,7 @@ def s_oudnieuw(prs):
               anchor="midden", autofit=False)
         pb = (nw - 0.5 - (len(delen) - 1) * 0.14) / len(delen)
         for j, deel in enumerate(delen):
-            pil(d, nx + 0.25 + j * (pb + 0.14), y + 0.78, pb, 0.44, deel, WIT,
+            pil(d, nx + 0.25 + j * (pb + 0.14), y + 0.78, pb, 0.44, deel, INKT,
                 vul=KAART_OP, size=11.5)
         tekst(d, nx + 0.25, y + 1.32, nw - 0.5, 0.24,
               [{"tekst": vraag, "size": 10.5, "vet": True, "kleur": AMBER, "na": 0}],
@@ -431,7 +429,7 @@ def s_nieuwbouw(prs):
             ("EHH", "?", "plekken, nog bepalen", AMBER)]):
         y = INHOUD_Y + 0.62 + i * 0.78
         tekst(d, rx + 0.28, y, rw - 1.4, 0.3,
-              [{"tekst": naam, "size": 14, "vet": True, "kleur": WIT, "na": 0}],
+              [{"tekst": naam, "size": 14, "vet": True, "kleur": INKT, "na": 0}],
               autofit=False)
         tekst(d, rx + 0.28, y + 0.3, rw - 1.4, 0.26,
               [{"tekst": status, "size": 10, "kleur": DIM, "na": 0}], autofit=False)
@@ -467,7 +465,7 @@ def s_scenarios(prs):
         paneel(d, MARGE, y, lw, 0.58)
         penning(d, MARGE + 0.42, y + 0.29, 0.4, str(i + 1), kleur, size=13)
         tekst(d, MARGE + 0.76, y + 0.04, lw - 1.1, 0.5,
-              [{"tekst": titel, "size": 14, "vet": True, "kleur": WIT, "na": 1}] +
+              [{"tekst": titel, "size": 14, "vet": True, "kleur": INKT, "na": 1}] +
               ([{"tekst": sub, "size": 10, "kleur": DIM, "na": 0}] if sub else []),
               anchor="midden")
 
@@ -511,7 +509,7 @@ def s_stappen(prs):
         paneel(d, x, INHOUD_Y + 0.4, b, 2.2)
         penning(d, x + b / 2, INHOUD_Y + 0.88, 0.56, f"{i + 1:02d}", VIOLET, size=14)
         tekst(d, x + 0.16, INHOUD_Y + 1.3, b - 0.32, 0.62,
-              [{"tekst": titel, "size": 12.5, "vet": True, "kleur": WIT, "na": 0,
+              [{"tekst": titel, "size": 12.5, "vet": True, "kleur": INKT, "na": 0,
                 "uit": "center", "lh": 1.15}])
         tekst(d, x + 0.16, INHOUD_Y + 1.98, b - 0.32, 0.5,
               [{"tekst": sub, "size": 9.5, "kleur": GRIJS, "na": 0, "uit": "center",
@@ -555,7 +553,7 @@ def s_oordeel(prs, deel, titel, sub, kleur, verdict, verdict_sub, kolom_titel,
         paneel(d, MARGE, y, vw, 0.66)
         penning(d, MARGE + 0.4, y + 0.33, 0.4, str(i + 1), kleur, size=12)
         tekst(d, MARGE + 0.74, y + 0.06, vw - 1.1, 0.54,
-              [{"tekst": kop, "size": 12.5, "vet": True, "kleur": WIT, "na": 1},
+              [{"tekst": kop, "size": 12.5, "vet": True, "kleur": INKT, "na": 1},
                {"tekst": tekstje, "size": 10, "kleur": DIM, "na": 0}], anchor="midden")
         y += 0.76
 
@@ -606,7 +604,7 @@ def s_ehh(prs):
               [{"tekst": titel, "size": 19, "vet": True, "kleur": kleur, "na": 0}],
               anchor="midden", autofit=False)
         tekst(d, x + 0.28, y + 0.82, b - 0.56, 0.28,
-              [{"tekst": sub, "size": 11.5, "kleur": WIT, "na": 0}], autofit=False)
+              [{"tekst": sub, "size": 11.5, "kleur": INKT, "na": 0}], autofit=False)
         haarlijn(d, x + 0.28, y + 1.2, b - 0.56, meng(kleur, BG2, 0.55), 1)
         tekst(d, x + 0.28, y + 1.36, b - 0.56, 0.6,
               [{"tekst": gevolg, "size": 11.5, "kleur": GRIJS, "na": 0, "lh": 1.25}])
@@ -638,7 +636,7 @@ def s_situatie(prs):
          "3   Inzet kinderverpleegkundige op de SEH?\n"
          "4   En verder"],
     ]
-    kleuren = [[WIT, GRIJS, DIM], [WIT, DIM, DIM], [WIT, GRIJS, GRIJS]]
+    kleuren = [[INKT, GRIJS, DIM], [INKT, DIM, DIM], [INKT, GRIJS, GRIJS]]
     tabel(d, MARGE, INHOUD_Y, KOL, breedtes, koppen, rijen, 11.5, 9.5,
           rijhoogtes=[0.62, 0.62, 1.5], kophoogte=0.38, kleuren=kleuren,
           uitlijningen=["left", "left", "left"])
@@ -677,7 +675,7 @@ def s_vragen_overzicht(prs):
               [{"tekst": aantal, "size": 44, "vet": True, "kleur": kleur, "na": 0}],
               autofit=False)
         tekst(d, x + 0.28, y + 0.92, b - 0.56, 0.3,
-              [{"tekst": titel, "size": 14, "vet": True, "kleur": WIT, "na": 0}],
+              [{"tekst": titel, "size": 14, "vet": True, "kleur": INKT, "na": 0}],
               autofit=False)
         tekst(d, x + 0.28, y + 1.24, b - 0.56, 0.5,
               [{"tekst": sub, "size": 10, "kleur": GRIJS, "na": 0, "lh": 1.2}])
@@ -735,7 +733,7 @@ def s_besluiten(prs):
         vlak(d, MARGE, y, 0.05, 0.64, kleur, None, 0, 0.5)
         penning(d, MARGE + 0.44, y + 0.32, 0.42, str(i + 1), kleur, size=12)
         tekst(d, MARGE + 0.8, y + 0.05, 6.4, 0.54,
-              [{"tekst": besluit, "size": 13.5, "vet": True, "kleur": WIT, "na": 1},
+              [{"tekst": besluit, "size": 13.5, "vet": True, "kleur": INKT, "na": 1},
                {"tekst": waarom, "size": 10, "kleur": DIM, "na": 0}], anchor="midden")
         tekst(d, MARGE + 7.3, y + 0.05, 2.1, 0.54,
               [{"tekst": waar, "size": 10.5, "kleur": GRIJS, "na": 0}],
@@ -751,10 +749,9 @@ def s_besluiten(prs):
 def s_slot(prs):
     d = canvas(prs)
     N["i"] += 1
-    gloed(d, 11.4, 2.0, 2.6, CYAAN, 5, 4.0)
     kicker(d, MARGE, 1.5, 8.0, "waar het op neerkomt", CYAAN, 11)
     tekst(d, MARGE, 1.86, 8.6, 1.0,
-          [{"tekst": "Drie dingen", "size": 46, "vet": True, "kleur": WIT, "na": 0}],
+          [{"tekst": "Drie dingen", "size": 46, "vet": True, "kleur": INKT, "na": 0}],
           autofit=False)
     haarlijn(d, MARGE, 3.0, 2.6, CYAAN, 2.0)
     punten = [("Fysiek eerst",
@@ -776,7 +773,7 @@ def s_slot(prs):
         tekst(d, MARGE + 0.72, y + 0.36, 9.2, 0.5,
               [{"tekst": uitleg, "size": 12.5, "kleur": GRIJS, "na": 0, "lh": 1.25}])
         y += 1.14
-    pulslijn(d, 0, 6.94, BREED, 0.4, CYAAN, 1.5, 4, alpha=26)
+    pulslijn(d, 0, 6.94, BREED, 0.4, CYAAN, 1.5, 4, alpha=40)
     return d
 
 

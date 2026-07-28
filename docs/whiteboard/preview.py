@@ -103,12 +103,12 @@ def teken_tekst(d, tf, x, y, w, h, waarschuw, naam):
         size = (r0.font.size.pt if r0.font.size else 18) * PT
         try:
             kleur = ("#" + str(r0.font.color.rgb)
-                     if r0.font.color.type is not None else "#0F1B2D")
+                     if r0.font.color.type is not None else "#0D1B2A")
             deel = _alfa(r0.font.color)
         except (AttributeError, TypeError, ValueError):
-            kleur, deel = "#0F1B2D", 1.0
+            kleur, deel = "#0D1B2A", 1.0
         if deel < 1.0:
-            kleur = _vermeng(kleur, "#0A1A2E", deel)
+            kleur = _vermeng(kleur, "#FFFFFF", deel)
         vet = bool(r0.font.bold)
         na = (p.space_after.pt if p.space_after else 0) * PT
         lh = p.line_spacing if isinstance(p.line_spacing, float) else 1.2
@@ -233,7 +233,7 @@ def teken_tabel(d, vorm, waarschuw, prefix=""):
             cel = tbl.cell(i, j)
             vul, _va = kleur_van(cel.fill, "#FFFFFF")
             d.rect(kx * PPI, ky * PPI, breedte * PPI, hoogte * PPI,
-                   fill=vul or "#FFFFFF", stroke="#1D3B5E", sw=0.8, rx=0)
+                   fill=vul or "#FFFFFF", stroke="#E2E9F1", sw=0.8, rx=0)
             if cel.text.strip():
                 teken_tekst(d, cel.text_frame, kx, ky, breedte, hoogte,
                             waarschuw, f"{prefix}tabel r{i}k{j}")
@@ -252,7 +252,7 @@ def main():
     bw, bh = inch(prs.slide_width) * PPI, inch(prs.slide_height) * PPI
     alle = []
     for n, dia in enumerate(prs.slides, start=1):
-        d = Svg(int(bw), int(bh), bg="#05101E")
+        d = Svg(int(bw), int(bh), bg="#FFFFFF")
         waarschuw = []
         for vorm in dia.shapes:
             teken_vorm(d, vorm, waarschuw, f"dia{n} ")

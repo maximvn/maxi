@@ -55,10 +55,11 @@ uit de pptx-geometrie en meldt tekst die niet in zijn kader past.
 
 ## Ontwerpsysteem PULSE
 
-De presentatie is opnieuw ontworpen: donker canvas als een monitorscherm, een
-lichtgevende pulslijn als terugkerend motief, en signaalkleuren die alleen
-worden ingezet waar iets klemt. De tellingen zijn echte datavisualisatie —
-blokjes per kamer, meters per berekening, stippen per bed — geen opsommingen.
+Wit papier met veel lucht, een dunne pulslijn als terugkerend motief, en
+verzadigde signaalkleuren die alleen worden ingezet waar iets klemt. Panelen
+krijgen een zachte slagschaduw zodat ze van het papier af komen. De tellingen
+zijn echte datavisualisatie — blokjes per kamer, meters per berekening, stippen
+per bed — geen opsommingen.
 
 | Bestand | Wat het is |
 |---|---|
