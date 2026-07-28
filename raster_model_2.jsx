@@ -3498,7 +3498,18 @@ export default function RasterTool(){
       )
     }
 
-    const rooms=Array.from({length:numRooms},(_,i)=>i)
+    // Toon alleen kamers die op DEZE dag daadwerkelijk een spreekuur hebben. Een
+    // kamer die op een andere dag wel wordt gebruikt maar hier leeg is, wordt niet
+    // getoond — anders staar je naar lege kolommen die niets betekenen.
+    const kamerInGebruik=(di,r)=>{
+      const sl=raster.days[di]; if(!sl) return false
+      return ['o','m','a'].some(pre=>((sl[pre+r]||[]).some(a=>!a.isFlex)))
+    }
+    const rooms=(()=>{
+      const uit=[]
+      for(let r=0;r<numRooms;r++) if(kamerInGebruik(selDay,r)) uit.push(r)
+      return uit.length?uit:[0]      // altijd minstens één kolom om op te slepen
+    })()
     const dayHasData=!!raster.days[selDay]
 
     // Inklapbare paneelkop met minimaliseer/maximaliseer-knop
@@ -3924,11 +3935,17 @@ export default function RasterTool(){
                               background:'repeating-linear-gradient(45deg,#EEF1F5,#EEF1F5 5px,#F7F9FB 5px,#F7F9FB 11px)',borderTop:`1px solid ${C.border}`,borderBottom:`1px solid ${C.border}`}}/>)})}
                           {/* kamer-subkolommen */}
                           <div style={{position:'absolute',inset:0,display:'flex'}}>
-                            {rooms.map(r=>(
-                              <div key={r} style={{flex:1,position:'relative',borderRight:r<numRooms-1?`1px dashed ${C.border}`:'none'}}>
-                                {regions.map(reg=>(slots[reg.pre+r]||[]).map(it=><WeekBlok key={it.id} it={it} di={di}/>))}
-                              </div>
-                            ))}
+                            {(()=>{
+                              // Per dag alleen de kamers die er echt een spreekuur hebben
+                              const dagKamers=[]
+                              for(let r=0;r<numRooms;r++) if(kamerInGebruik(di,r)) dagKamers.push(r)
+                              const lijst=dagKamers.length?dagKamers:[0]
+                              return lijst.map((r,ix)=>(
+                                <div key={r} style={{flex:1,position:'relative',borderRight:ix<lijst.length-1?`1px dashed ${C.border}`:'none'}}>
+                                  {regions.map(reg=>(slots[reg.pre+r]||[]).map(it=><WeekBlok key={it.id} it={it} di={di}/>))}
+                                </div>
+                              ))
+                            })()}
                           </div>
                         </div>
                       )}
