@@ -160,15 +160,17 @@ def teken_vorm(d, vorm, waarschuw, prefix=""):
 
     if vorm.shape_type == MSO_SHAPE_TYPE.FREEFORM:
         rand, ra, rw = lijnkleur(vorm)
+        vul, va = kleur_van(vorm.fill)
         punten = _pad_punten(vorm)
-        if rand and len(punten) > 1:
+        if len(punten) > 1:
+            coords = " ".join(f"{(x + px * w) * PPI:.1f},{(y + py * h) * PPI:.1f}"
+                              for px, py in punten)
+            tag = "polygon" if vul else "polyline"
             d.parts.append(
-                '<polyline points="' + " ".join(
-                    f"{(x + px * w) * PPI:.1f},{(y + py * h) * PPI:.1f}"
-                    for px, py in punten) +
-                f'" fill="none" stroke="{rand}" stroke-opacity="{ra:.2f}" '
-                f'stroke-width="{rw * PT:.1f}" stroke-linejoin="round" '
-                f'stroke-linecap="round"/>')
+                f'<{tag} points="{coords}" fill="{vul or "none"}" '
+                f'fill-opacity="{va:.2f}" stroke="{rand or "none"}" '
+                f'stroke-opacity="{ra:.2f}" stroke-width="{rw * PT:.1f}" '
+                f'stroke-linejoin="round" stroke-linecap="round"/>')
         return
 
     if vorm.shape_type == MSO_SHAPE_TYPE.AUTO_SHAPE:

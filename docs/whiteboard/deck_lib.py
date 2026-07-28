@@ -5,6 +5,8 @@ verzadigde signaalkleuren die alleen worden ingezet waar iets klemt. Panelen
 krijgen een zachte slagschaduw zodat ze van het papier af komen. Alles wordt
 als echte PowerPoint-vorm geplaatst, dus elke tekst blijft selecteerbaar.
 """
+import math
+
 from pptx import Presentation
 from pptx.dml.color import RGBColor
 from pptx.enum.shapes import MSO_SHAPE
@@ -196,6 +198,86 @@ def verbinding(dia, punten, kleur=RAND_OP, dikte=1.5, alpha=None):
     return vorm
 
 
+# ------------------------------------------------- cirkeldiagram en stromen
+def _boog(cx, cy, r, a0, a1, n=40):
+    return [(cx + r * math.cos(math.radians(a)), cy + r * math.sin(math.radians(a)))
+            for a in (a0 + (a1 - a0) * i / n for i in range(n + 1))]
+
+
+def _vlakvorm(dia, punten, vul, rand=None, dikte=2.0):
+    ff = dia.shapes.build_freeform(Inches(punten[0][0]), Inches(punten[0][1]))
+    ff.add_line_segments([(Inches(x), Inches(y)) for x, y in punten[1:]], close=True)
+    v = ff.convert_to_shape()
+    v.fill.solid()
+    v.fill.fore_color.rgb = rgb(vul)
+    if rand:
+        v.line.color.rgb = rgb(rand)
+        v.line.width = Pt(dikte)
+    else:
+        v.line.fill.background()
+    v.shadow.inherit = False
+    return v
+
+
+def taart(dia, cx, cy, r, segmenten, start=-90, rand=PAPIER, dikte=2.5,
+          labelmaat=None, binnen=0.0):
+    """Cirkel in segmenten, elk met een eigen kleur en label in het vlak."""
+    totaal = sum(s[0] for s in segmenten) or 1
+    hoek = start
+    for fractie, kleur, label in segmenten:
+        span = 360.0 * fractie / totaal
+        punten = _boog(cx, cy, r, hoek, hoek + span)
+        if binnen:
+            punten += _boog(cx, cy, r * binnen, hoek + span, hoek)
+        else:
+            punten.append((cx, cy))
+        _vlakvorm(dia, punten, kleur, rand, dikte)
+        if label:
+            if span >= 359:
+                lx, ly = cx, cy
+            else:
+                mid = math.radians(hoek + span / 2)
+                straal = r * (0.58 if not binnen else (1 + binnen) / 2)
+                lx = cx + straal * math.cos(mid)
+                ly = cy + straal * math.sin(mid)
+            maat = labelmaat or max(8.5, r * 13)
+            regels = label.split("\n")
+            hoogte = len(regels) * maat * 1.16 / 72
+            tekst(dia, lx - r * 0.92, ly - hoogte / 2, r * 1.84, hoogte,
+                  [{"tekst": label, "size": maat, "vet": True, "kleur": PAPIER,
+                    "na": 0, "uit": "center", "lh": 1.16}], autofit=False)
+        hoek += span
+    ring = _vorm(dia, MSO_SHAPE.OVAL, cx - r, cy - r, 2 * r, 2 * r)
+    ring.fill.background()
+    ring.line.color.rgb = rgb(rand)
+    ring.line.width = Pt(dikte + 1.5)
+    ring.shadow.inherit = False
+    ring.text_frame.text = ""
+    return ring
+
+
+def stroom(dia, x0, y0, x1, y1, kleur, dikte=5.0, alpha=None, n=44):
+    """Vloeiende verbinding tussen twee punten, als een lint."""
+    punten = []
+    for i in range(n + 1):
+        t = i / n
+        e = t * t * (3 - 2 * t)
+        punten.append((x0 + (x1 - x0) * t, y0 + (y1 - y0) * e))
+    return verbinding(dia, punten, kleur, dikte, alpha)
+
+
+def knoop(dia, cx, cy, d, kleur, rand=PAPIER):
+    """Klein gekleurd knooppunt op een stroom."""
+    v = _vorm(dia, MSO_SHAPE.OVAL, cx - d / 2, cy - d / 2, d, d)
+    v.fill.solid()
+    v.fill.fore_color.rgb = rgb(kleur)
+    v.line.color.rgb = rgb(rand)
+    v.line.width = Pt(2)
+    v.shadow.inherit = False
+    v.text_frame.text = ""
+    return v
+
+
 # ------------------------------------------------------------------ tekst
 def tekst(dia, x, y, w, h, blokken, anchor="top", marge=0.0, autofit=True):
     if isinstance(blokken, str):
@@ -248,8 +330,8 @@ def diakop(dia, label, titel, sub=None, kleur=CYAAN):
           [{"tekst": titel, "size": 34, "vet": True, "kleur": INKT, "na": 0}],
           autofit=False)
     if sub:
-        tekst(dia, MARGE, 1.48, KOL * 0.72, 0.3,
-              [{"tekst": sub, "size": 13, "kleur": GRIJS, "na": 0}], autofit=False)
+        tekst(dia, MARGE, 1.46, KOL * 0.78, 0.3,
+              [{"tekst": sub, "size": 13, "kleur": GRIJS, "na": 0}])
     haarlijn(dia, MARGE, 1.76, KOL, RAND, 1.0)
     return INHOUD_Y
 
