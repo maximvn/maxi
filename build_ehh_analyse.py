@@ -327,7 +327,10 @@ for formule, namen in [
 
 # ====================================================================== DATA ==
 ws_d = wb.create_sheet("Data")
-ws_d.freeze_panes = "AD2"
+# Alleen de kopregel en kolom A vastzetten. Vastzetten op AD zou alle 29
+# kolommen ervoor bevriezen; die zijn samen breder dan het scherm, waardoor
+# er niets meer te scrollen valt en het beeld stil lijkt te staan.
+ws_d.freeze_panes = "B2"
 
 for i, kop in enumerate(BRON_KOPPEN, start=1):
     c = ws_d.cell(row=1, column=i, value=kop)
