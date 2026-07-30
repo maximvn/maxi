@@ -10,34 +10,17 @@ SP = "/tmp/claude-0/-home-user-maxi/6cb3d4b7-2b09-53b1-b52a-d878fb334a3e/scratch
 RECALC = "/root/.claude/skills/xlsx/scripts/recalc.py"
 BUILD = "/home/user/maxi/build_ehh_analyse.py"
 
-# berekende kolommen op het tabblad Data
-C_INSEL, C_STATUS, C_LIG, C_LIGTXT = "AD", "AE", "AF", "AG"
-C_START, C_EIND, C_BEST = "AH", "AI", "AJ"
-C_W4, C_W6, C_W24 = "AK", "AL", "AM"
-C_EERSTE, C_LIGSEL, C_WINSTSEL, C_CTRL = "AN", "AO", "AP", "AQ"
-CALC_KOLOMMEN = [C_INSEL, C_STATUS, C_LIG, C_LIGTXT, C_START, C_EIND, C_BEST,
-                 C_W4, C_W6, C_W24, C_EERSTE, C_LIGSEL, C_WINSTSEL, C_CTRL,
-                 "AR", "AS"]
-
-# instelcellen
-I_BRON, I_ONDER, I_BOVEN = "C6", "C11", "C12"
-I_DEDUP = "C15"
-I_BESTKOL, I_BESTWAARDE, I_TELBEST = "C19", "C21", "C22"
-I_FILTER_AAN, I_FILTERKOL, I_FILTERZOEK, I_FILTERWAARDE = "C25", "C26", "C28", "C29"
-I_SCENARIO, I_TIJDJA, I_EXCL = "C33", "C34", "C35"
+# hulpkolommen op het tabblad Data
+C_LIG, C_FLAG, C_SEL = "AC", "AD", "AE"
+HELPERS = [C_LIG, C_FLAG, C_SEL]
 
 # dashboardcellen
-D_REGELS, D_METFORMULE, D_UNIEK, D_GELDIG, D_MELDING = "C6", "C7", "C8", "C9", "B10"
-D_SEL, D_HUIS, D_BLIJFT, D_EERDER = "C13", "C14", "C15", "C16"
-D_WINST_UREN, D_WINST_GEM, D_WINST_MED = "E17", "E18", "E19"
-D_KORTSTE, D_MEDIAAN, D_GEMIDDELD, D_LANGSTE = "C22", "C23", "C24", "C25"
-D_SCEN4, D_SCEN6, D_SCEN24 = 29, 30, 31
-D_STATUS_EERSTE, D_STATUS_TOTAAL = 34, 42
-
-STATUSSEN = ["In selectie - naar huis", "In selectie - blijft in ziekenhuis",
-             "Te kort (t/m ondergrens)", "Te lang (boven bovengrens)",
-             "Geen geldige start- of eindtijd", "Extra regel van dezelfde opname",
-             "Buiten het extra filter", "Tijd onbetrouwbaar (uitgesloten)"]
+D_INGELEZEN, D_METFORMULE, D_METLIG = "C6", "C7", "C8"
+D_MELDING = "B9"
+D_TUSSEN = "C12"
+D_KORTSTE, D_GEMIDDELD, D_MEDIAAN, D_LANGSTE = "C15", "C16", "C17", "C18"
+D_VERD_EERSTE = 21        # rij van blok '0 tot 2 uur'
+D_VERD_TOTAAL = 34
 
 
 def bouw(pad, rijen=60):
@@ -46,14 +29,14 @@ def bouw(pad, rijen=60):
                         "PATH": "/usr/bin:/bin"})
 
 
-def trek_formules_door(pad, tot_rij):
+def trek_door(pad, tot_rij):
     """Bootst na wat de gebruiker doet: rij 2 kopieren naar beneden."""
     wb = load_workbook(pad)
     ws = wb["Data"]
-    bron = {k: ws[f"{k}2"].value for k in CALC_KOLOMMEN}
-    opmaak = {k: ws[f"{k}2"].number_format for k in CALC_KOLOMMEN}
+    bron = {k: ws[f"{k}2"].value for k in HELPERS}
+    opmaak = {k: ws[f"{k}2"].number_format for k in HELPERS}
     for r in range(3, tot_rij + 1):
-        for k in CALC_KOLOMMEN:
+        for k in HELPERS:
             cel = ws[f"{k}{r}"]
             cel.value = Translator(bron[k], origin=f"{k}2").translate_formula(f"{k}{r}")
             cel.number_format = opmaak[k]
