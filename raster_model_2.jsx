@@ -79,11 +79,11 @@ const PLAN_INFO = {
   // ── Digitale consulten ─────────────────────────────────────────────────────
   digitalMode:{label:'Digitale consulten',type:'radio',
     opts:[{v:'spread',l:'Verdelen over dag'},{v:'cluster',l:'Clusteren in blok'},{v:'end',l:'Aan het einde plannen'}],
-    desc:'"Verdelen" = digitale afspraken gelijkmatig ingespreid tussen de fysieke afspraken van elke kamer. "Clusteren" = alle digitale afspraken als aaneengesloten blok achteraan de kamer. "Einde" = digitale afspraken in het laatste tijdvenster van het spreekuur (venster instelbaar in minuten).'},
+    desc:'"Verdelen over dag" = digitale afspraken worden over alle spreekuren verdeeld en tussen de fysieke afspraken gepland. "Clusteren in blok" = digitale consulten worden samengevoegd tot volledig digitale spreekuren; wat daarna nog overblijft wordt over de overige spreekuren van die dag verdeeld. "Aan het einde plannen" = digitale consulten aan het eind van elk spreekuur, in een venster van instelbare breedte.'},
   // ── Kamerverdeling ─────────────────────────────────────────────────────────
   kamerVerdeling:{label:'Verdeling over kamers en dagdelen',type:'radio',
-    opts:[{v:'kamer',l:'Kamer voor kamer vol'},{v:'dagdeel',l:'Dagdeel voor dagdeel vol'},{v:'gelijk',l:'Gelijk verdelen'}],
-    desc:'Bepaalt waar de RESTVRAAG belandt. "Kamer voor kamer" vult kamer 1 in alle dagdelen tot de benutting, dan kamer 2, enz.; wat overblijft komt in de laatste kamer en daarbinnen in het eerste dagdeel — kamers 1 t/m 3 dus volledig, kamer 4 alleen een ochtend met een lege middag. "Dagdeel voor dagdeel" vult eerst alle kamers van de ochtend en dan de middag. "Gelijk verdelen" smeert de vraag gelijkmatig over alle benodigde kamers en dagdelen uit.'},
+    opts:[{v:'dagdeel',l:'Dagdeel voor dagdeel vol'},{v:'gelijk',l:'Gelijk verdelen'}],
+    desc:'Elk spreekuur wordt gevuld tot de ingestelde benutting, met een marge van maximaal 2,5 procentpunt naar boven of beneden. Wat daardoor niet in een spreekuur past, gaat naar "nog te plannen". "Dagdeel voor dagdeel vol" maakt eerst de ochtend van kamer 1 af, dan de middag van kamer 1, dan pas kamer 2 — zo wordt een kamer helemaal afgerond voordat de volgende opengaat. "Gelijk verdelen" smeert de vraag gelijkmatig over alle benodigde kamers en dagdelen uit.'},
   // ── Groepering afsprakencodes ──────────────────────────────────────────────
   groupMode:{label:'Groepering afsprakencodes',type:'radio',
     opts:[{v:'spread',l:'Gespreid inplannen (afwisselen)'},{v:'wave',l:'Wave planning (per blok)'}],
@@ -383,7 +383,7 @@ export default function RasterTool(){
   const [rules,setRules]=useState({
     shortFirst:false, spoedFirst:false, certainFirst:false, baileyWelsh:false,
     digitalMode:'spread', groupMode:'spread', flexMode:'end',
-    kamerVerdeling:'kamer',   // 'kamer' = kamer voor kamer vol | 'dagdeel' = dagdeel voor dagdeel | 'gelijk'
+    kamerVerdeling:'dagdeel', // 'dagdeel' = kamer per kamer afmaken (och → mid → volgende kamer) | 'gelijk'
     restDag:'uit',            // 'uit' | 'auto' | 'ma'..'vr' — restvraag samenvoegen op één dag
     spoedDagdeel:'both',      // 'both' | 'och' | 'mid' — in welk dagdeel geldt spoed-eerst
     flexNoFirstMin:60,        // geen verspreide flex in de eerste N minuten van een spreekuur
@@ -1018,6 +1018,13 @@ export default function RasterTool(){
     allInst.forEach(it=>{ (grouped[it.day]=grouped[it.day]||[]).push(it) })
 
     const usableFor=dd=> dd==='O'?mUsable : dd==='M'?aUsable : avUsable
+    // Benuttingsband: elk spreekuur moet binnen ±2,5 procentpunt van de ingestelde
+    // benutting uitkomen. Onder de ondergrens is het spreekuur te leeg (afspraken
+    // gaan dan naar "nog te plannen"), boven de bovengrens mag niet worden gevuld.
+    const BAND=2.5
+    const durOf=dd=> dd==='O'?ochDur : dd==='M'?midDur : avDur
+    const minCapFor=dd=>Math.round(durOf(dd)*Math.max(0,m2.benutting-BAND)/100)
+    const maxCapFor=dd=>Math.round(durOf(dd)*Math.min(100,m2.benutting+BAND)/100)
     const durFor2=dd=> dd==='O'?ochDur : dd==='M'?midDur : avDur
 
     const durFor=dd=> dd==='O'?ochDur : dd==='M'?midDur : avDur
@@ -1079,13 +1086,12 @@ export default function RasterTool(){
       // 'dagdeel' DAGDEEL-MAJOR: eerst alle kamers van de ochtend, dan de middag.
       //           De restvraag concentreert zich in één dagdeel over de kamers heen.
       // 'gelijk'  gelijkmatig over alle benodigde kamers en dagdelen.
-      const mk=(dd,r)=>({dd,r,items:[],used:0,cap:usableFor(dd)})
+      // Slotvolgorde "dagdeel voor dagdeel": eerst de ochtend van kamer 1, dan de
+      // middag van kamer 1, dan pas kamer 2. Zo wordt een kamer helemaal afgemaakt
+      // voordat de volgende opengaat en concentreert de restvraag zich achteraan.
+      const mk=(dd,r)=>({dd,r,items:[],used:0,cap:maxCapFor(dd),min:minCapFor(dd)})
       const slots=[]
-      if(modus==='dagdeel'){
-        ddVolg.forEach(dd=>{ for(let r=0;r<kap;r++) slots.push(mk(dd,r)) })
-      } else {
-        for(let r=0;r<kap;r++) ddVolg.forEach(dd=>slots.push(mk(dd,r)))
-      }
+      for(let r=0;r<kap;r++) ddVolg.forEach(dd=>slots.push(mk(dd,r)))
 
       // Bij 'gelijk' beperken we het aantal slots tot wat echt nodig is, zodat de
       // vraag over precies dát aantal gelijkmatig wordt uitgesmeerd.
@@ -1106,6 +1112,30 @@ export default function RasterTool(){
 
       const past=(s,a)=>a.ddOpties.includes(s.dd)&&s.used+a.duur<=s.cap
       const plaats=(s,a)=>{ s.items.push(a); s.used+=a.duur }
+
+      // (0) Digitaal clusteren: maak eerst zoveel mogelijk VOLLEDIG digitale
+      //     spreekuren. Wat daarna aan digitale consulten overblijft, doet gewoon
+      //     mee met de rest en wordt over de overige spreekuren verdeeld.
+      if(rules.digitalMode==='cluster'){
+        const dig=poolIn.filter(a=>a.digitaal)
+        if(dig.length){
+          const digRest=[...dig]
+          for(const sl of actief){
+            if(!digRest.length) break
+            let ging=true
+            while(ging&&digRest.length){
+              ging=false
+              const i=digRest.findIndex(a=>past(sl,a))
+              if(i>=0){ plaats(sl,digRest.splice(i,1)[0]); ging=true }
+            }
+            // alleen doorgaan met een volgend volledig digitaal spreekuur zolang
+            // dit spreekuur de ondergrens haalde; anders stoppen we met clusteren
+            if(sl.used<sl.min) break
+          }
+          const gebruikt=new Set(dig.filter(a=>!digRest.includes(a)).map(a=>a.id))
+          poolIn=poolIn.filter(a=>!gebruikt.has(a.id))
+        }
+      }
 
       // (1) Afspraken die maar in ÉÉN dagdeel kunnen (bv. alleen avond) hebben
       //     voorrang — anders blijven ze over terwijl hun dagdeel nog ruimte had.
@@ -1138,6 +1168,12 @@ export default function RasterTool(){
         }
         rest.forEach(a=>over.push(a))
       }
+
+      // Spreekuren die de ondergrens van de benuttingsband niet halen zijn geen
+      // volwaardig spreekuur: die afspraken gaan naar "nog te plannen".
+      actief.forEach(sl=>{
+        if(sl.items.length && sl.used<sl.min){ over.push(...sl.items); sl.items=[]; sl.used=0 }
+      })
 
       // Slots met inhoud terugvertalen naar kamers per dagdeel (dicht opeen).
       ddVolg.forEach(dd=>{
@@ -1532,7 +1568,7 @@ export default function RasterTool(){
     ddDagen:{O:{...DEF_DD_DAGEN.O},M:{...DEF_DD_DAGEN.M},A:{...DEF_DD_DAGEN.A}}})
     setRules({shortFirst:false,spoedFirst:false,certainFirst:false,baileyWelsh:false,
       digitalMode:'spread',groupMode:'spread',flexMode:'end',
-      kamerVerdeling:'kamer',restDag:'uit',spoedDagdeel:'both',flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30,
+      kamerVerdeling:'dagdeel',restDag:'uit',spoedDagdeel:'both',flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30,
       order:['spoedFirst','shortFirst','certainFirst']})
     setSelDay(0); setRaster(null); setDrag(null)
     setShowFullReset(false)
@@ -1613,7 +1649,8 @@ export default function RasterTool(){
           const sr=state.rules
           setRules({shortFirst:false,spoedFirst:false,certainFirst:false,baileyWelsh:false,
             digitalMode:'spread',groupMode:'spread',flexMode:'end',
-            kamerVerdeling:'kamer',restDag:'uit',spoedDagdeel:'both',flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30,...sr,
+            kamerVerdeling:'dagdeel',restDag:'uit',spoedDagdeel:'both',flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30,...sr,
+            ...(sr.kamerVerdeling==='kamer'?{kamerVerdeling:'dagdeel'}:{}),
             order:Array.isArray(sr.order)&&sr.order.length?sr.order:['spoedFirst','shortFirst','certainFirst']})
         }
         // Note: raster is not stored (too large), it will be auto-generated
@@ -2843,11 +2880,9 @@ export default function RasterTool(){
           <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
             {PLAN_INFO.kamerVerdeling.opts.map(opt=>{
               const on=(rules.kamerVerdeling||'vullen')===opt.v
-              const sub=opt.v==='kamer'
-                ? `Kamer 1 in alle dagdelen vol tot ${m2.benutting}%, dan kamer 2. De restvraag komt in de laatste kamer, daarbinnen in het eerste dagdeel — de rest blijft leeg.`
-                : opt.v==='dagdeel'
-                ? `Eerst alle kamers van het eerste dagdeel vol tot ${m2.benutting}%, dan het volgende dagdeel.`
-                : 'Elke kamer en elk dagdeel krijgt een vergelijkbare belasting en mix.'
+              const sub=opt.v==='dagdeel'
+                ? `Ochtend kamer 1 → middag kamer 1 → ochtend kamer 2 … elk spreekuur op ${m2.benutting}% (±2,5 procentpunt).`
+                : `Elke kamer en elk dagdeel een vergelijkbare belasting en mix, elk spreekuur op ${m2.benutting}% (±2,5 procentpunt).`
               return(
                 <div key={opt.v} onClick={()=>setRules(p=>({...p,kamerVerdeling:opt.v}))}
                   style={{flex:1,minWidth:190,display:'flex',alignItems:'flex-start',gap:9,padding:'11px 13px',borderRadius:7,cursor:'pointer',
