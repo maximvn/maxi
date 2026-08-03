@@ -90,7 +90,7 @@ const PLAN_INFO = {
   // ── Digitale consulten ─────────────────────────────────────────────────────
   digitalMode:{label:'Digitale consulten',type:'radio',
     opts:[{v:'spread',l:'Verdelen over dag'},{v:'cluster',l:'Clusteren in blok'},{v:'end',l:'Aan het einde plannen'}],
-    desc:'"Verdelen over dag" = digitale consulten gelijkmatig over ALLE spreekuren verdeeld, tussen de fysieke afspraken in. "Clusteren in blok" = de digitale consulten worden samengebald: eerst zoveel mogelijk volledig digitale spreekuren, en wat overblijft als één aaneengesloten blok in zo min mogelijk spreekuren (niet los verspreid). "Aan het einde plannen" = digitale consulten worden over alle spreekuren verdeeld en telkens in het laatste tijdvenster van het spreekuur gezet (venster instelbaar in minuten). Kan een regel ergens niet worden toegepast, dan verschijnt er een melding bij het raster met de reden.'},
+    desc:'De digitale consulten worden in alle drie de modi op basis van de aantallen per dagdeel over de benodigde spreekuren verdeeld (nooit als één grote bulk in één kamer). Het verschil zit in de plaatsing bínnen elk spreekuur: "Verdelen over dag" = tussen de fysieke afspraken ingespreid. "Clusteren in blok" = de digitale consulten van dat spreekuur staan als één aaneengesloten blok bij elkaar. "Aan het einde plannen" = dat blok staat in het laatste tijdvenster van het spreekuur (venster instelbaar in minuten). Kan een regel ergens niet worden toegepast, dan verschijnt er een melding bij het raster met de reden.'},
   // ── Kamerverdeling ─────────────────────────────────────────────────────────
   kamerVerdeling:{label:'Verdeling over kamers en dagdelen',type:'radio',
     opts:[{v:'dagdeel',l:'Dagdeel voor dagdeel vol'},{v:'gelijk',l:'Gelijk verdelen'}],
@@ -1102,105 +1102,52 @@ export default function RasterTool(){
       const plaats=(s,a)=>{ s.items.push(a); s.used+=a.duur }
       const gemCap=ddVolg.reduce((s,x)=>s+usableFor(x),0)/Math.max(1,ddVolg.length)
 
-      // ── DIGITAAL CLUSTEREN — volledig digitale spreekuren ───────────────────
-      // Bij "clusteren in blok" maken we eerst zoveel mogelijk VOLLEDIG digitale
-      // spreekuren: de eerste kamers worden alleen met digitale consulten gevuld.
-      // Wat daarna aan digitale consulten overblijft (minder dan een vol spreekuur)
-      // doet gewoon mee met de fysieke afspraken en wordt over de overige
-      // spreekuren van die dag verdeeld.
-      let werkPool=[...poolIn]
-      let digReserved=[]
-      if(rules.digitalMode==='cluster'){
-        const digAll=werkPool.filter(a=>a.digitaal)
-        const digMin=digAll.reduce((s,a)=>s+a.duur,0)
-        const nDig=Math.min(slots.length-1, Math.floor(digMin/Math.max(1,gemCap)))
-        if(nDig>=1){
-          digReserved=slots.slice(0,nDig)
-          const digSorted=sorteerPool(digAll)
-          const gedaan=new Set()
-          digSorted.forEach(a=>{ const k=digReserved.filter(s=>past(s,a)); if(!k.length) return
-            k.sort((x,y)=>x.used-y.used); plaats(k[0],a); gedaan.add(a.id) })
-          werkPool=werkPool.filter(a=>!gedaan.has(a.id))   // rest (incl. digitaal-rest) volgt normaal
-        }
-      }
-
-      // ── WELKE SPREEKUREN GEBRUIKEN WE? ──────────────────────────────────────
-      // Auto: het dichtstbijzijnde hele aantal volle spreekuren bij de doel-
-      //   benutting, zodat er nooit een dun, half leeg spreekuur ontstaat.
-      // Vast: precies de door de gebruiker gekozen kamers. Elk (kamer × open
-      //   dagdeel) is een kandidaat-spreekuur; de vraag wordt erover verdeeld.
-      //   Meer kamers → dunner; minder → voller of overloop naar "nog te plannen".
-      //   Daardoor is het aantal kamers een échte knop die het raster verandert.
+      // ── EFFICIËNT VULLEN — kamer voor kamer tot de doelbenutting ─────────────
+      // Het aantal benodigde spreekuren volgt uit de vraag ÷ de gemiddelde
+      // capaciteit bij de ingestelde benutting. De slots staan kamer-voor-kamer
+      // geordend (kamer 1 ochtend, kamer 1 middag, kamer 2 ochtend, …), dus de
+      // eerste nNodig slots vullen eerst kamer 1 af, dan kamer 2, enz. In vast-
+      // modus is het aantal kamers begrensd (kap = gekozen kamers); past de vraag
+      // daar niet in, dan gaat het overschot naar "nog te plannen". Zo wordt er
+      // nooit dun over te veel kamers uitgesmeerd en blijft elk spreekuur rond de
+      // benutting — de meest efficiënte verdeling.
+      const werkPool=[...poolIn]
       const totMin=werkPool.reduce((s,a)=>s+a.duur,0)
-      const vrijeSlots=slots.filter(s=>!digReserved.includes(s))
-      let actief
-      if(capMode==='vast'){
-        actief=vrijeSlots.slice()
-        // In vast-modus koos de gebruiker zelf het aantal kamers, dus een spreekuur
-        // mag tot 100% vol (geen bovenband die de kamer kunstmatig beperkt).
-        actief.forEach(s=>{ s.cap=durFor2(s.dd) })
-      } else {
-        const nNodig=Math.max(1,Math.min(vrijeSlots.length,Math.round(totMin/Math.max(1,gemCap))))
-        actief=vrijeSlots.slice(0,nNodig)
-      }
+      const nNodig=Math.max(1,Math.min(slots.length,Math.round(totMin/Math.max(1,gemCap))))
+      const actief=slots.slice(0,nNodig)
 
       // Tie-break: 'dagdeel' vult bij gelijke stand de laagst genummerde kamer
       // eerst (kamer voor kamer afronden); 'gelijk' spreidt puur op belasting.
       const tie=(x,y)=> gelijk ? (x.used-y.used) : (x.used-y.used)||(x.r-y.r)||(DD.indexOf(x.dd)-DD.indexOf(y.dd))
 
-      // ── DIGITALE CONSULTEN — expliciet over de spreekuren verdelen ───────────
-      // De drie modi verschillen in WELK spreekuur welke digitale consulten krijgt:
-      //   spread  — gelijkmatig over ALLE spreekuren (tussen de fysieke afspraken)
-      //   cluster — samengebald: eerst volledig digitale spreekuren (hierboven),
-      //             de rest als één aaneengesloten blok in zo min mogelijk spreekuren
-      //   einde   — gelijkmatig over alle spreekuren, later achteraan elk spreekuur
-      // De volgorde bínnen een spreekuur wordt daarna door applyPlanRules +
-      // layoutSlot bepaald; hier bepalen we alléén de verdeling over de spreekuren.
+      // ── DIGITALE CONSULTEN — per dagdeel over de spreekuren verdelen ─────────
+      // Digitale consulten worden — net als fysieke — over ALLE benodigde
+      // spreekuren van de dag verdeeld op basis van de aantallen per dagdeel,
+      // nooit als één grote bulk in één kamer. HOE ze bínnen een spreekuur staan
+      // bepaalt applyPlanRules + layoutSlot: spread = tussen de fysieke afspraken;
+      // cluster = als één aaneengesloten blok bij elkaar; einde = blok achteraan.
       const digAll=werkPool.filter(a=>a.digitaal)
       const physAll=werkPool.filter(a=>!a.digitaal)
       const physVast=physAll.filter(a=>a.ddOpties.length===1)
       const physRest=sorteerPool(physAll.filter(a=>a.ddOpties.length>1))
+      // Fysiek: gebalanceerd, met per spreekuur ruimte gereserveerd voor zijn
+      // evenredige deel digitale consulten, zodat elk spreekuur zijn deel krijgt.
+      const digTotMin=digAll.reduce((s,a)=>s+a.duur,0)
+      const perSlotDig= actief.length? digTotMin/actief.length : 0
+      const physCapOf=s=> Math.max(0, s.cap - (digAll.length?perSlotDig:0))
+      const kiesPhys=a=>{ let k=actief.filter(s=>a.ddOpties.includes(s.dd)&&s.used+a.duur<=physCapOf(s))
+        if(!k.length) k=actief.filter(s=>past(s,a)); if(!k.length) return null; k.sort(tie); return k[0] }
+      ;[...physVast,...physRest].forEach(a=>{ const s=kiesPhys(a); if(s) plaats(s,a); else over.push(a) })
+      // Digitaal: round-robin over alle actieve spreekuren (minst-digitaal eerst),
+      // zodat elk spreekuur zijn evenredige deel digitale consulten krijgt.
+      const digUsed=new Map(actief.map(s=>[s,0]))
+      const kiesDig=a=>{ const k=actief.filter(s=>past(s,a)); if(!k.length) return null
+        k.sort((x,y)=>(digUsed.get(x)-digUsed.get(y))||tie(x,y)); return k[0] }
+      sorteerPool(digAll).forEach(a=>{ const s=kiesDig(a)
+        if(s){ plaats(s,a); digUsed.set(s,digUsed.get(s)+a.duur) } else over.push(a) })
 
-      if(rules.digitalMode==='cluster'){
-        // Resterende digitale consulten (de volledig digitale spreekuren zijn al
-        // gevuld) samen in ZO MIN MOGELIJK spreekuren zetten: één clusterslot krijgt
-        // de digitale staart, met ruimte gereserveerd zodat die niet overloopt.
-        const digRestMin=digAll.reduce((s,a)=>s+a.duur,0)
-        let clusterSlot=null
-        if(digAll.length){
-          const kand=actief.filter(s=>digAll.some(a=>a.ddOpties.includes(s.dd)))
-          clusterSlot=(kand.length?kand:actief)[(kand.length?kand:actief).length-1]||null
-        }
-        const physCapOf=s=> s===clusterSlot ? Math.max(0,s.cap-digRestMin) : s.cap
-        const kiesPhys=a=>{ let k=actief.filter(s=>a.ddOpties.includes(s.dd)&&s.used+a.duur<=physCapOf(s))
-          if(!k.length) k=actief.filter(s=>past(s,a)); if(!k.length) return null; k.sort(tie); return k[0] }
-        ;[...physVast,...physRest].forEach(a=>{ const s=kiesPhys(a); if(s) plaats(s,a); else over.push(a) })
-        sorteerPool(digAll).forEach(a=>{
-          let s = clusterSlot && past(clusterSlot,a) ? clusterSlot : null
-          if(!s){ const k=actief.filter(x=>past(x,a)); if(k.length){ k.sort(tie); s=k[0] } }
-          if(s) plaats(s,a); else over.push(a)
-        })
-      } else {
-        // SPREAD / EINDE — fysiek gebalanceerd, met per spreekuur ruimte gereserveerd
-        // voor zijn evenredige deel digitale consulten; daarna de digitale consulten
-        // round-robin over ALLE actieve spreekuren (minst-digitaal eerst), zodat élk
-        // spreekuur zijn deel krijgt en de "einde"-regel overal iets heeft om te doen.
-        const digTotMin=digAll.reduce((s,a)=>s+a.duur,0)
-        const perSlotDig= actief.length? digTotMin/actief.length : 0
-        const physCapOf=s=> Math.max(0, s.cap - (digAll.length?perSlotDig:0))
-        const kiesPhys=a=>{ let k=actief.filter(s=>a.ddOpties.includes(s.dd)&&s.used+a.duur<=physCapOf(s))
-          if(!k.length) k=actief.filter(s=>past(s,a)); if(!k.length) return null; k.sort(tie); return k[0] }
-        ;[...physVast,...physRest].forEach(a=>{ const s=kiesPhys(a); if(s) plaats(s,a); else over.push(a) })
-        const digUsed=new Map(actief.map(s=>[s,0]))
-        const kiesDig=a=>{ const k=actief.filter(s=>past(s,a)); if(!k.length) return null
-          k.sort((x,y)=>(digUsed.get(x)-digUsed.get(y))||tie(x,y)); return k[0] }
-        sorteerPool(digAll).forEach(a=>{ const s=kiesDig(a)
-          if(s){ plaats(s,a); digUsed.set(s,digUsed.get(s)+a.duur) } else over.push(a) })
-      }
-
-      // Slots met inhoud terugvertalen naar kamers per dagdeel (de gereserveerde
-      // digitale spreekuren tellen mee). Per dagdeel op kamernummer gesorteerd.
-      const gebruikt=[...digReserved,...actief].filter(s=>s.items.length)
+      // Slots met inhoud terugvertalen naar kamers per dagdeel, op kamernummer.
+      const gebruikt=actief.filter(s=>s.items.length)
       ddVolg.forEach(dd=>{
         uit[dd]=gebruikt.filter(s=>s.dd===dd).sort((a,b)=>a.r-b.r).map(s=>s.items)
       })
@@ -1279,7 +1226,11 @@ export default function RasterTool(){
       }
     })
     // Toon minstens het gekozen aantal kamers (lege kolommen kun je op inslepen)
-    if(capMode==='vast') maxRooms=Math.max(maxRooms, Math.min(maxParallel, neededRooms))
+    // In vast-modus tonen we ALLE gekozen kamers als kolom — ook als de vraag er
+    // bij de ingestelde benutting minder nodig heeft. Zo is het aantal kamers een
+    // zichtbare knop: meer kamers → extra (lege) kolommen, minder → de vraag die
+    // niet past gaat naar "nog te plannen".
+    if(capMode==='vast') maxRooms=Math.max(maxRooms, maxParallel)
 
     // Build slot structure with explicit start times + flex blocks
     const res={ numRooms:maxRooms, mUsable, aUsable, avUsable, ochDur, midDur, avDur, avondOn,
@@ -1433,9 +1384,11 @@ export default function RasterTool(){
           }
         })
         t=plaatsDigitaalEinde(t)
-        // 4) Restbuffer: de flex die niet in hele blokken van blokMin paste, komt hier
-        //    aan het einde te staan (dit is geen "flexblok" maar de resterende ruimte).
-        if(sessEnd-t>=FLEX_MIN) out.push(mkFlex(t, sessEnd-t,'Restbuffer (einde spreekuur)'))
+        // 4) GEEN eindblok. Bij "flex verspreid" eindigt het spreekuur nooit op een
+        //    flexblok — de laatste afspraak sluit af. De flex die niet in hele
+        //    blokken van blokMin tussen de afspraken paste, blijft simpelweg als
+        //    (ongemarkeerde) ruimte aan het einde staan en wordt niet als blok
+        //    getoond. Zo eindigt het spreekuur altijd met een afspraak.
       } else {
         // flexMode 'end' (of te weinig flex om te verspreiden): alles achter elkaar,
         // één aaneengesloten flexblok na de laatste afspraak.
@@ -1525,20 +1478,23 @@ export default function RasterTool(){
         : `Er bleef een restant over dat geen vol spreekuur vormt. Zet "restvraag samenvoegen op één dag" aan om het te bundelen.`
       notices.push({level:'warn',rule:'Nog te plannen',msg:`${res.ntp.length} afspra${res.ntp.length===1?'ak':'ken'} niet ingepland (${dagTekst}). ${reden}`})
     }
-    // 2) Digitale consulten — per modus
-    if(digTotaal>0){
-      if(rules.digitalMode==='end'){
-        const zonder=spreekuren.filter(s=>s.dig===0).length
-        if(zonder>0) notices.push({level:'info',rule:'Digitaal — aan het einde',
-          msg:`${zonder} van de ${spreekuren.length} spreekuren heeft geen digitale consulten, dus daar valt niets achteraan te plannen. De digitale consulten zijn zo gelijk mogelijk over de spreekuren verdeeld en telkens aan het einde geplaatst.`})
+    // 2) Digitale consulten — alleen melden als een spreekuur er géén heeft
+    if(digTotaal>0 && (rules.digitalMode==='end'||rules.digitalMode==='cluster')){
+      const zonder=spreekuren.filter(s=>s.dig===0).length
+      if(zonder>0){
+        const waar=rules.digitalMode==='end'?'achteraan te plannen':'als blok te clusteren'
+        notices.push({level:'info',rule:'Digitale consulten',
+          msg:`${zonder} van de ${spreekuren.length} spreekuren heeft geen digitale consulten (te weinig digitaal volume), dus daar valt niets ${waar}. De ${digTotaal} digitale consulten zijn zo gelijk mogelijk over de overige spreekuren verdeeld.`})
       }
-      if(rules.digitalMode==='cluster'){
-        const volDig=spreekuren.filter(s=>s.dig===s.n).length
-        if(volDig===0) notices.push({level:'info',rule:'Digitaal — clusteren',
-          msg:`Er zijn te weinig digitale consulten (${digTotaal} deze week) voor een volledig digitaal spreekuur. Ze zijn als één aaneengesloten blok samengevoegd binnen bestaande spreekuren in plaats van los verspreid.`})
-        else notices.push({level:'ok',rule:'Digitaal — clusteren',
-          msg:`${volDig} volledig digitale spreekuur${volDig===1?'':'en'} gevormd; overige digitale consulten als aaneengesloten blok toegevoegd.`})
-      }
+    }
+    // 3) Vast aantal kamers — lege kamers die de vraag niet nodig had
+    if(capMode==='vast' && !res.ntp.length){
+      const gebruikt=new Set()
+      ;[0,1,2,3,4].forEach(di=>{ const slots=res.days[di]; if(!slots) return
+        Object.entries(slots).forEach(([key,arr])=>{ if((arr||[]).some(a=>!a.isFlex)) gebruikt.add(+key.slice(1)) }) })
+      const leeg=maxParallel-gebruikt.size
+      if(leeg>0) notices.push({level:'info',rule:'Aantal kamers',
+        msg:`De vraag past bij ${m2.benutting}% benutting al in ${gebruikt.size} kamer${gebruikt.size===1?'':'s'}; ${leeg} van de ${maxParallel} gekozen kamers blij${leeg===1?'ft':'ven'} leeg. Verlaag het aantal kamers of de benutting om ze te benutten.`})
     }
     res.notices=notices
     return res
@@ -2990,7 +2946,7 @@ export default function RasterTool(){
               <span style={{width:12,height:12,borderRadius:3,background:FLEX_STRIPE(3,6),border:`1px solid ${FLEX_COLOR.brd}`,flexShrink:0}}/>
               <div style={{flex:1,minWidth:190}}>
                 <div style={{fontSize:12,fontWeight:700,color:FLEX_COLOR.fg}}>Geen flex aan het begin</div>
-                <div style={{fontSize:11,color:C.muted}}>Flex komt <b style={{color:C.text}}>uitsluitend tussen de afspraken</b>, pas ná <b style={{color:C.text}}>{rules.flexNoFirstMin??60} min</b> spreekuur. Het spreekuur eindigt nooit op een flexblok — de laatste afspraak sluit af. Elk flexblok is <b style={{color:C.text}}>{rules.flexBlokMin??10} min</b> lang; het aantal blokken volgt uit de beschikbare flex ÷ deze duur, gelijkmatig over het spreekuur gespreid. Zijn er te weinig tussenruimtes voor zoveel blokken, dan worden de blokken navenant groter.</div>
+                <div style={{fontSize:11,color:C.muted}}>Flex komt <b style={{color:C.text}}>uitsluitend tussen de afspraken</b>, pas ná <b style={{color:C.text}}>{rules.flexNoFirstMin??60} min</b> spreekuur. Elk flexblok is <b style={{color:C.text}}>exact {rules.flexBlokMin??10} min</b> lang — nooit korter of langer. De blokken worden gelijkmatig tussen de afspraken over het spreekuur gespreid. Het spreekuur <b style={{color:C.text}}>eindigt nooit op een flexblok</b>: de laatste afspraak sluit af, en de eventuele restruimte die niet in hele blokken paste blijft ongemarkeerd aan het einde staan.</div>
               </div>
               <div style={{display:'inline-flex',alignItems:'center',border:`1px solid ${FLEX_COLOR.brd}`,borderRadius:8,overflow:'hidden',background:C.white}}>
                 <button onClick={()=>setRules(p=>({...p,flexNoFirstMin:Math.max(0,(p.flexNoFirstMin??60)-10)}))}
