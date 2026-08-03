@@ -626,6 +626,90 @@ def s_scenarios(prs):
     return d
 
 
+# ============================================ 13. wat er per scenario schuift
+def s_scenario_verschuiving(prs):
+    """Per scenario: welk onderdeel schuift waarheen, in de stijl van dia 9.
+
+    De bron staat steeds rechts in de kolom 'nu' en het doel links in de kolom
+    'straks', zodat het lint altijd een korte sprong maakt en nooit door een
+    andere cirkel loopt.
+    """
+    d = nieuw(prs, "Deel 03  ·  Wat verandert er",
+              "Wat er per scenario verschuift",
+              "Oranje is het onderdeel dat van afdeling wisselt", BLAUW)
+    SCU_K = meng(CYAAN, INKT, 0.3)
+
+    scenarios = [
+        ("1", "EHH naar de SEH",
+         [("SEH", None, [(1, BLAUW)]),
+          ("CCU / SCU / EHH", None, [(1, CYAAN), (1, SCU_K), (1, AMBER)])],
+         [("SEH + EHH", None, [(1, BLAUW), (1, AMBER)]),
+          ("CCU / SCU", None, [(1, CYAAN), (1, SCU_K)])]),
+        ("2", "ICU en SCU samen op de ICU",
+         [("ICU", None, [(1, BLAUW)]),
+          ("CCU / SCU / EHH", None, [(1, CYAAN), (1, AMBER), (1, NAVY)])],
+         [("ICU + SCU", None, [(1, BLAUW), (1, AMBER)]),
+          ("CCU / EHH", None, [(1, CYAAN), (1, NAVY)])]),
+        ("3", "Recovery van de ICU naar CCU / SCU",
+         [("CCU / SCU", None, [(1, CYAAN), (1, SCU_K)]),
+          ("ICU met recovery", None, [(2, BLAUW), (1, AMBER)])],
+         [("CCU / SCU + recovery", None, [(1, CYAAN), (1, SCU_K), (1, AMBER)]),
+          ("ICU", None, [(1, BLAUW)])]),
+        ("4", "Cardioversies van de CCU verplaatsen",
+         [("CCU met cardioversie", None, [(2, CYAAN), (1, AMBER)])],
+         [("cardioversie", "waarheen nog te bepalen", [(1, AMBER)]),
+          ("CCU", None, [(1, CYAAN)])]),
+    ]
+
+    cw, ch, r = (KOL - 0.4) / 2, 2.06, 0.3
+    for i, (nr, titel, voor, na) in enumerate(scenarios):
+        rij, kol = divmod(i, 2)
+        x = MARGE + kol * (cw + 0.4)
+        y = INHOUD_Y + rij * (ch + 0.2)
+        paneel(d, x, y, cw, ch)
+        penning(d, x + 0.44, y + 0.4, 0.44, nr, BLAUW, size=13)
+        tekst(d, x + 0.78, y + 0.18, cw - 1.1, 0.44,
+              [{"tekst": titel, "size": 13.5, "vet": True, "kleur": INKT, "na": 0,
+                "lh": 1.15}], anchor="midden")
+
+        zb = 1.95
+        zx = [x + 0.45, x + cw - 0.45 - zb]
+        cy = y + 1.2
+        for zone, label in enumerate(["nu", "straks"]):
+            tekst(d, zx[zone], y + 0.66, zb, 0.24,
+                  [{"tekst": label.upper(), "size": 8, "vet": True, "kleur": DIM,
+                    "na": 0, "uit": "center", "spatie": 1.2}], autofit=False)
+
+        randen = []
+        for zone, groep in enumerate([voor, na]):
+            n = len(groep)
+            for j, (naam, noot, segmenten) in enumerate(groep):
+                ccx = zx[zone] + (j + 0.5) * zb / n
+                taart(d, ccx, cy, r, [(f, k, "") for f, k in segmenten], dikte=1.8)
+                blokken = [{"tekst": naam, "size": 8.5, "vet": True, "kleur": INKT,
+                            "na": 1, "uit": "center", "lh": 1.14}]
+                if noot:
+                    blokken.append({"tekst": noot, "size": 7.5, "kleur": AMBER,
+                                    "na": 0, "uit": "center", "lh": 1.12})
+                tekst(d, ccx - 0.78, cy + r + 0.05, 1.56, 0.5, blokken)
+                if (zone == 0 and j == n - 1) or (zone == 1 and j == 0):
+                    randen.append(ccx)
+
+        stroom(d, randen[0] + r + 0.04, cy, randen[1] - r - 0.04, cy, AMBER, 3.5,
+               alpha=85)
+        knoop(d, randen[0] + r + 0.04, cy, 0.12, AMBER)
+        knoop(d, randen[1] - r - 0.04, cy, 0.12, AMBER)
+
+    sy = INHOUD_Y + 2 * ch + 0.2 + 0.22
+    paneel(d, MARGE, sy, KOL, 0.44, KAART_OP, RAND)
+    penning(d, MARGE + 0.42, sy + 0.22, 0.34, "5", DIM, size=10.5)
+    tekst(d, MARGE + 0.74, sy + 0.02, KOL - 1.1, 0.4,
+          [{"tekst": "Huidige situatie handhaven — ICU, CCU/SCU/EHH en SEH blijven "
+                     "apart. Er verschuift niets; dit is het referentiescenario.",
+            "size": 11, "kleur": GRIJS, "na": 0}], anchor="midden")
+    return d
+
+
 # =========================================================== 13. stappenplan
 def s_stappen(prs):
     d = nieuw(prs, "Deel 03  ·  Wat verandert er", "Van scenario naar rooster",
@@ -864,10 +948,10 @@ def s_besluiten(prs):
               "Drie ervan blokkeren de onderbouwing van de personele inzet", KORAAL)
     besluiten = [
         ("Waar valt de EHH onder?", "acute poort of Hotfloor",
-         "blokkeert beide analyses en de personele inzet", KORAAL, "blokkerend", "16"),
+         "blokkeert beide analyses en de personele inzet", KORAAL, "blokkerend", "17"),
         ("Hoeveel plekken krijgt de acute poort?", "kind, EHH en SEH samen",
          "de analyse zegt nu: drie stromen passen niet achter een poort", KORAAL,
-         "blokkerend", "14"),
+         "blokkerend", "15"),
         ("Wie stelt de norm verpleegkundigen vast?", "Remco, of wij met een voorstel",
          "geen enkele afdeling heeft een vastgestelde norm", KORAAL, "blokkerend",
          "3 en 7"),
@@ -879,7 +963,7 @@ def s_besluiten(prs):
          "15"),
         ("Wat doen we met de knelpunten?", "uit beide analyses",
          "de analyses zijn gedeeld, de vervolgacties zijn niet belegd", AMBER,
-         "urgent", "14 en 23"),
+         "urgent", "15 en 24"),
     ]
     for i, (besluit, waar, waarom, kleur, status, dia_nr) in enumerate(besluiten):
         y = INHOUD_Y + 0.06 + i * 0.76
@@ -952,6 +1036,7 @@ def bouw():
     s_nieuwbouw(prs)
     s_kamers(prs)
     s_scenarios(prs)
+    s_scenario_verschuiving(prs)
     s_stappen(prs)
     s_oordeel(prs, "Deel 03  ·  Analyse 1", "De acute poort",
               "Drie stromen achter één poort", KORAAL,
@@ -1083,5 +1168,17 @@ def bouw():
     return UIT
 
 
+def bouw_losse_dia():
+    """Alleen de scenariotekening, als los bestand om te kopieren."""
+    prs = presentatie()
+    N["i"] = 12
+    s_scenario_verschuiving(prs)
+    pad = os.path.join(HIER, "Scenario-verschuivingen.pptx")
+    prs.save(pad)
+    print("Losse dia opgeslagen:", pad)
+    return pad
+
+
 if __name__ == "__main__":
     bouw()
+    bouw_losse_dia()
