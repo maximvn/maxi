@@ -64,6 +64,14 @@ per bed — geen opsommingen.
 | Bestand | Wat het is |
 |---|---|
 | `deck_lib.py` | Het ontwerpsysteem: palet, panelen, pulslijn, meters, tabellen |
-| `maak_deck.py` | Bouwt de 26 dia's |
+| `maak_deck.py` | Bouwt de dia's van *Acute poort en Hotfloor* |
+| `maak_proces.py` | Zet de procesbeschrijving van het capaciteitsjaarplan om in dezelfde stijl |
+
+De procesbeschrijving komt uit de aangeleverde presentatie *Acuut 2026 —
+procesbeschrijving strategisch capaciteitsjaarplan* en staat als los bestand in
+`Procesbeschrijving-capaciteitsjaarplan.pptx`, zodat de dia's een voor een in
+een andere presentatie geplakt kunnen worden. De twee afbeeldingen uit de bron
+(het rekenblad radiologie en het ketenschema) zijn opnieuw opgebouwd als echte
+PowerPoint-vormen.
 
 Alles is een echte PowerPoint-vorm of tabel; er zit geen enkele afbeelding in.
