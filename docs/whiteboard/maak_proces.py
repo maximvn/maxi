@@ -20,7 +20,7 @@ from deck_lib import (AMBER, BG2, BLAUW, BREED, CYAAN, DIM, GRIJS, INHOUD_Y,
                       tekst, verbinding, vlak, voet)
 
 HIER = os.path.dirname(os.path.abspath(__file__))
-UIT = os.path.join(HIER, "Procesbeschrijving-capaciteitsjaarplan.pptx")
+UIT = os.path.join(HIER, "Procesbeschrijving-uitgebreid.pptx")
 
 N = {"i": 0}
 DEEL = "Procesbeschrijving  ·  Strategisch capaciteitsjaarplan"

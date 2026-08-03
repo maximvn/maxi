@@ -64,14 +64,26 @@ per bed — geen opsommingen.
 | Bestand | Wat het is |
 |---|---|
 | `deck_lib.py` | Het ontwerpsysteem: palet, panelen, pulslijn, meters, tabellen |
-| `maak_deck.py` | Bouwt de dia's van *Acute poort en Hotfloor* |
-| `maak_proces.py` | Zet de procesbeschrijving van het capaciteitsjaarplan om in dezelfde stijl |
-
-De procesbeschrijving komt uit de aangeleverde presentatie *Acuut 2026 —
-procesbeschrijving strategisch capaciteitsjaarplan* en staat als los bestand in
-`Procesbeschrijving-capaciteitsjaarplan.pptx`, zodat de dia's een voor een in
-een andere presentatie geplakt kunnen worden. De twee afbeeldingen uit de bron
-(het rekenblad radiologie en het ketenschema) zijn opnieuw opgebouwd als echte
-PowerPoint-vormen.
+| `maak_deck.py` | Bouwde de eerste versie van *Acute poort en Hotfloor* |
+| `bewerk_deck.py` | Werkt de in PowerPoint bijgewerkte presentatie bij — dit is nu de bron |
+| `maak_proces.py` | De uitgebreide procesbeschrijving, zes dia's |
 
 Alles is een echte PowerPoint-vorm of tabel; er zit geen enkele afbeelding in.
+
+## Werkwijze
+
+De presentatie wordt sinds de eerste oplevering in PowerPoint zelf bijgewerkt.
+`bewerk_deck.py` gaat daarom uit van `bron/AcutepoortenHotfloor_bewerkt.pptx`
+— het bestand zoals het uit PowerPoint komt — zodat handmatige correcties en
+aantekeningen behouden blijven. Het script voegt vooraan het stappenplan toe,
+zet de vragendia's om in korte kaarten met de volledige tekst in de notities,
+en hernummert de dia's en kruisverwijzingen. `maak_deck.py` bouwt de oude
+versie en is daarmee historie geworden; draai het niet meer over de
+opgeleverde presentatie heen.
+
+| Bestand | Wat het is |
+|---|---|
+| `Acute-poort-en-Hotfloor.pptx` | De presentatie, 29 dia's |
+| `Procesbeschrijving-stappenplan.pptx` | De twee procesdia's los, om te kopiëren |
+| `Procesbeschrijving-uitgebreid.pptx` | Dezelfde procesbeschrijving in zes dia's |
+| `Scenario-verschuivingen.pptx` | De scenariotekening los |
