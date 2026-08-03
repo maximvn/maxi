@@ -1113,8 +1113,6 @@ export default function RasterTool(){
       // benutting — de meest efficiënte verdeling.
       const werkPool=[...poolIn]
       const totMin=werkPool.reduce((s,a)=>s+a.duur,0)
-      const nNodig=Math.max(1,Math.min(slots.length,Math.round(totMin/Math.max(1,gemCap))))
-      const actief=slots.slice(0,nNodig)
 
       // Tie-break: 'dagdeel' vult bij gelijke stand de laagst genummerde kamer
       // eerst (kamer voor kamer afronden); 'gelijk' spreidt puur op belasting.
@@ -1130,21 +1128,40 @@ export default function RasterTool(){
       const physAll=werkPool.filter(a=>!a.digitaal)
       const physVast=physAll.filter(a=>a.ddOpties.length===1)
       const physRest=sorteerPool(physAll.filter(a=>a.ddOpties.length>1))
-      // Fysiek: gebalanceerd, met per spreekuur ruimte gereserveerd voor zijn
-      // evenredige deel digitale consulten, zodat elk spreekuur zijn deel krijgt.
       const digTotMin=digAll.reduce((s,a)=>s+a.duur,0)
-      const perSlotDig= actief.length? digTotMin/actief.length : 0
-      const physCapOf=s=> Math.max(0, s.cap - (digAll.length?perSlotDig:0))
-      const kiesPhys=a=>{ let k=actief.filter(s=>a.ddOpties.includes(s.dd)&&s.used+a.duur<=physCapOf(s))
-        if(!k.length) k=actief.filter(s=>past(s,a)); if(!k.length) return null; k.sort(tie); return k[0] }
-      ;[...physVast,...physRest].forEach(a=>{ const s=kiesPhys(a); if(s) plaats(s,a); else over.push(a) })
-      // Digitaal: round-robin over alle actieve spreekuren (minst-digitaal eerst),
-      // zodat elk spreekuur zijn evenredige deel digitale consulten krijgt.
-      const digUsed=new Map(actief.map(s=>[s,0]))
-      const kiesDig=a=>{ const k=actief.filter(s=>past(s,a)); if(!k.length) return null
-        k.sort((x,y)=>(digUsed.get(x)-digUsed.get(y))||tie(x,y)); return k[0] }
-      sorteerPool(digAll).forEach(a=>{ const s=kiesDig(a)
-        if(s){ plaats(s,a); digUsed.set(s,digUsed.get(s)+a.duur) } else over.push(a) })
+
+      // Eén plaatsingspoging met de eerste nSlots spreekuren. Wordt herhaald met
+      // meer spreekuren als er onterecht iets overloopt (zie hieronder).
+      const probeer=(nSlots)=>{
+        slots.forEach(s=>{ s.items=[]; s.used=0 })
+        const act=slots.slice(0,nSlots)
+        const ov=[]
+        const perSlotDig= act.length? digTotMin/act.length : 0
+        const physCapOf=s=> Math.max(0, s.cap - (digAll.length?perSlotDig:0))
+        const kiesPhys=a=>{ let k=act.filter(s=>a.ddOpties.includes(s.dd)&&s.used+a.duur<=physCapOf(s))
+          if(!k.length) k=act.filter(s=>past(s,a)); if(!k.length) return null; k.sort(tie); return k[0] }
+        ;[...physVast,...physRest].forEach(a=>{ const s=kiesPhys(a); if(s) plaats(s,a); else ov.push(a) })
+        const digUsed=new Map(act.map(s=>[s,0]))
+        const kiesDig=a=>{ const k=act.filter(s=>past(s,a)); if(!k.length) return null
+          k.sort((x,y)=>(digUsed.get(x)-digUsed.get(y))||tie(x,y)); return k[0] }
+        sorteerPool(digAll).forEach(a=>{ const s=kiesDig(a)
+          if(s){ plaats(s,a); digUsed.set(s,digUsed.get(s)+a.duur) } else ov.push(a) })
+        return {act, ov}
+      }
+
+      // Start bij het efficiënte aantal (vraag ÷ capaciteit). Past er door bin-
+      // packing-verlies toch iets niet, dan openen we extra spreekuren tot ALLES
+      // past — nooit een kunstmatige "nog te plannen" terwijl er ruimte is. De groei
+      // stopt bij het aantal beschikbare spreekuren: in AUTO ruim voldoende, in VAST
+      // exact het gekozen aantal kamers × dagdelen (het echte overschot gaat dan pas
+      // naar "nog te plannen").
+      let nNodig=Math.max(1,Math.min(slots.length,Math.round(totMin/Math.max(1,gemCap))))
+      let uitkomst=probeer(nNodig)
+      while(uitkomst.ov.length && nNodig<slots.length){
+        nNodig++; uitkomst=probeer(nNodig)
+      }
+      const actief=uitkomst.act
+      uitkomst.ov.forEach(a=>over.push(a))
 
       // Slots met inhoud terugvertalen naar kamers per dagdeel, op kamernummer.
       const gebruikt=actief.filter(s=>s.items.length)
@@ -1352,29 +1369,39 @@ export default function RasterTool(){
         // In dat geval laten we de startzone wijken: niet eindigen op flex weegt
         // zwaarder dan niet beginnen met flex.
         if(!gaten.length) gaten=verzamelGaten(0)
-        // 2) Verdeel de flex in blokken van EXACT de ingestelde duur (blokMin). Elk
-        //    gebruikt tussengat krijgt precies blokMin minuten — nooit meer, nooit
-        //    minder. Het aantal hele blokken volgt uit flexTotal ÷ blokMin en die
-        //    worden gelijkmatig over de beschikbare (verschillende) gaten gespreid.
-        //    Wat niet in hele blokken past — het restant kleiner dan één blok, of de
-        //    overloop als er te weinig gaten zijn — komt als één restbuffer aan het
-        //    einde. Zo is élk tussenblok gegarandeerd exact de ingestelde lengte.
+        // 2) Verdeel de VOLLEDIGE flex over de gaten tússen de afspraken, zodat de
+        //    laatste afspraak exact op het einde van het spreekuur uitkomt — nooit
+        //    een leeg plekje aan het einde. Elk tussenblok is de ingestelde duur
+        //    (blokMin); alleen het laatste gebruikte gat vangt de restbuffer op
+        //    (blokMin + het restant dat niet in hele blokken paste). Het aantal
+        //    blokken volgt uit flexTotal ÷ blokMin, begrensd door het aantal gaten.
         const bedrag={}
-        if(gaten.length && flexTotal>=blokMin){
-          const nHeel=Math.floor(flexTotal/blokMin)        // hele blokken van blokMin
-          const gebruik=Math.min(nHeel, gaten.length)      // zoveel verschillende gaten
-          const stap=gaten.length/gebruik
-          const bezet=new Set()
-          for(let i=0;i<gebruik;i++){
+        if(gaten.length && flexTotal>0){
+          // Aantal blokken ≈ flexTotal ÷ blokMin (begrensd door het aantal gaten),
+          // gelijkmatig over het spreekuur gespreid. De blokken worden GELIJKMATIG
+          // op elkaar afgestemd zodat ze allemaal ongeveer even lang zijn (≈ blokMin)
+          // en SAMEN precies flexTotal vullen — geen leeg einde, geen groot los blok.
+          const nBlok=Math.max(1,Math.min(gaten.length,Math.round(flexTotal/blokMin)))
+          const gekozen=[]
+          const stap=gaten.length/nBlok
+          const bezet=[]
+          for(let i=0;i<nBlok;i++){
             let idx=Math.min(gaten.length-1,Math.floor(i*stap+stap/2))
-            while(bezet.has(idx)&&idx<gaten.length-1) idx++
-            while(bezet.has(idx)&&idx>0) idx--
-            bezet.add(idx)
-            bedrag[gaten[idx]]=blokMin                      // EXACT blokMin
+            while(bezet.includes(idx)&&idx<gaten.length-1) idx++
+            while(bezet.includes(idx)&&idx>0) idx--
+            bezet.push(idx); gekozen.push(gaten[idx])
           }
+          gekozen.sort((a,b)=>a-b)
+          const n=gekozen.length; let geplaatst=0
+          gekozen.forEach((g,i)=>{
+            const doel=Math.round(flexTotal*(i+1)/n/5)*5   // cumulatief, op 5 min
+            const chunk=Math.max(0,Math.min(flexTotal-geplaatst, doel-geplaatst))
+            bedrag[g]=chunk; geplaatst+=chunk
+          })
+          if(geplaatst<flexTotal) bedrag[gekozen[n-1]]=(bedrag[gekozen[n-1]]||0)+(flexTotal-geplaatst)
         }
-        // 3) Afspraken + flexblokken op de tijdas zetten. Elk tussenblok is exact
-        //    blokMin lang (nooit korter/langer); het restant volgt in stap 4.
+        // 3) Afspraken + flexblokken op de tijdas zetten. De flex zit volledig tussen
+        //    de afspraken, dus de laatste afspraak sluit het spreekuur exact af.
         physAppts.forEach((a,i)=>{
           t=pushAppt(a,i,t)
           const m=bedrag[i]||0
@@ -1384,11 +1411,8 @@ export default function RasterTool(){
           }
         })
         t=plaatsDigitaalEinde(t)
-        // 4) GEEN eindblok. Bij "flex verspreid" eindigt het spreekuur nooit op een
-        //    flexblok — de laatste afspraak sluit af. De flex die niet in hele
-        //    blokken van blokMin tussen de afspraken paste, blijft simpelweg als
-        //    (ongemarkeerde) ruimte aan het einde staan en wordt niet als blok
-        //    getoond. Zo eindigt het spreekuur altijd met een afspraak.
+        // 4) GEEN eindblok — de flex is volledig tussen de afspraken verdeeld, dus het
+        //    spreekuur eindigt altijd met een afspraak, precies op de eindtijd.
       } else {
         // flexMode 'end' (of te weinig flex om te verspreiden): alles achter elkaar,
         // één aaneengesloten flexblok na de laatste afspraak.
@@ -2946,7 +2970,7 @@ export default function RasterTool(){
               <span style={{width:12,height:12,borderRadius:3,background:FLEX_STRIPE(3,6),border:`1px solid ${FLEX_COLOR.brd}`,flexShrink:0}}/>
               <div style={{flex:1,minWidth:190}}>
                 <div style={{fontSize:12,fontWeight:700,color:FLEX_COLOR.fg}}>Geen flex aan het begin</div>
-                <div style={{fontSize:11,color:C.muted}}>Flex komt <b style={{color:C.text}}>uitsluitend tussen de afspraken</b>, pas ná <b style={{color:C.text}}>{rules.flexNoFirstMin??60} min</b> spreekuur. Elk flexblok is <b style={{color:C.text}}>exact {rules.flexBlokMin??10} min</b> lang — nooit korter of langer. De blokken worden gelijkmatig tussen de afspraken over het spreekuur gespreid. Het spreekuur <b style={{color:C.text}}>eindigt nooit op een flexblok</b>: de laatste afspraak sluit af, en de eventuele restruimte die niet in hele blokken paste blijft ongemarkeerd aan het einde staan.</div>
+                <div style={{fontSize:11,color:C.muted}}>Flex komt <b style={{color:C.text}}>uitsluitend tussen de afspraken</b>, pas ná <b style={{color:C.text}}>{rules.flexNoFirstMin??60} min</b> spreekuur. De flexblokken zijn <b style={{color:C.text}}>± {rules.flexBlokMin??10} min</b> en worden gelijkmatig tussen de afspraken gespreid; ze vullen samen precies de beschikbare buffer. Het spreekuur <b style={{color:C.text}}>eindigt altijd met een afspraak</b> op de eindtijd — nooit een flexblok of leeg plekje aan het einde.</div>
               </div>
               <div style={{display:'inline-flex',alignItems:'center',border:`1px solid ${FLEX_COLOR.brd}`,borderRadius:8,overflow:'hidden',background:C.white}}>
                 <button onClick={()=>setRules(p=>({...p,flexNoFirstMin:Math.max(0,(p.flexNoFirstMin??60)-10)}))}
