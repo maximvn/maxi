@@ -1,6 +1,17 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from "react"
 import * as XLSX from 'xlsx'
 
+// Maak een echte, downloadbare URL van een XLSX-workbook. We gebruiken een Blob
+// + object-URL i.p.v. een data:-URI: grote data:-URI's worden door sommige
+// browsers geweigerd en top-level navigatie ernaartoe wordt in een afgeschermde
+// iframe (gedeelde artifact) geblokkeerd. Een blob:-URL is same-origin en werkt
+// met het download-attribuut in alle omgevingen.
+const wbNaarHref=wb=>{
+  const data=XLSX.write(wb,{bookType:'xlsx',type:'array'})
+  return URL.createObjectURL(new Blob([data],
+    {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}))
+}
+
 // ─── DESIGN TOKENS ────────────────────────────────────────────────────────────
 const C = {
   primary:'#1C6EA4',     // clean professional blue
@@ -396,10 +407,8 @@ export default function RasterTool(){
   const [calZoom,setCalZoom]=useState(3.0) // px per minute, range 1.5–6
   const [viewMode,setViewMode]=useState('dag') // 'dag' | 'week' (multi-dynamisch overzicht)
   // Inklapbare rasterpanelen (minimaliseren/maximaliseren)
-  const [openPanels,setOpenPanels]=useState({kpi:true,analyse:true,scenarios:true,capaciteit:true})
+  const [openPanels,setOpenPanels]=useState({kpi:true,analyse:true,capaciteit:true})
   const togglePanel=k=>setOpenPanels(p=>({...p,[k]:!p[k]}))
-  const [solver,setSolver]=useState(null)    // uitkomst van de achtergrond-solver
-  const [solving,setSolving]=useState(false)
   const [drag,setDrag]=useState(null)
   const [showExport,setShowExport]=useState(false)
   const [showReset,setShowReset]=useState(false)
@@ -1346,22 +1355,33 @@ export default function RasterTool(){
         // In dat geval laten we de startzone wijken: niet eindigen op flex weegt
         // zwaarder dan niet beginnen met flex.
         if(!gaten.length) gaten=verzamelGaten(0)
-        // 2) Verdeel ALLE flex over de beschikbare gaten. Bij "flex verspreid" mag
-        //    het spreekuur NIET op een flexblok eindigen — de laatste afspraak sluit
-        //    het spreekuur af. Blijft er meer flex over dan het ingestelde blokje,
-        //    dan worden de tussenblokken navenant groter in plaats van dat de rest
-        //    achteraan wordt geparkeerd.
+        // 2) Verdeel de flex in blokken van de INGESTELDE duur (blokMin). Het aantal
+        //    blokken volgt uit flexTotal ÷ blokMin, zodat elk tussenblok ongeveer de
+        //    door de gebruiker gekozen lengte krijgt. Die blokken worden gelijkmatig
+        //    over de beschikbare gaten gespreid. Zijn er te weinig gaten voor zoveel
+        //    blokken (kort spreekuur, veel flex), dan worden de blokken navenant
+        //    groter in plaats van dat flex achteraan belandt. Het spreekuur eindigt
+        //    nooit op flex — de laatste afspraak sluit af.
         const bedrag={}
         if(gaten.length){
-          const n=gaten.length
+          // Aantal blokken zodat elk blok ± blokMin lang is, begrensd door de gaten.
+          const nBlok=Math.max(1,Math.min(gaten.length,Math.round(flexTotal/blokMin)))
+          // Kies nBlok gelijkmatig gespreide gaten (gecentreerd, dus bij 1 blok het
+          // middelste gat, niet het eerste).
+          const gekozen=[]
+          for(let i=0;i<nBlok;i++){
+            const idx=Math.min(gaten.length-1,Math.max(0,Math.round((i+0.5)*gaten.length/nBlok-0.5)))
+            if(!gekozen.includes(gaten[idx])) gekozen.push(gaten[idx])
+          }
+          const n=gekozen.length
           let geplaatst=0
-          gaten.forEach((g,i)=>{
+          gekozen.forEach((g,i)=>{
             // cumulatief doel, op 5 minuten afgerond → geen drift, som klopt exact
             const doel=Math.round(flexTotal*(i+1)/n/5)*5
             const chunk=Math.max(0,Math.min(flexTotal-geplaatst, doel-geplaatst))
             bedrag[g]=chunk; geplaatst+=chunk
           })
-          if(geplaatst<flexTotal) bedrag[gaten[n-1]]=(bedrag[gaten[n-1]]||0)+(flexTotal-geplaatst)
+          if(geplaatst<flexTotal) bedrag[gekozen[n-1]]=(bedrag[gekozen[n-1]]||0)+(flexTotal-geplaatst)
         }
         // 3) Afspraken + flexblokken op de tijdas zetten.
         physAppts.forEach((a,i)=>{
@@ -1451,61 +1471,6 @@ export default function RasterTool(){
   const doGenerate=useCallback(()=>{
     setRaster(computeRaster(cfg,newRows,ctrlRows,m2,rules,capacity))
   },[cfg,newRows,ctrlRows,m2,rules,capacity,computeRaster])
-
-  // ── SOLVER — multidimensionaal: toetst met de ECHTE engine drie assen tegelijk
-  //    (1) planregel-strategie, (2) benutting, (3) VERDELING over dagen/dagdelen —
-  //    bv. nieuw 's ochtends & controle 's middags, of type-specifieke dagen — en
-  //    kiest per doel de combinatie die alles het best & rustigst inplant. ──
-  // De solver rekent 3 scenario's door met de ECHTE engine, ALTIJD vanuit het
-  // ingestelde aantal kamers (baseRooms). Scenario 1 & 2 gebruiken exact die
-  // capaciteit; scenario 3 zet er één kamer bij.
-  //   1 · Maximaal strak  — hoogste benutting, flex aan het einde
-  //   2 · Jouw instellingen — precies de waarden uit module Tijden (benutting én
-  //       de ochtend/middag-verdeling) plus je eigen flexmodus, doorgerekend in
-  //       jouw kamers. Zo zie je wat je eigen configuratie oplevert.
-  //   3 · Ruim — een kamer erbij en de laagste benutting: de meeste lucht.
-  // Alle drie erven de ochtend/middag-verdeling (verOch) en weekdagverdeling uit
-  // module Tijden; de codes blijven ongemoeid, dus schakelen is omkeerbaar.
-  const runSolver=useCallback((cfg,newRows,ctrlRows,m2,rules,baseRooms)=>{
-    const clampB=b=>Math.max(60,Math.min(98,Math.round(b)))
-    const R0=Math.max(1,baseRooms||1)
-    // Eén doorrekening bij (kamers, benutting, flexmodus). m2 — en dus verOch,
-    // de weekdagverdeling en de spreekuurtijden — gaat onveranderd mee.
-    const evalAt=(rooms,benut,flexMode)=>{
-      const res=computeRaster(cfg,newRows,ctrlRows,{...m2,benutting:benut},
-        {...rules,flexMode},{mode:'vast',kamers:rooms})
-      const k=res.kpi.week
-      return {rooms,benut,flexMode,overflow:res.ntp.length,verOch:m2.verOch,
-        flex:k.flex,spreiding:k.spreiding,wissels:k.wissels,planned:k.planned,capacity:k.capacity}
-    }
-    // Laagste benutting die in R kamers nog past (= meeste flex terwijl alles past).
-    const minFit=R=>{ for(let b=60;b<=98;b+=2){ if(evalAt(R,b,'spread').overflow===0) return b } return 98 }
-    const fitBase=minFit(R0)          // strakste benutting die nog past in R0
-    const fitPlus=minFit(R0+1)        // idem met een kamer erbij
-    const b1=clampB(Math.max(fitBase,96))          // strak: maximaal opgevuld
-    const bEigen=clampB(m2.benutting)              // JOUW benutting uit module Tijden
-    const b3=clampB(Math.max(fitPlus,72))          // ruim: laag, met kamer erbij
-    const t1={...evalAt(R0,b1,'end'),                       key:'strak', naam:'Maximaal strak'}
-    const t2={...evalAt(R0,bEigen,rules.flexMode||'spread'),key:'eigen', naam:'Jouw instellingen',eigen:true}
-    const t3={...evalAt(R0+1,b3,'spread'),                  key:'ruim',  naam:'Ruim · kamer erbij'}
-    return {baseRooms:R0,tiers:[t1,t2,t3]}
-  },[computeRaster])
-
-  // Achtergrond-analyse: draait (gedebounced) na elke rasterwijziging, buiten de
-  // render om via setTimeout, zodat de UI soepel blijft.
-  const solveKeyRef=useRef('')
-  useEffect(()=>{
-    if(!raster) return
-    setSolving(true)
-    const id=setTimeout(()=>{
-      // baseRooms = het INGESTELDE aantal kamers, of het auto-afgeleide aantal.
-      // Scenario 1 & 2 gaan hiervan uit.
-      const R=capacity.mode==='vast'?capacity.kamers:(raster.numRooms||2)
-      try{ setSolver(runSolver(cfg,newRows,ctrlRows,m2,rules,R)) }catch(e){ /* solver faalt stil */ }
-      setSolving(false)
-    },240)
-    return ()=>clearTimeout(id)
-  },[cfg,newRows,ctrlRows,m2,rules,capacity,raster,runSolver])
 
   // ENGINE 2.0 — live sync (gedebounced): zodra er een raster is, wordt élke
   // wijziging in gegevens/tijden/regels/capaciteit doorgerekend. De debounce
@@ -1684,13 +1649,13 @@ export default function RasterTool(){
       const ws=XLSX.utils.aoa_to_sheet([kop,...SPREEKUUR_VOORBEELD])
       ws['!cols']=[{wch:8},{wch:22},{wch:11},{wch:11},{wch:12},{wch:12},{wch:14},{wch:20},{wch:18},{wch:13}]
       XLSX.utils.book_append_sheet(wb,ws,'Spreekuurgegevens')
-      const b64=XLSX.write(wb,{bookType:'xlsx',type:'base64'})
       // Een SYNTHETISCHE a.click() wordt geblokkeerd zodra de tool in een
-      // afgeschermde iframe draait (zoals bij een gedeelde link). Daarom tonen we
-      // — net als bij de raster-export — een echte downloadlink die de gebruiker
-      // zelf aanklikt. Dat werkt in alle omgevingen.
+      // afgeschermde iframe draait (zoals bij een gedeelde link), en een grote
+      // data:-URI weigeren sommige browsers óók. Daarom maken we een echte
+      // Blob-download-URL en tonen we een link die de gebruiker zelf aanklikt —
+      // dat werkt betrouwbaar in alle omgevingen, ook in de gedeelde artifact.
       setTplLink({
-        href:'data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,'+b64,
+        href:wbNaarHref(wb),
         filename:'spreekuurgegevens-voorbeeld.xlsx'})
     }catch(err){ alert('Kon voorbeeld niet maken: '+err.message) }
   }
@@ -1772,9 +1737,8 @@ export default function RasterTool(){
         const wsS=XLSX.utils.aoa_to_sheet([[JSON.stringify(state)]])
         XLSX.utils.book_append_sheet(wb,wsS,'_rasterdata')
 
-        const b64=XLSX.write(wb,{bookType:'xlsx',type:'base64'})
         setExportLink({
-          href:'data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,'+b64,
+          href:wbNaarHref(wb),
           filename:(expName.trim()||(poli.naam||'raster').toLowerCase().replace(/\s+/g,'_')||'raster')+'.xlsx'
         })
       }catch(err){console.error('Export:',err);alert('Export fout: '+err.message)}
@@ -2950,7 +2914,7 @@ export default function RasterTool(){
               <span style={{width:12,height:12,borderRadius:3,background:FLEX_STRIPE(3,6),border:`1px solid ${FLEX_COLOR.brd}`,flexShrink:0}}/>
               <div style={{flex:1,minWidth:190}}>
                 <div style={{fontSize:12,fontWeight:700,color:FLEX_COLOR.fg}}>Geen flex aan het begin</div>
-                <div style={{fontSize:11,color:C.muted}}>Flex komt <b style={{color:C.text}}>uitsluitend tussen de afspraken</b>, pas ná <b style={{color:C.text}}>{rules.flexNoFirstMin??60} min</b> spreekuur. Het spreekuur eindigt nooit op een flexblok — de laatste afspraak sluit af. Richtmaat per blok is <b style={{color:C.text}}>{rules.flexBlokMin??10} min</b>; is er meer flex dan dat, dan worden de tussenblokken groter in plaats van dat de rest achteraan komt.</div>
+                <div style={{fontSize:11,color:C.muted}}>Flex komt <b style={{color:C.text}}>uitsluitend tussen de afspraken</b>, pas ná <b style={{color:C.text}}>{rules.flexNoFirstMin??60} min</b> spreekuur. Het spreekuur eindigt nooit op een flexblok — de laatste afspraak sluit af. Elk flexblok is <b style={{color:C.text}}>{rules.flexBlokMin??10} min</b> lang; het aantal blokken volgt uit de beschikbare flex ÷ deze duur, gelijkmatig over het spreekuur gespreid. Zijn er te weinig tussenruimtes voor zoveel blokken, dan worden de blokken navenant groter.</div>
               </div>
               <div style={{display:'inline-flex',alignItems:'center',border:`1px solid ${FLEX_COLOR.brd}`,borderRadius:8,overflow:'hidden',background:C.white}}>
                 <button onClick={()=>setRules(p=>({...p,flexNoFirstMin:Math.max(0,(p.flexNoFirstMin??60)-10)}))}
@@ -3207,49 +3171,6 @@ export default function RasterTool(){
     else if(dekking>150) adviezen.push({t:'warn',m:`Ruim overschot: ${dekking}% capaciteit t.o.v. de vraag. Een kamer of dagdeel minder kan al voldoende zijn.`})
     if(pctOnzeker>=30&&rules.flexMode!=='spread') adviezen.push({t:'info',m:`${pctOnzeker}% onzekere afspraken — 'Buffer: verspreid' vangt uitloop beter op.`})
     if(!adviezen.length) adviezen.push({t:'ok',m:'Vraag en capaciteit zijn in balans; geen knelpunten gevonden.'})
-
-    // ── 3 SCENARIO'S — KRAPTE-NIVEAUS uit de ACHTERGROND-SOLVER (echte engine) ──
-    // Ze verschillen alléén in speelruimte (benutting + flex + kamers): scenario 1
-    // maximaal strak, 2 krap-maar-met-flex, 3 ruim (kamer erbij). Toepassen én
-    // terugschakelen is volledig omkeerbaar omdat de codes ongemoeid blijven.
-    const demandCount=Math.round(
-      newRows.reduce((s,r)=>s+cfg.newPat*((r.percentage||0)/100),0)+
-      ctrlRows.reduce((s,r)=>s+cfg.ctrlPat*((r.percentage||0)/100),0)) || (nReal+nNtp)
-    const TINTS={strak:C.primary,eigen:C.green,ruim:'#8B5CF6'}
-    const KRAPTE={strak:'Erg krap',eigen:'Jouw waardes',ruim:'Ruim'}
-    const ddVerd=t=>`ochtend ${t.verOch??m2.verOch}% / middag ${100-(t.verOch??m2.verOch)}%`
-    const HOE={
-      strak:t=>`Maximaal opgevuld bij ${t.benut}% benutting in ${t.rooms} kamer${t.rooms===1?'':'s'} — flex aan het einde, slechts ${100-t.benut}% buffer. Verdeling ${ddVerd(t)}. Efficiëntst, maar weinig ademruimte bij uitloop.`,
-      eigen:t=>`Precies jouw instellingen uit module Tijden: ${t.benut}% benutting, verdeling ${ddVerd(t)}, flex ${t.flexMode==='end'?'aan het einde':'verspreid'} — in je ${t.rooms} ingestelde kamer${t.rooms===1?'':'s'}. Dit is wat je eigen configuratie oplevert.`,
-      ruim:t=>`Een kamer erbij (${t.rooms} kamers) bij ${t.benut}% benutting — de meeste lucht met ${100-t.benut}% buffer. Verdeling ${ddVerd(t)}. Comfortabel, maar duurder qua capaciteit.`,
-    }
-    const mkTier=t=>{
-      const fit=t.overflow===0
-      return {key:t.key,naam:t.naam,tint:TINTS[t.key],krapte:KRAPTE[t.key],rooms:t.rooms,benut:t.benut,
-        flexMode:t.flexMode,flex:t.flex,fit,eigen:!!t.eigen,verOch:t.verOch,
-        sub:`${t.rooms} kamer${t.rooms===1?'':'s'} · ${t.benut}% benutting · O ${t.verOch??m2.verOch}/M ${100-(t.verOch??m2.verOch)}`,
-        metric:fit?`${demandCount}/${demandCount} geplaatst`:`${Math.max(0,demandCount-t.overflow)}/${demandCount} geplaatst`,
-        hoe:fit?HOE[t.key](t):`Past niet volledig: ${t.overflow} afspraken lopen over in ${t.rooms} kamer${t.rooms===1?'':'s'} bij ${t.benut}% (verdeling ${ddVerd(t)}). Kies een ruimer scenario of voeg een kamer toe.`}
-    }
-    let scenarios
-    if(solver && solver.tiers && solver.tiers.length===3){
-      scenarios=solver.tiers.map(mkTier)
-    } else {
-      // Voorlopige weergave zolang de solver nog rekent (stabiele schatting).
-      const bRef=beschRooms
-      scenarios=[
-        {key:'strak',naam:'Maximaal strak',krapte:KRAPTE.strak,tint:TINTS.strak,rooms:bRef,benut:96,flexMode:'end',flex:0,fit:true,verOch:m2.verOch,sub:`${bRef} kamer${bRef===1?'':'s'} · solver rekent…`,metric:`${demandCount}/${demandCount}`,hoe:'De solver rekent het strakste, meest opgevulde rooster door…'},
-        {key:'eigen',naam:'Jouw instellingen',krapte:KRAPTE.eigen,tint:TINTS.eigen,rooms:bRef,benut:m2.benutting,flexMode:rules.flexMode||'spread',flex:0,fit:true,eigen:true,verOch:m2.verOch,sub:`${bRef} kamer${bRef===1?'':'s'} · solver rekent…`,metric:`${demandCount}/${demandCount}`,hoe:'De solver rekent jouw eigen instellingen uit module Tijden door…'},
-        {key:'ruim',naam:'Ruim · kamer erbij',krapte:KRAPTE.ruim,tint:TINTS.ruim,rooms:bRef+1,benut:74,flexMode:'spread',flex:0,fit:true,verOch:m2.verOch,sub:`${bRef+1} kamers · solver rekent…`,metric:`${demandCount}/${demandCount}`,hoe:'De solver rekent de ruimste opzet met een extra kamer door…'},
-      ]
-    }
-    // Toepassen: alléén benutting, flexmodus en kamers — codes blijven ongemoeid,
-    // zodat 1↔2↔3 volledig omkeerbaar is en niet vastloopt.
-    const applyScenario=s=>{
-      setM2(p=>({...p,benutting:s.benut}))
-      setRules(p=>({...p,flexMode:s.flexMode}))
-      setCapacity({mode:'vast',kamers:s.rooms})
-    }
 
     // ── Time-grid raster (resource calendar: rooms as columns, time on Y) ──────
     const PXMIN=calZoom*0.95 // px per minute for the grid
@@ -3734,96 +3655,6 @@ export default function RasterTool(){
                 </div>
               ))}
             </div>
-          </div>
-        </div>
-        )}
-        </div>
-
-        {/* ── 3 SCENARIO'S — inklapbaar ── */}
-        <div style={{marginBottom:12}}>
-        <PanelKop id="scenarios" titel="Scenario's" samenvatting="Maximaal strak · Jouw instellingen · Ruim (kamer erbij)"/>
-        {openPanels.scenarios&&(
-        <div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:12,padding:'14px 16px'}}>
-          <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:11,flexWrap:'wrap'}}>
-            <span style={{fontSize:11.5,color:C.muted,flex:1,minWidth:200}}>Een <b style={{color:C.text}}>solver</b> rekent met de échte engine drie scenario's door in je <b style={{color:C.text}}>{beschRooms} ingestelde kamer{beschRooms===1?'':'s'}</b>: <b style={{color:C.primary}}>1 · Maximaal strak</b> (alles opgevuld, weinig flex), <b style={{color:C.green}}>2 · Jouw instellingen</b> (exact de benutting én ochtend/middag-verdeling uit module Tijden), <b style={{color:'#8B5CF6'}}>3 · Ruim</b> (kamer erbij, de meeste lucht). Je kunt vrij heen en weer schakelen.</span>
-            <span style={{fontSize:10.5,fontWeight:700,padding:'4px 11px',borderRadius:20,display:'inline-flex',alignItems:'center',gap:6,
-              background:solving?'#FBF3E2':'#EAF5EE',color:solving?'#B8860B':C.green,border:`1px solid ${solving?'#EFD9B4':'#C9E6D5'}`}}>
-              <span style={{width:7,height:7,borderRadius:'50%',background:solving?'#D9860A':C.green,animation:solving?'pmPulse 1s infinite':'none'}}/>
-              {solving?'Solver analyseert…':'Solver klaar'}
-            </span>
-          </div>
-          <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12}}>
-            {scenarios.map((s,si)=>{
-              // Actief = huidige benutting + kamers + flexmodus komen overeen met dit
-              // niveau. De drie niveaus hebben unieke (benut,rooms,flexMode) → precies
-              // één is actief, ongeacht de volgorde waarin je klikt.
-              const actief=Math.abs(m2.benutting-s.benut)<2.5
-                && (capacity.mode==='vast'?capacity.kamers:beschRooms)===s.rooms
-                && rules.flexMode===s.flexMode
-              const bg=s.tint===C.primary?C.blueAccent:s.tint===C.green?'#EDF7F0':'#F3EEFA'
-              // Speelruimte = de gereserveerde buffer (100−benutting), plus een bonus
-              // voor de extra kamer. Altijd voelbaar verschillend tussen de niveaus.
-              const buffer=100-s.benut
-              const speel=Math.min(100,Math.round(buffer*2.6)+(s.rooms>beschRooms?18:0))
-              return(
-                <div key={s.key} style={{border:`1.5px solid ${actief?s.tint:C.border}`,borderRadius:12,padding:'14px 15px',
-                  background:actief?bg:C.white,transition:'all 0.13s',display:'flex',flexDirection:'column',
-                  boxShadow:actief?`0 6px 18px ${s.tint}22`:'none'}}>
-                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:2,gap:6}}>
-                    <span style={{fontSize:13.5,fontWeight:800,color:s.tint,lineHeight:1.2}}>{si+1}. {s.naam}</span>
-                    {actief
-                      ?<span style={{fontSize:9,fontWeight:700,color:'#fff',background:s.tint,borderRadius:10,padding:'2px 7px',flexShrink:0}}>ACTIEF</span>
-                      :<span style={{fontSize:9,fontWeight:700,color:s.tint,background:bg,borderRadius:10,padding:'2px 7px',flexShrink:0}}>{s.krapte}</span>}
-                  </div>
-                  <div style={{fontSize:10,color:C.muted,marginBottom:9,fontFamily:'IBM Plex Mono,monospace',letterSpacing:'0.02em'}}>{s.sub}</div>
-                  {/* Speelruimte-meter */}
-                  <div style={{marginBottom:10}}>
-                    <div style={{display:'flex',justifyContent:'space-between',fontSize:8.5,color:C.muted,textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:3}}>
-                      <span>Speelruimte</span><span>{100-s.benut}% buffer</span></div>
-                    <div style={{height:7,borderRadius:4,background:C.surface2,overflow:'hidden'}}>
-                      <div style={{width:speel+'%',height:'100%',background:s.tint,borderRadius:4,transition:'width 0.3s ease'}}/></div>
-                  </div>
-                  <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:10,padding:'6px 10px',borderRadius:8,background:s.tint,color:'#fff'}}>
-                    <span style={{fontSize:14}}>◆</span><span style={{fontSize:12,fontWeight:800}}>{s.metric}</span>
-                  </div>
-                  <div style={{display:'flex',gap:8,marginBottom:8}}>
-                    <div style={{flex:1,background:C.surface2,borderRadius:8,padding:'7px 9px'}}>
-                      <div style={{fontSize:8.5,color:C.muted,textTransform:'uppercase',letterSpacing:'0.05em'}}>Benutting</div>
-                      <div style={{fontSize:16,fontWeight:800,color:C.text,fontVariantNumeric:'tabular-nums'}}>{s.benut}%</div></div>
-                    <div style={{flex:1,background:C.surface2,borderRadius:8,padding:'7px 9px'}}>
-                      <div style={{fontSize:8.5,color:C.muted,textTransform:'uppercase',letterSpacing:'0.05em'}}>Kamers</div>
-                      <div style={{fontSize:16,fontWeight:800,color:s.rooms>beschRooms?s.tint:C.text,fontVariantNumeric:'tabular-nums'}}>
-                        {s.rooms}{s.rooms>beschRooms&&<span style={{fontSize:10,fontWeight:600}}> (+{s.rooms-beschRooms})</span>}</div></div>
-                  </div>
-                  {/* Ochtend/middag-verdeling uit module Tijden */}
-                  <div style={{background:C.surface2,borderRadius:8,padding:'7px 9px',marginBottom:11}}>
-                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
-                      <span style={{fontSize:8.5,color:C.muted,textTransform:'uppercase',letterSpacing:'0.05em'}}>Verdeling ochtend / middag</span>
-                      <span style={{fontSize:9.5,fontWeight:700,color:C.text}}>{s.verOch??m2.verOch}% / {100-(s.verOch??m2.verOch)}%</span>
-                    </div>
-                    <div style={{display:'flex',height:6,borderRadius:3,overflow:'hidden',background:C.border}}>
-                      <div style={{width:(s.verOch??m2.verOch)+'%',background:s.tint}}/>
-                      <div style={{flex:1,background:s.tint,opacity:0.35}}/>
-                    </div>
-                  </div>
-                  {s.eigen&&(
-                    <div style={{fontSize:9.5,fontWeight:700,color:C.green,background:'#EDF7F0',border:'1px solid #C9E6D5',
-                      borderRadius:7,padding:'5px 8px',marginBottom:9,textAlign:'center'}}>
-                      ⚙ Overgenomen uit module Tijden
-                    </div>
-                  )}
-                  <div style={{fontSize:10.5,color:C.text,lineHeight:1.45,marginBottom:11,minHeight:60,
-                    padding:'8px 10px',borderRadius:8,background:s.fit?'#EDF7F0':'#FCEEEB',border:`1px solid ${s.fit?'#C9E6D5':'#F0C8C3'}`}}>
-                    <b style={{color:s.fit?C.green:C.danger}}>{s.fit?'✓ Haalbaar':'✗ Niet volledig'}</b> — {s.hoe}
-                  </div>
-                  <button onClick={()=>applyScenario(s)}
-                    style={{marginTop:'auto',width:'100%',padding:'9px 0',borderRadius:8,cursor:'pointer',fontSize:12,fontWeight:700,
-                      border:`1px solid ${s.tint}`,background:actief?s.tint:C.white,color:actief?'#fff':s.tint,transition:'all 0.12s'}}>
-                    {actief?'✓ Toegepast':'Pas dit scenario toe'}
-                  </button>
-                </div>
-              )
-            })}
           </div>
         </div>
         )}
