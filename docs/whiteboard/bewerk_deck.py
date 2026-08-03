@@ -16,13 +16,14 @@ import os
 import sys
 
 from pptx import Presentation
-from pptx.util import Emu, Pt
+from pptx.util import Emu, Inches, Pt
 
 from pptx_lib import regelhoogte
 from deck_lib import (AMBER, BLAUW, CYAAN, DIM, GRIJS, INHOUD_Y, INKT,
-                      KOL, KORAAL, MARGE, ONDER, RAND, VIOLET, accentpaneel,
-                      canvas, diakop, haarlijn, melding, meng, paneel, penning,
-                      pijl, pil, spot, tekst, vlak, voet)
+                      KOL, KORAAL, MARGE, ONDER, PAPIER, RAND, RAND_OP,
+                      VIOLET, accentpaneel, canvas, diakop, haarlijn, melding,
+                      meng, paneel, penning, pijl, pil, schaduw, spot, tekst,
+                      vlak, voet, zacht)
 
 HIER = os.path.dirname(os.path.abspath(__file__))
 BRON = os.path.join(HIER, "bron", "AcutepoortenHotfloor_bewerkt.pptx")
@@ -98,144 +99,220 @@ vervolgopleidingen) en de dagelijkse bedrijfsvoering erbij. De uitkomst is het \
 urenoverzicht."""
 
 
+def station(dia, cx, cy, r, label, kleur):
+    """Genummerde halte op de rail."""
+    vlak(dia, cx - r - 0.13, cy - r - 0.13, 2 * (r + 0.13), 2 * (r + 0.13),
+         zacht(kleur, 0.10), None, 0, 0.5)
+    schaduw(vlak(dia, cx - r, cy - r, 2 * r, 2 * r, PAPIER, kleur, 2.0, 0.5),
+            50000, 14000, 8)
+    tekst(dia, cx - r, cy - 0.22, 2 * r, 0.44,
+          [{"tekst": label, "size": 20, "vet": True, "kleur": kleur, "na": 0,
+            "uit": "center"}], anchor="midden", autofit=False)
+
+
 def dia_stappenplan(prs):
     d = canvas(prs)
     diakop(d, PROCESLABEL, "Van zorgvraag naar rooster",
-           "Vier stappen — elke stap levert de input voor de volgende", CYAAN)
-    b = (KOL - 3 * 0.28) / 4
-    ph = 4.14
-    for i, (nr, naam, kleur, uitkomst, stappen) in enumerate(FASEN):
-        x = MARGE + i * (b + 0.28)
-        paneel(d, x, INHOUD_Y, b, ph)
-        vlak(d, x, INHOUD_Y, b, 0.055, kleur, None, 0, 0.5)
-        penning(d, x + 0.46, INHOUD_Y + 0.52, 0.5, nr, kleur, size=13)
-        tekst(d, x + 0.26, INHOUD_Y + 0.9, b - 0.52, 0.6,
-              [{"tekst": naam, "size": 15.5, "vet": True, "kleur": INKT,
-                "na": 0, "lh": 1.14}])
-        pil(d, x + 0.26, INHOUD_Y + 1.54, b - 0.52, 0.32, uitkomst, kleur,
-            size=10)
-        haarlijn(d, x + 0.26, INHOUD_Y + 2.04, b - 0.52, RAND, 1)
-        sy = INHOUD_Y + 2.2
-        hoogtes = [regelhoogte(t, b - 0.8, 10) + 0.06 for t in stappen]
-        ruimte = (INHOUD_Y + ph - 0.2 - sy - sum(hoogtes)) / max(1, len(stappen) - 1)
-        for j, stap in enumerate(stappen):
-            open_punt = (i == 2 and j == 3)
-            spot(d, x + 0.34, sy + 0.11, AMBER if open_punt else kleur, 0.09,
-                 False)
-            tekst(d, x + 0.54, sy, b - 0.8, hoogtes[j],
-                  [{"tekst": stap, "size": 10, "lh": 1.2, "na": 0,
-                    "kleur": AMBER if open_punt else GRIJS}])
-            sy += hoogtes[j] + ruimte
-        if i < 3:
-            pijl(d, x + b + 0.045, INHOUD_Y + 0.42, 0.19, 0.19, kleur,
-                 alpha=55)
+           "Vier stappen — wat de ene stap oplevert, is de invoer van de "
+           "volgende", CYAAN)
+    b = KOL / 4
+    cy = INHOUD_Y + 0.5
+    r = 0.42
+    haarlijn(d, MARGE + b / 2, cy, KOL - b, RAND_OP, 1.25)
 
-    melding(d, INHOUD_Y + ph + 0.16, "Waar het nu stokt",
+    ky = INHOUD_Y + 1.6
+    kh = 2.52
+    for i, (nr, naam, kleur, uitkomst, stappen) in enumerate(FASEN):
+        cx = MARGE + b / 2 + i * b
+        x = MARGE + i * b + 0.13
+        kb = b - 0.26
+        if i < 3:
+            pijl(d, cx + b / 2 - 0.1, cy - 0.1, 0.2, 0.2, kleur, alpha=45)
+        station(d, cx, cy, r, nr, kleur)
+        tekst(d, cx - kb / 2, cy + 0.62, kb, 0.44,
+              [{"tekst": naam, "size": 16, "vet": True, "kleur": INKT, "na": 0,
+                "uit": "center", "lh": 1.14}])
+
+        paneel(d, x, ky, kb, kh)
+        vlak(d, x, ky, kb, 0.055, kleur, None, 0, 0.5)
+        ry = ky + 0.16
+        rh = 0.46
+        for j, stap in enumerate(stappen):
+            if j:
+                haarlijn(d, x + 0.2, ry, kb - 0.4, RAND, 0.75)
+            open_punt = (i == 2 and j == 3)
+            tekst(d, x + 0.2, ry + 0.04, 0.3, rh - 0.08,
+                  [{"tekst": f"{j + 1:02d}", "size": 8.5, "vet": True,
+                    "kleur": AMBER if open_punt else meng(kleur, PAPIER, 0.25),
+                    "na": 0}], anchor="midden", autofit=False)
+            tekst(d, x + 0.52, ry + 0.04, kb - 0.72, rh - 0.08,
+                  [{"tekst": stap, "size": 10, "lh": 1.18, "na": 0,
+                    "kleur": AMBER if open_punt else INKT}], anchor="midden")
+            ry += rh
+        sy = ky + kh - 0.56
+        vlak(d, x + 0.01, sy, kb - 0.02, 0.55, zacht(kleur, 0.11), None, 0,
+             0.03)
+        tekst(d, x + 0.2, sy + 0.05, kb - 0.4, 0.2,
+              [{"tekst": "LEVERT OP", "size": 7.5, "vet": True, "kleur": DIM,
+                "na": 0, "spatie": 1.4}], autofit=False)
+        tekst(d, x + 0.2, sy + 0.24, kb - 0.4, 0.26,
+              [{"tekst": uitkomst, "size": 11.5, "vet": True, "kleur": kleur,
+                "na": 0}], autofit=False)
+
+    melding(d, ky + kh + 0.2, "Waar het nu stokt",
             "Stap 02 kan niet af: de verpleegkundige norm ligt alleen op de ICU "
             "vast en de indirecte uren zijn niet vastgesteld. Zonder die twee "
-            "staat ook stap 03 stil.", AMBER, 0.62)
+            "staat ook stap 03 stil.", AMBER, 0.6)
     voet(d, 2)
     d.notes_slide.notes_text_frame.text = NOTITIE_A
     return d
 
 
-# ============================================== dia B: de formatieberekening
-TRAPPEN = [("Bruto", "vanuit HR en F&C", CYAAN),
-           ("Afwezigheid", "vanuit HR en F&C", AMBER),
-           ("Netto", "bruto min afwezigheid", BLAUW),
-           ("Benodigd", "vanuit BIC", VIOLET),
-           ("Resultaat", "naar de begroting", KORAAL)]
+# ================================== dia B en C: de formatieberekening in delen
+DELEN = os.path.join(HIER, "bron", "formatie")
 
-CIJFERS = [("1.878", "bruto uren per fte", "36,0 uur per week · 52,17 weken",
-            CYAAN),
-           ("300", "uren afwezigheid  ·  15,9%",
-            "vakantie 144,0 · ziek 75,1 · bijzonder 8,0 · PLB 22,0 · "
-            "feestdagen 50,4", AMBER),
-           ("1.579", "netto inzetbaar  ·  84,1%", "30,3 uur per week", BLAUW)]
-
-NOTITIE_B = """Formatieberekening, voorbeeld radiologie.
+NOTITIE_B = """Formatieberekening, voorbeeld radiologie — deel 1: van bruto \
+naar netto. De blokken komen uit het rekenblad dat wij hiervoor gebruiken.
 
 Jaarlijkse bruto arbeidsduur conform cao: voltijd 36,0 uur per week, 52,17 \
 weken, 1.878 bruto uren per jaar per fte.
 
-Afwezigheid volgens begroting: vakantierechten 144,0, ziekteverzuim 75,1, \
-bijzonder verlof 8,0, PLB 22,0 en feestdagen 50,4 — samen 300 uur, oftewel \
-5,7 uur per week of 15,9%.
+Afwezigheid volgens begroting, per fte: vakantierechten 144,0 (2,8 u/wk, \
+7,7%), ziek 75,1 (1,4 u/wk, 4,0%), bijzonder verlof 8,0 (0,2 u/wk, 0,4%), PLB \
+22,0 (0,4 u/wk, 1,2%) en feestdagen 50,4 (1,0 u/wk, 2,7%). Totaal 300 uur, \
+5,7 u/wk, 15,9%. Per medewerker komt daar scholing en werkoverleg bij.
 
-Netto inzetbaarheid: 1.579 uur, oftewel 30,3 uur per week of 84,1%.
+Netto inzetbaarheid: 1.579 uur, 30,3 uur per week, 84,1%."""
 
-Benodigde uren bestaan uit de indirecte uren per afdeling, de directe uren op \
-basis van roostersleutel of sessierooster, de spoedmodaliteiten en de \
-bereikbaarheidsdiensten.
+NOTITIE_C = """Formatieberekening, voorbeeld radiologie — deel 2: van \
+benodigd naar resultaat.
+
+Benodigde uren: de indirecte uren per afdeling, de directe uren op basis van \
+de roostersleutel (sessies op basis van het sessierooster, bij radiologie \
+uitgesplitst naar Bucky, CT, MRI, echo, angio, doorlichting, vacuümbioptie, \
+mammografie en vaatdiagnostiek), de spoedmodaliteiten en de \
+bereikbaarheidsdiensten. Samen geven die de benodigde capaciteit in uren.
 
 Personeelsformatie: benodigde capaciteit in uren, bruto benodigde formatie in \
-fte, overige afwijkingen en bruto beschikbare formatie in fte. Het verschil is \
-de fte-(mis)match.
+fte, overige afwijkingen, bruto benodigde formatie inclusief overige \
+afwijkingen, en de bruto beschikbare formatie in fte. Het verschil tussen \
+benodigd en beschikbaar is de fte-(mis)match.
 
-Overige afwijkingen komen bovenop de begrote afwezigheid: zwangerschapsverlof, \
-ouderschapsverlof en ziekteverzuim boven de 4 procent."""
+Overige afwijkingen komen bovenop de begrote afwezigheid: \
+zwangerschapsverlof, ouderschapsverlof en ziekteverzuim boven de 4 procent."""
 
 
-def dia_formatieberekening(prs):
+def _plaat(dia, naam, x, y, w):
+    """Zet een uitsnede van het rekenblad neer en geeft de onderkant terug."""
+    pad = os.path.join(DELEN, naam + ".png")
+    plaat = dia.shapes.add_picture(pad, Inches(x), Inches(y), width=Inches(w))
+    h = Emu(plaat.height).inches
+    vlak(dia, x - 0.04, y - 0.04, w + 0.08, h + 0.08, None, RAND, 1.0, 0.02)
+    return y + h
+
+
+def dia_formatie_een(prs):
     d = canvas(prs)
-    diakop(d, PROCESLABEL, "Formatieberekening",
-           "Voorbeeld radiologie — van bruto arbeidsduur naar de fte-(mis)match",
-           BLAUW)
-    b = (KOL - 4 * 0.22) / 5
-    for i, (naam, bron, kleur) in enumerate(TRAPPEN):
-        x = MARGE + i * (b + 0.22)
-        accentpaneel(d, x, INHOUD_Y, b, 1.02, kleur, 0.12)
-        tekst(d, x + 0.18, INHOUD_Y + 0.14, b - 0.36, 0.34,
-              [{"tekst": naam, "size": 16.5, "vet": True, "kleur": kleur,
-                "na": 0, "uit": "center"}], autofit=False)
-        tekst(d, x + 0.18, INHOUD_Y + 0.56, b - 0.36, 0.34,
-              [{"tekst": bron, "size": 9.5, "kleur": GRIJS, "na": 0,
-                "uit": "center", "lh": 1.16}])
-        if i < 4:
-            pijl(d, x + b + 0.025, INHOUD_Y + 0.42, 0.17, 0.17, kleur,
-                 alpha=55)
-
-    cy = INHOUD_Y + 1.32
-    cb = (KOL - 2 * 0.3) / 3
-    for i, (waarde, label, uitleg, kleur) in enumerate(CIJFERS):
-        x = MARGE + i * (cb + 0.3)
-        paneel(d, x, cy, cb, 1.86)
-        vlak(d, x, cy, cb, 0.055, kleur, None, 0, 0.5)
-        tekst(d, x + 0.3, cy + 0.24, cb - 0.6, 0.76,
-              [{"tekst": waarde, "size": 42, "vet": True, "kleur": kleur,
-                "na": 0}], autofit=False)
-        tekst(d, x + 0.3, cy + 1.0, cb - 0.6, 0.26,
-              [{"tekst": label.upper(), "size": 9.5, "vet": True, "kleur": DIM,
-                "na": 0, "spatie": 1.2}], autofit=False)
-        tekst(d, x + 0.3, cy + 1.3, cb - 0.6, 0.46,
-              [{"tekst": uitleg, "size": 10, "kleur": GRIJS, "na": 0,
-                "lh": 1.2}])
-
-    oy = cy + 2.04
-    onder = [("Benodigde uren bestaan uit", VIOLET,
-              ["indirecte uren per afdeling",
-               "directe uren o.b.v. roostersleutel of sessierooster",
-               "spoedmodaliteiten en bereikbaarheidsdiensten"]),
-             ("Overige afwijkingen komen er bovenop", AMBER,
-              ["zwangerschapsverlof", "ouderschapsverlof",
-               "ziekteverzuim boven de 4 procent"])]
-    ob = (KOL - 0.36) / 2
-    for i, (kop, kleur, punten) in enumerate(onder):
-        x = MARGE + i * (ob + 0.36)
-        paneel(d, x, oy, ob, 1.16)
-        tekst(d, x + 0.3, oy + 0.16, ob - 0.6, 0.28,
-              [{"tekst": kop, "size": 12.5, "vet": True, "kleur": kleur,
-                "na": 0}], autofit=False)
-        py = oy + 0.52
-        for punt in punten:
-            spot(d, x + 0.36, py + 0.1, kleur, 0.09, False)
-            tekst(d, x + 0.56, py - 0.02, ob - 0.86, 0.24,
-                  [{"tekst": punt, "size": 9.5, "kleur": GRIJS, "na": 0,
-                    "lh": 1.14}])
-            py += 0.21
+    diakop(d, PROCESLABEL, "Formatieberekening · 1",
+           "Voorbeeld radiologie — van bruto arbeidsduur naar netto "
+           "inzetbaarheid", CYAAN)
+    iw = 6.9
+    ix = MARGE + KOL - iw
+    lw = ix - MARGE - 0.3
+    rijen = [("01", "Bruto", "1-bruto", CYAAN, "input vanuit HR en F&C",
+              "1.878", "bruto uren per fte",
+              "36,0 uur per week · 52,17 weken"),
+             ("02", "Afwezigheid", "2-afwezigheid", AMBER,
+              "input vanuit HR en F&C", "300", "uren afwezigheid · 15,9%",
+              "vakantie, ziek, bijzonder verlof, PLB en feestdagen"),
+             ("03", "Netto", "3-netto", BLAUW, "bruto min afwezigheid",
+              "1.579", "netto inzetbaar · 84,1%", "30,3 uur per week")]
+    y = INHOUD_Y
+    for nr, naam, plaat, kleur, bron, waarde, label, uitleg in rijen:
+        onder = _plaat(d, plaat, ix, y, iw)
+        h = onder - y
+        ruim = h > 1.6
+        vlak(d, MARGE, y, 0.055, h, kleur, None, 0, 0.5)
+        ny = y + (0.14 if ruim else 0.04)
+        tekst(d, MARGE + 0.26, ny, lw - 0.3, 0.4,
+              [{"tekst": naam, "size": 19 if ruim else 17, "vet": True,
+                "kleur": kleur, "na": 0}], autofit=False)
+        tekst(d, MARGE + 0.26, ny + (0.42 if ruim else 0.36), lw - 0.3, 0.24,
+              [{"tekst": bron, "size": 10, "kleur": GRIJS, "na": 0}],
+              autofit=False)
+        if ruim:
+            tekst(d, MARGE + 0.26, y + 1.0, lw - 0.3, 0.6,
+                  [{"tekst": waarde, "size": 34, "vet": True, "kleur": kleur,
+                    "na": 0}], autofit=False)
+            tekst(d, MARGE + 0.26, y + 1.58, lw - 0.3, 0.24,
+                  [{"tekst": label.upper(), "size": 9, "vet": True,
+                    "kleur": DIM, "na": 0, "spatie": 1.2}], autofit=False)
+            tekst(d, MARGE + 0.26, y + 1.86, lw - 0.3, 0.4,
+                  [{"tekst": uitleg, "size": 10, "kleur": GRIJS, "na": 0,
+                    "lh": 1.2}])
+        else:
+            tekst(d, MARGE + lw - 2.3, y + 0.02, 2.0, 0.44,
+                  [{"tekst": waarde, "size": 26, "vet": True, "kleur": kleur,
+                    "na": 0, "uit": "right"}], autofit=False)
+            tekst(d, MARGE + lw - 2.3, y + 0.44, 2.0, 0.22,
+                  [{"tekst": label.upper(), "size": 8.5, "vet": True,
+                    "kleur": DIM, "na": 0, "spatie": 1.2, "uit": "right"}],
+                  autofit=False)
+        y = onder + 0.13
     voet(d, 3)
     d.notes_slide.notes_text_frame.text = NOTITIE_B
     return d
+
+
+def dia_formatie_twee(prs):
+    d = canvas(prs)
+    diakop(d, PROCESLABEL, "Formatieberekening · 2",
+           "Voorbeeld radiologie — van de benodigde uren naar de fte-(mis)match",
+           VIOLET)
+    kb = (KOL - 0.34) / 2
+
+    def blok(x, y, kop, sub, kleur, plaat):
+        iw = kb - 0.48
+        hoogte = 0.24 + 0.52 + _hoogte(plaat, iw) + 0.24
+        paneel(d, x, y, kb, hoogte)
+        vlak(d, x, y, kb, 0.055, kleur, None, 0, 0.5)
+        tekst(d, x + 0.24, y + 0.18, kb - 2.3, 0.3,
+              [{"tekst": kop, "size": 14, "vet": True, "kleur": kleur,
+                "na": 0}], autofit=False)
+        tekst(d, x + kb - 2.14, y + 0.2, 1.9, 0.26,
+              [{"tekst": sub, "size": 9.5, "kleur": DIM, "na": 0,
+                "uit": "right"}], autofit=False)
+        _plaat(d, plaat, x + 0.24, y + 0.76, iw)
+        return y + hoogte
+
+    onder = blok(MARGE, INHOUD_Y, "Benodigde uren", "vanuit BIC", VIOLET,
+                 "4-benodigd")
+    rx = MARGE + kb + 0.34
+    ry = blok(rx, INHOUD_Y, "Personeelsformatie", "het resultaat", KORAAL,
+              "5-formatie")
+    blok(rx, ry + 0.18, "Overige afwijkingen", "bovenop de begroting", AMBER,
+         "6-overig")
+
+    accentpaneel(d, MARGE, onder + 0.18, kb, ONDER - onder - 0.18, KORAAL, 0.10)
+    vlak(d, MARGE, onder + 0.18, 0.055, ONDER - onder - 0.18, KORAAL, None, 0,
+         0.5)
+    tekst(d, MARGE + 0.3, onder + 0.3, kb - 0.6, ONDER - onder - 0.42,
+          [{"tekst": "DE FTE-(MIS)MATCH", "size": 9, "vet": True,
+            "kleur": KORAAL, "na": 3, "spatie": 1.6},
+           {"tekst": "Benodigde capaciteit in uren tegenover de bruto "
+                     "beschikbare formatie. Het verschil is wat er aan fte "
+                     "bij moet of over is — dat is de uitkomst die naar de "
+                     "financiële begroting gaat.", "size": 11,
+            "kleur": INKT, "na": 0, "lh": 1.22}])
+    voet(d, 4)
+    d.notes_slide.notes_text_frame.text = NOTITIE_C
+    return d
+
+
+def _hoogte(plaat, breedte):
+    from PIL import Image
+    with Image.open(os.path.join(DELEN, plaat + ".png")) as im:
+        return breedte * im.height / im.width
 
 
 # ================================================== de vragen als korte kaarten
@@ -441,9 +518,10 @@ def bouw(bron=BRON, uit=UIT):
     aantal = len(prs.slides._sldIdLst)
 
     dia_stappenplan(prs)
-    dia_formatieberekening(prs)
-    verplaats(prs, aantal, 1)
-    verplaats(prs, aantal + 1, 2)
+    dia_formatie_een(prs)
+    dia_formatie_twee(prs)
+    for i in range(3):
+        verplaats(prs, aantal + i, 1 + i)
 
     for dia in prs.slides:
         titel = titel_van(dia)
@@ -453,10 +531,10 @@ def bouw(bron=BRON, uit=UIT):
     herstel_overloop(prs)
     voetteksten(prs)
     # het vragenoverzicht en de besluitendia wijzen naar andere dia's
-    verwijzingen(prs, {22: ["dia 23", "dia 24 en 25", "dia 26 en 27"],
-                       28: ["dia 19", "dia 17", "dia 5 en 9", "dia 14",
-                            "dia 17", "dia 17 en 26"]})
-    tabelverwijzing(prs, 21, "dia 12", "dia 14")
+    verwijzingen(prs, {23: ["dia 24", "dia 25 en 26", "dia 27 en 28"],
+                       29: ["dia 20", "dia 18", "dia 6 en 10", "dia 15",
+                            "dia 19", "dia 18 en 27"]})
+    tabelverwijzing(prs, 22, "dia 12", "dia 15")
 
     prs.save(uit)
     print("Opgeslagen:", uit, "-", len(prs.slides._sldIdLst), "dia's")
@@ -468,7 +546,8 @@ def losse_procesdias(pad=PROCESUIT):
     from deck_lib import presentatie
     prs = presentatie()
     dia_stappenplan(prs)
-    dia_formatieberekening(prs)
+    dia_formatie_een(prs)
+    dia_formatie_twee(prs)
     voetteksten(prs)
     prs.save(pad)
     print("Opgeslagen:", pad, "-", len(prs.slides._sldIdLst), "dia's")

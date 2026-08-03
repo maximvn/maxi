@@ -128,6 +128,14 @@ class Svg:
             f'stroke-width="{sw}"{d}{f}/>'
         )
 
+    def afbeelding(self, x, y, w, h, data, mime="image/png"):
+        """Ingesloten afbeelding, zodat de preview ook plaatjes laat zien."""
+        import base64
+        b64 = base64.b64encode(data).decode("ascii")
+        self.parts.append(
+            f'<image x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{h:.1f}" '
+            f'preserveAspectRatio="none" xlink:href="data:{mime};base64,{b64}"/>')
+
     def line(self, x1, y1, x2, y2, stroke=LINE, sw=2, dash=None):
         d = f' stroke-dasharray="{dash}"' if dash else ""
         self.parts.append(
@@ -238,7 +246,7 @@ class Svg:
                 f'markerWidth="5.5" markerHeight="5.5" orient="auto-start-reverse">'
                 f'<path d="M 0 0.6 L 9.4 5 L 0 9.4 z" fill="{c}"/></marker>')
         defs.append('</defs>')
-        return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{self.w}" '
+        return (f'<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="{self.w}" '
                 f'height="{self.h}" viewBox="0 0 {self.w} {self.h}">'
                 + "".join(defs)
                 + f'<rect width="{self.w}" height="{self.h}" fill="{self.bg}"/>'

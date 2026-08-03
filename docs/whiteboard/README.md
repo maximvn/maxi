@@ -51,7 +51,8 @@ python3 preview.py          # controleert op overloop en tekent de dia's
 ```
 
 LibreOffice draait niet in deze omgeving, dus `preview.py` tekent de dia's zelf
-uit de pptx-geometrie en meldt tekst die niet in zijn kader past.
+uit de pptx-geometrie en meldt tekst die niet in zijn kader past. Vormen,
+tabellen, lijnen en ingesloten afbeeldingen worden meegetekend.
 
 ## Ontwerpsysteem PULSE
 
@@ -68,7 +69,11 @@ per bed — geen opsommingen.
 | `bewerk_deck.py` | Werkt de in PowerPoint bijgewerkte presentatie bij — dit is nu de bron |
 | `maak_proces.py` | De uitgebreide procesbeschrijving, zes dia's |
 
-Alles is een echte PowerPoint-vorm of tabel; er zit geen enkele afbeelding in.
+Alles is een echte PowerPoint-vorm of tabel, met één uitzondering: de twee
+dia's over de formatieberekening tonen uitsneden van het rekenblad dat er in
+de praktijk voor gebruikt wordt. Die uitsneden staan in `bron/formatie/`,
+naast het volledige blad; de omkadering, de labels en de duiding eromheen zijn
+wel gewone vormen.
 
 ## Werkwijze
 
@@ -83,7 +88,7 @@ opgeleverde presentatie heen.
 
 | Bestand | Wat het is |
 |---|---|
-| `Acute-poort-en-Hotfloor.pptx` | De presentatie, 29 dia's |
-| `Procesbeschrijving-stappenplan.pptx` | De twee procesdia's los, om te kopiëren |
+| `Acute-poort-en-Hotfloor.pptx` | De presentatie, 30 dia's |
+| `Procesbeschrijving-stappenplan.pptx` | De drie procesdia's los, om te kopiëren |
 | `Procesbeschrijving-uitgebreid.pptx` | Dezelfde procesbeschrijving in zes dia's |
 | `Scenario-verschuivingen.pptx` | De scenariotekening los |

@@ -158,6 +158,19 @@ def teken_vorm(d, vorm, waarschuw, prefix=""):
     w, h = inch(vorm.width), inch(vorm.height)
     naam = f"{prefix}{vorm.shape_id}"
 
+    if vorm.shape_type == MSO_SHAPE_TYPE.LINE:
+        rand, ra, rw = lijnkleur(vorm)
+        if rand:
+            d.line(inch(vorm.begin_x) * PPI, inch(vorm.begin_y) * PPI,
+                   inch(vorm.end_x) * PPI, inch(vorm.end_y) * PPI, rand,
+                   max(1, rw))
+        return
+
+    if vorm.shape_type == MSO_SHAPE_TYPE.PICTURE:
+        d.afbeelding(x * PPI, y * PPI, w * PPI, h * PPI, vorm.image.blob,
+                     vorm.image.content_type)
+        return
+
     if vorm.shape_type == MSO_SHAPE_TYPE.FREEFORM:
         rand, ra, rw = lijnkleur(vorm)
         vul, va = kleur_van(vorm.fill)
