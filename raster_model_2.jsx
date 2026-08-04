@@ -1220,15 +1220,6 @@ export default function RasterTool(){
     // bespaart kamer-dagen en tilt de benutting terug naar de band. Staat de regel
     // "restvraag bundelen" uit, dan blijft de vraag gelijk over de dagen verdeeld.
     const capVolRoom=DD.reduce((t,x)=>t+usableFor(x),0)   // vol kamer op doelbenutting
-    const maxCapForW=dd=>Math.round(durFor2(dd)*Math.min(100,(m2.benutting||85)+2.5)/100)
-    const capRoomBand=DD.reduce((t,x)=>t+maxCapForW(x),0) // vol kamer op de bovenband
-    // PAK-VEILIGE kamercapaciteit: afspraken hebben vaste duren en vullen een dagdeel
-    // zelden exact (bv. 170 van 184 min). Reserveer daarom ~1 gemiddelde afspraak per
-    // dagdeel als pak-verlies, zodat de week-optimalisatie geen kamers "op papier" vol
-    // rekent die in de praktijk toch een halve rest-kamer openen.
-    const alleWeekPool=[0,1,2,3,4].flatMap(di=>grouped[di]||[])
-    const gemDuurW=alleWeekPool.length?alleWeekPool.reduce((s,a)=>s+a.duur,0)/alleWeekPool.length:15
-    const capRoomVeilig=Math.max(1,DD.reduce((t,x)=>t+Math.max(0,maxCapForW(x)-gemDuurW),0))
     const vraagVan=di=>(grouped[di]||[]).reduce((t,q)=>t+q.duur,0)
     // Bereken de meest efficiënte kamer-per-dag-verdeling (voor melding + herverdeling).
     const dagOpenW=di=>(m2.days[WEEKDAY_KEYS[di]]||0)>0 && DD.some(x=>ddOpenOp(x,di))
@@ -1238,7 +1229,7 @@ export default function RasterTool(){
       const W=weekDagen.reduce((t,di)=>t+vraagVan(di),0)
       // Iets ruimer afronden (naar boven) zodat de dagen niet exact op de bovenband
       // zitten en er speling is om zonder overloop te herverdelen.
-      const totRooms=Math.max(weekDagen.length, Math.ceil(W/capRoomVeilig))
+      const totRooms=Math.max(weekDagen.length, Math.ceil(W/capVolRoom))
       const basis=Math.floor(totRooms/weekDagen.length)
       let extra=totRooms-basis*weekDagen.length
       const druk=[...weekDagen].sort((a,b)=>vraagVan(b)-vraagVan(a))
@@ -1251,31 +1242,73 @@ export default function RasterTool(){
     }
     const weekPlan=weekOpt()   // bewaard voor de aanbevelingsmelding (zie onder)
 
+    // ── RESTVRAAG BUNDELEN — kamer-dagen minimaliseren, verspilling concentreren ──
+    // Doel (hard): minimaliseer het TOTAAL aantal kamer-dagen over de week. De
+    // ondergrens is ceil(weekvraag ÷ kamercapaciteit); die is haalbaar als er hooguit
+    // ÉÉN kamer in de hele week deels gevuld is. In plaats van elke dag een dunne
+    // rest-kamer (bv. 5× een 33%-kamer en 2× een 26%-kamer) schuiven we die losse
+    // resten samen: bijna-volle kamers van andere dagen worden bijgevuld en de over-
+    // gebleven rest concentreert op de gekozen rest-dag (of, bij 'auto', op de drukste
+    // dag die nog ruimte heeft). Zo verdwijnen de half-lege kamers en stijgt de
+    // benutting, zonder ook maar één afspraak toe te voegen of te schrappen.
     const herverdeelNaarVolleKamers=()=>{
-      if((rules.restDag||'uit')==='uit') return
-      const plan=weekPlan; if(!plan) return
-      // Doel per dag = kamers × gemiddelde vraag-per-kamer (dus de totale weekvraag
-      // blijft exact behouden). We verplaatsen telkens de afspraak van de meest-
-      // overvolle dag naar de meest-lege dag die de balans het meest verbetert.
-      const doelVan=di=>plan.rooms[di]*plan.perRoom
-      for(let ronde=0; ronde<400; ronde++){
-        const staat=weekDagen.map(di=>({di,delta:vraagVan(di)-doelVan(di)}))
+      const keuze=(rules.restDag||'uit')
+      if(keuze==='uit') return
+      if(weekDagen.length<2) return
+      // Kamercapaciteit voor het TELLEN van kamers: de realistisch haalbare vulling rond
+      // de doelbenutting (niet de pak-veilige ondergrens — anders lijken vijf dunne rest-
+      // kamers al "optimaal" en wordt er niets gebundeld).
+      const cap=Math.max(1, capVolRoom)
+      const dagIdx={ma:0,di:1,wo:2,do:3,vr:4}
+      const forced = (keuze in dagIdx && weekDagen.includes(dagIdx[keuze])) ? dagIdx[keuze] : null
+      const Wtot=weekDagen.reduce((t,di)=>t+vraagVan(di),0)
+      const actieveDagen=weekDagen.filter(di=>vraagVan(di)>0).length
+      // Minimaal aantal kamer-dagen voor de hele week (de ondergrens).
+      let R=Math.max(actieveDagen, Math.ceil(Wtot/cap))
+      const maxRoom = maxParallel===Infinity
+        ? Math.max(1, Math.ceil(R/weekDagen.length)+1)
+        : maxParallel
+      R=Math.min(R, maxRoom*weekDagen.length)   // fysiek haalbaar houden
+
+      // ── Kamers per dag (grootste-rest), begrensd op [0..maxRoom] ─────────────────
+      const raw={}, rooms={}
+      weekDagen.forEach(di=>{ raw[di]=vraagVan(di)/cap; rooms[di]=Math.min(maxRoom,Math.floor(raw[di])) })
+      let som=weekDagen.reduce((t,di)=>t+rooms[di],0)
+      // rond op tot R: dagen met de grootste restfractie eerst; de gedwongen rest-dag
+      // krijgt lichte voorrang zodat een eventuele extra kamer daar landt.
+      const opRonden=()=>weekDagen.filter(di=>rooms[di]<maxRoom)
+        .sort((a,b)=>((raw[b]-rooms[b])-(raw[a]-rooms[a])) || (a===forced?-1:b===forced?1:0))
+      let veilig=0
+      while(som<R && veilig++<weekDagen.length*maxRoom+8){ const kand=opRonden(); if(!kand.length) break; rooms[kand[0]]++; som++ }
+      R=som
+      if(R<=0) return
+
+      // ── Target-minuten per dag: verdeel de weekvraag GELIJKMATIG over alle R kamers
+      //    (capVul = weekvraag ÷ R). Zo krijgt élke geopende kamer ~dezelfde vulling
+      //    binnen de band en ontstaat er nergens een dunne rest-kamer; de totale vraag
+      //    blijft exact behouden (Σ rooms×capVul = R×(Wtot/R) = Wtot).
+      const capVul = Wtot/R
+      const target={}
+      weekDagen.forEach(di=>{ target[di]=rooms[di]*capVul })
+
+      // ── Afspraken naar de targets schuiven (totale vraag blijft exact behouden) ───
+      const mag=(a,toDi)=> !a.dagOpties || a.dagOpties.includes(toDi)
+      for(let ronde=0; ronde<1000; ronde++){
+        const staat=weekDagen.map(di=>({di,delta:vraagVan(di)-target[di]}))
         const bron=staat.reduce((a,b)=>b.delta>a.delta?b:a)
         const doel=staat.reduce((a,b)=>b.delta<a.delta?b:a)
-        if(bron.di===doel.di || bron.delta<=10 || doel.delta>=-10) break
-        const pool=grouped[bron.di]||[]
-        // De doeldag mag NOOIT over zijn kamergrens (rooms × bovenband) geduwd worden,
-        // anders opent daar juist een extra (halfvolle) kamer — precies wat we vermijden.
-        const ruimte=plan.rooms[doel.di]*capRoomVeilig - vraagVan(doel.di)
-        const kand=pool.filter(q=>(!q.dagOpties||q.dagOpties.includes(doel.di)) && q.duur<=ruimte)
-        if(!kand.length) break
+        if(bron.di===doel.di || bron.delta<=8 || doel.delta>=-8) break
+        // De doeldag mag niet boven zijn target (=zijn kamerbudget) worden geduwd,
+        // anders opent daar een extra dunne kamer.
+        const ruimteDoel=target[doel.di]-vraagVan(doel.di)
+        const pool=(grouped[bron.di]||[]).filter(q=>mag(q,doel.di) && q.duur<=ruimteDoel+1e-6)
+        if(!pool.length) break
         const tekort=-doel.delta
-        kand.sort((a,b)=>Math.abs(a.duur-tekort)-Math.abs(b.duur-tekort))
-        const keuze=kand[0]
-        // alleen verplaatsen als het de totale onbalans verkleint
-        if(Math.abs(bron.delta-keuze.duur)+Math.abs(doel.delta+keuze.duur) >= Math.abs(bron.delta)+Math.abs(doel.delta)) break
-        grouped[bron.di]=pool.filter(q=>q.id!==keuze.id)
-        grouped[doel.di]=[...(grouped[doel.di]||[]),{...keuze,day:doel.di,_verhuisd:bron.di}]
+        pool.sort((a,b)=>Math.abs(a.duur-tekort)-Math.abs(b.duur-tekort))
+        const kz=pool[0]
+        if(Math.abs(bron.delta-kz.duur)+Math.abs(doel.delta+kz.duur) >= Math.abs(bron.delta)+Math.abs(doel.delta)) break
+        grouped[bron.di]=(grouped[bron.di]||[]).filter(q=>q.id!==kz.id)
+        grouped[doel.di]=[...(grouped[doel.di]||[]),{...kz,day:doel.di,_verhuisd:bron.di}]
       }
     }
     herverdeelNaarVolleKamers()
