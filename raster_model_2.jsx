@@ -94,7 +94,7 @@ const PLAN_INFO = {
   // ── Kamerverdeling ─────────────────────────────────────────────────────────
   kamerVerdeling:{label:'Verdeling over kamers en dagdelen',type:'radio',
     opts:[{v:'dagdeel',l:'Dagdeel voor dagdeel vol'},{v:'gelijk',l:'Gelijk verdelen'}],
-    desc:'Elk spreekuur wordt gevuld tot de ingestelde benutting, met een marge van maximaal 2,5 procentpunt naar boven of beneden. "Dagdeel voor dagdeel vol" rondt een kamer helemaal af voordat de volgende opengaat: eerst de ochtend van kamer 1, dan de middag van kamer 1, dan de ochtend van kamer 2, enz. De restvraag concentreert zich zo in de laatste kamer. "Gelijk verdelen" smeert de vraag gelijkmatig over alle benodigde kamers en dagdelen uit.'},
+    desc:'Uitgangspunt: er wordt altijd het MINIMALE aantal kamers gebruikt en die worden allemaal rond de ingestelde benutting gevuld (±2,5 procentpunt speelruimte) — nooit een halfvolle of dunne restkamer. Het aantal spreekuren volgt uit de weekvraag ÷ de capaciteit op de bovenband. "Dagdeel voor dagdeel vol" vult bij gelijke stand eerst de laagst genummerde kamer (kamer 1 ochtend, kamer 1 middag, kamer 2 ochtend, …). "Gelijk verdelen" spreidt puur op belasting. In beide gevallen blijft de verdeling efficiënt en uniform. Deelt de weekvraag niet rond op volle spreekuren, dan komen alle spreekuren gelijkmatig iets lager uit (met een melding), i.p.v. enkele vol en één dun.'},
   // ── Groepering afsprakencodes ──────────────────────────────────────────────
   groupMode:{label:'Groepering afsprakencodes',type:'radio',
     opts:[{v:'spread',l:'Gespreid inplannen (afwisselen)'},{v:'wave',l:'Wave planning (per blok)'}],
@@ -102,7 +102,7 @@ const PLAN_INFO = {
   // ── Flex-tijd beheer ───────────────────────────────────────────────────────
   flexMode:{label:'Flex-tijd verdeling',type:'radio',
     opts:[{v:'end',l:'Flex-blok aan het einde'},{v:'spread',l:'Flex verspreid tussen afspraken'}],
-    desc:'"Aan het einde" = één aaneengesloten flexblok na de laatste afspraak. "Verspreid" = flexblokken van minimaal 10 minuten, gelijkmatig verdeeld over het spreekuur, nooit binnen de eerste N minuten en nooit tussen de laatste afspraak en het einde (dat is het restblok).'},
+    desc:'"Aan het einde" = één aaneengesloten flexblok ná de laatste afspraak (het spreekuur eindigt dan op flex). "Verspreid tussen afspraken" = flexblokken van EXACT de ingestelde duur (nooit korter of langer), gelijkmatig tussen de afspraken verdeeld, nooit binnen de eerste N minuten; het spreekuur eindigt met een afspraak. Een restant kleiner dan één heel blok (hooguit blokduur−5 min) kan geen exact blok vormen en blijft als kleine, ongemarkeerde ruimte aan het einde.'},
   // ── Bailey-Welsh ───────────────────────────────────────────────────────────
   baileyWelsh:{label:'Bailey-Welsh regel',type:'toggle',
     desc:'De eerste afspraak van het spreekuur wordt dubbel geboekt (twee patiënten tegelijk). Dit compenseert voor no-shows en start-vertragingen, en verhoogt de gemiddelde benutting.'},
