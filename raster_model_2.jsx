@@ -1253,63 +1253,76 @@ export default function RasterTool(){
     // benutting, zonder ook maar één afspraak toe te voegen of te schrappen.
     const herverdeelNaarVolleKamers=()=>{
       const keuze=(rules.restDag||'uit')
-      if(keuze==='uit') return
-      if(weekDagen.length<2) return
-      // Kamercapaciteit voor het TELLEN van kamers: de realistisch haalbare vulling rond
-      // de doelbenutting (niet de pak-veilige ondergrens — anders lijken vijf dunne rest-
-      // kamers al "optimaal" en wordt er niets gebundeld).
-      const cap=Math.max(1, capVolRoom)
+      if(keuze==='uit' || weekDagen.length<2) return
       const dagIdx={ma:0,di:1,wo:2,do:3,vr:4}
       const forced = (keuze in dagIdx && weekDagen.includes(dagIdx[keuze])) ? dagIdx[keuze] : null
-      const Wtot=weekDagen.reduce((t,di)=>t+vraagVan(di),0)
-      const actieveDagen=weekDagen.filter(di=>vraagVan(di)>0).length
-      // Minimaal aantal kamer-dagen voor de hele week (de ondergrens).
-      let R=Math.max(actieveDagen, Math.ceil(Wtot/cap))
-      const maxRoom = maxParallel===Infinity
-        ? Math.max(1, Math.ceil(R/weekDagen.length)+1)
-        : maxParallel
-      R=Math.min(R, maxRoom*weekDagen.length)   // fysiek haalbaar houden
-
-      // ── Kamers per dag (grootste-rest), begrensd op [0..maxRoom] ─────────────────
-      const raw={}, rooms={}
-      weekDagen.forEach(di=>{ raw[di]=vraagVan(di)/cap; rooms[di]=Math.min(maxRoom,Math.floor(raw[di])) })
-      let som=weekDagen.reduce((t,di)=>t+rooms[di],0)
-      // rond op tot R: dagen met de grootste restfractie eerst; de gedwongen rest-dag
-      // krijgt lichte voorrang zodat een eventuele extra kamer daar landt.
-      const opRonden=()=>weekDagen.filter(di=>rooms[di]<maxRoom)
-        .sort((a,b)=>((raw[b]-rooms[b])-(raw[a]-rooms[a])) || (a===forced?-1:b===forced?1:0))
-      let veilig=0
-      while(som<R && veilig++<weekDagen.length*maxRoom+8){ const kand=opRonden(); if(!kand.length) break; rooms[kand[0]]++; som++ }
-      R=som
-      if(R<=0) return
-
-      // ── Target-minuten per dag: verdeel de weekvraag GELIJKMATIG over alle R kamers
-      //    (capVul = weekvraag ÷ R). Zo krijgt élke geopende kamer ~dezelfde vulling
-      //    binnen de band en ontstaat er nergens een dunne rest-kamer; de totale vraag
-      //    blijft exact behouden (Σ rooms×capVul = R×(Wtot/R) = Wtot).
-      const capVul = Wtot/R
-      const target={}
-      weekDagen.forEach(di=>{ target[di]=rooms[di]*capVul })
-
-      // ── Afspraken naar de targets schuiven (totale vraag blijft exact behouden) ───
+      // DRAGER-dag: de dag die de énige, deels gevulde rest-kamer van de hele week draagt.
+      // Alle ándere dagen houden alleen VOLLE kamers over; hun deels gevulde laatste kamer
+      // wordt naar de drager verhuisd. Gedwongen keuze → die dag; 'auto' → de drukste dag.
+      const drager = forced!=null ? forced
+        : [...weekDagen].sort((a,b)=>vraagVan(b)-vraagVan(a))[0]
+      const maxRoom = maxParallel===Infinity ? 99 : maxParallel
       const mag=(a,toDi)=> !a.dagOpties || a.dagOpties.includes(toDi)
-      for(let ronde=0; ronde<1000; ronde++){
-        const staat=weekDagen.map(di=>({di,delta:vraagVan(di)-target[di]}))
-        const bron=staat.reduce((a,b)=>b.delta>a.delta?b:a)
-        const doel=staat.reduce((a,b)=>b.delta<a.delta?b:a)
-        if(bron.di===doel.di || bron.delta<=8 || doel.delta>=-8) break
-        // De doeldag mag niet boven zijn target (=zijn kamerbudget) worden geduwd,
-        // anders opent daar een extra dunne kamer.
-        const ruimteDoel=target[doel.di]-vraagVan(doel.di)
-        const pool=(grouped[bron.di]||[]).filter(q=>mag(q,doel.di) && q.duur<=ruimteDoel+1e-6)
-        if(!pool.length) break
-        const tekort=-doel.delta
-        pool.sort((a,b)=>Math.abs(a.duur-tekort)-Math.abs(b.duur-tekort))
-        const kz=pool[0]
-        if(Math.abs(bron.delta-kz.duur)+Math.abs(doel.delta+kz.duur) >= Math.abs(bron.delta)+Math.abs(doel.delta)) break
-        grouped[bron.di]=(grouped[bron.di]||[]).filter(q=>q.id!==kz.id)
-        grouped[doel.di]=[...(grouped[doel.di]||[]),{...kz,day:doel.di,_verhuisd:bron.di}]
+      const bandCap=dd=>Math.round(durFor2(dd)*Math.min(100,(m2.benutting||85)+2.5)/100)
+      const openDdOf=di=>DD.filter(x=>ddOpenOp(x,di))
+
+      // meet(): TRIAL-FILL een dag met de echte pakker (vulDag) en lees af hoeveel kamers
+      // hij opent en welke afspraken in de LAATSTE (mogelijk deels gevulde) kamer staan.
+      // Zo werken we met de werkelijke vulling i.p.v. een schatting die er net naast zit.
+      const meet=di=>{
+        const pool=grouped[di]||[]
+        if(!pool.length) return {n:0, lastAppts:[], frac:1, over:0}
+        const res=vulDag(di, pool)
+        const odd=openDdOf(di)
+        let n=0; odd.forEach(dd=>{ n=Math.max(n,(res.perDd[dd]||[]).length) })
+        if(n===0) return {n:0, lastAppts:[], frac:1, over:(res.over||[]).length}
+        let appts=[], min=0, cap=0
+        odd.forEach(dd=>{ const arr=(res.perDd[dd]||[])[n-1]||[]; appts=appts.concat(arr)
+          min+=arr.reduce((t,a)=>t+a.duur,0); cap+=bandCap(dd) })
+        return {n, lastAppts:appts, frac: cap>0?min/cap:1, over:(res.over||[]).length}
       }
+      const snap=()=>{ const s={}; weekDagen.forEach(di=>s[di]=[...(grouped[di]||[])]); return s }
+      const zet=s=>{ weekDagen.forEach(di=>grouped[di]=s[di]) }
+      const bandDag=di=>openDdOf(di).reduce((t,dd)=>t+bandCap(dd),0)
+      const totRD=meas=>weekDagen.reduce((t,di)=>t+meas[di].n,0)
+
+      // Een kamer geldt als "vol" vanaf 82% van de bovenband (binnen de benuttingsband).
+      const VOL=0.82
+      const beginSnap=snap()
+      const rdBegin=totRD((()=>{ const m={}; weekDagen.forEach(di=>m[di]=meet(di)); return m })())
+      for(let guard=0; guard<60; guard++){
+        const meas={}; weekDagen.forEach(di=>{ meas[di]=meet(di) })
+        // Donor: de dag met de MINST gevulde laatste kamer waarvan afspraken naar de drager
+        // kunnen. We verhuizen die HELE laatste kamer (ochtend + middag samen) naar de
+        // drager — zo verliest de donor een kamer en bundelt de rest op de drager, i.p.v.
+        // losse dagdelen te verspreiden (wat door de ochtend/middag-verdeling niet past).
+        const kand=weekDagen.filter(di=>di!==drager)
+          .filter(di=>meas[di].n>0 && meas[di].frac<VOL && meas[di].lastAppts.some(a=>mag(a,drager)))
+          .sort((a,b)=>meas[a].frac-meas[b].frac)
+        if(!kand.length) break
+        let vooruit=false
+        for(const donorDi of kand){
+          const donorN=meas[donorDi].n
+          const teVerhuizen=meas[donorDi].lastAppts.filter(a=>mag(a,drager))
+          if(!teVerhuizen.length) continue
+          const back=snap()
+          teVerhuizen.forEach(a=>{
+            grouped[donorDi]=(grouped[donorDi]||[]).filter(q=>q.id!==a.id)
+            grouped[drager]=[...(grouped[drager]||[]),{...a,day:drager,_verhuisd:donorDi}]
+          })
+          // Behouden als: geen overloop op de restlijst, de drager binnen de kamerlimiet
+          // blijft, en de donor daadwerkelijk zijn deels gevulde kamer kwijtraakt.
+          const na=meet(donorDi), dragerNa=meet(drager)
+          if(dragerNa.over===0 && na.over===0 && dragerNa.n<=maxRoom && na.n<donorN){ vooruit=true; break }
+          zet(back)
+        }
+        if(!vooruit) break
+      }
+      // Bundelen mag het totaal aantal kamer-dagen NOOIT verhogen (bv. wanneer de drager
+      // door de kamerlimiet vol zit): levert het geen winst op, draai dan alles terug naar
+      // de gelijkmatige verdeling — die is dan zelf al de beste optie.
+      const rdEind=totRD((()=>{ const m={}; weekDagen.forEach(di=>m[di]=meet(di)); return m })())
+      if(rdEind>=rdBegin) zet(beginSnap)
     }
     herverdeelNaarVolleKamers()
 
@@ -1375,6 +1388,9 @@ export default function RasterTool(){
     // Een LEGE kamer blijft leeg — die wordt nooit met flex opgevuld.
     const FLEX_BLOK=10   // verspreide flex bestaat uit blokken van 10 min
     const FLEX_MIN=5     // kleiner dan dit renderen we niet
+    // Bailey-Welsh-donorpool per dag: échte patiënten uit de laatste (rest-)kamer die als
+    // dubbelboeking op de eerste ochtendslots komen (zie opbouw vlak vóór de layout-lus).
+    const bwExtra={}
     const layoutSlot=(apptsIn, sessStart, dagdeelMin, dd, room, di)=>{
       const appts=apptsIn||[]
       if(!appts.length) return []          // lege kamer → geen flex, geen slot
@@ -1402,21 +1418,26 @@ export default function RasterTool(){
         out.push({...a,dagdeel:dd,room,start:t,end,
           baileyWelsh:isBW, _why:explain({...a,baileyWelsh:isBW},idx,appts.length,dd)})
         if(isBW){
-          // Bailey-Welsh dubbelboekt het eerste ochtendslot ALLEEN met een échte
-          // afspraak van de restlijst. Is de restlijst leeg, dan is de pool volledig
-          // gepland en voegen we NIETS toe — de pool blijft exact zoals opgegeven.
-          let ex=null
-          if(res.ntp.length){
+          // Bailey-Welsh dubbelboekt het eerste ochtendslot met een ÉCHTE patiënt uit de
+          // pool: eerst uit de laatste (rest-)kamer van de dag (die daardoor leeg loopt),
+          // anders van de restlijst. Er wordt NOOIT een afspraak bijgemaakt — de tweede
+          // patiënt is verplaatst, dus het totaal blijft exact de opgegeven pool. Is er
+          // niets te verplaatsen, dan gebeurt er niets.
+          let ex=null, bron=''
+          if(bwExtra[di] && bwExtra[di].length){ ex=bwExtra[di].shift(); bron='rest-kamer' }
+          else if(res.ntp.length){
             let ix=res.ntp.findIndex(x=>x.day===di)
             if(ix<0) ix=0
-            ex=res.ntp.splice(ix,1)[0]
+            ex=res.ntp.splice(ix,1)[0]; bron='restlijst'
           }
           if(ex){
             const dur=Math.max(5,ex.duur)
             out.push({...ex,id:ex.id+'_bw',dagdeel:dd,room,start:t,end:Math.min(t+dur,sessEnd),duur:dur,
               baileyWelsh:true, overbook:true, bwReal:true,
               description:(ex.description||ex.code)+' · Bailey-Welsh extra',
-              _why:['Bailey-Welsh: extra patiënt op het eerste ochtendslot — stond anders op de restlijst.']})
+              _why:[bron==='rest-kamer'
+                ? 'Bailey-Welsh: tweede patiënt op het eerste ochtendslot — verplaatst uit de laatste (rest-)kamer, zodat die kamer dicht kan.'
+                : 'Bailey-Welsh: extra patiënt op het eerste ochtendslot — stond anders op de restlijst.']})
           }
         }
         return end
@@ -1511,6 +1532,34 @@ export default function RasterTool(){
       return out
     }
     const sessInfo={O:[ochStart,ochDur],M:[midStart,midDur],A:[avondStart,avDur]}
+
+    // ── BAILEY-WELSH — dubbelboekingen uit de laatste (rest-)kamer ────────────────
+    // Staat de regel aan, dan halen we per dag zoveel patiënten uit de LAATSTE kamer als
+    // er andere kamers zijn, en zetten die als dubbelboeking op het eerste ochtendslot
+    // van die kamers. Zo staan er 's ochtends écht twee patiënten tegelijk (no-show-buffer)
+    // en loopt de losse rest-kamer (deels) leeg — zonder één afspraak toe te voegen.
+    if(rules.baileyWelsh){
+      ;[0,1,2,3,4].forEach(di=>{
+        if(!built[di]) return
+        let n=0; DD.forEach(dd=>{ n=Math.max(n,(built[di][dd]||[]).length) })
+        if(n<2) return                       // met één kamer valt er niets te verplaatsen
+        const ontvangers=n-1                 // de kamers vóór de laatste krijgen een dubbelboeking
+        // Kandidaten uit de laatste kamer (ochtend eerst, dan middag); kortste eerst zodat
+        // een dubbelboeking het spreekuur zo min mogelijk verlengt.
+        const donor=[]
+        DD.forEach(dd=>{ const room=(built[di][dd]||[])[n-1]; if(room) donor.push(...room) })
+        donor.sort((a,b)=>a.duur-b.duur)
+        const nemen=Math.min(ontvangers, donor.length)
+        if(nemen<=0) return
+        const genomen=donor.slice(0,nemen)
+        const ids=new Set(genomen.map(a=>a.id))
+        DD.forEach(dd=>{ if(built[di][dd]&&built[di][dd][n-1]) built[di][dd][n-1]=built[di][dd][n-1].filter(a=>!ids.has(a.id)) })
+        // Is de laatste kamer nu helemaal leeg, verwijder dan die (nu overbodige) kolom.
+        let leeg=true; DD.forEach(dd=>{ if((built[di][dd]||[])[n-1]?.length) leeg=false })
+        if(leeg) DD.forEach(dd=>{ if(built[di][dd]&&built[di][dd].length>=n) built[di][dd]=built[di][dd].slice(0,n-1) })
+        bwExtra[di]=genomen
+      })
+    }
 
     ;[0,1,2,3,4].forEach(di=>{
       if(!built[di]){ res.days[di]=null; return }
@@ -1633,13 +1682,16 @@ export default function RasterTool(){
       let huidigeRoomDays=0
       ;[0,1,2,3,4].forEach(di=>{ const slots=res.days[di]; if(!slots) return
         const rSet=new Set(); Object.entries(slots).forEach(([key,arr])=>{ if((arr||[]).some(a=>!a.isFlex)) rSet.add(+key.slice(1)) }); huidigeRoomDays+=rSet.size })
-      const planVerdeling=weekDagen.map(di=>`${(DAYS[di]||'?').slice(0,2)} ${weekPlan.rooms[di]}`).join(' · ')
+      // Werkelijke kamer-per-dag-verdeling uit het gebouwde raster (voor de melding).
+      const echteVerdeling=weekDagen.map(di=>{ const slots=res.days[di]||{}
+        const rSet=new Set(); Object.entries(slots).forEach(([key,arr])=>{ if((arr||[]).some(a=>!a.isFlex)) rSet.add(+key.slice(1)) })
+        return `${(DAYS[di]||'?').slice(0,2)} ${rSet.size}` }).join(' · ')
       if((rules.restDag||'uit')==='uit' && weekPlan.totRooms < huidigeRoomDays && kpi.week.benutting < m2.benutting-4){
         notices.push({level:'info',rule:'Efficiënter plannen — aanbeveling',
-          msg:`Nu staan er ${huidigeRoomDays} kamer-dagen open op ~${kpi.week.benutting}% (elke dag een deels gevulde kamer). Efficiënter: concentreer de weekvraag tot ${weekPlan.totRooms} vólle kamer-dagen op ~${weekPlan.planBenut}% — verdeling ${planVerdeling} kamers per dag. Zet de regel "Restvraag bundelen" aan (bij Volgorde & regels) om dit automatisch toe te passen.`})
+          msg:`Nu staan er ${huidigeRoomDays} kamer-dagen open op ~${kpi.week.benutting}% (op meerdere dagen een deels gevulde kamer). Efficiënter: bundel de restvraag tot ~${weekPlan.totRooms} vólle kamer-dagen. Zet de regel "Restvraag bundelen tot volle kamers" aan (bij Volgorde & regels) — de overige dagen worden dan volledig gevuld en de rest concentreert op de gekozen rest-dag.`})
       } else if((rules.restDag||'uit')!=='uit'){
         notices.push({level:'ok',rule:'Restvraag gebundeld',
-          msg:`De weekvraag is geconcentreerd tot volle kamers — verdeling ${planVerdeling} kamers per dag, benutting ~${kpi.week.benutting}%. Zo staan er geen halve dagen open.`})
+          msg:`De restvraag is geconcentreerd: de overige dagen draaien volle kamers en de rest-kamer(s) staan op de gekozen dag — verdeling ${echteVerdeling} kamers per dag, benutting ~${kpi.week.benutting}%.`})
       }
     }
     // 4) Vast aantal kamers — lege kamers die de vraag niet nodig had
@@ -3024,10 +3076,12 @@ export default function RasterTool(){
             <div style={{fontSize:12,fontWeight:700,color:C.text,marginBottom:3}}>Restvraag bundelen tot volle kamers</div>
             <div style={{fontSize:11,color:C.muted,lineHeight:1.5,marginBottom:8}}>
               Deelt de weekvraag niet rond op volle kamers, dan draait elke dag een deels gevulde extra kamer op lage
-              benutting. Met deze optie herverdeelt de tool de weekvraag zo dat élke dag een héél aantal volle kamers
-              draait (sommige dagen een kamer erbij, andere minder) — dat tilt de benutting terug richting het doel en
-              voorkomt halve dagen. "Automatisch" concentreert op de drukste dagen; kies een weekdag om die dag als
-              bundeldag te forceren. Afspraken verhuizen alleen naar een dag die hun code toestaat.
+              benutting. Met deze optie maakt de tool alle kamers die vol kúnnen zijn ook écht vol (rond de bovenkant
+              van de band) en verhuist de overgebleven "rest-kamer(s)" naar één dag — de gekozen rest-dag, of bij
+              "Automatisch" de drukste dag. Zo staat er hooguit één deels gevulde kamer in de hele week i.p.v. op elke
+              dag een halve. Afspraken verhuizen alleen naar een dag die hun code toestaat, en het totaal blijft exact
+              de opgegeven pool. Levert bundelen bij het gekozen aantal kamers geen winst op, dan blijft de gelijkmatige
+              verdeling staan.
             </div>
             <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
               {[{v:'uit',l:'Uit'},{v:'auto',l:'Automatisch'},...WEEKDAY_KEYS.map((k,i)=>({v:k,l:DAY_ABBR[i]}))].map(o=>{
