@@ -94,7 +94,7 @@ const PLAN_INFO = {
   // ── Kamerverdeling ─────────────────────────────────────────────────────────
   kamerVerdeling:{label:'Verdeling over kamers en dagdelen',type:'radio',
     opts:[{v:'dagdeel',l:'Dagdeel voor dagdeel vol'},{v:'gelijk',l:'Gelijk verdelen'}],
-    desc:'Uitgangspunt: er wordt altijd het MINIMALE aantal kamers gebruikt en die worden allemaal rond de ingestelde benutting gevuld (±2,5 procentpunt speelruimte) — nooit een halfvolle of dunne restkamer. Het aantal spreekuren volgt uit de weekvraag ÷ de capaciteit op de bovenband. "Dagdeel voor dagdeel vol" vult bij gelijke stand eerst de laagst genummerde kamer (kamer 1 ochtend, kamer 1 middag, kamer 2 ochtend, …). "Gelijk verdelen" spreidt puur op belasting. In beide gevallen blijft de verdeling efficiënt en uniform. Deelt de weekvraag niet rond op volle spreekuren, dan komen alle spreekuren gelijkmatig iets lager uit (met een melding), i.p.v. enkele vol en één dun.'},
+    desc:'"Dagdeel voor dagdeel vol" vult SEQUENTIEEL: eerst kamer 1 ochtend tot de ingestelde benutting (±2,5 procentpunt), dan kamer 1 middag, dan kamer 2 ochtend, dan kamer 2 middag, enz. Elk dagdeel wordt afgemaakt voordat het volgende opengaat, zodat de restvraag zich in het laatste (mogelijk halve) dagdeel concentreert. Blijft de laatste kamer een halve dag (alleen ochtend óf alleen middag), dan verschijnt het advies om die halve dagdelen te bundelen tot volle dagen (regel "Restvraag bundelen tot volle kamers"). "Gelijk verdelen" spreidt de vraag juist gebalanceerd over het minimale aantal volledige kamers (ochtend + middag samen), zodat elke kamer op ~dezelfde benutting uitkomt. Beide werken uitsluitend op de opgegeven pool afspraken — er worden nooit afspraken toegevoegd.'},
   // ── Groepering afsprakencodes ──────────────────────────────────────────────
   groupMode:{label:'Groepering afsprakencodes',type:'radio',
     opts:[{v:'spread',l:'Gespreid inplannen (afwisselen)'},{v:'wave',l:'Wave planning (per blok)'}],
@@ -105,7 +105,7 @@ const PLAN_INFO = {
     desc:'"Aan het einde" = één aaneengesloten flexblok ná de laatste afspraak (het spreekuur eindigt dan op flex). "Verspreid tussen afspraken" = flexblokken van EXACT de ingestelde duur (nooit korter of langer), gelijkmatig tussen de afspraken verdeeld, nooit binnen de eerste N minuten; het spreekuur eindigt met een afspraak. Een restant kleiner dan één heel blok (hooguit blokduur−5 min) kan geen exact blok vormen en blijft als kleine, ongemarkeerde ruimte aan het einde.'},
   // ── Bailey-Welsh ───────────────────────────────────────────────────────────
   baileyWelsh:{label:'Bailey-Welsh regel',type:'toggle',
-    desc:'De eerste afspraak van het spreekuur wordt dubbel geboekt (twee patiënten tegelijk). Dit compenseert voor no-shows en start-vertragingen, en verhoogt de gemiddelde benutting.'},
+    desc:'Het eerste ochtendslot van elke kamer wordt dubbel geboekt: er wordt één patiënt UIT DE RESTLIJST ("nog te plannen") als tweede afspraak op datzelfde tijdstip gezet. Dit compenseert voor no-shows en start-vertragingen. Er worden nooit nieuwe afspraken bijgemaakt — is de restlijst leeg (de hele pool past al), dan gebeurt er niets. Zo blijft het totaal exact gelijk aan de opgegeven pool.'},
 }
 
 // Which keys are boolean toggles vs radio
@@ -1114,10 +1114,6 @@ export default function RasterTool(){
       const werkPool=[...poolIn]
       const totMin=werkPool.reduce((s,a)=>s+a.duur,0)
 
-      // Tie-break: 'dagdeel' vult bij gelijke stand de laagst genummerde kamer
-      // eerst (kamer voor kamer afronden); 'gelijk' spreidt puur op belasting.
-      const tie=(x,y)=> gelijk ? (x.used-y.used) : (x.used-y.used)||(x.r-y.r)||(DD.indexOf(x.dd)-DD.indexOf(y.dd))
-
       // ── DIGITALE CONSULTEN — per dagdeel over de spreekuren verdelen ─────────
       // Digitale consulten worden — net als fysieke — over ALLE benodigde
       // spreekuren van de dag verdeeld op basis van de aantallen per dagdeel,
@@ -1137,51 +1133,74 @@ export default function RasterTool(){
       // van de benutting, en verdelen de vraag dan gebalanceerd (steeds in het minst
       // gevulde passende spreekuur) over precies dat aantal. Zo komen ze allemaal op
       // ~dezelfde benutting uit en ontstaan er geen gaten of losse restkamers.
-      const probeer=(nRooms)=>{
+      // Elk slot krijgt een vaste volgorde-index (kamer-major: kamer1 ochtend,
+      // kamer1 middag, kamer2 ochtend, …) zodat 'dagdeel' kamer-voor-kamer kan vullen.
+      slots.forEach((s,i)=>{ s.ord=i })
+      const nSlotsPerRoom=ddVolg.length
+
+      // probeer(act) vult de meegegeven set actieve slots met de dagpool.
+      //  • 'gelijk'  → gebalanceerd: telkens het minst gevulde passende slot (spreiden),
+      //                spoed round-robin zodat elk spreekuur met spoed kan openen.
+      //  • 'dagdeel' → sequentieel FIRST-FIT op slotvolgorde: kamer 1 ochtend eerst tot
+      //                de bovenband, dan kamer 1 middag, dan kamer 2 ochtend, enz. De
+      //                restvraag concentreert zich zo in het laatste (mogelijk halve) slot.
+      const ordSort = gelijk
+        ? (x,y)=>(x.used-y.used)||(x.r-y.r)||(DD.indexOf(x.dd)-DD.indexOf(y.dd))
+        : (x,y)=>(x.ord-y.ord)
+      const probeer=(act)=>{
         slots.forEach(s=>{ s.items=[]; s.used=0 })
-        // Hele kamers openen: ALLE dagdelen (ochtend + middag) van de eerste nRooms
-        // kamers. Zo ontstaat er nooit een kamer met een leeg dagdeel ("halve dag").
-        const act=slots.filter(s=>s.r<nRooms)
         const ov=[]
         const perSlotDig= act.length? digTotMin/act.length : 0
         const physCapOf=s=> Math.max(0, s.cap - (digAll.length?perSlotDig:0))
         const kiesPhys=a=>{ let k=act.filter(s=>a.ddOpties.includes(s.dd)&&s.used+a.duur<=physCapOf(s))
-          if(!k.length) k=act.filter(s=>past(s,a)); if(!k.length) return null; k.sort(tie); return k[0] }
-        // Spoed-afspraken worden — als "spoed eerst" aanstaat — GELIJKMATIG over de
-        // spreekuren verdeeld (elk spreekuur eerst één spoedgeval voordat een tweede
-        // erbij komt), zodat élk spreekuur met een spoedgeval kan openen i.p.v. dat ze
-        // in één spreekuur samenklonteren. De volgorde binnen het spreekuur (spoed
-        // vooraan) regelt applyPlanRules daarna.
+          if(!k.length) k=act.filter(s=>past(s,a)); if(!k.length) return null; k.sort(ordSort); return k[0] }
         const alleFys=[...physVast,...physRest]
-        const spoedFys= rules.spoedFirst ? alleFys.filter(a=>a.spoed) : []
-        const restFys= rules.spoedFirst ? alleFys.filter(a=>!a.spoed) : alleFys
-        const spoedU=new Map(act.map(s=>[s,0]))
-        spoedFys.forEach(a=>{ let k=act.filter(s=>a.ddOpties.includes(s.dd)&&s.used+a.duur<=physCapOf(s))
-          if(!k.length) k=act.filter(s=>past(s,a))
-          if(!k.length){ ov.push(a); return }
-          k.sort((x,y)=>(spoedU.get(x)-spoedU.get(y))||tie(x,y)); plaats(k[0],a); spoedU.set(k[0],spoedU.get(k[0])+1) })
-        restFys.forEach(a=>{ const s=kiesPhys(a); if(s) plaats(s,a); else ov.push(a) })
+        if(gelijk){
+          // Spoed GELIJKMATIG over de spreekuren (elk spreekuur eerst één spoedgeval),
+          // zodat élk spreekuur met een spoedgeval kan openen i.p.v. samen te klonteren.
+          const spoedFys= rules.spoedFirst ? alleFys.filter(a=>a.spoed) : []
+          const restFys= rules.spoedFirst ? alleFys.filter(a=>!a.spoed) : alleFys
+          const spoedU=new Map(act.map(s=>[s,0]))
+          spoedFys.forEach(a=>{ let k=act.filter(s=>a.ddOpties.includes(s.dd)&&s.used+a.duur<=physCapOf(s))
+            if(!k.length) k=act.filter(s=>past(s,a))
+            if(!k.length){ ov.push(a); return }
+            k.sort((x,y)=>(spoedU.get(x)-spoedU.get(y))||ordSort(x,y)); plaats(k[0],a); spoedU.set(k[0],spoedU.get(k[0])+1) })
+          restFys.forEach(a=>{ const s=kiesPhys(a); if(s) plaats(s,a); else ov.push(a) })
+        } else {
+          // 'dagdeel': pure first-fit — vul het vroegste slot tot de bovenband voordat
+          // het volgende opengaat. Spoed staat via sorteerPool/applyPlanRules vooraan.
+          alleFys.forEach(a=>{ const s=kiesPhys(a); if(s) plaats(s,a); else ov.push(a) })
+        }
         const digU=new Map(act.map(s=>[s,0]))
         const kiesDig=a=>{ const k=act.filter(s=>past(s,a)); if(!k.length) return null
-          k.sort((x,y)=>(digU.get(x)-digU.get(y))||tie(x,y)); return k[0] }
+          k.sort(gelijk?((x,y)=>(digU.get(x)-digU.get(y))||ordSort(x,y)):ordSort); return k[0] }
         sorteerPool(digAll).forEach(a=>{ const s=kiesDig(a)
           if(s){ plaats(s,a); digU.set(s,digU.get(s)+a.duur) } else ov.push(a) })
         return {act,ov}
       }
-      // Minimaal aantal VOLLEDIGE kamers = vraag ÷ capaciteit van een hele kamer
-      // (ochtend + middag samen op de bovenband), naar boven afgerond. Zo worden er
-      // altijd volledige kamers (ochtend én middag) geopend, nooit een halve dag, en
-      // wordt de vraag gelijkmatig over die kamers verdeeld. Groeit alleen als bin-
-      // packing het écht afdwingt (en tot maximaal het aantal beschikbare kamers).
-      // Vast aantal kamers: gebruik EXACT het gekozen aantal (de vraag wordt erover
-      //   verdeeld — meer kamers → lager gevuld, minder → voller/overloop → NTP).
-      // Automatisch: het MINIMALE aantal volledige kamers dat de vraag bergt.
+
       const capPerRoom=ddVolg.reduce((s,x)=>s+maxCapFor(x),0)
-      let nRooms= capMode==='vast'
-        ? kap
-        : Math.max(1,Math.min(kap,Math.ceil(totMin/Math.max(1,capPerRoom))))
-      let uitkomst=probeer(nRooms)
-      while(uitkomst.ov.length && nRooms<kap){ nRooms++; uitkomst=probeer(nRooms) }
+      let uitkomst
+      if(gelijk){
+        // 'gelijk': hele kamers openen (ochtend + middag samen), vraag gebalanceerd
+        // over het minimale aantal kamers verdelen; groeit alleen als bin-packing dat
+        // afdwingt (tot het maximale aantal kamers). Vast = exact het gekozen aantal.
+        const roomsAct=n=>slots.filter(s=>s.r<n)
+        let nRooms= capMode==='vast' ? kap
+          : Math.max(1,Math.min(kap,Math.ceil(totMin/Math.max(1,capPerRoom))))
+        uitkomst=probeer(roomsAct(nRooms))
+        while(uitkomst.ov.length && nRooms<kap){ nRooms++; uitkomst=probeer(roomsAct(nRooms)) }
+      } else {
+        // 'dagdeel': slot voor slot in kamer-major volgorde. Start met een schatting
+        // van het aantal benodigde slots en groei één slot tegelijk tot alles past
+        // (of het maximale aantal kamers is bereikt → overschot naar "nog te plannen").
+        const maxSlots= kap*nSlotsPerRoom
+        const seqAct=n=>slots.slice(0,Math.min(n,maxSlots))
+        const avgBand= capPerRoom/Math.max(1,nSlotsPerRoom)
+        let nSlots=Math.max(1,Math.min(maxSlots,Math.ceil(totMin/Math.max(1,avgBand))))
+        uitkomst=probeer(seqAct(nSlots))
+        while(uitkomst.ov.length && nSlots<maxSlots){ nSlots++; uitkomst=probeer(seqAct(nSlots)) }
+      }
       const actief=uitkomst.act
       uitkomst.ov.forEach(a=>over.push(a))
 
@@ -1203,6 +1222,13 @@ export default function RasterTool(){
     const capVolRoom=DD.reduce((t,x)=>t+usableFor(x),0)   // vol kamer op doelbenutting
     const maxCapForW=dd=>Math.round(durFor2(dd)*Math.min(100,(m2.benutting||85)+2.5)/100)
     const capRoomBand=DD.reduce((t,x)=>t+maxCapForW(x),0) // vol kamer op de bovenband
+    // PAK-VEILIGE kamercapaciteit: afspraken hebben vaste duren en vullen een dagdeel
+    // zelden exact (bv. 170 van 184 min). Reserveer daarom ~1 gemiddelde afspraak per
+    // dagdeel als pak-verlies, zodat de week-optimalisatie geen kamers "op papier" vol
+    // rekent die in de praktijk toch een halve rest-kamer openen.
+    const alleWeekPool=[0,1,2,3,4].flatMap(di=>grouped[di]||[])
+    const gemDuurW=alleWeekPool.length?alleWeekPool.reduce((s,a)=>s+a.duur,0)/alleWeekPool.length:15
+    const capRoomVeilig=Math.max(1,DD.reduce((t,x)=>t+Math.max(0,maxCapForW(x)-gemDuurW),0))
     const vraagVan=di=>(grouped[di]||[]).reduce((t,q)=>t+q.duur,0)
     // Bereken de meest efficiënte kamer-per-dag-verdeling (voor melding + herverdeling).
     const dagOpenW=di=>(m2.days[WEEKDAY_KEYS[di]]||0)>0 && DD.some(x=>ddOpenOp(x,di))
@@ -1212,7 +1238,7 @@ export default function RasterTool(){
       const W=weekDagen.reduce((t,di)=>t+vraagVan(di),0)
       // Iets ruimer afronden (naar boven) zodat de dagen niet exact op de bovenband
       // zitten en er speling is om zonder overloop te herverdelen.
-      const totRooms=Math.max(weekDagen.length, Math.ceil(W/capVolRoom))
+      const totRooms=Math.max(weekDagen.length, Math.ceil(W/capRoomVeilig))
       const basis=Math.floor(totRooms/weekDagen.length)
       let extra=totRooms-basis*weekDagen.length
       const druk=[...weekDagen].sort((a,b)=>vraagVan(b)-vraagVan(a))
@@ -1240,7 +1266,7 @@ export default function RasterTool(){
         const pool=grouped[bron.di]||[]
         // De doeldag mag NOOIT over zijn kamergrens (rooms × bovenband) geduwd worden,
         // anders opent daar juist een extra (halfvolle) kamer — precies wat we vermijden.
-        const ruimte=plan.rooms[doel.di]*capRoomBand - vraagVan(doel.di)
+        const ruimte=plan.rooms[doel.di]*capRoomVeilig - vraagVan(doel.di)
         const kand=pool.filter(q=>(!q.dagOpties||q.dagOpties.includes(doel.di)) && q.duur<=ruimte)
         if(!kand.length) break
         const tekort=-doel.delta
@@ -1343,19 +1369,22 @@ export default function RasterTool(){
         out.push({...a,dagdeel:dd,room,start:t,end,
           baileyWelsh:isBW, _why:explain({...a,baileyWelsh:isBW},idx,appts.length,dd)})
         if(isBW){
-          // prefer een restlijst-item van dezelfde dag; anders welke dan ook
+          // Bailey-Welsh dubbelboekt het eerste ochtendslot ALLEEN met een échte
+          // afspraak van de restlijst. Is de restlijst leeg, dan is de pool volledig
+          // gepland en voegen we NIETS toe — de pool blijft exact zoals opgegeven.
           let ex=null
           if(res.ntp.length){
             let ix=res.ntp.findIndex(x=>x.day===di)
             if(ix<0) ix=0
             ex=res.ntp.splice(ix,1)[0]
           }
-          const dur=ex?Math.max(5,ex.duur):a.duur
-          out.push({...(ex||a),id:(ex?ex.id:a.id)+'_bw',dagdeel:dd,room,start:t,end:Math.min(t+dur,sessEnd),duur:dur,
-            baileyWelsh:true, overbook:true, bwReal:!!ex,
-            description: ex?((ex.description||ex.code)+' · Bailey-Welsh extra'):'Overboeking (Bailey-Welsh)',
-            _why: ex?['Bailey-Welsh: extra patiënt op het eerste ochtendslot — stond anders op de restlijst.']
-                    :['Bailey-Welsh: eerste ochtendslot dubbel geboekt om no-show/startvertraging op te vangen.']})
+          if(ex){
+            const dur=Math.max(5,ex.duur)
+            out.push({...ex,id:ex.id+'_bw',dagdeel:dd,room,start:t,end:Math.min(t+dur,sessEnd),duur:dur,
+              baileyWelsh:true, overbook:true, bwReal:true,
+              description:(ex.description||ex.code)+' · Bailey-Welsh extra',
+              _why:['Bailey-Welsh: extra patiënt op het eerste ochtendslot — stond anders op de restlijst.']})
+          }
         }
         return end
       }
@@ -1538,9 +1567,33 @@ export default function RasterTool(){
       }
     }
     // 3) Benutting onder het doel — de weekvraag deelt niet rond op VOLLEDIGE kamers
-    if(!res.ntp.length && kpi.week.benutting>0 && kpi.week.benutting < m2.benutting-4){
+    // (alleen relevant bij 'gelijk verdelen', dat hele kamers ochtend+middag opent).
+    if(rules.kamerVerdeling==='gelijk' && !res.ntp.length && kpi.week.benutting>0 && kpi.week.benutting < m2.benutting-4){
       notices.push({level:'info',rule:'Benutting',
         msg:`De weekvraag deelt niet rond op volledige kamers (ochtend + middag) bij ${m2.benutting}% benutting. Om te voorkomen dat een kamer maar een halve dag (alleen ochtend of middag) draait, zijn alle geopende kamers als volledige dag ingepland op ~${kpi.week.benutting}%. Wil je richting ${m2.benutting}% benutting? Zet "Vast aantal kamers" op één minder — de vraag die dan niet past komt op "nog te plannen". Meer kamers verlaagt de benutting juist verder.`})
+    }
+    // 3c) Halve dagen — kamers die maar één dagdeel (alleen ochtend óf alleen middag)
+    // draaien terwijl beide dagdelen open zijn. Bij 'dagdeel voor dagdeel vol' vult de
+    // laatste kamer zich vaak maar half; het advies is die halve dagdelen te bundelen
+    // tot volle dagen (ochtend én middag in dezelfde kamer) i.p.v. losse halve dagen.
+    if(!res.ntp.length){
+      let halveDagen=0
+      ;[0,1,2,3,4].forEach(di=>{ const slots=res.days[di]; if(!slots) return
+        const openDd=DD.filter(x=>ddOpenOp(x,di))
+        if(openDd.length<2) return   // maar één dagdeel open → geen "halve dag" te bundelen
+        const perRoom={}             // kamernr → set dagdelen met een spreekuur
+        Object.entries(slots).forEach(([key,arr])=>{
+          if(!(arr||[]).some(a=>!a.isFlex)) return
+          const dd=key[0]==='o'?'O':key[0]==='m'?'M':'A'; const r=+key.slice(1)
+          ;(perRoom[r]=perRoom[r]||new Set()).add(dd) })
+        Object.values(perRoom).forEach(set=>{
+          const gevuld=openDd.filter(x=>set.has(x)).length
+          if(gevuld>0 && gevuld<openDd.length) halveDagen++ })
+      })
+      if(halveDagen>0 && (rules.restDag||'uit')==='uit'){
+        notices.push({level:'info',rule:'Halve dagen — advies',
+          msg:`Er ${halveDagen===1?'staat':'staan'} ${halveDagen} halve kamer-dag${halveDagen===1?'':'en'} open (alleen ochtend óf alleen middag gevuld). Combineer die halve dagdelen tot volle dagen — ochtend én middag in dezelfde kamer — i.p.v. losse halve dagdelen: zet de regel "Restvraag bundelen tot volle kamers" aan (bij Volgorde & regels) om dit automatisch te doen.`})
+      }
     }
     // 3b) Week-optimalisatie — aanbeveling of bevestiging
     if(weekPlan && weekDagen.length>=2){
