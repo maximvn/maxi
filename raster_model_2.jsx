@@ -396,6 +396,7 @@ export default function RasterTool(){
     digitalMode:'spread', groupMode:'spread', flexMode:'end',
     kamerVerdeling:'dagdeel', // 'dagdeel' = kamer voor kamer afronden (och→mid→volgende kamer) | 'gelijk'
     restDag:'uit',            // 'uit' | 'auto' | 'ma'..'vr' — restvraag samenvoegen op één dag
+    restOpruimen:true,        // rest-kamer: dagdeel dat de ondergrens niet haalt → nog te plannen (dicht) i.p.v. half-leeg laten staan
     spoedDagdeel:'both',      // 'both' | 'och' | 'mid' — in welk dagdeel geldt spoed-eerst
     flexNoFirstMin:60,        // geen verspreide flex in de eerste N minuten van een spreekuur
     flexBlokMin:10,           // grootte van één verspreid flexblokje (5/10/15/20 min)
@@ -1028,6 +1029,9 @@ export default function RasterTool(){
 
     const usableFor=dd=> dd==='O'?mUsable : dd==='M'?aUsable : avUsable
     const durFor2=dd=> dd==='O'?ochDur : dd==='M'?midDur : avDur
+    // Onder- en bovengrens van de benuttingsband per dagdeel (in minuten). Een dagdeel
+    // telt pas als volwaardig (half dag-)spreekuur als het de ONDERGRENS haalt.
+    const ondergrensCap=dd=>Math.round(durFor2(dd)*Math.max(0,(m2.benutting-2.5))/100)
 
     const durFor=dd=> dd==='O'?ochDur : dd==='M'?midDur : avDur
     const ddIndex={O:0,M:1,A:2}
@@ -1350,6 +1354,38 @@ export default function RasterTool(){
         neededRooms=Math.max(neededRooms, Math.max(1,Math.ceil(totMin/Math.max(1,capDag))))
       }
     })
+
+    // ── REST-KAMER OPRUIMEN — geen half-lege dagdelen met gaten ───────────────────
+    // De laatste (rest-)kamer van een dag bevat de afspraken die niet meer in een volle
+    // kamer pasten. Een dagdeel daarvan is alléén een volwaardig (half dag-)spreekuur als
+    // het de ONDERGRENS van de band haalt. Haalt het dat niet, dan is het een half-lege
+    // kamer met een gat: die afspraken gaan naar "nog te plannen" en het dagdeel gaat dicht.
+    // Zo houd je óf een volle ochtend (met de middag dicht), óf — als er te weinig rest is
+    // voor zelfs een halve dag — belanden ze netjes op de restlijst. Dit gebeurt alléén op
+    // dagen die al minstens één volwaardig spreekuur hebben (dus niet op een rustige dag
+    // met weinig volume, waar één deels gevuld dagdeel juist het hele programma is).
+    if(rules.restOpruimen!==false) [0,1,2,3,4].forEach(di=>{
+      if(!built[di]) return
+      const odd=DD.filter(x=>ddOpenOp(x,di))
+      // Bestaat er ergens deze dag een volwaardig spreekuur (dagdeel ≥ ondergrens)?
+      let heeftVol=false
+      odd.forEach(dd=>{ (built[di][dd]||[]).forEach(room=>{ if(room && room.reduce((t,a)=>t+a.duur,0)>=ondergrensCap(dd)) heeftVol=true }) })
+      if(!heeftVol) return
+      // Index van de laatste kamer met inhoud.
+      let L=-1
+      odd.forEach(dd=>{ const arr=built[di][dd]||[]; for(let r=0;r<arr.length;r++) if(arr[r]&&arr[r].length) L=Math.max(L,r) })
+      if(L<0) return
+      // Ruim in die laatste kamer elk dagdeel op dat de ondergrens niet haalt.
+      odd.forEach(dd=>{
+        const room=(built[di][dd]||[])[L]
+        if(!room || !room.length) return
+        const fill=room.reduce((t,a)=>t+a.duur,0)
+        if(fill < ondergrensCap(dd)){
+          room.forEach(a=>overflowInst.push({...a, day:di, dd:(a.ddOpties&&a.ddOpties[0])||dd, edited:false, _restKamer:true}))
+          built[di][dd][L]=[]
+        }
+      })
+    })
     // Toon minstens het gekozen aantal kamers (lege kolommen kun je op inslepen)
     // In vast-modus tonen we ALLE gekozen kamers als kolom — ook als de vraag er
     // bij de ingestelde benutting minder nodig heeft. Zo is het aantal kamers een
@@ -1634,9 +1670,12 @@ export default function RasterTool(){
     if(res.ntp.length){
       const perDag={}; res.ntp.forEach(a=>{ perDag[a.day]=(perDag[a.day]||0)+1 })
       const dagTekst=Object.entries(perDag).map(([d,n])=>`${DAYS[d]||'?'}: ${n}`).join(', ')
+      const restKamer=res.ntp.filter(a=>a._restKamer).length
       const reden = capMode==='vast'
         ? `De vraag past niet binnen ${maxParallel} kamer${maxParallel===1?'':'s'} op maximale benutting. Verhoog het aantal kamers, verruim de spreekuurtijden of verlaag de vraag.`
-        : `Er bleef een restant over dat geen vol spreekuur vormt. Zet "restvraag samenvoegen op één dag" aan om het te bundelen.`
+        : restKamer===res.ntp.length
+          ? `Dit is de rest die geen vol (half dag-)spreekuur meer vormt: het betreffende dagdeel is dichtgezet i.p.v. half-leeg gelaten.${(rules.restDag||'uit')==='uit'?' Zet "restvraag bundelen tot volle kamers" aan om deze rest op één dag samen te voegen — dan blijft er veel minder over.':' Wil je ze tóch tonen (half gevuld dagdeel), zet dan "Rest-kamer: open laten" aan.'}`
+          : `Er bleef een restant over dat geen vol spreekuur vormt. Zet "restvraag bundelen tot volle kamers" aan om het te bundelen.`
       notices.push({level:'warn',rule:'Nog te plannen',msg:`${res.ntp.length} afspra${res.ntp.length===1?'ak':'ken'} niet ingepland (${dagTekst}). ${reden}`})
     }
     // 2) Digitale consulten — alleen melden als een spreekuur er géén heeft
@@ -1742,7 +1781,7 @@ export default function RasterTool(){
     ddDagen:{O:{...DEF_DD_DAGEN.O},M:{...DEF_DD_DAGEN.M},A:{...DEF_DD_DAGEN.A}}})
     setRules({shortFirst:false,spoedFirst:false,certainFirst:false,baileyWelsh:false,
       digitalMode:'spread',groupMode:'spread',flexMode:'end',
-      kamerVerdeling:'dagdeel',restDag:'uit',spoedDagdeel:'both',flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30,
+      kamerVerdeling:'dagdeel',restDag:'uit',restOpruimen:true,spoedDagdeel:'both',flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30,
       order:['spoedFirst','shortFirst','certainFirst']})
     setSelDay(0); setRaster(null); setDrag(null)
     setShowFullReset(false)
@@ -1823,7 +1862,7 @@ export default function RasterTool(){
           const sr=state.rules
           setRules({shortFirst:false,spoedFirst:false,certainFirst:false,baileyWelsh:false,
             digitalMode:'spread',groupMode:'spread',flexMode:'end',
-            kamerVerdeling:'dagdeel',restDag:'uit',spoedDagdeel:'both',flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30,...sr,
+            kamerVerdeling:'dagdeel',restDag:'uit',restOpruimen:true,spoedDagdeel:'both',flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30,...sr,
             ...(sr.kamerVerdeling==='kamer'?{kamerVerdeling:'dagdeel'}:{}),
             order:Array.isArray(sr.order)&&sr.order.length?sr.order:['spoedFirst','shortFirst','certainFirst']})
         }
@@ -3093,6 +3132,26 @@ export default function RasterTool(){
                       border:`1px solid ${on?C.primary:C.border}`}}>{o.l}</button>
                 )
               })}
+            </div>
+            <div style={{marginTop:12,paddingTop:11,borderTop:`1px solid ${C.border}`}}>
+              <div style={{fontSize:12,fontWeight:700,color:C.text,marginBottom:3}}>Rest-kamer: dagdeel dat niet vol wordt</div>
+              <div style={{fontSize:11,color:C.muted,lineHeight:1.5,marginBottom:8}}>
+                De laatste (rest-)kamer houdt vaak één dagdeel over dat de ondergrens van de band niet haalt — een
+                half-leeg spreekuur met een gat. "Dichtzetten" houdt alleen de volle dagdelen aan (bv. een volle
+                ochtend) en zet die losse afspraken op "nog te plannen"; is er te weinig voor zelfs een halve dag, dan
+                gaat de hele rest-kamer daarheen. "Open laten" toont het dagdeel half gevuld zoals het is.
+              </div>
+              <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                {[{v:true,l:'Dichtzetten → nog te plannen'},{v:false,l:'Open laten (half gevuld)'}].map(o=>{
+                  const on=(rules.restOpruimen!==false)===o.v
+                  return(
+                    <button key={String(o.v)} onClick={()=>setRules(p=>({...p,restOpruimen:o.v}))}
+                      style={{padding:'6px 13px',borderRadius:16,cursor:'pointer',fontSize:11.5,fontWeight:700,
+                        background:on?C.primary:C.white,color:on?'#fff':C.muted,
+                        border:`1px solid ${on?C.primary:C.border}`}}>{o.l}</button>
+                  )
+                })}
+              </div>
             </div>
           </div>
         </Card>
