@@ -1369,50 +1369,40 @@ export default function RasterTool(){
         // In dat geval laten we de startzone wijken: niet eindigen op flex weegt
         // zwaarder dan niet beginnen met flex.
         if(!gaten.length) gaten=verzamelGaten(0)
-        // 2) Verdeel de VOLLEDIGE flex over de gaten tússen de afspraken, zodat de
-        //    laatste afspraak exact op het einde van het spreekuur uitkomt — nooit
-        //    een leeg plekje aan het einde. Elk tussenblok is de ingestelde duur
-        //    (blokMin); alleen het laatste gebruikte gat vangt de restbuffer op
-        //    (blokMin + het restant dat niet in hele blokken paste). Het aantal
-        //    blokken volgt uit flexTotal ÷ blokMin, begrensd door het aantal gaten.
+        // 2) Elk flexblok is EXACT blokMin minuten — nooit korter, nooit langer.
+        //    Het aantal hele blokken volgt uit flexTotal ÷ blokMin en die worden
+        //    gelijkmatig over de (verschillende) gaten tussen de afspraken gespreid,
+        //    elk gat hoogstens één blok. Een restant kleiner dan één heel blok (bv.
+        //    5 min bij een blokduur van 10) kan geen exact blok vormen en wordt niet
+        //    getoond; het blijft als kleine ruimte aan het einde, ná de laatste
+        //    afspraak. Zo is ELK zichtbaar flexblok gegarandeerd exact de ingestelde
+        //    lengte.
         const bedrag={}
-        if(gaten.length && flexTotal>0){
-          // Aantal blokken ≈ flexTotal ÷ blokMin (begrensd door het aantal gaten),
-          // gelijkmatig over het spreekuur gespreid. De blokken worden GELIJKMATIG
-          // op elkaar afgestemd zodat ze allemaal ongeveer even lang zijn (≈ blokMin)
-          // en SAMEN precies flexTotal vullen — geen leeg einde, geen groot los blok.
-          const nBlok=Math.max(1,Math.min(gaten.length,Math.round(flexTotal/blokMin)))
-          const gekozen=[]
-          const stap=gaten.length/nBlok
+        if(gaten.length && flexTotal>=blokMin){
+          const nBlok=Math.min(gaten.length, Math.floor(flexTotal/blokMin))
+          const stap=gaten.length/Math.max(1,nBlok)
           const bezet=[]
           for(let i=0;i<nBlok;i++){
             let idx=Math.min(gaten.length-1,Math.floor(i*stap+stap/2))
             while(bezet.includes(idx)&&idx<gaten.length-1) idx++
             while(bezet.includes(idx)&&idx>0) idx--
-            bezet.push(idx); gekozen.push(gaten[idx])
+            bezet.push(idx)
+            bedrag[gaten[idx]]=blokMin                      // EXACT blokMin
           }
-          gekozen.sort((a,b)=>a-b)
-          const n=gekozen.length; let geplaatst=0
-          gekozen.forEach((g,i)=>{
-            const doel=Math.round(flexTotal*(i+1)/n/5)*5   // cumulatief, op 5 min
-            const chunk=Math.max(0,Math.min(flexTotal-geplaatst, doel-geplaatst))
-            bedrag[g]=chunk; geplaatst+=chunk
-          })
-          if(geplaatst<flexTotal) bedrag[gekozen[n-1]]=(bedrag[gekozen[n-1]]||0)+(flexTotal-geplaatst)
         }
-        // 3) Afspraken + flexblokken op de tijdas zetten. De flex zit volledig tussen
-        //    de afspraken, dus de laatste afspraak sluit het spreekuur exact af.
+        // 3) Afspraken + flexblokken op de tijdas zetten. Elk tussenblok is exact
+        //    blokMin lang; het spreekuur eindigt met de laatste afspraak.
         physAppts.forEach((a,i)=>{
           t=pushAppt(a,i,t)
           const m=bedrag[i]||0
           if(m>0){
             const fEnd=Math.min(t+m, sessEnd)
-            if(fEnd>t){ out.push(mkFlex(t, fEnd-t,'Buffer (tussen afspraken)')); t=fEnd }
+            if(fEnd-t>=blokMin){ out.push(mkFlex(t, blokMin,'Buffer (tussen afspraken)')); t+=blokMin }
           }
         })
         t=plaatsDigitaalEinde(t)
-        // 4) GEEN eindblok — de flex is volledig tussen de afspraken verdeeld, dus het
-        //    spreekuur eindigt altijd met een afspraak, precies op de eindtijd.
+        // 4) GEEN eindblok — het restant kleiner dan één heel flexblok blijft
+        //    ongemarkeerd na de laatste afspraak (hooguit blokMin−5 minuten).
       } else {
         // flexMode 'end' (of te weinig flex om te verspreiden): alles achter elkaar,
         // één aaneengesloten flexblok na de laatste afspraak.
@@ -2970,7 +2960,7 @@ export default function RasterTool(){
               <span style={{width:12,height:12,borderRadius:3,background:FLEX_STRIPE(3,6),border:`1px solid ${FLEX_COLOR.brd}`,flexShrink:0}}/>
               <div style={{flex:1,minWidth:190}}>
                 <div style={{fontSize:12,fontWeight:700,color:FLEX_COLOR.fg}}>Geen flex aan het begin</div>
-                <div style={{fontSize:11,color:C.muted}}>Flex komt <b style={{color:C.text}}>uitsluitend tussen de afspraken</b>, pas ná <b style={{color:C.text}}>{rules.flexNoFirstMin??60} min</b> spreekuur. De flexblokken zijn <b style={{color:C.text}}>± {rules.flexBlokMin??10} min</b> en worden gelijkmatig tussen de afspraken gespreid; ze vullen samen precies de beschikbare buffer. Het spreekuur <b style={{color:C.text}}>eindigt altijd met een afspraak</b> op de eindtijd — nooit een flexblok of leeg plekje aan het einde.</div>
+                <div style={{fontSize:11,color:C.muted}}>Flex komt <b style={{color:C.text}}>uitsluitend tussen de afspraken</b>, pas ná <b style={{color:C.text}}>{rules.flexNoFirstMin??60} min</b> spreekuur. Elk flexblok is <b style={{color:C.text}}>exact {rules.flexBlokMin??10} min</b> — nooit korter of langer. De blokken worden gelijkmatig tussen de afspraken gespreid en het spreekuur <b style={{color:C.text}}>eindigt met een afspraak</b>. Een eventueel restant kleiner dan één heel blok (hooguit {(rules.flexBlokMin??10)-5} min) kan geen exact blok vormen en blijft als kleine, ongemarkeerde ruimte aan het einde.</div>
               </div>
               <div style={{display:'inline-flex',alignItems:'center',border:`1px solid ${FLEX_COLOR.brd}`,borderRadius:8,overflow:'hidden',background:C.white}}>
                 <button onClick={()=>setRules(p=>({...p,flexNoFirstMin:Math.max(0,(p.flexNoFirstMin??60)-10)}))}
