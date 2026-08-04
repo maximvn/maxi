@@ -2864,6 +2864,7 @@ export default function RasterTool(){
             : b.spoed?{bg:'#FCEEEB',fg:C.danger,brd:'#E7B3A6'}
             : b.digitaal?{bg:'#D6EAE3',fg:'#1A5544',brd:'#94C5B4'}
             : b.cat==='nieuw'?NEW_PALETTE[0]:CTRL_PALETTE[0]
+          const activeOrder=(rules.order||['spoedFirst','shortFirst','certainFirst']).filter(k=>rules[k])
           const actieveRegels=[
             ...activeOrder.map((k,i)=>`${i+1}. ${PLAN_INFO[k].label}`),
             rules.groupMode==='wave'?'Wave-groepering':'Gespreid',
