@@ -82,9 +82,9 @@ const ddDagenVan=m2=>({
 const PLAN_INFO = {
   // ── Planning volgorde ──────────────────────────────────────────────────────
   shortFirst:{label:'Starten met korte afspraken',type:'toggle',
-    desc:'De 3 kortste afspraken van ELK spreekuur komen vooraan. De rest behoudt de volgorde uit de andere regels. Dit bevordert snelle doorstroom aan het begin zonder de hele volgorde op duur te sorteren.'},
+    desc:'Twee dingen tegelijk. (1) VOLGORDE: de 3 kortste fysieke afspraken van elk spreekuur komen letterlijk vooraan (kortste → langste). (2) SELECTIE: past niet alles binnen de kamers, dan worden de KORTE afspraken bij voorkeur ingepland en gaan de LANGSTE naar "nog te plannen" — niet andersom. Zo bouw je je spreekuren met de korte afspraken die je hebt en blijven de kamers vol.'},
   spoedFirst:{label:'Spoed afspraken eerst',type:'toggle',
-    desc:'Afspraken met het spoedvinkje worden vóór alle andere afspraken van hetzelfde spreekuur geplaatst. Instelbaar per dagdeel (ochtend, middag of beide). Staat "korte afspraken eerst" ook aan, dan worden de spoedafspraken onderling ook op duur gesorteerd.'},
+    desc:'Afspraken met het spoedvinkje komen vóór alle andere afspraken van hetzelfde spreekuur, en belanden NOOIT op "nog te plannen" zolang ze passen (spoed heeft voorrang bij de selectie). Instelbaar per dagdeel (ochtend, middag of beide). Staat "korte afspraken eerst" ook aan, dan worden de spoedafspraken onderling ook op duur gesorteerd.'},
   certainFirst:{label:'Zekere afspraken eerst',type:'toggle',
     desc:'Afspraken met een lage onzekerheid (voorspelbare duur) worden vroeg in het dagdeel gepland; onzekere afspraken komen later, bij voorkeur vlak vóór een buffer, zodat uitloop kan worden opgevangen. Onzekerheid stel je per afspraakcode in bij Gegevens invoer.'},
   // ── Digitale consulten ─────────────────────────────────────────────────────
@@ -1337,8 +1337,10 @@ export default function RasterTool(){
       const res1=vulDag(di, dagPool)
       DD.forEach(dd=>{
         const rooms=res1.perDd[dd]||[]
-        // FASE 2 — volgorde: planregels per kamer, structuur blijft ongemoeid.
-        built[di][dd]=rooms.map(r=>applyPlanRules(r, ddIndex[dd]))
+        // FASE 2a — RUWE structuur (welke afspraak in welke kamer). De VOLGORDE binnen
+        // een kamer (applyPlanRules) volgt pas ná de selectie-solver hieronder, zodat een
+        // omgeruilde afspraak alsnog correct geordend wordt.
+        built[di][dd]=rooms.map(r=>[...r])
         maxRooms=Math.max(maxRooms, rooms.length)
         perDagdeelNeed.push({day:di,dd,need:rooms.length,placed:rooms.length,over:0})
       })
@@ -1383,6 +1385,83 @@ export default function RasterTool(){
         }
       })
     })
+
+    // ══ SELECTIE-SOLVER — de restlijst bevat de MINST gewenste afspraken ═════════════
+    // De volgorderegels bepalen niet alleen de VOLGORDE binnen een spreekuur, maar ook de
+    // SELECTIE: wát er ingepland wordt en wát op "nog te plannen" belandt. Staat "kort
+    // eerst" aan, dan horen de KORTE afspraken ingepland en de LANGE op de restlijst — niet
+    // andersom. Spoed hoort nooit op de restlijst. Deze lokale-zoek-solver ruilt net zolang
+    // een gewenste rest-afspraak om met een minder-gewenste geplande afspraak als dat binnen
+    // de bovenband van het dagdeel past; elke ruil verbetert de oplossing richting de regels.
+    const bovengrensCap=dd=>Math.round(durFor2(dd)*Math.min(100,(m2.benutting+2.5))/100)
+    // Selectie-prioriteit: LAGER = liever inplannen. Spoed staat altijd vooraan; "kort
+    // eerst" maakt korte afspraken gewenster (langere komen eerder op de restlijst).
+    const selPrio=a=> (rules.spoedFirst&&a.spoed?-1e6:0) + (rules.shortFirst?(a.duur||15):0)
+    if(rules.shortFirst||rules.spoedFirst){
+      ;[0,1,2,3,4].forEach(di=>{
+        if(!built[di]) return
+        if(!overflowInst.some(a=>a.day===di)) return
+        const odd=DD.filter(x=>ddOpenOp(x,di))
+        let guard=0, verbeterd=true
+        while(verbeterd && guard++<1500){
+          verbeterd=false
+          const rest=overflowInst.filter(a=>a.day===di).sort((a,b)=>selPrio(a)-selPrio(b))
+          for(const O of rest){
+            // Zoek de SLECHTST-geprioriteerde geplande afspraak (hoogste selPrio) die O's
+            // dagdeel toestaat en waar O ná de ruil binnen de bovenband van de kamer past.
+            let best=null, bestP=null, bestPrio=selPrio(O)
+            odd.forEach(dd=>{
+              if(!O.ddOpties||!O.ddOpties.includes(dd)) return
+              const rooms=built[di][dd]||[]
+              for(let r=0;r<rooms.length;r++){
+                const room=rooms[r]; if(!room||!room.length) continue
+                const fill=room.reduce((t,a)=>t+a.duur,0)
+                for(const P of room){
+                  if(selPrio(P)<=bestPrio) continue
+                  if(fill - P.duur + O.duur > bovengrensCap(dd)+0.01) continue
+                  bestPrio=selPrio(P); best={dd,r}; bestP=P
+                }
+              }
+            })
+            if(bestP){
+              const room=built[di][best.dd][best.r]
+              room[room.indexOf(bestP)]=O
+              const oi=overflowInst.indexOf(O); if(oi>=0) overflowInst.splice(oi,1)
+              overflowInst.push({...bestP, day:di, dd:(bestP.ddOpties&&bestP.ddOpties[0])||best.dd, edited:false})
+              verbeterd=true; break
+            }
+          }
+        }
+        // NAVULLEN — een ruil (lange afspraak eruit, korte erin) laat ruimte achter. Vul
+        // die met de meest-gewenste rest-afspraken tot de bovenband, zodat de kamers vol
+        // blijven (geen gaten) i.p.v. leeg te lopen door de selectie.
+        let g2=0, vul=true
+        while(vul && g2++<1500){
+          vul=false
+          const rest2=overflowInst.filter(a=>a.day===di).sort((a,b)=>selPrio(a)-selPrio(b))
+          for(const O of rest2){
+            let plek=null
+            odd.forEach(dd=>{
+              if(plek || !O.ddOpties || !O.ddOpties.includes(dd)) return
+              const rooms=built[di][dd]||[]
+              for(let r=0;r<rooms.length;r++){ const room=rooms[r]; if(!room||!room.length) continue
+                const fill=room.reduce((t,a)=>t+a.duur,0)
+                if(fill+O.duur<=bovengrensCap(dd)+0.01){ plek={dd,r}; break } }
+            })
+            if(plek){ built[di][plek.dd][plek.r].push(O)
+              const oi=overflowInst.indexOf(O); if(oi>=0) overflowInst.splice(oi,1); vul=true; break }
+          }
+        }
+      })
+    }
+
+    // FASE 2b — VOLGORDE binnen elke kamer (ná structuur + selectie), zodat een omgeruilde
+    // afspraak alsnog volgens de regels wordt geordend (bv. de 3 kortste vooraan).
+    ;[0,1,2,3,4].forEach(di=>{
+      if(!built[di]) return
+      DD.forEach(dd=>{ if(built[di][dd]) built[di][dd]=built[di][dd].map(r=>applyPlanRules(r, ddIndex[dd])) })
+    })
+
     // Toon minstens het gekozen aantal kamers (lege kolommen kun je op inslepen)
     // In vast-modus tonen we ALLE gekozen kamers als kolom — ook als de vraag er
     // bij de ingestelde benutting minder nodig heeft. Zo is het aantal kamers een
