@@ -1145,7 +1145,20 @@ export default function RasterTool(){
         const physCapOf=s=> Math.max(0, s.cap - (digAll.length?perSlotDig:0))
         const kiesPhys=a=>{ let k=act.filter(s=>a.ddOpties.includes(s.dd)&&s.used+a.duur<=physCapOf(s))
           if(!k.length) k=act.filter(s=>past(s,a)); if(!k.length) return null; k.sort(tie); return k[0] }
-        ;[...physVast,...physRest].forEach(a=>{ const s=kiesPhys(a); if(s) plaats(s,a); else ov.push(a) })
+        // Spoed-afspraken worden — als "spoed eerst" aanstaat — GELIJKMATIG over de
+        // spreekuren verdeeld (elk spreekuur eerst één spoedgeval voordat een tweede
+        // erbij komt), zodat élk spreekuur met een spoedgeval kan openen i.p.v. dat ze
+        // in één spreekuur samenklonteren. De volgorde binnen het spreekuur (spoed
+        // vooraan) regelt applyPlanRules daarna.
+        const alleFys=[...physVast,...physRest]
+        const spoedFys= rules.spoedFirst ? alleFys.filter(a=>a.spoed) : []
+        const restFys= rules.spoedFirst ? alleFys.filter(a=>!a.spoed) : alleFys
+        const spoedU=new Map(act.map(s=>[s,0]))
+        spoedFys.forEach(a=>{ let k=act.filter(s=>a.ddOpties.includes(s.dd)&&s.used+a.duur<=physCapOf(s))
+          if(!k.length) k=act.filter(s=>past(s,a))
+          if(!k.length){ ov.push(a); return }
+          k.sort((x,y)=>(spoedU.get(x)-spoedU.get(y))||tie(x,y)); plaats(k[0],a); spoedU.set(k[0],spoedU.get(k[0])+1) })
+        restFys.forEach(a=>{ const s=kiesPhys(a); if(s) plaats(s,a); else ov.push(a) })
         const digU=new Map(act.map(s=>[s,0]))
         const kiesDig=a=>{ const k=act.filter(s=>past(s,a)); if(!k.length) return null
           k.sort((x,y)=>(digU.get(x)-digU.get(y))||tie(x,y)); return k[0] }
