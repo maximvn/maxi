@@ -1130,8 +1130,13 @@ export default function RasterTool(){
       const physRest=sorteerPool(physAll.filter(a=>a.ddOpties.length>1))
       const digTotMin=digAll.reduce((s,a)=>s+a.duur,0)
 
-      // Eén plaatsingspoging met de eerste nSlots spreekuren. Wordt herhaald met
-      // meer spreekuren als er onterecht iets overloopt (zie hieronder).
+      // ── GEBALANCEERD VULLEN over het MINIMALE aantal spreekuren ──────────────
+      // Doel: minimaal aantal kamers, en die kamers allemaal ROND de benutting —
+      // dus geen half lege of dunne staart-kamer. We bepalen eerst hoeveel
+      // spreekuren minimaal nodig zijn om de hele vraag te bergen op de bovenband
+      // van de benutting, en verdelen de vraag dan gebalanceerd (steeds in het minst
+      // gevulde passende spreekuur) over precies dat aantal. Zo komen ze allemaal op
+      // ~dezelfde benutting uit en ontstaan er geen gaten of losse restkamers.
       const probeer=(nSlots)=>{
         slots.forEach(s=>{ s.items=[]; s.used=0 })
         const act=slots.slice(0,nSlots)
@@ -1141,25 +1146,21 @@ export default function RasterTool(){
         const kiesPhys=a=>{ let k=act.filter(s=>a.ddOpties.includes(s.dd)&&s.used+a.duur<=physCapOf(s))
           if(!k.length) k=act.filter(s=>past(s,a)); if(!k.length) return null; k.sort(tie); return k[0] }
         ;[...physVast,...physRest].forEach(a=>{ const s=kiesPhys(a); if(s) plaats(s,a); else ov.push(a) })
-        const digUsed=new Map(act.map(s=>[s,0]))
+        const digU=new Map(act.map(s=>[s,0]))
         const kiesDig=a=>{ const k=act.filter(s=>past(s,a)); if(!k.length) return null
-          k.sort((x,y)=>(digUsed.get(x)-digUsed.get(y))||tie(x,y)); return k[0] }
+          k.sort((x,y)=>(digU.get(x)-digU.get(y))||tie(x,y)); return k[0] }
         sorteerPool(digAll).forEach(a=>{ const s=kiesDig(a)
-          if(s){ plaats(s,a); digUsed.set(s,digUsed.get(s)+a.duur) } else ov.push(a) })
-        return {act, ov}
+          if(s){ plaats(s,a); digU.set(s,digU.get(s)+a.duur) } else ov.push(a) })
+        return {act,ov}
       }
-
-      // Start bij het efficiënte aantal (vraag ÷ capaciteit). Past er door bin-
-      // packing-verlies toch iets niet, dan openen we extra spreekuren tot ALLES
-      // past — nooit een kunstmatige "nog te plannen" terwijl er ruimte is. De groei
-      // stopt bij het aantal beschikbare spreekuren: in AUTO ruim voldoende, in VAST
-      // exact het gekozen aantal kamers × dagdelen (het echte overschot gaat dan pas
-      // naar "nog te plannen").
-      let nNodig=Math.max(1,Math.min(slots.length,Math.round(totMin/Math.max(1,gemCap))))
+      // Minimaal aantal spreekuren = vraag ÷ capaciteit op de BOVENband (afgerond
+      // naar boven). Zo raakt niet één spreekuur onder de benutting door te veel
+      // kamers open te zetten. Groeit alleen als bin-packing het écht afdwingt; dan
+      // herbalanceert het en blijven alle spreekuren uniform gevuld.
+      const bandCapAvg=ddVolg.reduce((s,x)=>s+maxCapFor(x),0)/Math.max(1,ddVolg.length)
+      let nNodig=Math.max(1,Math.min(slots.length,Math.ceil(totMin/Math.max(1,bandCapAvg))))
       let uitkomst=probeer(nNodig)
-      while(uitkomst.ov.length && nNodig<slots.length){
-        nNodig++; uitkomst=probeer(nNodig)
-      }
+      while(uitkomst.ov.length && nNodig<slots.length){ nNodig++; uitkomst=probeer(nNodig) }
       const actief=uitkomst.act
       uitkomst.ov.forEach(a=>over.push(a))
 
@@ -1501,7 +1502,12 @@ export default function RasterTool(){
           msg:`${zonder} van de ${spreekuren.length} spreekuren heeft geen digitale consulten (te weinig digitaal volume), dus daar valt niets ${waar}. De ${digTotaal} digitale consulten zijn zo gelijk mogelijk over de overige spreekuren verdeeld.`})
       }
     }
-    // 3) Vast aantal kamers — lege kamers die de vraag niet nodig had
+    // 3) Benutting onder het doel — de weekvraag deelt niet rond op volle spreekuren
+    if(!res.ntp.length && kpi.week.benutting>0 && kpi.week.benutting < m2.benutting-4){
+      notices.push({level:'info',rule:'Benutting',
+        msg:`De weekvraag deelt niet rond op volledig gevulde spreekuren bij ${m2.benutting}% benutting. Om te voorkomen dat één kamer half leeg blijft, zijn álle spreekuren gelijkmatig op ~${kpi.week.benutting}% gevuld (in plaats van enkele op ${m2.benutting}% en één dunne restkamer). Wil je exact ${m2.benutting}%: pas de weekvraag of de spreekuurtijden iets aan, of kies "vast aantal kamers".`})
+    }
+    // 4) Vast aantal kamers — lege kamers die de vraag niet nodig had
     if(capMode==='vast' && !res.ntp.length){
       const gebruikt=new Set()
       ;[0,1,2,3,4].forEach(di=>{ const slots=res.days[di]; if(!slots) return
