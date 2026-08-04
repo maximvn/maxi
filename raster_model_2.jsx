@@ -1137,9 +1137,11 @@ export default function RasterTool(){
       // van de benutting, en verdelen de vraag dan gebalanceerd (steeds in het minst
       // gevulde passende spreekuur) over precies dat aantal. Zo komen ze allemaal op
       // ~dezelfde benutting uit en ontstaan er geen gaten of losse restkamers.
-      const probeer=(nSlots)=>{
+      const probeer=(nRooms)=>{
         slots.forEach(s=>{ s.items=[]; s.used=0 })
-        const act=slots.slice(0,nSlots)
+        // Hele kamers openen: ALLE dagdelen (ochtend + middag) van de eerste nRooms
+        // kamers. Zo ontstaat er nooit een kamer met een leeg dagdeel ("halve dag").
+        const act=slots.filter(s=>s.r<nRooms)
         const ov=[]
         const perSlotDig= act.length? digTotMin/act.length : 0
         const physCapOf=s=> Math.max(0, s.cap - (digAll.length?perSlotDig:0))
@@ -1166,14 +1168,20 @@ export default function RasterTool(){
           if(s){ plaats(s,a); digU.set(s,digU.get(s)+a.duur) } else ov.push(a) })
         return {act,ov}
       }
-      // Minimaal aantal spreekuren = vraag ÷ capaciteit op de BOVENband (afgerond
-      // naar boven). Zo raakt niet één spreekuur onder de benutting door te veel
-      // kamers open te zetten. Groeit alleen als bin-packing het écht afdwingt; dan
-      // herbalanceert het en blijven alle spreekuren uniform gevuld.
-      const bandCapAvg=ddVolg.reduce((s,x)=>s+maxCapFor(x),0)/Math.max(1,ddVolg.length)
-      let nNodig=Math.max(1,Math.min(slots.length,Math.ceil(totMin/Math.max(1,bandCapAvg))))
-      let uitkomst=probeer(nNodig)
-      while(uitkomst.ov.length && nNodig<slots.length){ nNodig++; uitkomst=probeer(nNodig) }
+      // Minimaal aantal VOLLEDIGE kamers = vraag ÷ capaciteit van een hele kamer
+      // (ochtend + middag samen op de bovenband), naar boven afgerond. Zo worden er
+      // altijd volledige kamers (ochtend én middag) geopend, nooit een halve dag, en
+      // wordt de vraag gelijkmatig over die kamers verdeeld. Groeit alleen als bin-
+      // packing het écht afdwingt (en tot maximaal het aantal beschikbare kamers).
+      // Vast aantal kamers: gebruik EXACT het gekozen aantal (de vraag wordt erover
+      //   verdeeld — meer kamers → lager gevuld, minder → voller/overloop → NTP).
+      // Automatisch: het MINIMALE aantal volledige kamers dat de vraag bergt.
+      const capPerRoom=ddVolg.reduce((s,x)=>s+maxCapFor(x),0)
+      let nRooms= capMode==='vast'
+        ? kap
+        : Math.max(1,Math.min(kap,Math.ceil(totMin/Math.max(1,capPerRoom))))
+      let uitkomst=probeer(nRooms)
+      while(uitkomst.ov.length && nRooms<kap){ nRooms++; uitkomst=probeer(nRooms) }
       const actief=uitkomst.act
       uitkomst.ov.forEach(a=>over.push(a))
 
@@ -1185,52 +1193,66 @@ export default function RasterTool(){
       return {perDd:uit, over}
     }
 
-    // ══ RESTVRAAG SAMENVOEGEN OP ÉÉN DAG ══════════════════════════════════════
-    // Kijkt naar de WERKELIJKE vulling (via vulDag), niet naar een theoretische
-    // schatting. Door bin-packing-verlies gebruikt een dag vaak één kamer méér dan
-    // vraag ÷ capaciteit suggereert; die extra kamer bevat dan een paar losse
-    // afspraken. Precies die kamer verhuist hier naar de gekozen dag, zodat hij op
-    // de andere dagen helemaal dicht kan.
-    const concentreerRest=()=>{
-      const keuze=rules.restDag||'uit'
-      if(keuze==='uit') return
-      const dagOpen=di=>(m2.days[WEEKDAY_KEYS[di]]||0)>0 && DD.some(x=>ddOpenOp(x,di))
-      const dagen=[0,1,2,3,4].filter(dagOpen)
-      if(dagen.length<2) return
-      let doel = keuze==='auto'
-        ? dagen.slice().sort((x,y)=>((grouped[y]||[]).reduce((t,q)=>t+q.duur,0))-((grouped[x]||[]).reduce((t,q)=>t+q.duur,0)))[0]
-        : WEEKDAY_KEYS.indexOf(keuze)
-      if(!(doel>=0)||!dagOpen(doel)) doel=dagen[0]
-      const capKamer=di=>DD.filter(x=>ddOpenOp(x,di)).reduce((t,x)=>t+usableFor(x),0)
-      const drempel=0.6
-      for(let ronde=0;ronde<10;ronde++){
-        let bewogen=false
-        dagen.filter(di=>di!==doel).forEach(di=>{
-          const pool=grouped[di]||[]
-          if(!pool.length) return
-          const cap=capKamer(di); if(cap<=0) return
-          const res=vulDag(di,pool)
-          // hoogste kamerindex die deze dag daadwerkelijk gebruikt
-          let maxIx=-1
-          DD.forEach(x=>{ const rs=res.perDd[x]||[]; if(rs.length-1>maxIx) maxIx=rs.length-1 })
-          if(maxIx<1) return                       // dag gebruikt maar één kamer: laat staan
-          // werkelijke belasting van die laatste kamer, over alle dagdelen
-          const items=[]
-          DD.forEach(x=>{ const rs=res.perDd[x]||[]; if(rs[maxIx]) items.push(...rs[maxIx]) })
-          const load=items.reduce((t,q)=>t+q.duur,0)
-          if(!items.length||load>=drempel*cap) return   // die kamer is vol genoeg
-          // alleen verplaatsen wat op de doeldag mág
-          const mee=items.filter(q=>!q.dagOpties||q.dagOpties.includes(doel))
-          if(!mee.length) return
-          const ids=new Set(mee.map(q=>q.id))
-          grouped[di]=pool.filter(q=>!ids.has(q.id))
-          grouped[doel]=[...(grouped[doel]||[]),...mee.map(q=>({...q,day:doel,_verhuisd:di}))]
-          bewogen=true
-        })
-        if(!bewogen) break
+    // ══ WEEK-OPTIMALISATIE — restvraag concentreren tot VOLLEDIGE kamers ═════════
+    // Even verdelen over 5 dagen geeft vaak een gebroken aantal kamers per dag (bv.
+    // 2,46) → elke dag een deels gevulde kamer op lage benutting. Efficiënter is de
+    // weekvraag zo te herverdelen dat élke dag een HEEL aantal volle kamers heeft op
+    // ~de doelbenutting: sommige dagen een kamer erbij, andere een kamer minder. Dat
+    // bespaart kamer-dagen en tilt de benutting terug naar de band. Staat de regel
+    // "restvraag bundelen" uit, dan blijft de vraag gelijk over de dagen verdeeld.
+    const capVolRoom=DD.reduce((t,x)=>t+usableFor(x),0)   // vol kamer op doelbenutting
+    const maxCapForW=dd=>Math.round(durFor2(dd)*Math.min(100,(m2.benutting||85)+2.5)/100)
+    const capRoomBand=DD.reduce((t,x)=>t+maxCapForW(x),0) // vol kamer op de bovenband
+    const vraagVan=di=>(grouped[di]||[]).reduce((t,q)=>t+q.duur,0)
+    // Bereken de meest efficiënte kamer-per-dag-verdeling (voor melding + herverdeling).
+    const dagOpenW=di=>(m2.days[WEEKDAY_KEYS[di]]||0)>0 && DD.some(x=>ddOpenOp(x,di))
+    const weekDagen=[0,1,2,3,4].filter(dagOpenW)
+    const weekOpt=()=>{
+      if(weekDagen.length<2||capVolRoom<=0) return null
+      const W=weekDagen.reduce((t,di)=>t+vraagVan(di),0)
+      // Iets ruimer afronden (naar boven) zodat de dagen niet exact op de bovenband
+      // zitten en er speling is om zonder overloop te herverdelen.
+      const totRooms=Math.max(weekDagen.length, Math.ceil(W/capVolRoom))
+      const basis=Math.floor(totRooms/weekDagen.length)
+      let extra=totRooms-basis*weekDagen.length
+      const druk=[...weekDagen].sort((a,b)=>vraagVan(b)-vraagVan(a))
+      const rooms={}; weekDagen.forEach(di=>rooms[di]=basis)
+      druk.forEach(di=>{ if(extra>0){ rooms[di]++; extra-- } })
+      const perRoom=totRooms>0?W/totRooms:capVolRoom   // conserveert de totale vraag
+      const grossRoom=DD.reduce((t,x)=>t+durFor2(x),0)
+      const planBenut=grossRoom>0?Math.round(W/(totRooms*grossRoom)*100):0
+      return {rooms, totRooms, W, perRoom, planBenut}
+    }
+    const weekPlan=weekOpt()   // bewaard voor de aanbevelingsmelding (zie onder)
+
+    const herverdeelNaarVolleKamers=()=>{
+      if((rules.restDag||'uit')==='uit') return
+      const plan=weekPlan; if(!plan) return
+      // Doel per dag = kamers × gemiddelde vraag-per-kamer (dus de totale weekvraag
+      // blijft exact behouden). We verplaatsen telkens de afspraak van de meest-
+      // overvolle dag naar de meest-lege dag die de balans het meest verbetert.
+      const doelVan=di=>plan.rooms[di]*plan.perRoom
+      for(let ronde=0; ronde<400; ronde++){
+        const staat=weekDagen.map(di=>({di,delta:vraagVan(di)-doelVan(di)}))
+        const bron=staat.reduce((a,b)=>b.delta>a.delta?b:a)
+        const doel=staat.reduce((a,b)=>b.delta<a.delta?b:a)
+        if(bron.di===doel.di || bron.delta<=10 || doel.delta>=-10) break
+        const pool=grouped[bron.di]||[]
+        // De doeldag mag NOOIT over zijn kamergrens (rooms × bovenband) geduwd worden,
+        // anders opent daar juist een extra (halfvolle) kamer — precies wat we vermijden.
+        const ruimte=plan.rooms[doel.di]*capRoomBand - vraagVan(doel.di)
+        const kand=pool.filter(q=>(!q.dagOpties||q.dagOpties.includes(doel.di)) && q.duur<=ruimte)
+        if(!kand.length) break
+        const tekort=-doel.delta
+        kand.sort((a,b)=>Math.abs(a.duur-tekort)-Math.abs(b.duur-tekort))
+        const keuze=kand[0]
+        // alleen verplaatsen als het de totale onbalans verkleint
+        if(Math.abs(bron.delta-keuze.duur)+Math.abs(doel.delta+keuze.duur) >= Math.abs(bron.delta)+Math.abs(doel.delta)) break
+        grouped[bron.di]=pool.filter(q=>q.id!==keuze.id)
+        grouped[doel.di]=[...(grouped[doel.di]||[]),{...keuze,day:doel.di,_verhuisd:bron.di}]
       }
     }
-    concentreerRest()
+    herverdeelNaarVolleKamers()
 
     ;[0,1,2,3,4].forEach(di=>{
       // Dag inactief als het weekdag-% 0 is óf als er geen enkel dagdeel open staat.
@@ -1515,10 +1537,24 @@ export default function RasterTool(){
           msg:`${zonder} van de ${spreekuren.length} spreekuren heeft geen digitale consulten (te weinig digitaal volume), dus daar valt niets ${waar}. De ${digTotaal} digitale consulten zijn zo gelijk mogelijk over de overige spreekuren verdeeld.`})
       }
     }
-    // 3) Benutting onder het doel — de weekvraag deelt niet rond op volle spreekuren
+    // 3) Benutting onder het doel — de weekvraag deelt niet rond op VOLLEDIGE kamers
     if(!res.ntp.length && kpi.week.benutting>0 && kpi.week.benutting < m2.benutting-4){
       notices.push({level:'info',rule:'Benutting',
-        msg:`De weekvraag deelt niet rond op volledig gevulde spreekuren bij ${m2.benutting}% benutting. Om te voorkomen dat één kamer half leeg blijft, zijn álle spreekuren gelijkmatig op ~${kpi.week.benutting}% gevuld (in plaats van enkele op ${m2.benutting}% en één dunne restkamer). Wil je exact ${m2.benutting}%: pas de weekvraag of de spreekuurtijden iets aan, of kies "vast aantal kamers".`})
+        msg:`De weekvraag deelt niet rond op volledige kamers (ochtend + middag) bij ${m2.benutting}% benutting. Om te voorkomen dat een kamer maar een halve dag (alleen ochtend of middag) draait, zijn alle geopende kamers als volledige dag ingepland op ~${kpi.week.benutting}%. Wil je richting ${m2.benutting}% benutting? Zet "Vast aantal kamers" op één minder — de vraag die dan niet past komt op "nog te plannen". Meer kamers verlaagt de benutting juist verder.`})
+    }
+    // 3b) Week-optimalisatie — aanbeveling of bevestiging
+    if(weekPlan && weekDagen.length>=2){
+      let huidigeRoomDays=0
+      ;[0,1,2,3,4].forEach(di=>{ const slots=res.days[di]; if(!slots) return
+        const rSet=new Set(); Object.entries(slots).forEach(([key,arr])=>{ if((arr||[]).some(a=>!a.isFlex)) rSet.add(+key.slice(1)) }); huidigeRoomDays+=rSet.size })
+      const planVerdeling=weekDagen.map(di=>`${(DAYS[di]||'?').slice(0,2)} ${weekPlan.rooms[di]}`).join(' · ')
+      if((rules.restDag||'uit')==='uit' && weekPlan.totRooms < huidigeRoomDays && kpi.week.benutting < m2.benutting-4){
+        notices.push({level:'info',rule:'Efficiënter plannen — aanbeveling',
+          msg:`Nu staan er ${huidigeRoomDays} kamer-dagen open op ~${kpi.week.benutting}% (elke dag een deels gevulde kamer). Efficiënter: concentreer de weekvraag tot ${weekPlan.totRooms} vólle kamer-dagen op ~${weekPlan.planBenut}% — verdeling ${planVerdeling} kamers per dag. Zet de regel "Restvraag bundelen" aan (bij Volgorde & regels) om dit automatisch toe te passen.`})
+      } else if((rules.restDag||'uit')!=='uit'){
+        notices.push({level:'ok',rule:'Restvraag gebundeld',
+          msg:`De weekvraag is geconcentreerd tot volle kamers — verdeling ${planVerdeling} kamers per dag, benutting ~${kpi.week.benutting}%. Zo staan er geen halve dagen open.`})
+      }
     }
     // 4) Vast aantal kamers — lege kamers die de vraag niet nodig had
     if(capMode==='vast' && !res.ntp.length){
@@ -2899,11 +2935,13 @@ export default function RasterTool(){
             })}
           </div>
           <div style={{marginTop:11,background:C.rowAlt,border:`1px solid ${C.border}`,borderRadius:9,padding:'11px 13px'}}>
-            <div style={{fontSize:12,fontWeight:700,color:C.text,marginBottom:3}}>Restvraag samenvoegen op één dag</div>
+            <div style={{fontSize:12,fontWeight:700,color:C.text,marginBottom:3}}>Restvraag bundelen tot volle kamers</div>
             <div style={{fontSize:11,color:C.muted,lineHeight:1.5,marginBottom:8}}>
-              Blijft er elke dag maar een handjevol afspraken over voor de laatste kamer, dan staat die kamer vijf dagen
-              half leeg. Met deze optie worden die restjes gebundeld op één dag: daar raakt de kamer wél tot de benutting
-              gevuld en op de overige dagen is hij niet nodig. Afspraken verhuizen alleen naar een dag die hun code toestaat.
+              Deelt de weekvraag niet rond op volle kamers, dan draait elke dag een deels gevulde extra kamer op lage
+              benutting. Met deze optie herverdeelt de tool de weekvraag zo dat élke dag een héél aantal volle kamers
+              draait (sommige dagen een kamer erbij, andere minder) — dat tilt de benutting terug richting het doel en
+              voorkomt halve dagen. "Automatisch" concentreert op de drukste dagen; kies een weekdag om die dag als
+              bundeldag te forceren. Afspraken verhuizen alleen naar een dag die hun code toestaat.
             </div>
             <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
               {[{v:'uit',l:'Uit'},{v:'auto',l:'Automatisch'},...WEEKDAY_KEYS.map((k,i)=>({v:k,l:DAY_ABBR[i]}))].map(o=>{
