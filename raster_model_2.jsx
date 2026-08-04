@@ -862,20 +862,45 @@ export default function RasterTool(){
     //   As C — VOLGORDE   : kort/zeker bepalen wélk wave-blok of welke afspraak eerst
     // Daardoor combineren ze: "spoed eerst + wave" = spoedblok vooraan, en dáárna
     // de waves — en "kort eerst + wave" = het blok met de kortste afspraken eerst.
+    // ══ VOLGORDE-ENGINE — elke regel als EXACTE, deterministische transformatie ══
+    // Vier assen die náást elkaar werken (stapelen), niet door elkaar:
+    //   AS 1 SPOED    — spoedblok exact vooraan (dagdeel-gated).
+    //   AS 2 GROEP    — wave (codeblokken) of gespreid (gewogen mix) ordent de romp.
+    //   AS 3 KOP/STAART — "kort eerst" zet de 3 KORTSTE exact vooraan; "zeker eerst"
+    //                     sorteert stabiel op onzekerheid (onzeker vlak vóór de buffer).
+    //                     Bij conflict beslist de PRIORITEITSVOLGORDE (rules.order).
+    //   AS 4 DIGITAAL — plaatsing van de digitale consulten op de tijdas.
     const applyPlanRules=(room,dd)=>{
       if(!room||!room.length) return room||[]
+      // Actieve KOP/STAART-regels in prioriteitsvolgorde (spoed staat los, digitaal ook).
       const seq=(rules.order||['spoedFirst','shortFirst','certainFirst'])
-        .filter(k=>rules[k]&&['shortFirst','certainFirst'].includes(k))
+        .filter(k=>rules[k]&&(k==='shortFirst'||k==='certainFirst'))
       const gemDuur=l=>l.reduce((s,a)=>s+a.duur,0)/Math.max(1,l.length)
       const gemOnz=l=>l.reduce((s,a)=>s+uScore(a),0)/Math.max(1,l.length)
 
-      // ── As B+C: orden één blok afspraken ────────────────────────────────────
+      // AS 3 — exacte transformaties.
+      // "kort eerst": de 3 KORTSTE letterlijk vooraan (kortste→langste), rest ongemoeid.
+      const kortVoor=lst=>{
+        if(lst.length<=1) return lst
+        const gesorteerd=lst.map((a,i)=>({a,i})).sort((x,y)=>(x.a.duur-y.a.duur)||(x.i-y.i))
+        const kop=gesorteerd.slice(0,Math.min(3,lst.length)).map(x=>x.a)
+        const kopSet=new Set(kop)
+        return [...kop, ...lst.filter(a=>!kopSet.has(a))]
+      }
+      // "zeker eerst": stabiel op onzekerheid (zeker=0 → gemiddeld=1 → onzeker=2).
+      const zekerVoor=lst=>lst.map((a,i)=>({a,i})).sort((x,y)=>(uScore(x.a)-uScore(y.a))||(x.i-y.i)).map(x=>x.a)
+      // Pas de actieve KOP/STAART-regels toe in OMGEKEERDE prioriteit: de regel met de
+      // hoogste prioriteit wordt als LAATSTE toegepast en heeft dus het laatste woord.
+      const kopStaart=lst=>{ let r=lst
+        ;[...seq].reverse().forEach(k=>{ if(k==='shortFirst') r=kortVoor(r); else if(k==='certainFirst') r=zekerVoor(r) })
+        return r }
+
+      // AS 2 — GROEPERING; daarna AS 3 er overheen.
       const ordenBlok=(lst)=>{
         if(!lst.length) return lst
         if(rules.groupMode==='wave'){
-          // Wave: aaneengesloten blokken per code. De BLOKVOLGORDE volgt de
-          // volgorderegels — zo werkt "kort eerst" samen met wave in plaats van
-          // ertegenin: het blok met de kortste afspraken start het spreekuur.
+          // Wave: aaneengesloten codeblokken. De BLOKvolgorde volgt de kop/staart-regels
+          // (het kortste codeblok opent bij "kort eerst") en binnen elk blok ook.
           const by={}, ord=[]
           lst.forEach(a=>{ const k=a.code||a.category; if(!by[k]){by[k]=[];ord.push(k)} by[k].push(a) })
           let blokken=ord.map(k=>by[k])
@@ -883,74 +908,46 @@ export default function RasterTool(){
             if(k==='shortFirst') blokken=[...blokken].sort((a,b)=>gemDuur(a)-gemDuur(b))
             else if(k==='certainFirst') blokken=[...blokken].sort((a,b)=>gemOnz(a)-gemOnz(b))
           })
-          // binnen elk codeblok ook nog op duur/zekerheid ordenen
-          blokken=blokken.map(bl=>{
-            let b=[...bl]
-            ;[...seq].reverse().forEach(k=>{
-              if(k==='shortFirst') b=b.map((a,i)=>({a,i})).sort((x,y)=>(x.a.duur-y.a.duur)||(x.i-y.i)).map(x=>x.a)
-              else if(k==='certainFirst') b=b.map((a,i)=>({a,i})).sort((x,y)=>(uScore(x.a)-uScore(y.a))||(x.i-y.i)).map(x=>x.a)
-            })
-            return b
-          })
-          return blokken.flat()
+          return blokken.map(bl=>kopStaart(bl)).flat()
         }
-        // Gespreid: gewogen mix op AANDEEL (niet star om-en-om), zodat de
-        // verhouding nieuw/controle en de code-variatie het hele spreekuur klopt.
-        const n=lst.length
-        const totCat={}, totCode={}
-        lst.forEach(a=>{ totCat[a.category]=(totCat[a.category]||0)+1
-                         totCode[a.code]=(totCode[a.code]||0)+1 })
-        // De volgorderegels krijgen een GEWICHT naar prioriteit dat zwaarder weegt
-        // dan de mixbewaking. Zo bepaalt "kort eerst" op prioriteit 1 écht de kop
-        // van het spreekuur, terwijl de mix nog steeds spreidt bij gelijke stand.
-        // Zonder dit overstemde de mix de regel en leek "kort eerst" niets te doen.
-        const W_REGEL=[3.2,1.5,0.7]
-        const regelW=seq.map((k,i)=>({k,w:W_REGEL[i]??0.3}))
-        const durs=lst.map(a=>a.duur||15)
-        const dMin=Math.min(...durs), dSpan=Math.max(1,Math.max(...durs)-dMin)
-        const sig={
-          shortFirst:a=>1-((a.duur||15)-dMin)/dSpan,   // 1 = kortste
-          certainFirst:a=>1-uScore(a)/2,               // 1 = meest zeker
-        }
-        const rest=[...lst]
-        const gCat={}, gCode={}, uit=[]
-        let vorige=null
+        // Gespreid: gewogen mix op AANDEEL (categorie nieuw/controle + code-variatie).
+        // Dit bepaalt alléén de neutrale spreiding; de kop/staart-regels komen er ná.
+        const n=lst.length, totCat={}, totCode={}
+        lst.forEach(a=>{ totCat[a.category]=(totCat[a.category]||0)+1; totCode[a.code]=(totCode[a.code]||0)+1 })
+        const rest=[...lst], gCat={}, gCode={}, uit=[]; let vorige=null
         while(rest.length){
           let best=0, bestS=-Infinity
-          for(let j=0;j<rest.length;j++){
-            const a=rest[j]
-            let s=0
-            // (1) volgorderegels, gewogen naar prioriteit — dominant
-            regelW.forEach(({k,w})=>{ if(sig[k]) s+=w*sig[k](a) })
-            // (2) mixbewaking: straf een categorie/code die vóórloopt op zijn aandeel
-            s+=-1.8*((((gCat[a.category]||0)+1)/(uit.length+1))-(totCat[a.category]||0)/n)
-               -0.9*((((gCode[a.code]||0)+1)/(uit.length+1))-(totCode[a.code]||0)/n)
+          for(let j=0;j<rest.length;j++){ const a=rest[j]
+            let s=-1.8*((((gCat[a.category]||0)+1)/(uit.length+1))-(totCat[a.category]||0)/n)
+                  -0.9*((((gCode[a.code]||0)+1)/(uit.length+1))-(totCode[a.code]||0)/n)
             if(vorige&&vorige.code===a.code) s-=0.30
             s+=0.10*(1-j/Math.max(1,rest.length-1))   // stabiele tiebreak
-            if(s>bestS){ bestS=s; best=j }
-          }
-          const a=rest.splice(best,1)[0]
-          uit.push(a); gCat[a.category]=(gCat[a.category]||0)+1
-          gCode[a.code]=(gCode[a.code]||0)+1; vorige=a
+            if(s>bestS){ bestS=s; best=j } }
+          const a=rest.splice(best,1)[0]; uit.push(a)
+          gCat[a.category]=(gCat[a.category]||0)+1; gCode[a.code]=(gCode[a.code]||0)+1; vorige=a
         }
-        return uit
+        return kopStaart(uit)
       }
 
-      // ── As A: spoed als eigen blok vooraan ─────────────────────────────────
+      // AS 1 — SPOED vooraan (dagdeel-gated). Digitaal staat los (AS 4).
       const spoedAan=rules.spoedFirst&&(rules.spoedDagdeel==='both'
         ||(rules.spoedDagdeel==='och'&&dd===0)||(rules.spoedDagdeel==='mid'&&dd===1))
-      let spoed=[], rest=[...room]
-      if(spoedAan){ spoed=rest.filter(a=>a.spoed); rest=rest.filter(a=>!a.spoed) }
-      let pool=[...ordenBlok(spoed), ...ordenBlok(rest)]
+      const dig=room.filter(a=>a.digitaal)
+      let fys=room.filter(a=>!a.digitaal)
+      let spoed=[]
+      if(spoedAan){ spoed=fys.filter(a=>a.spoed); fys=fys.filter(a=>!a.spoed) }
+      fys=ordenBlok(fys)
+      // Spoedblok intern: op duur bij "kort eerst", anders de groeperingsvolgorde.
+      spoed = rules.shortFirst ? [...spoed].sort((a,b)=>(a.duur-b.duur)) : ordenBlok(spoed)
+      let pool=[...spoed, ...fys]
 
-      // ── Digitale consulten (eigen as: plaatsing) ───────────────────────────
-      const dig=pool.filter(a=>a.digitaal), phys=pool.filter(a=>!a.digitaal)
+      // AS 4 — DIGITALE CONSULTEN op de tijdas.
       if(dig.length){
         if(rules.digitalMode==='spread'){
-          const out=[...phys]
+          const out=[...pool]
           dig.forEach((d,i)=>out.splice(Math.min(Math.round((i+1)*(out.length+1)/(dig.length+1)),out.length),0,d))
           pool=out
-        } else pool=[...phys,...dig]   // cluster / einde: als blok achteraan
+        } else pool=[...pool,...dig]   // cluster / einde: als blok achteraan
       }
       return pool
     }
@@ -2829,37 +2826,30 @@ export default function RasterTool(){
           // Spiegelt exact de pipeline van applyPlanRules in de engine, zodat dit
           // voorbeeld laat zien wat de gekozen regels écht doen.
           const uScore=a=>a.onzeker==='zeker'?0:a.onzeker==='onzeker'?2:1
-          let rest=sample.map((a,i)=>({...a,id:'s'+i,category:a.cat}))
-          // 1 — groepering
-          if(rules.groupMode==='wave'){ const by={},ord=[]; rest.forEach(a=>{if(!by[a.code]){by[a.code]=[];ord.push(a.code)}by[a.code].push(a)}); rest=ord.flatMap(c=>by[c]) }
-          else { const np=rest.filter(a=>a.cat==='nieuw'),cp=rest.filter(a=>a.cat==='controle'),mx=[]
+          const all=sample.map((a,i)=>({...a,id:'s'+i,category:a.cat}))
+          // Spiegelt de vier assen van applyPlanRules (spoed · groep · kop/staart · digitaal).
+          const seqR=(rules.order||['spoedFirst','shortFirst','certainFirst']).filter(k=>rules[k]&&(k==='shortFirst'||k==='certainFirst'))
+          const kortVoor=lst=>{ if(lst.length<=1)return lst; const g=lst.map((a,i)=>({a,i})).sort((x,y)=>(x.a.duur-y.a.duur)||(x.i-y.i))
+            const kop=g.slice(0,Math.min(3,lst.length)).map(x=>x.a),set=new Set(kop); return [...kop,...lst.filter(a=>!set.has(a))] }
+          const zekerVoor=lst=>lst.map((a,i)=>({a,i})).sort((x,y)=>(uScore(x.a)-uScore(y.a))||(x.i-y.i)).map(x=>x.a)
+          const kopStaart=lst=>{ let r=lst; [...seqR].reverse().forEach(k=>{ if(k==='shortFirst')r=kortVoor(r); else if(k==='certainFirst')r=zekerVoor(r) }); return r }
+          // AS 1 — spoed apart (voorbeeld = ochtend); digitaal apart (AS 4).
+          const dig=all.filter(a=>a.digitaal); let fys=all.filter(a=>!a.digitaal)
+          const spoedAan=rules.spoedFirst&&(rules.spoedDagdeel==='both'||rules.spoedDagdeel==='och')
+          let sp=[]; if(spoedAan){ sp=fys.filter(a=>a.spoed); fys=fys.filter(a=>!a.spoed) }
+          // AS 2 — groepering van de romp
+          if(rules.groupMode==='wave'){ const by={},ord=[]; fys.forEach(a=>{if(!by[a.code]){by[a.code]=[];ord.push(a.code)}by[a.code].push(a)}); fys=kopStaart(ord.map(c=>by[c]).flat()) }
+          else { const np=fys.filter(a=>a.cat==='nieuw'),cp=fys.filter(a=>a.cat==='controle'),mx=[]
             for(let i=0;i<Math.max(np.length,cp.length);i++){ if(i<np.length)mx.push(np[i]); if(i<cp.length)mx.push(cp[i]) }
-            rest=mx }
-          // 2 — digitaal
-          {
-            const dig=rest.filter(a=>a.digitaal), phys=rest.filter(a=>!a.digitaal)
-            if(dig.length){
-              if(rules.digitalMode==='spread'){ const o=[...phys]
-                dig.forEach((d,i)=>o.splice(Math.min(Math.round((i+1)*(o.length+1)/(dig.length+1)),o.length),0,d)); rest=o }
-              else rest=[...phys,...dig]
-            }
+            fys=kopStaart(mx) }
+          if(spoedAan&&rules.shortFirst) sp=[...sp].sort((a,b)=>a.duur-b.duur)
+          let rest=[...sp,...fys]
+          // AS 4 — digitaal op de tijdas
+          if(dig.length){
+            if(rules.digitalMode==='spread'){ const o=[...rest]
+              dig.forEach((d,i)=>o.splice(Math.min(Math.round((i+1)*(o.length+1)/(dig.length+1)),o.length),0,d)); rest=o }
+            else rest=[...rest,...dig]
           }
-          // 3 — volgorderegels op prioriteit (order[0] sterkst → als laatste toegepast)
-          const activeOrder=(rules.order||['spoedFirst','shortFirst','certainFirst']).filter(k=>rules[k])
-          ;[...activeOrder].reverse().forEach(k=>{
-            if(k==='spoedFirst'){
-              const aan=rules.spoedDagdeel==='both'||rules.spoedDagdeel==='och'  // voorbeeld = ochtend
-              if(!aan) return
-              const sp=rest.filter(a=>a.spoed), ov=rest.filter(a=>!a.spoed)
-              if(rules.shortFirst) sp.sort((a,b)=>a.duur-b.duur)
-              rest=[...sp,...ov]
-            } else if(k==='shortFirst'){
-              const b3=[...rest].sort((a,b)=>a.duur-b.duur).slice(0,3)
-              const ids=new Set(b3.map(a=>a.id)); rest=[...b3,...rest.filter(a=>!ids.has(a.id))]
-            } else if(k==='certainFirst'){
-              rest=rest.map((a,i)=>({...a,_i:i})).sort((a,b)=>(uScore(a)-uScore(b))||(a._i-b._i))
-            }
-          })
           // bouw blokreeks incl. buffers + Bailey-Welsh. Verspreide flex: blokjes ná
           // een afspraak, nooit ná de laatste (dat is het restblok aan het einde).
           const seq=[]
