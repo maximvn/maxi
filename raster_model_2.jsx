@@ -1562,7 +1562,15 @@ export default function RasterTool(){
         const latestStart=sessEnd-totalDigDur
         const windowStart=Math.max(sessEnd-endWindow, afterPhys)
         const digStart=Math.max(afterPhys, Math.min(latestStart, windowStart))
-        if(digStart-afterPhys>=FLEX_MIN) out.push(mkFlex(afterPhys, digStart-afterPhys,'Buffer (vóór digitaal venster)'))
+        const gap=digStart-afterPhys
+        if(gap>=FLEX_MIN){
+          if(rules.flexMode==='spread'){
+            // Verspreide flex: óók dit buffer bestaat uit blokken van EXACT blokMin;
+            // een restant kleiner dan één heel blok blijft ongemarkeerde ruimte.
+            const nB=Math.floor(gap/blokMin)
+            for(let i=0;i<nB;i++) out.push(mkFlex(afterPhys+i*blokMin, blokMin,'Buffer (vóór digitaal venster)'))
+          } else out.push(mkFlex(afterPhys, gap,'Buffer (vóór digitaal venster)'))
+        }
         let tt=Math.max(afterPhys,digStart)
         digAppts.forEach((a,i)=>{ if(tt<sessEnd) tt=pushAppt(a, physAppts.length+i, tt) })
         return tt
@@ -1747,12 +1755,19 @@ export default function RasterTool(){
       const perDag={}; res.ntp.forEach(a=>{ perDag[a.day]=(perDag[a.day]||0)+1 })
       const dagTekst=Object.entries(perDag).map(([d,n])=>`${DAYS[d]||'?'}: ${n}`).join(', ')
       const restKamer=res.ntp.filter(a=>a._restKamer).length
-      const reden = capMode==='vast'
-        ? `De vraag past niet binnen ${maxParallel} kamer${maxParallel===1?'':'s'} op maximale benutting. Verhoog het aantal kamers, verruim de spreekuurtijden of verlaag de vraag.`
+      const probleem=`${res.ntp.length} afspra${res.ntp.length===1?'ak':'ken'} niet ingepland (${dagTekst}). `+(capMode==='vast'
+        ? `De vraag past niet binnen ${maxParallel} kamer${maxParallel===1?'':'s'} op maximale benutting.`
         : restKamer===res.ntp.length
-          ? `Dit is de rest die geen vol (half dag-)spreekuur meer vormt: het betreffende dagdeel is dichtgezet i.p.v. half-leeg gelaten.${(rules.restDag||'uit')==='uit'?' Zet "restvraag bundelen tot volle kamers" aan om deze rest op één dag samen te voegen — dan blijft er veel minder over.':' Wil je ze tóch tonen (half gevuld dagdeel), zet dan "Rest-kamer: open laten" aan.'}`
-          : `Er bleef een restant over dat geen vol spreekuur vormt. Zet "restvraag bundelen tot volle kamers" aan om het te bundelen.`
-      notices.push({level:'warn',rule:'Nog te plannen',msg:`${res.ntp.length} afspra${res.ntp.length===1?'ak':'ken'} niet ingepland (${dagTekst}). ${reden}`})
+          ? `Dit is de rest die geen vol (half dag-)spreekuur meer vormt: het betreffende dagdeel is dichtgezet i.p.v. half-leeg gelaten.`
+          : `Er bleef een restant over dat geen vol spreekuur vormt.`)
+      const oplossing = capMode==='vast'
+        ? `Verhoog het aantal kamers, verruim de spreekuurtijden of verlaag de vraag. Of plan deze afspraken handmatig: sleep ze vanuit "nog te plannen" het raster in.`
+        : restKamer===res.ntp.length
+          ? ((rules.restDag||'uit')==='uit'
+            ? `Zet "Restvraag bundelen tot volle kamers" aan (bij Volgorde & regels) om deze rest op één dag samen te voegen — dan blijft er veel minder over. Of sleep ze handmatig het raster in.`
+            : `Sleep deze afspraken handmatig het raster in, of zet "Rest-kamer: open laten" aan om het half gevulde dagdeel tóch te tonen.`)
+          : `Zet "Restvraag bundelen tot volle kamers" aan om het restant op één dag te bundelen.`
+      notices.push({level:'warn',rule:'Nog te plannen',msg:probleem,fix:oplossing})
     }
     // 2) Digitale consulten — alleen melden als een spreekuur er géén heeft
     if(digTotaal>0 && (rules.digitalMode==='end'||rules.digitalMode==='cluster')){
@@ -1760,14 +1775,16 @@ export default function RasterTool(){
       if(zonder>0){
         const waar=rules.digitalMode==='end'?'achteraan te plannen':'als blok te clusteren'
         notices.push({level:'info',rule:'Digitale consulten',
-          msg:`${zonder} van de ${spreekuren.length} spreekuren heeft geen digitale consulten (te weinig digitaal volume), dus daar valt niets ${waar}. De ${digTotaal} digitale consulten zijn zo gelijk mogelijk over de overige spreekuren verdeeld.`})
+          msg:`${zonder} van de ${spreekuren.length} spreekuren heeft geen digitale consulten (te weinig digitaal volume), dus daar valt niets ${waar}.`,
+          fix:`De ${digTotaal} digitale consulten zijn zo gelijk mogelijk over de overige spreekuren verdeeld. Meer digitaal volume (hoger percentage TC) vult meer spreekuren.`})
       }
     }
     // 3) Benutting onder het doel — de weekvraag deelt niet rond op VOLLEDIGE kamers
     // (alleen relevant bij 'gelijk verdelen', dat hele kamers ochtend+middag opent).
     if(rules.kamerVerdeling==='gelijk' && !res.ntp.length && kpi.week.benutting>0 && kpi.week.benutting < m2.benutting-4){
       notices.push({level:'info',rule:'Benutting',
-        msg:`De weekvraag deelt niet rond op volledige kamers (ochtend + middag) bij ${m2.benutting}% benutting. Om te voorkomen dat een kamer maar een halve dag (alleen ochtend of middag) draait, zijn alle geopende kamers als volledige dag ingepland op ~${kpi.week.benutting}%. Wil je richting ${m2.benutting}% benutting? Zet "Vast aantal kamers" op één minder — de vraag die dan niet past komt op "nog te plannen". Meer kamers verlaagt de benutting juist verder.`})
+        msg:`De weekvraag deelt niet rond op volledige kamers (ochtend + middag) bij ${m2.benutting}% benutting. Om halve dagen te voorkomen zijn alle geopende kamers als volledige dag ingepland op ~${kpi.week.benutting}%.`,
+        fix:`Wil je richting ${m2.benutting}%? Zet "Vast aantal kamers" op één minder — wat dan niet past komt op "nog te plannen". Meer kamers verlaagt de benutting juist verder.`})
     }
     // 3c) Halve dagen — kamers die maar één dagdeel (alleen ochtend óf alleen middag)
     // draaien terwijl beide dagdelen open zijn. Bij 'dagdeel voor dagdeel vol' vult de
@@ -1789,7 +1806,8 @@ export default function RasterTool(){
       })
       if(halveDagen>0 && (rules.restDag||'uit')==='uit'){
         notices.push({level:'info',rule:'Halve dagen — advies',
-          msg:`Er ${halveDagen===1?'staat':'staan'} ${halveDagen} halve kamer-dag${halveDagen===1?'':'en'} open (alleen ochtend óf alleen middag gevuld). Combineer die halve dagdelen tot volle dagen — ochtend én middag in dezelfde kamer — i.p.v. losse halve dagdelen: zet de regel "Restvraag bundelen tot volle kamers" aan (bij Volgorde & regels) om dit automatisch te doen.`})
+          msg:`Er ${halveDagen===1?'staat':'staan'} ${halveDagen} halve kamer-dag${halveDagen===1?'':'en'} open (alleen ochtend óf alleen middag gevuld).`,
+          fix:`Combineer die halve dagdelen tot volle dagen — ochtend én middag in dezelfde kamer: zet "Restvraag bundelen tot volle kamers" aan (bij Volgorde & regels) om dit automatisch te doen.`})
       }
     }
     // 3b) Week-optimalisatie — aanbeveling of bevestiging
@@ -1803,7 +1821,8 @@ export default function RasterTool(){
         return `${(DAYS[di]||'?').slice(0,2)} ${rSet.size}` }).join(' · ')
       if((rules.restDag||'uit')==='uit' && weekPlan.totRooms < huidigeRoomDays && kpi.week.benutting < m2.benutting-4){
         notices.push({level:'info',rule:'Efficiënter plannen — aanbeveling',
-          msg:`Nu staan er ${huidigeRoomDays} kamer-dagen open op ~${kpi.week.benutting}% (op meerdere dagen een deels gevulde kamer). Efficiënter: bundel de restvraag tot ~${weekPlan.totRooms} vólle kamer-dagen. Zet de regel "Restvraag bundelen tot volle kamers" aan (bij Volgorde & regels) — de overige dagen worden dan volledig gevuld en de rest concentreert op de gekozen rest-dag.`})
+          msg:`Nu staan er ${huidigeRoomDays} kamer-dagen open op ~${kpi.week.benutting}% (op meerdere dagen een deels gevulde kamer).`,
+          fix:`Bundel de restvraag tot ~${weekPlan.totRooms} vólle kamer-dagen: zet "Restvraag bundelen tot volle kamers" aan (bij Volgorde & regels) — de overige dagen worden volledig gevuld en de rest concentreert op de gekozen rest-dag.`})
       } else if((rules.restDag||'uit')!=='uit'){
         notices.push({level:'ok',rule:'Restvraag gebundeld',
           msg:`De restvraag is geconcentreerd: de overige dagen draaien volle kamers en de rest-kamer(s) staan op de gekozen dag — verdeling ${echteVerdeling} kamers per dag, benutting ~${kpi.week.benutting}%.`})
@@ -1816,7 +1835,8 @@ export default function RasterTool(){
         Object.entries(slots).forEach(([key,arr])=>{ if((arr||[]).some(a=>!a.isFlex)) gebruikt.add(+key.slice(1)) }) })
       const leeg=maxParallel-gebruikt.size
       if(leeg>0) notices.push({level:'info',rule:'Aantal kamers',
-        msg:`De vraag past bij ${m2.benutting}% benutting al in ${gebruikt.size} kamer${gebruikt.size===1?'':'s'}; ${leeg} van de ${maxParallel} gekozen kamers blij${leeg===1?'ft':'ven'} leeg. Verlaag het aantal kamers of de benutting om ze te benutten.`})
+        msg:`De vraag past bij ${m2.benutting}% benutting al in ${gebruikt.size} kamer${gebruikt.size===1?'':'s'}; ${leeg} van de ${maxParallel} gekozen kamers blij${leeg===1?'ft':'ven'} leeg.`,
+        fix:`Verlaag het aantal kamers naar ${gebruikt.size}, of verlaag de benutting zodat de vraag zich over meer kamers spreidt.`})
     }
     res.notices=notices
     return res
@@ -1825,6 +1845,9 @@ export default function RasterTool(){
   const doGenerate=useCallback(()=>{
     setRaster(computeRaster(cfg,newRows,ctrlRows,m2,rules,capacity))
   },[cfg,newRows,ctrlRows,m2,rules,capacity,computeRaster])
+  // Test-API voor de invariant-suite (test_invariants.mjs): stelt de pure engine
+  // bloot zodat elke regel-combinatie headless gevalideerd kan worden.
+  useEffect(()=>{ if(typeof window!=='undefined'){ window.__cr=(a,b,c,d,e,f)=>computeRaster(a,b,c,d,e,f) } },[computeRaster])
 
   // ENGINE 2.0 — live sync (gedebounced): zodra er een raster is, wordt élke
   // wijziging in gegevens/tijden/regels/capaciteit doorgerekend. De debounce
@@ -3948,9 +3971,17 @@ export default function RasterTool(){
                   background:bg,border:`1px solid ${col}44`,borderRadius:10}}>
                   <span style={{width:22,height:22,borderRadius:'50%',background:col,color:'#fff',fontSize:13,fontWeight:700,
                     display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,marginTop:1}}>{ico}</span>
-                  <div>
+                  <div style={{flex:1}}>
                     <div style={{fontSize:11.5,fontWeight:700,color:col,marginBottom:1}}>{n.rule}</div>
                     <div style={{fontSize:11.5,color:C.text,lineHeight:1.45}}>{n.msg}</div>
+                    {n.fix&&(
+                      <div style={{display:'flex',alignItems:'flex-start',gap:7,marginTop:7,padding:'7px 10px',
+                        background:'rgba(255,255,255,0.65)',border:`1px dashed ${col}55`,borderRadius:8}}>
+                        <span style={{fontSize:10,fontWeight:800,color:col,letterSpacing:'0.06em',textTransform:'uppercase',
+                          flexShrink:0,marginTop:1}}>Oplossing →</span>
+                        <span style={{fontSize:11.5,color:C.text,lineHeight:1.45}}>{n.fix}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               )
