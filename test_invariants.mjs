@@ -111,13 +111,37 @@ const results = await page.evaluate(()=>{
     flexSpread:(r,rules)=>{ if(rules.flexMode!=='spread') return []
       const v=[]; const blok=rules.flexBlokMin||10, noFirst=rules.flexNoFirstMin??60
       const sessStart={o:8.5*60,m:13*60,a:17*60}
+      const sEnd={o:12*60,m:16.5*60,a:20*60}
       perRoomPhys(r).forEach(({di,key,dd,arr})=>{
         const flex=(arr||[]).filter(a=>a.isFlex)
         const alles=(arr||[]).filter(a=>!a.overbook).sort((x,y)=>x.start-y.start)
-        flex.forEach(f=>{ if(Math.abs(f.duur-blok)>0.01 && f.start-sessStart[dd]>=noFirst) v.push(`${key}@d${di} flexblok ${f.duur}m≠${blok}m`) })
+        // blokken exact blokMin, tenzij gedocumenteerd verruimd (_rek) met < blokMin extra
+        flex.forEach(f=>{ const afw=f.duur-blok
+          if(Math.abs(afw)>0.01 && f.start-sessStart[dd]>=noFirst){
+            if(!(f._rek && afw>0 && afw<blok)) v.push(`${key}@d${di} flexblok ${f.duur}m≠${blok}m (geen _rek)`) } })
         flex.forEach(f=>{ if(f.start-sessStart[dd]<noFirst-0.01) v.push(`${key}@d${di} flex binnen eerste ${noFirst}m`) })
         // agenda mag NIET met flex eindigen
         if(alles.length&&alles[alles.length-1].isFlex) v.push(`${key}@d${di} eindigt met flexblok`)
+        // met flex in het spreekuur mag er GEEN rest-gat aan het einde zijn: laatste
+        // afspraak eindigt exact op de eindtijd van het dagdeel
+        if(flex.length&&alles.length){ const laatste=alles[alles.length-1]
+          if(Math.abs(laatste.end-sEnd[dd])>0.01) v.push(`${key}@d${di} rest-gat: eindigt ${Math.round(sEnd[dd]-laatste.end)}m vóór eindtijd`) }
+      })
+      return v },
+    bandOnder:(r,rules)=>{ // kamer onder de band terwijl een passende afspraak op de restlijst staat
+      if(!r.ntp.length) return []
+      const v=[]; const gross={o:210,m:210,a:180}
+      const onder=0.825, boven=0.876
+      ;[0,1,2,3,4].forEach(di=>{
+        const ntpD=r.ntp.filter(a=>a.day===di); if(!ntpD.length) return
+        perRoomPhys(r).filter(x=>x.di===di).forEach(({key,dd,phys})=>{
+          const fill=phys.reduce((t,a)=>t+a.duur,0), cap=gross[dd]
+          if(fill/cap>=onder) return
+          const ruimte=cap*boven-fill
+          const ddU=dd==='o'?'O':dd==='m'?'M':'A'
+          const past=ntpD.some(a=>a.duur<=ruimte+0.01 && (!a.ddOpties||a.ddOpties.includes(ddU)))
+          if(past) v.push(`${key}@d${di} ${Math.round(fill/cap*100)}% onder band terwijl restlijst past`)
+        })
       })
       return v },
     bw:(r,rules)=>{ const v=[]
@@ -178,6 +202,7 @@ const results = await page.evaluate(()=>{
     v.push(...CHECKS.wave(r,rules))
     v.push(...CHECKS.digCluster(r,rules))
     v.push(...CHECKS.flexSpread(r,rules))
+    v.push(...CHECKS.bandOnder(r,rules))
     v.push(...CHECKS.bw(r,rules))
     if(v.length) failures.push({c,v:v.slice(0,4)})
     else pass++

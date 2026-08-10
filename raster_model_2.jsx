@@ -1432,21 +1432,35 @@ export default function RasterTool(){
             }
           }
         }
-        // NAVULLEN — een ruil (lange afspraak eruit, korte erin) laat ruimte achter. Vul
-        // die met de meest-gewenste rest-afspraken tot de bovenband, zodat de kamers vol
-        // blijven (geen gaten) i.p.v. leeg te lopen door de selectie.
+      })
+    }
+
+    // NAVULLEN — draait ALTIJD (niet alleen bij kort/spoed-regels): zolang er afspraken
+    // op "nog te plannen" staan, worden bestaande spreekuren tot de bovenband bijgevuld.
+    // Een kamer op 76% terwijl er nog passende afspraken op de restlijst staan mag niet
+    // bestaan — elk geopend spreekuur zit op de band (±2,5 pp) of de restlijst is leeg.
+    // (Ook aangeroepen ná Bailey-Welsh: die haalt patiënten uit de laatste kamer voor de
+    // dubbelboekingen, en de vrijgekomen ruimte wordt dan weer vanuit de restlijst gevuld.)
+    const navullenAlle=()=>{
+      ;[0,1,2,3,4].forEach(di=>{
+        if(!built[di]) return
+        if(!overflowInst.some(a=>a.day===di)) return
+        const odd=DD.filter(x=>ddOpenOp(x,di))
         let g2=0, vul=true
-        while(vul && g2++<1500){
+        while(vul && g2++<2000){
           vul=false
           const rest2=overflowInst.filter(a=>a.day===di).sort((a,b)=>selPrio(a)-selPrio(b))
           for(const O of rest2){
-            let plek=null
+            // Krapste passende plek: de kamer die er het volst van wordt (minste restruimte),
+            // zodat de band overal zo strak mogelijk wordt gehaald.
+            let plek=null, plekOver=Infinity
             odd.forEach(dd=>{
-              if(plek || !O.ddOpties || !O.ddOpties.includes(dd)) return
+              if(!O.ddOpties || !O.ddOpties.includes(dd)) return
               const rooms=built[di][dd]||[]
               for(let r=0;r<rooms.length;r++){ const room=rooms[r]; if(!room||!room.length) continue
                 const fill=room.reduce((t,a)=>t+a.duur,0)
-                if(fill+O.duur<=bovengrensCap(dd)+0.01){ plek={dd,r}; break } }
+                const over=bovengrensCap(dd)-(fill+O.duur)
+                if(over>=-0.01 && over<plekOver){ plek={dd,r}; plekOver=over } }
             })
             if(plek){ built[di][plek.dd][plek.r].push(O)
               const oi=overflowInst.indexOf(O); if(oi>=0) overflowInst.splice(oi,1); vul=true; break }
@@ -1454,6 +1468,7 @@ export default function RasterTool(){
         }
       })
     }
+    navullenAlle()
 
     // FASE 2b — VOLGORDE binnen elke kamer (ná structuur + selectie), zodat een omgeruilde
     // afspraak alsnog volgens de regels wordt geordend (bv. de 3 kortste vooraan).
@@ -1503,6 +1518,9 @@ export default function RasterTool(){
     // Bailey-Welsh-donorpool per dag: échte patiënten uit de laatste (rest-)kamer die als
     // dubbelboeking op de eerste ochtendslots komen (zie opbouw vlak vóór de layout-lus).
     const bwExtra={}
+    // Restruimte-administratie: spreekuren waar het laatste flexblok met een paar minuten
+    // is verruimd om het rest-gat aan het einde te absorberen (→ melding met uitleg).
+    const flexVerruimd=[]
     const layoutSlot=(apptsIn, sessStart, dagdeelMin, dd, room, di)=>{
       const appts=apptsIn||[]
       if(!appts.length) return []          // lege kamer → geen flex, geen slot
@@ -1609,39 +1627,57 @@ export default function RasterTool(){
         // zwaarder dan niet beginnen met flex.
         if(!gaten.length) gaten=verzamelGaten(0)
         // 2) Elk flexblok is EXACT blokMin minuten — nooit korter, nooit langer.
-        //    Het aantal hele blokken volgt uit flexTotal ÷ blokMin en die worden
-        //    gelijkmatig over de (verschillende) gaten tussen de afspraken gespreid,
-        //    elk gat hoogstens één blok. Een restant kleiner dan één heel blok (bv.
-        //    5 min bij een blokduur van 10) kan geen exact blok vormen en wordt niet
-        //    getoond; het blijft als kleine ruimte aan het einde, ná de laatste
-        //    afspraak. Zo is ELK zichtbaar flexblok gegarandeerd exact de ingestelde
-        //    lengte.
+        //    ÁLLE hele blokken (flexTotal ÷ blokMin) worden gelijkmatig over de gaten
+        //    tussen de afspraken gespreid. Zijn er meer blokken dan gaten, dan krijgen
+        //    gaten er meerdere (round-robin) — elk blok blijft EXACT blokMin, maar de
+        //    volledige flexruimte belandt tússen de afspraken zodat er nooit een leeg
+        //    rest-gat achter de laatste afspraak overblijft. Alleen een restant kleiner
+        //    dan één heel blok blijft over; dat absorbeert stap 4 in het laatste blok.
         const bedrag={}
         if(gaten.length && flexTotal>=blokMin){
-          const nBlok=Math.min(gaten.length, Math.floor(flexTotal/blokMin))
-          const stap=gaten.length/Math.max(1,nBlok)
+          const nBlok=Math.floor(flexTotal/blokMin)
+          const eerste=Math.min(gaten.length, nBlok)
+          const stap=gaten.length/Math.max(1,eerste)
           const bezet=[]
-          for(let i=0;i<nBlok;i++){
+          for(let i=0;i<eerste;i++){
             let idx=Math.min(gaten.length-1,Math.floor(i*stap+stap/2))
             while(bezet.includes(idx)&&idx<gaten.length-1) idx++
             while(bezet.includes(idx)&&idx>0) idx--
             bezet.push(idx)
-            bedrag[gaten[idx]]=blokMin                      // EXACT blokMin
+            bedrag[gaten[idx]]=(bedrag[gaten[idx]]||0)+blokMin   // EXACT blokMin
           }
+          // meer blokken dan gaten → verdeel de rest round-robin over alle gaten
+          for(let i=eerste;i<nBlok;i++) bedrag[gaten[i%gaten.length]]+=blokMin
         }
-        // 3) Afspraken + flexblokken op de tijdas zetten. Elk tussenblok is exact
-        //    blokMin lang; het spreekuur eindigt met de laatste afspraak.
+        // 3) Afspraken + flexblokken op de tijdas zetten. Elk tussenblok bestaat uit
+        //    blokken van exact blokMin; het spreekuur eindigt met de laatste afspraak.
         physAppts.forEach((a,i)=>{
           t=pushAppt(a,i,t)
-          const m=bedrag[i]||0
-          if(m>0){
-            const fEnd=Math.min(t+m, sessEnd)
-            if(fEnd-t>=blokMin){ out.push(mkFlex(t, blokMin,'Buffer (tussen afspraken)')); t+=blokMin }
+          let m=bedrag[i]||0
+          while(m>=blokMin && sessEnd-t>=blokMin){
+            out.push(mkFlex(t, blokMin,'Buffer (tussen afspraken)')); t+=blokMin; m-=blokMin
           }
         })
         t=plaatsDigitaalEinde(t)
-        // 4) GEEN eindblok — het restant kleiner dan één heel flexblok blijft
-        //    ongemarkeerd na de laatste afspraak (hooguit blokMin−5 minuten).
+        // 4) REST-ABSORPTIE — een restant kleiner dan één heel blok (hooguit blokMin−5)
+        //    zou als leeg gat achter de laatste afspraak blijven staan. In plaats daarvan
+        //    wordt het LAATSTE flexblok met dat restant verruimd en schuiven de afspraken
+        //    erna op, zodat het spreekuur exact op de eindtijd met een AFSPRAAK eindigt.
+        //    De verruiming wordt geadministreerd (zie melding "Restruimte verwerkt").
+        const rest=sessEnd-t
+        if(rest>=1 && rest<blokMin){
+          let lastFlex=null
+          for(let i=out.length-1;i>=0;i--){ if(out[i].isFlex){ lastFlex=out[i]; break } }
+          if(lastFlex){
+            const grens=lastFlex.end
+            out.forEach(a=>{ if(a.start>=grens-0.01){ a.start+=rest; a.end+=rest } })
+            lastFlex.end+=rest; lastFlex.duur+=rest
+            lastFlex.description=`Buffer (tussen afspraken) · +${Math.round(rest)} min rest verwerkt`
+            lastFlex._rek=rest
+            flexVerruimd.push({di,dd,room,extra:Math.round(rest)})
+            t=sessEnd
+          }
+        }
       } else {
         // flexMode 'end' (of te weinig flex om te verspreiden): alles achter elkaar,
         // één aaneengesloten flexblok na de laatste afspraak.
@@ -1679,6 +1715,17 @@ export default function RasterTool(){
         if(leeg) DD.forEach(dd=>{ if(built[di][dd]&&built[di][dd].length>=n) built[di][dd]=built[di][dd].slice(0,n-1) })
         bwExtra[di]=genomen
       })
+      // De dubbelboekingen hebben de laatste kamer (deels) leeggehaald; vul de vrij-
+      // gekomen ruimte weer vanuit de restlijst en orden de aangevulde kamers opnieuw.
+      navullenAlle()
+      ;[0,1,2,3,4].forEach(di=>{
+        if(!built[di]) return
+        DD.forEach(dd=>{ if(built[di][dd]) built[di][dd]=built[di][dd].map(r=>applyPlanRules(r, ddIndex[dd])) })
+      })
+      // res.ntp was al gesnapshot vóór dit blok — hersynchroniseer na het navullen,
+      // anders staan bijgevulde afspraken dubbel (in het raster én op de restlijst).
+      res.ntp=[...overflowInst]
+      res.capacity.overflow=overflowInst.length
     }
 
     ;[0,1,2,3,4].forEach(di=>{
@@ -1837,6 +1884,14 @@ export default function RasterTool(){
       if(leeg>0) notices.push({level:'info',rule:'Aantal kamers',
         msg:`De vraag past bij ${m2.benutting}% benutting al in ${gebruikt.size} kamer${gebruikt.size===1?'':'s'}; ${leeg} van de ${maxParallel} gekozen kamers blij${leeg===1?'ft':'ven'} leeg.`,
         fix:`Verlaag het aantal kamers naar ${gebruikt.size}, of verlaag de benutting zodat de vraag zich over meer kamers spreidt.`})
+    }
+    // 5) Restruimte verwerkt — flexblokken die met een paar minuten zijn verruimd omdat
+    // er een restant kleiner dan één heel blok overbleef aan het einde van het spreekuur.
+    if(flexVerruimd.length){
+      const totMinRek=flexVerruimd.reduce((t,x)=>t+x.extra,0)
+      notices.push({level:'ok',rule:'Restruimte verwerkt',
+        msg:`Op ${flexVerruimd.length} spreekur${flexVerruimd.length===1?'':'en'} bleef een restant kleiner dan één heel flexblok over (samen ${totMinRek} min) — te klein voor een eigen blok, en het spreekuur mag niet eindigen met een leeg gat.`,
+        fix:`Het laatste flexblok van die spreekuren is met dat restant verruimd (zichtbaar als "+N min rest verwerkt" op het blok) en de afspraken erna zijn opgeschoven, zodat elk spreekuur exact op de eindtijd met een afspraak eindigt.`})
     }
     res.notices=notices
     return res
