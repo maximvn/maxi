@@ -1392,6 +1392,7 @@ export default function RasterTool(){
       })
     })
 
+    let navulTotaal=0   // afspraken die vanuit de restlijst een spreekuur zijn bijgevuld
     // ══ SELECTIE-SOLVER — de restlijst bevat de MINST gewenste afspraken ═════════════
     // De volgorderegels bepalen niet alleen de VOLGORDE binnen een spreekuur, maar ook de
     // SELECTIE: wát er ingepland wordt en wát op "nog te plannen" belandt. Staat "kort
@@ -1469,7 +1470,7 @@ export default function RasterTool(){
                 if(over>=-0.01 && over<plekOver){ plek={dd,r}; plekOver=over } }
             })
             if(plek){ built[di][plek.dd][plek.r].push(O)
-              const oi=overflowInst.indexOf(O); if(oi>=0) overflowInst.splice(oi,1); vul=true; break }
+              const oi=overflowInst.indexOf(O); if(oi>=0) overflowInst.splice(oi,1); vul=true; navulTotaal++; break }
           }
         }
       })
@@ -2050,6 +2051,57 @@ export default function RasterTool(){
         fix:`Het laatste flexblok van die spreekuren is met dat restant verruimd (zichtbaar als "+N min rest verwerkt" op het blok) en de afspraken erna zijn opgeschoven, zodat elk spreekuur exact op de eindtijd met een afspraak eindigt.`})
     }
     res.notices=notices
+
+    // ══ AANPASSINGEN-LOG — elke automatische ingreep die de engine heeft toegepast ═══
+    // Alles wat de engine zelf heeft aangepast om de regels + capaciteit kloppend te
+    // krijgen, compact op één rij, zodat je precies ziet WAT er is toegepast, wat zelf is
+    // bijgesteld en wat (deels) niet kon. Geen stille aanpassingen meer.
+    const aanp=[]
+    if(flexVerruimd.length){
+      const mn=flexVerruimd.reduce((t,x)=>t+x.extra,0)
+      const maxE=Math.max(...flexVerruimd.map(x=>x.extra))
+      aanp.push({t:'wijziging',ico:'⏱',k:'Flexblok verruimd',
+        v:`${flexVerruimd.length}× · +${mn} min totaal (tot +${maxE} min)`,
+        d:`Een restant kleiner dan één heel flexblok is in het laatste blok opgenomen (bv. een blok van ${rules.flexBlokMin||10} → ${(rules.flexBlokMin||10)+maxE} min); de afspraken erna zijn opgeschoven zodat het spreekuur op een afspraak eindigt.`})
+    }
+    if(flexSurplus.length){
+      const mn=flexSurplus.reduce((t,x)=>t+x.min,0)
+      aanp.push({t:'let-op',ico:'▢',k:'Restruimte-blok geplaatst',
+        v:`${flexSurplus.length}× · ${mn} min`,
+        d:`Onderbezette spreekuren: meer flexruimte dan er tussen de afspraken past en de restlijst is leeg. Het surplus staat als één restruimte-blok aan het einde.`})
+    }
+    const restKamerN=res.ntp.filter(a=>a._restKamer).length
+    if(restKamerN){
+      aanp.push({t:'wijziging',ico:'✕',k:'Dagdeel dichtgezet',
+        v:`${restKamerN} afspra${restKamerN===1?'ak':'ken'} → nog te plannen`,
+        d:`De laatste (rest-)kamer haalde in een dagdeel de ondergrens van de band niet; dat dagdeel is dichtgezet en die afspraken staan op de restlijst i.p.v. half-leeg te draaien.`})
+    }
+    if(navulTotaal){
+      aanp.push({t:'ok',ico:'▲',k:'Spreekuren bijgevuld',
+        v:`${navulTotaal} afspra${navulTotaal===1?'ak':'ken'} uit de restlijst`,
+        d:`Kamers die onder de band zaten zijn bijgevuld vanuit "nog te plannen", tot elk spreekuur binnen de band (±2,5 pp) valt.`})
+    }
+    if(kortOchtendRuil){
+      aanp.push({t:'ok',ico:'⇄',k:'Kort → ochtend',
+        v:`${kortOchtendRuil} korte afspra${kortOchtendRuil===1?'ak':'ken'} verhuisd`,
+        d:`Bereik "alleen ochtend": korte middag-afspraken zijn band-veilig geruild met langere ochtend-afspraken.`})
+    }
+    if(kpi.week.bwExtra){
+      aanp.push({t:'ok',ico:'B',k:'Bailey-Welsh dubbelboeking',
+        v:`${kpi.week.bwExtra}× op slot 1`,
+        d:bwPaar==='beideKort'?`De twee kortste afspraken van de kamer staan samen op het eerste ochtendslot.`:`Naast afspraak 1 op het eerste ochtendslot; extra uit rest-kamer/restlijst.`})
+    }
+    if((rules.restDag||'uit')!=='uit'){
+      // tel verhuisde afspraken (grouped kreeg _verhuisd bij het bundelen)
+      let verh=0; [0,1,2,3,4].forEach(di=>{ const s=res.days[di]; if(!s) return
+        Object.values(s).forEach(arr=>(arr||[]).forEach(a=>{ if(a._verhuisd!=null) verh++ })) })
+      if(verh) aanp.push({t:'ok',ico:'⇉',k:'Restvraag gebundeld',
+        v:`${verh} afspra${verh===1?'ak':'ken'} verplaatst`,
+        d:`Afspraken zijn naar de rest-dag verhuisd zodat de overige dagen volle kamers draaien.`})
+    }
+    // rules die actief zijn maar niets deden (geen effect) — kort als "niet toegepast"
+    if(rules.baileyWelsh && !kpi.week.bwExtra) aanp.push({t:'niet',ico:'!',k:'Bailey-Welsh',v:'niets dubbelgeboekt',d:'Geen geschikte afspraak/rest-voorraad — zie de melding hieronder.'})
+    res.aanpassingen=aanp
     return res
   },[])
 
@@ -4076,8 +4128,13 @@ export default function RasterTool(){
       return ['o','m','a'].some(pre=>((sl[pre+r]||[]).some(a=>!a.isFlex)))
     }
     const rooms=(()=>{
+      // In VAST-modus is het aantal kamers een handmatige knop: toon élke gekozen
+      // kamer als kolom, óók de lege — zo levert "+" zichtbaar een extra (leeg,
+      // besleepbaar) spreekuur op en haalt "−" de laatste kamer weg. In AUTO-modus
+      // tonen we alleen de kamers die de vraag daadwerkelijk gebruikt.
+      const vast=raster.capacity&&raster.capacity.mode==='vast'
       const uit=[]
-      for(let r=0;r<numRooms;r++) if(kamerInGebruik(selDay,r)) uit.push(r)
+      for(let r=0;r<numRooms;r++) if(vast||kamerInGebruik(selDay,r)) uit.push(r)
       return uit.length?uit:[0]      // altijd minstens één kolom om op te slepen
     })()
     const dayHasData=!!raster.days[selDay]
@@ -4200,40 +4257,85 @@ export default function RasterTool(){
           )
         })()}
 
-        {/* ── MELDINGEN — waarom een regel (deels) niet kon worden toegepast ── */}
-        {raster.notices&&raster.notices.length>0&&(
-          <div style={{marginBottom:12,display:'flex',flexDirection:'column',gap:8}}>
-            {raster.notices.map((n,i)=>{
-              const col=n.interactie?'#7C3AED':n.level==='warn'?'#B8860B':n.level==='ok'?C.green:C.primary
-              const bg=n.interactie?'#F3EEFC':n.level==='warn'?'#FBF3E2':n.level==='ok'?'#EDF7F0':C.blueAccent
-              const ico=n.interactie?'⚡':n.level==='warn'?'△':n.level==='ok'?'✓':'ℹ'
-              return(
-                <div key={i} style={{display:'flex',alignItems:'flex-start',gap:10,padding:'10px 14px',
-                  background:bg,border:n.interactie?`1.5px solid ${col}66`:`1px solid ${col}44`,borderRadius:10,
-                  boxShadow:n.interactie?'0 2px 10px rgba(124,58,237,0.10)':'none'}}>
-                  <span style={{width:22,height:22,borderRadius:'50%',background:col,color:'#fff',fontSize:13,fontWeight:700,
-                    display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,marginTop:1}}>{ico}</span>
-                  <div style={{flex:1}}>
-                    <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:1}}>
-                      {n.interactie&&<span style={{fontSize:8.5,fontWeight:800,letterSpacing:'0.09em',textTransform:'uppercase',
-                        background:col,color:'#fff',padding:'2px 7px',borderRadius:10}}>Regel-interactie</span>}
-                      <span style={{fontSize:11.5,fontWeight:700,color:col}}>{n.rule}</span>
-                    </div>
-                    <div style={{fontSize:11.5,color:C.text,lineHeight:1.45}}>{n.msg}</div>
-                    {n.fix&&(
-                      <div style={{display:'flex',alignItems:'flex-start',gap:7,marginTop:7,padding:'7px 10px',
-                        background:'rgba(255,255,255,0.65)',border:`1px dashed ${col}55`,borderRadius:8}}>
-                        <span style={{fontSize:10,fontWeight:800,color:col,letterSpacing:'0.06em',textTransform:'uppercase',
-                          flexShrink:0,marginTop:1}}>Oplossing →</span>
-                        <span style={{fontSize:11.5,color:C.text,lineHeight:1.45}}>{n.fix}</span>
-                      </div>
-                    )}
-                  </div>
+        {/* ── OVERZICHT — één paneel: alles wat de engine deed + waar je op moet letten ──
+             De aanpassingen-log (automatische ingrepen) en de meldingen (regel-interacties
+             en aandachtspunten) staan onder één kop, gegroepeerd en compact, zodat in één
+             oogopslag zichtbaar is wát er speelt. */}
+        {((raster.aanpassingen&&raster.aanpassingen.length)||(raster.notices&&raster.notices.length))>0&&(()=>{
+          // Eén uniform item-model uit twee bronnen. sev bepaalt de groep + volgorde:
+          // 0 regel-interactie · 1 let op / niet gelukt · 2 info · 3 toegepast/aangepast.
+          const STYLE={
+            interactie:{col:'#7C3AED',bg:'#F5F1FD',tag:'Regel-interactie',ico:'⚡'},
+            'let-op'  :{col:'#B8860B',bg:'#FCF6E8',tag:'Let op',        ico:'△'},
+            niet      :{col:C.danger, bg:'#FBEDEA',tag:'Niet gelukt',    ico:'✕'},
+            info      :{col:C.primary,bg:C.blueAccent,tag:'Info',        ico:'ℹ'},
+            aangepast :{col:'#7C3AED',bg:'#F5F1FD',tag:'Zelf aangepast', ico:'⏱'},
+            ok        :{col:C.green,  bg:'#EDF7F0',tag:'Toegepast',      ico:'✓'},
+          }
+          const items=[]
+          ;(raster.notices||[]).forEach(n=>{
+            // Pure bevestigingen (level 'ok', geen interactie) dupliceren de aanpassingen-log
+            // hieronder (die ze mét aantallen logt) — hier overslaan om dubbeling te vermijden.
+            if(n.level==='ok'&&!n.interactie) return
+            const kind=n.interactie?'interactie':n.level==='warn'?'let-op':'info'
+            const sev=n.interactie?0:n.level==='warn'?1:2
+            items.push({kind,sev,titel:n.rule,detail:n.msg,oplossing:n.fix,waarde:null,ico:n.icoOverride})
+          })
+          ;(raster.aanpassingen||[]).forEach(a=>{
+            const kind=a.t==='niet'?'niet':a.t==='let-op'?'let-op':a.t==='wijziging'?'aangepast':'ok'
+            const sev=a.t==='niet'?1:a.t==='let-op'?1:a.t==='wijziging'?3:3
+            items.push({kind,sev,titel:a.k,detail:a.d,oplossing:null,waarde:a.v,ico:a.ico})
+          })
+          items.sort((x,y)=>x.sev-y.sev)
+          const aandacht=items.filter(i=>i.sev<=2)
+          const gedaan  =items.filter(i=>i.sev===3)
+          const Kaart=(it,i)=>{ const s=STYLE[it.kind]||STYLE.info
+            return(
+              <div key={i} style={{borderLeft:`3px solid ${s.col}`,background:s.bg,borderRadius:'0 9px 9px 0',
+                padding:'9px 12px',display:'flex',flexDirection:'column',gap:3,minWidth:0}}>
+                <div style={{display:'flex',alignItems:'center',gap:7,flexWrap:'wrap'}}>
+                  <span style={{fontSize:8.5,fontWeight:800,letterSpacing:'0.06em',textTransform:'uppercase',
+                    background:s.col,color:'#fff',padding:'2px 7px',borderRadius:9,whiteSpace:'nowrap'}}>{it.ico||s.ico} {s.tag}</span>
+                  <span style={{fontSize:11.5,fontWeight:700,color:C.text,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{it.titel}</span>
+                  {it.waarde&&<span style={{marginLeft:'auto',fontSize:11,fontWeight:800,color:s.col,whiteSpace:'nowrap'}}>{it.waarde}</span>}
                 </div>
-              )
-            })}
-          </div>
-        )}
+                {it.detail&&<div style={{fontSize:10.8,color:C.muted,lineHeight:1.42}}>{it.detail}</div>}
+                {it.oplossing&&(
+                  <div style={{display:'flex',alignItems:'flex-start',gap:6,marginTop:1}}>
+                    <span style={{fontSize:9,fontWeight:800,color:s.col,letterSpacing:'0.05em',textTransform:'uppercase',flexShrink:0,marginTop:1}}>Oplossing →</span>
+                    <span style={{fontSize:10.8,color:C.text,lineHeight:1.42}}>{it.oplossing}</span>
+                  </div>
+                )}
+              </div>
+            )}
+          return(
+            <div style={{marginBottom:12,border:`1px solid ${C.border}`,borderRadius:12,overflow:'hidden',background:C.white}}>
+              <div style={{display:'flex',alignItems:'center',gap:9,padding:'10px 15px',
+                background:'linear-gradient(90deg,#0E3450,#1C6EA4 55%,#2E8FC7)',color:'#fff'}}>
+                <span style={{fontSize:15}}>🛠</span>
+                <span style={{fontSize:12.5,fontWeight:800,letterSpacing:'0.03em'}}>OVERZICHT — WAT DE ENGINE DEED &amp; WAAR JE OP MOET LETTEN</span>
+                <span style={{marginLeft:'auto',display:'flex',gap:6}}>
+                  {aandacht.length>0&&<span style={{fontSize:10,fontWeight:700,background:'rgba(255,214,120,0.28)',color:'#FFE9B0',padding:'2px 9px',borderRadius:10,whiteSpace:'nowrap'}}>{aandacht.length} aandachtspunt{aandacht.length===1?'':'en'}</span>}
+                  {gedaan.length>0&&<span style={{fontSize:10,fontWeight:700,background:'rgba(93,214,188,0.26)',color:'#BFF3E4',padding:'2px 9px',borderRadius:10,whiteSpace:'nowrap'}}>{gedaan.length} toegepast</span>}
+                </span>
+              </div>
+              <div style={{padding:'12px 14px'}}>
+                {aandacht.length>0&&(<>
+                  <div style={{fontSize:9.5,fontWeight:800,color:C.muted,letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:7}}>Aandachtspunten &amp; regel-interacties</div>
+                  <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(330px,1fr))',gap:8,marginBottom:gedaan.length>0?14:0}}>
+                    {aandacht.map((it,i)=>Kaart(it,'a'+i))}
+                  </div>
+                </>)}
+                {gedaan.length>0&&(<>
+                  <div style={{fontSize:9.5,fontWeight:800,color:C.muted,letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:7}}>Automatisch toegepast &amp; aangepast</div>
+                  <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(300px,1fr))',gap:8}}>
+                    {gedaan.map((it,i)=>Kaart(it,'g'+i))}
+                  </div>
+                </>)}
+              </div>
+            </div>
+          )
+        })()}
 
         {/* ── ENGINE 2.0: KPI dashboard (inklapbaar) ── */}
         {raster.kpi&&(
