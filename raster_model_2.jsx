@@ -398,6 +398,7 @@ export default function RasterTool(){
     restDag:'uit',            // 'uit' | 'auto' | 'ma'..'vr' — restvraag samenvoegen op één dag
     restOpruimen:true,        // rest-kamer: dagdeel dat de ondergrens niet haalt → nog te plannen (dicht) i.p.v. half-leeg laten staan
     shortWaar:'elk',          // 'elk' = 3 kortste per spreekuur | 'ochtend' = kortste van de dag naar de ochtend
+    bwAnker:'eerste',         // Bailey-Welsh: 'eerste' = dubbelboeking op afspraak 1 | 'kort' = op de eerste korte (niet-spoed) afspraak
     spoedDagdeel:'both',      // 'both' | 'och' | 'mid' — in welk dagdeel geldt spoed-eerst
     flexNoFirstMin:60,        // geen verspreide flex in de eerste N minuten van een spreekuur
     flexBlokMin:10,           // grootte van één verspreid flexblokje (5/10/15/20 min)
@@ -1557,8 +1558,10 @@ export default function RasterTool(){
     // dubbelboeking op de eerste ochtendslots komen (zie opbouw vlak vóór de layout-lus).
     const bwExtra={}
     // Restruimte-administratie: spreekuren waar het laatste flexblok met een paar minuten
-    // is verruimd om het rest-gat aan het einde te absorberen (→ melding met uitleg).
+    // is verruimd om het rest-gat aan het einde te absorberen (→ melding met uitleg), en
+    // onderbezette spreekuren waar het surplus als één restruimte-blok aan het einde staat.
     const flexVerruimd=[]
+    const flexSurplus=[]
     const layoutSlot=(apptsIn, sessStart, dagdeelMin, dd, room, di)=>{
       const appts=apptsIn||[]
       if(!appts.length) return []          // lege kamer → geen flex, geen slot
@@ -1576,13 +1579,17 @@ export default function RasterTool(){
       const mkFlex=(start,dur,label)=>({id:'flex_'+dd+'_'+room+'_'+start+'_'+Math.random().toString(36).slice(2,5),
         isFlex:true,dagdeel:dd,room,start,end:start+dur,duur:dur,code:'Flex',
         description:label||'Flexruimte / buffer',category:'flex'})
-      // Bailey-Welsh — ALLEEN in de ochtend (dd===0). De eerste positie wordt dubbel
-      // geboekt. Staat er nog vraag op de restlijst, dan wordt dáár een échte extra
-      // patiënt geplaatst (die telt dus mee en haalt 1 van de restlijst af); anders
-      // een no-show-compensatie (kopie van de eerste afspraak).
+      // Bailey-Welsh — ALLEEN in de ochtend (dd===0). Het ANKER van de dubbelboeking is
+      // gekaderd via rules.bwAnker: 'eerste' = afspraak 1 van het spreekuur (wat de
+      // volgorde-regels daar ook zetten, dus bij "spoed eerst" een spoedafspraak);
+      // 'kort' = de eerste NIET-SPOED afspraak (bij "kort eerst" is dat de kortste,
+      // zodat er twee korte afspraken tegelijk staan; het spoedblok blijft enkel).
+      const bwIdx = (rules.baileyWelsh && dd===0)
+        ? (rules.bwAnker==='kort' ? Math.max(0, physAppts.findIndex(a=>!a.spoed)) : 0)
+        : -1
       const pushAppt=(a,idx,t)=>{
         const end=Math.min(t+a.duur, sessEnd)
-        const isBW=rules.baileyWelsh && idx===0 && dd===0
+        const isBW=idx===bwIdx && dd===0 && rules.baileyWelsh
         out.push({...a,dagdeel:dd,room,start:t,end,
           baileyWelsh:isBW, _why:explain({...a,baileyWelsh:isBW},idx,appts.length,dd)})
         if(isBW){
@@ -1624,12 +1631,12 @@ export default function RasterTool(){
         const digStart=Math.max(afterPhys, Math.min(latestStart, windowStart))
         const gap=digStart-afterPhys
         if(gap>=FLEX_MIN){
-          if(rules.flexMode==='spread'){
-            // Verspreide flex: óók dit buffer bestaat uit blokken van EXACT blokMin;
-            // een restant kleiner dan één heel blok blijft ongemarkeerde ruimte.
-            const nB=Math.floor(gap/blokMin)
-            for(let i=0;i<nB;i++) out.push(mkFlex(afterPhys+i*blokMin, blokMin,'Buffer (vóór digitaal venster)'))
-          } else out.push(mkFlex(afterPhys, gap,'Buffer (vóór digitaal venster)'))
+          // KADER: het venster-buffer is ÉÉN samenhangend blok (nooit meerdere flex-
+          // blokken aaneengesloten). Het zit altijd direct ná een afspraak en vóór de
+          // digitale consulten, en is als venster-buffer gemarkeerd.
+          const f=mkFlex(afterPhys, gap,'Buffer (vóór digitaal venster)')
+          f._venster=true
+          out.push(f)
         }
         let tt=Math.max(afterPhys,digStart)
         digAppts.forEach((a,i)=>{ if(tt<sessEnd) tt=pushAppt(a, physAppts.length+i, tt) })
@@ -1680,32 +1687,31 @@ export default function RasterTool(){
           const nBlok=Math.floor(flexTotal/blokMin)
           const eerste=Math.min(gaten.length, nBlok)
           const stap=gaten.length/Math.max(1,eerste)
+          // KADER: hoogstens ÉÉN flexblok per gat — nooit twee flexblokken aaneengesloten.
           const bezet=[]
           for(let i=0;i<eerste;i++){
             let idx=Math.min(gaten.length-1,Math.floor(i*stap+stap/2))
             while(bezet.includes(idx)&&idx<gaten.length-1) idx++
             while(bezet.includes(idx)&&idx>0) idx--
             bezet.push(idx)
-            bedrag[gaten[idx]]=(bedrag[gaten[idx]]||0)+blokMin   // EXACT blokMin
+            bedrag[gaten[idx]]=blokMin                           // EXACT blokMin, max één per gat
           }
-          // meer blokken dan gaten → verdeel de rest round-robin over alle gaten
-          for(let i=eerste;i<nBlok;i++) bedrag[gaten[i%gaten.length]]+=blokMin
         }
-        // 3) Afspraken + flexblokken op de tijdas zetten. Elk tussenblok bestaat uit
-        //    blokken van exact blokMin; het spreekuur eindigt met de laatste afspraak.
+        // 3) Afspraken + flexblokken op de tijdas zetten. Max één blok per gat;
+        //    het spreekuur eindigt met de laatste afspraak.
         physAppts.forEach((a,i)=>{
           t=pushAppt(a,i,t)
-          let m=bedrag[i]||0
-          while(m>=blokMin && sessEnd-t>=blokMin){
-            out.push(mkFlex(t, blokMin,'Buffer (tussen afspraken)')); t+=blokMin; m-=blokMin
-          }
+          const m=bedrag[i]||0
+          if(m>0 && sessEnd-t>=blokMin){ out.push(mkFlex(t, blokMin,'Buffer (tussen afspraken)')); t+=blokMin }
         })
         t=plaatsDigitaalEinde(t)
-        // 4) REST-ABSORPTIE — een restant kleiner dan één heel blok (hooguit blokMin−5)
-        //    zou als leeg gat achter de laatste afspraak blijven staan. In plaats daarvan
-        //    wordt het LAATSTE flexblok met dat restant verruimd en schuiven de afspraken
-        //    erna op, zodat het spreekuur exact op de eindtijd met een AFSPRAAK eindigt.
-        //    De verruiming wordt geadministreerd (zie melding "Restruimte verwerkt").
+        // 4) EINDE VAN HET SPREEKUUR — drie gekaderde gevallen:
+        //    a) restant < één blok → geabsorbeerd in het laatste flexblok ("+N min rest
+        //       verwerkt"), afspraken schuiven op: eindigen met een afspraak.
+        //    b) restant ≥ één blok (onderbezet spreekuur: méér flexruimte dan gaten,
+        //       restlijst leeg) → één aaneengesloten RESTRUIMTE-blok aan het einde.
+        //       Dit is de gedocumenteerde uitzondering op "eindigen met een afspraak"
+        //       en wordt expliciet gemeld (probleem + oplossing).
         const rest=sessEnd-t
         if(rest>=1 && rest<blokMin){
           let lastFlex=null
@@ -1719,6 +1725,12 @@ export default function RasterTool(){
             flexVerruimd.push({di,dd,room,extra:Math.round(rest)})
             t=sessEnd
           }
+        } else if(rest>=blokMin){
+          const f=mkFlex(t, rest,'Restruimte (onderbezet spreekuur)')
+          f._onderbezet=true
+          out.push(f)
+          flexSurplus.push({di,dd,room,min:Math.round(rest)})
+          t=sessEnd
         }
       } else {
         // flexMode 'end' (of te weinig flex om te verspreiden): alles achter elkaar,
@@ -1955,9 +1967,25 @@ export default function RasterTool(){
           fix:`De ochtend opent met zijn eigen 3 kortste afspraken. Meer ruimte voor ruilen? Verlaag de benutting iets of kies bereik "elk spreekuur".`})
       }
     }
-    if(rules.baileyWelsh && rules.shortFirst && kpi.week.bwExtra>0){
+    if(rules.baileyWelsh && rules.spoedFirst && (rules.bwAnker||'eerste')==='eerste' && kpi.week.bwExtra>0){
+      notices.push({level:'info',interactie:true,rule:'Bailey-Welsh × Spoed eerst',
+        msg:`"Spoed eerst" zet een spoedafspraak op positie 1, en het Bailey-Welsh-anker staat op "eerste afspraak" — de dubbelboeking staat dus naast een spoedafspraak (lang + kort tegelijk).`,
+        fix:`Wil je dat de dag met TWEE KORTE afspraken tegelijk opent? Zet het Bailey-Welsh-anker op "eerste korte (niet-spoed) afspraak" — het spoedblok blijft dan enkel geboekt en de dubbelboeking verhuist naar de eerste korte afspraak erna.`})
+    }
+    if(rules.baileyWelsh && (rules.bwAnker||'eerste')==='kort' && kpi.week.bwExtra>0){
+      notices.push({level:'ok',interactie:true,rule:'Bailey-Welsh — anker: eerste korte afspraak',
+        msg:`De ${kpi.week.bwExtra} dubbelboeking${kpi.week.bwExtra===1?' staat':'en staan'} op de eerste NIET-SPOED afspraak van het spreekuur${rules.shortFirst?' — met "kort eerst" zijn dat twee korte afspraken tegelijk':''}. Het spoedblok blijft enkel geboekt.`})
+    }
+    if(rules.baileyWelsh && rules.shortFirst && !rules.spoedFirst && (rules.bwAnker||'eerste')==='eerste' && kpi.week.bwExtra>0){
       notices.push({level:'ok',interactie:true,rule:'Bailey-Welsh × Kort eerst',
         msg:`De ${kpi.week.bwExtra} Bailey-Welsh dubbelboeking${kpi.week.bwExtra===1?' volgt':'en volgen'} "kort eerst": op het eerste ochtendslot is de KORTSTE beschikbare rest-afspraak dubbelgeboekt, zodat de dag met twee korte afspraken tegelijk opent.`})
+    }
+    // 7) Onderbezette spreekuren — surplus flexruimte die niet tussen de afspraken past
+    if(flexSurplus.length){
+      const totSur=flexSurplus.reduce((t,x)=>t+x.min,0)
+      notices.push({level:'warn',rule:'Onderbezet spreekuur',
+        msg:`${flexSurplus.length} spreekur${flexSurplus.length===1?'':'en'} ${flexSurplus.length===1?'heeft':'hebben'} meer flexruimte dan er tussen de afspraken past (samen ${totSur} min) — de restlijst is leeg, dus bijvullen kon niet. Het surplus staat als één "Restruimte"-blok aan het einde; dit is de gemelde uitzondering op "eindigen met een afspraak".`,
+        fix:`Minder kamers of dagen openen (vast aantal kamers omlaag), de restvraag bundelen, of de benutting verlagen zodat de vraag beter over de spreekuren verdeelt.`})
     }
     // 5) Restruimte verwerkt — flexblokken die met een paar minuten zijn verruimd omdat
     // er een restant kleiner dan één heel blok overbleef aan het einde van het spreekuur.
@@ -2009,7 +2037,7 @@ export default function RasterTool(){
     ddDagen:{O:{...DEF_DD_DAGEN.O},M:{...DEF_DD_DAGEN.M},A:{...DEF_DD_DAGEN.A}}})
     setRules({shortFirst:false,spoedFirst:false,certainFirst:false,baileyWelsh:false,
       digitalMode:'spread',groupMode:'spread',flexMode:'end',
-      kamerVerdeling:'dagdeel',restDag:'uit',restOpruimen:true,shortWaar:'elk',spoedDagdeel:'both',flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30,
+      kamerVerdeling:'dagdeel',restDag:'uit',restOpruimen:true,shortWaar:'elk',bwAnker:'eerste',spoedDagdeel:'both',flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30,
       order:['spoedFirst','shortFirst','certainFirst']})
     setSelDay(0); setRaster(null); setDrag(null)
     setShowFullReset(false)
@@ -2090,7 +2118,7 @@ export default function RasterTool(){
           const sr=state.rules
           setRules({shortFirst:false,spoedFirst:false,certainFirst:false,baileyWelsh:false,
             digitalMode:'spread',groupMode:'spread',flexMode:'end',
-            kamerVerdeling:'dagdeel',restDag:'uit',restOpruimen:true,shortWaar:'elk',spoedDagdeel:'both',flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30,...sr,
+            kamerVerdeling:'dagdeel',restDag:'uit',restOpruimen:true,shortWaar:'elk',bwAnker:'eerste',spoedDagdeel:'both',flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30,...sr,
             ...(sr.kamerVerdeling==='kamer'?{kamerVerdeling:'dagdeel'}:{}),
             order:Array.isArray(sr.order)&&sr.order.length?sr.order:['spoedFirst','shortFirst','certainFirst']})
         }
@@ -3264,6 +3292,20 @@ export default function RasterTool(){
               </div>
             )
           })()}
+          {rules.baileyWelsh&&(
+            <div style={{margin:'8px 0 0 34px',fontSize:11,color:C.muted}}>
+              <span style={{fontSize:10.5,fontWeight:700,color:C.text,marginRight:6}}>Anker van de dubbelboeking:</span>
+              {[{v:'eerste',l:'Eerste afspraak (ook als dat spoed is)'},{v:'kort',l:'Eerste korte (niet-spoed) afspraak'}].map(o=>{
+                const aan=(rules.bwAnker||'eerste')===o.v
+                return(
+                  <button key={o.v} onClick={()=>setRules(p=>({...p,bwAnker:o.v}))}
+                    style={{padding:'4px 11px',borderRadius:14,cursor:'pointer',fontSize:10.5,fontWeight:700,marginRight:5,
+                      background:aan?'#8B5CF6':C.white,color:aan?'#fff':C.muted,
+                      border:`1px solid ${aan?'#8B5CF6':C.border}`}}>{o.l}</button>
+                )
+              })}
+            </div>
+          )}
         </Card>
 
         {/* Radios: Digitale consulten */}

@@ -116,15 +116,20 @@ const results = await page.evaluate(()=>{
       perRoomPhys(r).forEach(({di,key,dd,arr})=>{
         const flex=(arr||[]).filter(a=>a.isFlex)
         const alles=(arr||[]).filter(a=>!a.overbook).sort((x,y)=>x.start-y.start)
-        // blokken exact blokMin, tenzij gedocumenteerd verruimd (_rek) met < blokMin extra
+        // blokken exact blokMin, tenzij gedocumenteerd: verruimd (_rek, < blokMin extra),
+        // het énkele venster-buffer (_venster) of het gemelde Restruimte-blok (_onderbezet)
         flex.forEach(f=>{ const afw=f.duur-blok
-          if(Math.abs(afw)>0.01 && f.start-sessStart[dd]>=noFirst){
+          if(Math.abs(afw)>0.01 && f.start-sessStart[dd]>=noFirst && !f._venster && !f._onderbezet){
             if(!(f._rek && afw>0 && afw<blok)) v.push(`${key}@d${di} flexblok ${f.duur}m≠${blok}m (geen _rek)`) } })
-        flex.forEach(f=>{ if(f.start-sessStart[dd]<noFirst-0.01) v.push(`${key}@d${di} flex binnen eerste ${noFirst}m`) })
-        // agenda mag NIET met flex eindigen
-        if(alles.length&&alles[alles.length-1].isFlex) v.push(`${key}@d${di} eindigt met flexblok`)
-        // met flex in het spreekuur mag er GEEN rest-gat aan het einde zijn: laatste
-        // afspraak eindigt exact op de eindtijd van het dagdeel
+        flex.forEach(f=>{ if(f.start-sessStart[dd]<noFirst-0.01 && !f._onderbezet) v.push(`${key}@d${di} flex binnen eerste ${noFirst}m`) })
+        // KADER: nooit twee flexblokken aaneengesloten
+        const fSort=[...flex].sort((a,b)=>a.start-b.start)
+        for(let i=1;i<fSort.length;i++) if(Math.abs(fSort[i].start-fSort[i-1].end)<0.01)
+          v.push(`${key}@d${di} twee flexblokken aaneengesloten om ${Math.round(fSort[i].start)}`)
+        // agenda mag NIET met flex eindigen — behalve het gemelde Restruimte-blok (onderbezet)
+        if(alles.length&&alles[alles.length-1].isFlex&&!alles[alles.length-1]._onderbezet) v.push(`${key}@d${di} eindigt met flexblok`)
+        // met flex in het spreekuur geen rest-gat: het slot eindigt exact op de eindtijd
+        // (met een afspraak, of met het gemelde Restruimte-blok)
         if(flex.length&&alles.length){ const laatste=alles[alles.length-1]
           if(Math.abs(laatste.end-sEnd[dd])>0.01) v.push(`${key}@d${di} rest-gat: eindigt ${Math.round(sEnd[dd]-laatste.end)}m vóór eindtijd`) }
       })
@@ -181,6 +186,7 @@ const results = await page.evaluate(()=>{
     if(c.shortFirst) extra.push(Object.assign({},c,{_cap:{mode:'vast',kamers:2}}))
     if(c.spoedFirst&&c.flexMode==='end') extra.push(Object.assign({},c,{_cfg:{newPat:40,ctrlPat:80,newCodes:2,ctrlCodes:2}}))
     if(c.shortFirst) extra.push(Object.assign({},c,{shortWaar:'ochtend'}))
+    if(c.shortFirst&&c.spoedFirst) extra.push(Object.assign({},c,{baileyWelsh:true,bwAnker:'kort',restDag:'ma'}))
   }
   const all=[...cases,...extra]
 
