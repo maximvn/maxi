@@ -1557,6 +1557,11 @@ export default function RasterTool(){
     // Bailey-Welsh-donorpool per dag: échte patiënten uit de laatste (rest-)kamer die als
     // dubbelboeking op de eerste ochtendslots komen (zie opbouw vlak vóór de layout-lus).
     const bwExtra={}
+    // bwEigen[di][room] — 'beide kort': de op-één-na-kortste afspraak van de EIGEN kamer,
+    // die als dubbelboeking naast de kortste terugkomt op het eerste ochtendslot.
+    const bwEigen={}
+    // bwGeplaatst — administratie van elke geplaatste dubbelboeking (voor de meldingen).
+    const bwGeplaatst=[]
     // Restruimte-administratie: spreekuren waar het laatste flexblok met een paar minuten
     // is verruimd om het rest-gat aan het einde te absorberen (→ melding met uitleg), en
     // onderbezette spreekuren waar het surplus als één restruimte-blok aan het einde staat.
@@ -1579,17 +1584,14 @@ export default function RasterTool(){
       const mkFlex=(start,dur,label)=>({id:'flex_'+dd+'_'+room+'_'+start+'_'+Math.random().toString(36).slice(2,5),
         isFlex:true,dagdeel:dd,room,start,end:start+dur,duur:dur,code:'Flex',
         description:label||'Flexruimte / buffer',category:'flex'})
-      // Bailey-Welsh — ALLEEN in de ochtend (dd===0). Het ANKER van de dubbelboeking is
-      // gekaderd via rules.bwAnker: 'eerste' = afspraak 1 van het spreekuur (wat de
-      // volgorde-regels daar ook zetten, dus bij "spoed eerst" een spoedafspraak);
-      // 'kort' = de eerste NIET-SPOED afspraak (bij "kort eerst" is dat de kortste,
-      // zodat er twee korte afspraken tegelijk staan; het spoedblok blijft enkel).
-      const bwIdx = (rules.baileyWelsh && dd===0)
-        ? (rules.bwAnker==='kort' ? Math.max(0, physAppts.findIndex(a=>!a.spoed)) : 0)
-        : -1
+      // Bailey-Welsh — ALLEEN in de ochtend (dd===0) en ALTIJD op het EERSTE slot
+      // (de dag opent met twee patiënten tegelijk; de dubbelboeking verschuift nooit).
+      // rules.bwAnker kadert het PAAR: 'eerste' = afspraak 1 + de kortste beschikbare
+      // rest-afspraak; 'beideKort' = de twee kortste niet-spoed afspraken van de EIGEN
+      // kamer samen op slot 1 (spoed volgt daarna; vrijgekomen ruimte is bijgevuld).
       const pushAppt=(a,idx,t)=>{
         const end=Math.min(t+a.duur, sessEnd)
-        const isBW=idx===bwIdx && dd===0 && rules.baileyWelsh
+        const isBW=idx===0 && dd===0 && rules.baileyWelsh
         out.push({...a,dagdeel:dd,room,start:t,end,
           baileyWelsh:isBW, _why:explain({...a,baileyWelsh:isBW},idx,appts.length,dd)})
         if(isBW){
@@ -1599,8 +1601,9 @@ export default function RasterTool(){
           // patiënt is verplaatst, dus het totaal blijft exact de opgegeven pool. Is er
           // niets te verplaatsen, dan gebeurt er niets.
           let ex=null, bron=''
-          if(bwExtra[di] && bwExtra[di].length){ ex=bwExtra[di].shift(); bron='rest-kamer' }
-          else if(res.ntp.length){
+          if(bwEigen[di] && bwEigen[di][room]){ ex=bwEigen[di][room]; delete bwEigen[di][room]; bron='eigen-kamer' }
+          else if(bwExtra[di] && bwExtra[di].length){ ex=bwExtra[di].shift(); bron='rest-kamer' }
+          else if(res.ntp.length && (rules.bwAnker||'eerste')!=='beideKort'){
             // KADER: bij "kort eerst" is de dubbelboeking de KORTSTE beschikbare
             // rest-afspraak (liefst van dezelfde dag) — twee korte tegelijk aan de kop.
             const vanDag=res.ntp.map((x,i)=>({x,i})).filter(q=>q.x.day===di)
@@ -1611,10 +1614,13 @@ export default function RasterTool(){
           }
           if(ex){
             const dur=Math.max(5,ex.duur)
+            bwGeplaatst.push({di,room,duur:dur,naast:a.duur})
             out.push({...ex,id:ex.id+'_bw',dagdeel:dd,room,start:t,end:Math.min(t+dur,sessEnd),duur:dur,
               baileyWelsh:true, overbook:true, bwReal:true,
               description:(ex.description||ex.code)+' · Bailey-Welsh extra',
-              _why:[bron==='rest-kamer'
+              _why:[bron==='eigen-kamer'
+                ? 'Bailey-Welsh (beide kort): de op-één-na-kortste afspraak van deze kamer is naast de kortste op het eerste ochtendslot gezet; de vrijgekomen ruimte is bijgevuld.'
+                : bron==='rest-kamer'
                 ? 'Bailey-Welsh: tweede patiënt op het eerste ochtendslot — verplaatst uit de laatste (rest-)kamer, zodat die kamer dicht kan.'
                 : 'Bailey-Welsh: extra patiënt op het eerste ochtendslot — stond anders op de restlijst.']})
           }
@@ -1743,39 +1749,73 @@ export default function RasterTool(){
     }
     const sessInfo={O:[ochStart,ochDur],M:[midStart,midDur],A:[avondStart,avDur]}
 
-    // ── BAILEY-WELSH — dubbelboekingen uit de laatste (rest-)kamer ────────────────
-    // Staat de regel aan, dan halen we per dag zoveel patiënten uit de LAATSTE kamer als
-    // er andere kamers zijn, en zetten die als dubbelboeking op het eerste ochtendslot
-    // van die kamers. Zo staan er 's ochtends écht twee patiënten tegelijk (no-show-buffer)
-    // en loopt de losse rest-kamer (deels) leeg — zonder één afspraak toe te voegen.
+    // ── BAILEY-WELSH — de dag opent met TWEE patiënten tegelijk op het eerste slot ──
+    // Twee gekaderde paar-strategieën (rules.bwAnker):
+    //  'eerste'    — de extra komt uit de laatste (rest-)kamer of de restlijst (kortste
+    //                eerst als "kort eerst" aanstaat) en wordt naast afspraak 1 gezet.
+    //  'beideKort' — elke ochtendkamer legt zijn TWEE KORTSTE niet-spoed afspraken samen
+    //                op het eerste slot (de op-één-na-kortste wordt de dubbelboeking);
+    //                de vrijgekomen ruimte wordt uit de restlijst bijgevuld. Het spoed-
+    //                blok volgt direct ná dit korte paar.
+    const bwPaar=(rules.bwAnker==='beideKort'||rules.bwAnker==='kort')?'beideKort':'eerste'
     if(rules.baileyWelsh){
-      ;[0,1,2,3,4].forEach(di=>{
-        if(!built[di]) return
-        let n=0; DD.forEach(dd=>{ n=Math.max(n,(built[di][dd]||[]).length) })
-        if(n<2) return                       // met één kamer valt er niets te verplaatsen
-        const ontvangers=n-1                 // de kamers vóór de laatste krijgen een dubbelboeking
-        // Kandidaten uit de laatste kamer (ochtend eerst, dan middag); kortste eerst zodat
-        // een dubbelboeking het spreekuur zo min mogelijk verlengt.
-        const donor=[]
-        DD.forEach(dd=>{ const room=(built[di][dd]||[])[n-1]; if(room) donor.push(...room) })
-        donor.sort((a,b)=>a.duur-b.duur)
-        const nemen=Math.min(ontvangers, donor.length)
-        if(nemen<=0) return
-        const genomen=donor.slice(0,nemen)
-        const ids=new Set(genomen.map(a=>a.id))
-        DD.forEach(dd=>{ if(built[di][dd]&&built[di][dd][n-1]) built[di][dd][n-1]=built[di][dd][n-1].filter(a=>!ids.has(a.id)) })
-        // Is de laatste kamer nu helemaal leeg, verwijder dan die (nu overbodige) kolom.
-        let leeg=true; DD.forEach(dd=>{ if((built[di][dd]||[])[n-1]?.length) leeg=false })
-        if(leeg) DD.forEach(dd=>{ if(built[di][dd]&&built[di][dd].length>=n) built[di][dd]=built[di][dd].slice(0,n-1) })
-        bwExtra[di]=genomen
-      })
-      // De dubbelboekingen hebben de laatste kamer (deels) leeggehaald; vul de vrij-
-      // gekomen ruimte weer vanuit de restlijst en orden de aangevulde kamers opnieuw.
+      if(bwPaar==='eerste'){
+        ;[0,1,2,3,4].forEach(di=>{
+          if(!built[di]) return
+          let n=0; DD.forEach(dd=>{ n=Math.max(n,(built[di][dd]||[]).length) })
+          if(n<2) return                       // met één kamer valt er niets te verplaatsen
+          const ontvangers=n-1                 // de kamers vóór de laatste krijgen een dubbelboeking
+          // Kandidaten uit de laatste kamer; kortste eerst zodat een dubbelboeking het
+          // spreekuur zo min mogelijk verlengt (en "kort eerst" gevolgd wordt).
+          const donor=[]
+          DD.forEach(dd=>{ const room=(built[di][dd]||[])[n-1]; if(room) donor.push(...room) })
+          donor.sort((a,b)=>a.duur-b.duur)
+          const nemen=Math.min(ontvangers, donor.length)
+          if(nemen<=0) return
+          const genomen=donor.slice(0,nemen)
+          const ids=new Set(genomen.map(a=>a.id))
+          DD.forEach(dd=>{ if(built[di][dd]&&built[di][dd][n-1]) built[di][dd][n-1]=built[di][dd][n-1].filter(a=>!ids.has(a.id)) })
+          // Is de laatste kamer nu helemaal leeg, verwijder dan die (nu overbodige) kolom.
+          let leeg=true; DD.forEach(dd=>{ if((built[di][dd]||[])[n-1]?.length) leeg=false })
+          if(leeg) DD.forEach(dd=>{ if(built[di][dd]&&built[di][dd].length>=n) built[di][dd]=built[di][dd].slice(0,n-1) })
+          bwExtra[di]=genomen
+        })
+      } else {
+        // 'beideKort' — per ochtendkamer de op-één-na-kortste niet-spoed afspraak eruit
+        // halen; die komt straks als dubbelboeking naast de kortste terug.
+        ;[0,1,2,3,4].forEach(di=>{
+          if(!built[di]) return
+          ;(built[di].O||[]).forEach((room,r)=>{
+            if(!room || room.length<3) return
+            const kand=room.filter(a=>!a.spoed&&!a.digitaal).sort((a,b)=>(a.duur-b.duur))
+            if(kand.length<2) return
+            const tweede=kand[1]
+            built[di].O[r]=room.filter(a=>a.id!==tweede.id)
+            ;(bwEigen[di]=bwEigen[di]||{})[r]=tweede
+          })
+        })
+      }
+      // De extractie heeft ruimte vrijgemaakt; vul die weer vanuit de restlijst en orden
+      // de aangevulde kamers opnieuw volgens de volgorde-regels.
       navullenAlle()
       ;[0,1,2,3,4].forEach(di=>{
         if(!built[di]) return
         DD.forEach(dd=>{ if(built[di][dd]) built[di][dd]=built[di][dd].map(r=>applyPlanRules(r, ddIndex[dd])) })
       })
+      // 'beideKort': de KORTSTE niet-spoed afspraak opent de kamer (vóór het spoedblok),
+      // zodat het paar op het eerste slot uit twee korte afspraken bestaat.
+      if(bwPaar==='beideKort'){
+        ;[0,1,2,3,4].forEach(di=>{
+          if(!built[di]) return
+          ;(built[di].O||[]).forEach((room,r)=>{
+            if(!room || room.length<2 || !(bwEigen[di]&&bwEigen[di][r])) return
+            const kand=room.filter(a=>!a.spoed&&!a.digitaal).sort((a,b)=>(a.duur-b.duur))
+            if(!kand.length) return
+            const kortste=kand[0]
+            built[di].O[r]=[kortste, ...room.filter(a=>a.id!==kortste.id)]
+          })
+        })
+      }
       // res.ntp was al gesnapshot vóór dit blok — hersynchroniseer na het navullen,
       // anders staan bijgevulde afspraken dubbel (in het raster én op de restlijst).
       res.ntp=[...overflowInst]
@@ -1967,18 +2007,32 @@ export default function RasterTool(){
           fix:`De ochtend opent met zijn eigen 3 kortste afspraken. Meer ruimte voor ruilen? Verlaag de benutting iets of kies bereik "elk spreekuur".`})
       }
     }
-    if(rules.baileyWelsh && rules.spoedFirst && (rules.bwAnker||'eerste')==='eerste' && kpi.week.bwExtra>0){
-      notices.push({level:'info',interactie:true,rule:'Bailey-Welsh × Spoed eerst',
-        msg:`"Spoed eerst" zet een spoedafspraak op positie 1, en het Bailey-Welsh-anker staat op "eerste afspraak" — de dubbelboeking staat dus naast een spoedafspraak (lang + kort tegelijk).`,
-        fix:`Wil je dat de dag met TWEE KORTE afspraken tegelijk opent? Zet het Bailey-Welsh-anker op "eerste korte (niet-spoed) afspraak" — het spoedblok blijft dan enkel geboekt en de dubbelboeking verhuist naar de eerste korte afspraak erna.`})
+    if(rules.baileyWelsh && kpi.week.bwExtra===0){
+      notices.push({level:'warn',interactie:true,rule:'Bailey-Welsh — geen dubbelboeking geplaatst',
+        msg: bwPaar==='eerste'
+          ? `Bailey-Welsh staat aan, maar er is niets dubbelgeboekt: de restlijst is leeg en er is geen rest-kamer om een tweede patiënt uit te verplaatsen (het paar "afspraak 1 + kortste uit de rest" heeft een rest-voorraad nodig).`
+          : `Bailey-Welsh ("beide kort") staat aan, maar geen enkel ochtendspreekuur had genoeg afspraken (minimaal 3, waarvan 2 niet-spoed en niet-digitaal) om een paar te vormen.`,
+        fix: bwPaar==='eerste'
+          ? `Kies het paar "De twee kortste samen (beide kort)" — dan komt de dubbelboeking uit de eigen kamer en is er geen rest-voorraad nodig.`
+          : `Meer afspraken per ochtendspreekuur (hogere aantallen of minder kamers), of controleer of de codes niet allemaal spoed/digitaal zijn.`})
     }
-    if(rules.baileyWelsh && (rules.bwAnker||'eerste')==='kort' && kpi.week.bwExtra>0){
-      notices.push({level:'ok',interactie:true,rule:'Bailey-Welsh — anker: eerste korte afspraak',
-        msg:`De ${kpi.week.bwExtra} dubbelboeking${kpi.week.bwExtra===1?' staat':'en staan'} op de eerste NIET-SPOED afspraak van het spreekuur${rules.shortFirst?' — met "kort eerst" zijn dat twee korte afspraken tegelijk':''}. Het spoedblok blijft enkel geboekt.`})
+    if(rules.baileyWelsh && bwPaar==='beideKort' && kpi.week.bwExtra>0){
+      notices.push({level:'ok',interactie:true,rule:'Bailey-Welsh — beide kort',
+        msg:`${kpi.week.bwExtra} ochtendspreekur${kpi.week.bwExtra===1?' opent':'en openen'} om ${m2.ochStart||'08:30'} met de TWEE KORTSTE afspraken van de eigen kamer tegelijk op het eerste slot${rules.spoedFirst?'; het spoedblok volgt direct daarna':''}. De vrijgekomen ruimte is uit de restlijst bijgevuld.`})
     }
-    if(rules.baileyWelsh && rules.shortFirst && !rules.spoedFirst && (rules.bwAnker||'eerste')==='eerste' && kpi.week.bwExtra>0){
-      notices.push({level:'ok',interactie:true,rule:'Bailey-Welsh × Kort eerst',
-        msg:`De ${kpi.week.bwExtra} Bailey-Welsh dubbelboeking${kpi.week.bwExtra===1?' volgt':'en volgen'} "kort eerst": op het eerste ochtendslot is de KORTSTE beschikbare rest-afspraak dubbelgeboekt, zodat de dag met twee korte afspraken tegelijk opent.`})
+    if(rules.baileyWelsh && bwPaar==='eerste' && kpi.week.bwExtra>0){
+      // Is de dubbelboeking (veel) langer dan de afspraak ernaast, leg dan uit waarom:
+      // alle kortere afspraken zijn al ingepland — de rest bevat alleen langere.
+      const lang=bwGeplaatst.filter(x=>x.duur>x.naast).length
+      if(rules.shortFirst && lang>0){
+        notices.push({level:'info',interactie:true,rule:'Bailey-Welsh × Kort eerst',
+          msg:`Bij ${lang} van de ${bwGeplaatst.length} dubbelboekingen is de extra afspraak lánger dan de afspraak ernaast. Dat komt doordat "kort eerst" alle korte afspraken al heeft ingepland — de rest-voorraad (rest-kamer/restlijst) bevat alleen langere; de engine koos daaruit wel de kortst beschikbare.`,
+          fix:`Wil je dat de dag met twee kórte afspraken tegelijk opent? Zet het Bailey-Welsh-paar op "De twee kortste samen (beide kort)" — dan komt de dubbelboeking uit de eigen kamer en wordt de vrijgekomen ruimte bijgevuld.`})
+      } else if(rules.spoedFirst){
+        notices.push({level:'info',interactie:true,rule:'Bailey-Welsh × Spoed eerst',
+          msg:`"Spoed eerst" zet een spoedafspraak op positie 1; de dubbelboeking staat daarnaast (paar = spoed + kortst beschikbare rest-afspraak).`,
+          fix:`Wil je dat de dag met TWEE KORTE afspraken opent? Kies het paar "De twee kortste samen (beide kort)" — het spoedblok volgt dan direct na het korte paar.`})
+      }
     }
     // 7) Onderbezette spreekuren — surplus flexruimte die niet tussen de afspraken past
     if(flexSurplus.length){
@@ -3294,12 +3348,15 @@ export default function RasterTool(){
           })()}
           {rules.baileyWelsh&&(
             <div style={{margin:'8px 0 0 34px',fontSize:11,color:C.muted}}>
-              <span style={{fontSize:10.5,fontWeight:700,color:C.text,marginRight:6}}>Anker van de dubbelboeking:</span>
-              {[{v:'eerste',l:'Eerste afspraak (ook als dat spoed is)'},{v:'kort',l:'Eerste korte (niet-spoed) afspraak'}].map(o=>{
-                const aan=(rules.bwAnker||'eerste')===o.v
+              <div style={{fontSize:10.5,fontWeight:700,color:C.text,marginBottom:4}}>
+                Het paar op het eerste ochtendslot ({m2.ochStart||'08:30'} — de dubbelboeking verschuift nooit):
+              </div>
+              {[{v:'eerste',l:'Afspraak 1 + kortste uit de rest',s:'de volgorde-regels bepalen afspraak 1; de extra komt uit rest-kamer/restlijst'},
+                {v:'beideKort',l:'De twee kortste samen (beide kort)',s:'de eigen kamer legt zijn 2 kortste tegelijk op slot 1; spoed volgt daarna; ruimte wordt bijgevuld'}].map(o=>{
+                const aan=((rules.bwAnker==='beideKort'||rules.bwAnker==='kort')?'beideKort':'eerste')===o.v
                 return(
-                  <button key={o.v} onClick={()=>setRules(p=>({...p,bwAnker:o.v}))}
-                    style={{padding:'4px 11px',borderRadius:14,cursor:'pointer',fontSize:10.5,fontWeight:700,marginRight:5,
+                  <button key={o.v} onClick={()=>setRules(p=>({...p,bwAnker:o.v}))} title={o.s}
+                    style={{padding:'4px 11px',borderRadius:14,cursor:'pointer',fontSize:10.5,fontWeight:700,marginRight:5,marginBottom:4,
                       background:aan?'#8B5CF6':C.white,color:aan?'#fff':C.muted,
                       border:`1px solid ${aan?'#8B5CF6':C.border}`}}>{o.l}</button>
                 )

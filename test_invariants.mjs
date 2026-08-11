@@ -44,8 +44,9 @@ const results = await page.evaluate(()=>{
       perRoomPhys(r).forEach(({di,key,phys})=>{
         if(rules.shortWaar==='ochtend' && key[0]!=='o') return   // bereik: alleen ochtend
         const fys=phys.filter(a=>!a.digitaal); if(fys.length<4) return
-        const spoedKop=rules.spoedFirst?fys.filter(a=>a.spoed).length:0
-        const naSpoed=fys.slice(spoedKop)
+        // spoed heeft een eigen positie (vooraan, of ná het beide-kort-paar) — de
+        // kort-eerst-eis geldt voor de niet-spoed afspraken in hun onderlinge volgorde
+        const naSpoed=rules.spoedFirst?fys.filter(a=>!a.spoed):fys
         if(naSpoed.length<4) return
         const first3=naSpoed.slice(0,3).map(a=>a.duur)
         const sorted=[...naSpoed].map(a=>a.duur).sort((a,b)=>a-b).slice(0,3)
@@ -69,7 +70,10 @@ const results = await page.evaluate(()=>{
       perRoomPhys(r).forEach(({di,key,dd,phys})=>{
         if(rules.spoedDagdeel==='och'&&dd!=='o') return
         if(rules.spoedDagdeel==='mid'&&dd!=='m') return
-        const fys=phys.filter(a=>!a.digitaal)
+        let fys=phys.filter(a=>!a.digitaal)
+        // KADER-uitzondering: bij Bailey-Welsh 'beide kort' opent de ochtend met één
+        // korte niet-spoed afspraak (het BW-paar); het spoedblok volgt direct daarna.
+        if(rules.baileyWelsh&&(rules.bwAnker==='beideKort'||rules.bwAnker==='kort')&&dd==='o'&&fys.length&&!fys[0].spoed) fys=fys.slice(1)
         let seenNon=false
         for(const a of fys){ if(!a.spoed) seenNon=true; else if(seenNon){ v.push(`${key}@d${di} spoed ná niet-spoed`); break } }
       })
@@ -151,10 +155,13 @@ const results = await page.evaluate(()=>{
       })
       return v },
     bw:(r,rules)=>{ const v=[]
-      perRoomPhys(r).forEach(({di,key,arr})=>{
+      perRoomPhys(r).forEach(({di,key,arr,phys})=>{
         const obs=(arr||[]).filter(a=>a.overbook)
         obs.forEach(o=>{ if(!o.bwReal) v.push(`${key}@d${di} fantoom-overboeking`) })
         if(!rules.baileyWelsh&&obs.length) v.push(`${key}@d${di} overboeking terwijl BW uit`)
+        // KADER: de dubbelboeking staat ALTIJD op het eerste slot (samen met afspraak 1)
+        if(obs.length&&phys.length){ const eerste=phys[0].start
+          obs.forEach(o=>{ if(Math.abs(o.start-eerste)>0.01) v.push(`${key}@d${di} dubbelboeking niet op het eerste slot`) }) }
       })
       return v },
   }
@@ -186,7 +193,8 @@ const results = await page.evaluate(()=>{
     if(c.shortFirst) extra.push(Object.assign({},c,{_cap:{mode:'vast',kamers:2}}))
     if(c.spoedFirst&&c.flexMode==='end') extra.push(Object.assign({},c,{_cfg:{newPat:40,ctrlPat:80,newCodes:2,ctrlCodes:2}}))
     if(c.shortFirst) extra.push(Object.assign({},c,{shortWaar:'ochtend'}))
-    if(c.shortFirst&&c.spoedFirst) extra.push(Object.assign({},c,{baileyWelsh:true,bwAnker:'kort',restDag:'ma'}))
+    if(c.shortFirst&&c.spoedFirst) extra.push(Object.assign({},c,{baileyWelsh:true,bwAnker:'beideKort',restDag:'ma'}))
+    if(c.shortFirst&&!c.spoedFirst&&c.flexMode==='spread') extra.push(Object.assign({},c,{baileyWelsh:true,bwAnker:'beideKort'}))
   }
   const all=[...cases,...extra]
 
