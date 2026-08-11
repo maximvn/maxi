@@ -82,7 +82,7 @@ const ddDagenVan=m2=>({
 const PLAN_INFO = {
   // ── Planning volgorde ──────────────────────────────────────────────────────
   shortFirst:{label:'Starten met korte afspraken',type:'toggle',
-    desc:'Twee dingen tegelijk. (1) VOLGORDE: de 3 kortste fysieke afspraken van elk spreekuur komen letterlijk vooraan (kortste → langste). (2) SELECTIE: past niet alles binnen de kamers, dan worden de KORTE afspraken bij voorkeur ingepland en gaan de LANGSTE naar "nog te plannen" — niet andersom. Zo bouw je je spreekuren met de korte afspraken die je hebt en blijven de kamers vol.'},
+    desc:'Twee dingen tegelijk. (1) VOLGORDE: de 3 kortste fysieke afspraken komen letterlijk vooraan (kortste → langste). (2) SELECTIE: past niet alles binnen de kamers, dan worden de KORTE afspraken bij voorkeur ingepland en gaan de LANGSTE naar "nog te plannen". KADER: het bereik is instelbaar — "elk spreekuur" (elk dagdeel opent met zijn eigen 3 kortste) of "alleen de ochtend" (de kortste afspraken van de hele dag verhuizen waar mogelijk naar de ochtend; de middag volgt de overige regels). LET OP: digitale consulten tellen alleen mee voor de kop als de digitaal-regel op "verdelen" staat — bij "clusteren" of "einde" zijn ze aan hun plek gebonden en gebruikt de kop de kortste fysieke afspraken (dit wordt gemeld bij de regel-interacties).'},
   spoedFirst:{label:'Spoed afspraken eerst',type:'toggle',
     desc:'Afspraken met het spoedvinkje komen vóór alle andere afspraken van hetzelfde spreekuur, en belanden NOOIT op "nog te plannen" zolang ze passen (spoed heeft voorrang bij de selectie). Instelbaar per dagdeel (ochtend, middag of beide). Staat "korte afspraken eerst" ook aan, dan worden de spoedafspraken onderling ook op duur gesorteerd.'},
   certainFirst:{label:'Zekere afspraken eerst',type:'toggle',
@@ -105,7 +105,7 @@ const PLAN_INFO = {
     desc:'"Aan het einde" = één aaneengesloten flexblok ná de laatste afspraak (het spreekuur eindigt dan op flex). "Verspreid tussen afspraken" = flexblokken van EXACT de ingestelde duur (nooit korter of langer), gelijkmatig tussen de afspraken verdeeld, nooit binnen de eerste N minuten; het spreekuur eindigt met een afspraak. Een restant kleiner dan één heel blok (hooguit blokduur−5 min) kan geen exact blok vormen en blijft als kleine, ongemarkeerde ruimte aan het einde.'},
   // ── Bailey-Welsh ───────────────────────────────────────────────────────────
   baileyWelsh:{label:'Bailey-Welsh regel',type:'toggle',
-    desc:'Het eerste ochtendslot van elke kamer wordt dubbel geboekt: er wordt één patiënt UIT DE RESTLIJST ("nog te plannen") als tweede afspraak op datzelfde tijdstip gezet. Dit compenseert voor no-shows en start-vertragingen. Er worden nooit nieuwe afspraken bijgemaakt — is de restlijst leeg (de hele pool past al), dan gebeurt er niets. Zo blijft het totaal exact gelijk aan de opgegeven pool.'},
+    desc:'Het eerste ochtendslot van elke kamer wordt dubbel geboekt: er wordt één patiënt uit de laatste (rest-)kamer of de restlijst als tweede afspraak op datzelfde tijdstip gezet. Dit compenseert voor no-shows en start-vertragingen. KADER: staat "starten met korte afspraken" óók aan, dan is de dubbelboeking de KORTSTE beschikbare rest-afspraak (twee korte tegelijk aan de kop); anders de eerst beschikbare. Er worden nooit nieuwe afspraken bijgemaakt — is er niets te verplaatsen, dan gebeurt er niets. Het totaal blijft exact gelijk aan de opgegeven pool.'},
 }
 
 // Which keys are boolean toggles vs radio
@@ -397,6 +397,7 @@ export default function RasterTool(){
     kamerVerdeling:'dagdeel', // 'dagdeel' = kamer voor kamer afronden (och→mid→volgende kamer) | 'gelijk'
     restDag:'uit',            // 'uit' | 'auto' | 'ma'..'vr' — restvraag samenvoegen op één dag
     restOpruimen:true,        // rest-kamer: dagdeel dat de ondergrens niet haalt → nog te plannen (dicht) i.p.v. half-leeg laten staan
+    shortWaar:'elk',          // 'elk' = 3 kortste per spreekuur | 'ochtend' = kortste van de dag naar de ochtend
     spoedDagdeel:'both',      // 'both' | 'och' | 'mid' — in welk dagdeel geldt spoed-eerst
     flexNoFirstMin:60,        // geen verspreide flex in de eerste N minuten van een spreekuur
     flexBlokMin:10,           // grootte van één verspreid flexblokje (5/10/15/20 min)
@@ -891,8 +892,12 @@ export default function RasterTool(){
       const zekerVoor=lst=>lst.map((a,i)=>({a,i})).sort((x,y)=>(uScore(x.a)-uScore(y.a))||(x.i-y.i)).map(x=>x.a)
       // Pas de actieve KOP/STAART-regels toe in OMGEKEERDE prioriteit: de regel met de
       // hoogste prioriteit wordt als LAATSTE toegepast en heeft dus het laatste woord.
+      // Bereik van "kort eerst": 'elk' spreekuur, of alléén de ochtend (dd===0) — dan
+      // volgt de middag de overige regels en verhuizen de kortste van de dag naar de
+      // ochtend via de ochtend-ruil (zie kortNaarOchtend, ná de selectie-solver).
+      const kortHier = rules.shortWaar!=='ochtend' || dd===0
       const kopStaart=lst=>{ let r=lst
-        ;[...seq].reverse().forEach(k=>{ if(k==='shortFirst') r=kortVoor(r); else if(k==='certainFirst') r=zekerVoor(r) })
+        ;[...seq].reverse().forEach(k=>{ if(k==='shortFirst'){ if(kortHier) r=kortVoor(r) } else if(k==='certainFirst') r=zekerVoor(r) })
         return r }
 
       // AS 2 — GROEPERING; daarna AS 3 er overheen.
@@ -905,7 +910,7 @@ export default function RasterTool(){
           lst.forEach(a=>{ const k=a.code||a.category; if(!by[k]){by[k]=[];ord.push(k)} by[k].push(a) })
           let blokken=ord.map(k=>by[k])
           ;[...seq].reverse().forEach(k=>{
-            if(k==='shortFirst') blokken=[...blokken].sort((a,b)=>gemDuur(a)-gemDuur(b))
+            if(k==='shortFirst'){ if(kortHier) blokken=[...blokken].sort((a,b)=>gemDuur(a)-gemDuur(b)) }
             else if(k==='certainFirst') blokken=[...blokken].sort((a,b)=>gemOnz(a)-gemOnz(b))
           })
           return blokken.map(bl=>kopStaart(bl)).flat()
@@ -1470,6 +1475,39 @@ export default function RasterTool(){
     }
     navullenAlle()
 
+    // ── KORT EERST, bereik 'alleen ochtend' — kortste van de dag naar de ochtend ────
+    // Per kamer worden fysieke middag-afspraken die korter zijn dan een ochtend-afspraak
+    // omgeruild, zolang beide dagdelen binnen de benuttingsband blijven. Digitale
+    // consulten ruilen niet mee als hun plaatsing vastligt (clusteren/einde) en spoed
+    // blijft in zijn spoed-dagdeel. Elke ruil wordt geteld voor de interactie-melding.
+    let kortOchtendRuil=0
+    if(rules.shortFirst && rules.shortWaar==='ochtend'){
+      const ondergrens=dd=>ondergrensCap(dd)
+      ;[0,1,2,3,4].forEach(di=>{
+        if(!built[di]) return
+        const och=built[di].O||[], mid=built[di].M||[]
+        const nK=Math.max(och.length, mid.length)
+        for(let r=0;r<nK;r++){
+          const oR=och[r], mR=mid[r]
+          if(!oR||!oR.length||!mR||!mR.length) continue
+          let guard=0, ging=true
+          while(ging && guard++<60){
+            ging=false
+            const oFill=oR.reduce((t,a)=>t+a.duur,0), mFill=mR.reduce((t,a)=>t+a.duur,0)
+            const mag=a=>!a.spoed && !(a.digitaal && rules.digitalMode!=='spread') && (!a.ddOpties||a.ddOpties.length>1)
+            const oKand=oR.filter(mag).sort((a,b)=>b.duur-a.duur)   // langste ochtend eerst
+            const mKand=mR.filter(mag).sort((a,b)=>a.duur-b.duur)   // kortste middag eerst
+            for(const M of mKand){
+              const O=oKand.find(o=>o.duur>M.duur
+                && oFill-o.duur+M.duur>=ondergrens('O')-0.01 && oFill-o.duur+M.duur<=bovengrensCap('O')+0.01
+                && mFill-M.duur+o.duur>=ondergrens('M')-0.01 && mFill-M.duur+o.duur<=bovengrensCap('M')+0.01)
+              if(O){ oR[oR.indexOf(O)]=M; mR[mR.indexOf(M)]=O; kortOchtendRuil++; ging=true; break }
+            }
+          }
+        }
+      })
+    }
+
     // FASE 2b — VOLGORDE binnen elke kamer (ná structuur + selectie), zodat een omgeruilde
     // afspraak alsnog volgens de regels wordt geordend (bv. de 3 kortste vooraan).
     ;[0,1,2,3,4].forEach(di=>{
@@ -1556,9 +1594,13 @@ export default function RasterTool(){
           let ex=null, bron=''
           if(bwExtra[di] && bwExtra[di].length){ ex=bwExtra[di].shift(); bron='rest-kamer' }
           else if(res.ntp.length){
-            let ix=res.ntp.findIndex(x=>x.day===di)
-            if(ix<0) ix=0
-            ex=res.ntp.splice(ix,1)[0]; bron='restlijst'
+            // KADER: bij "kort eerst" is de dubbelboeking de KORTSTE beschikbare
+            // rest-afspraak (liefst van dezelfde dag) — twee korte tegelijk aan de kop.
+            const vanDag=res.ntp.map((x,i)=>({x,i})).filter(q=>q.x.day===di)
+            const pool=vanDag.length?vanDag:res.ntp.map((x,i)=>({x,i}))
+            let keuze=pool[0]
+            if(rules.shortFirst) keuze=pool.reduce((a,b)=>b.x.duur<a.x.duur?b:a)
+            ex=res.ntp.splice(keuze.i,1)[0]; bron='restlijst'
           }
           if(ex){
             const dur=Math.max(5,ex.duur)
@@ -1885,6 +1927,38 @@ export default function RasterTool(){
         msg:`De vraag past bij ${m2.benutting}% benutting al in ${gebruikt.size} kamer${gebruikt.size===1?'':'s'}; ${leeg} van de ${maxParallel} gekozen kamers blij${leeg===1?'ft':'ven'} leeg.`,
         fix:`Verlaag het aantal kamers naar ${gebruikt.size}, of verlaag de benutting zodat de vraag zich over meer kamers spreidt.`})
     }
+    // 6) REGEL-INTERACTIES — waar twee actieve regels elkaar raken, melden we expliciet
+    // hoe de engine het conflict heeft beslist (geen stille eigen interpretatie).
+    if(rules.shortFirst && (rules.digitalMode==='cluster'||rules.digitalMode==='end')){
+      // Is de kortste afspraak van de week digitaal, dan kan die niet in de kop staan:
+      // de digitaal-regel pint hem aan het einde/in een blok. Meld welke duur de kop
+      // daardoor gebruikt en hoe je dit desgewenst anders krijgt.
+      let minDig=Infinity, minFys=Infinity, digCode='', fysCode=''
+      ;[0,1,2,3,4].forEach(di=>{ const s=res.days[di]; if(!s) return
+        Object.values(s).forEach(arr=>(arr||[]).forEach(a=>{ if(a.isFlex||a.overbook) return
+          if(a.digitaal){ if(a.duur<minDig){minDig=a.duur;digCode=a.code} }
+          else { if(a.duur<minFys){minFys=a.duur;fysCode=a.code} } })) })
+      if(minDig<minFys){
+        const waar=rules.digitalMode==='end'?'aan het einde van het spreekuur':'in een aaneengesloten blok'
+        notices.push({level:'info',interactie:true,rule:'Kort eerst × Digitaal '+(rules.digitalMode==='end'?'einde':'clusteren'),
+          msg:`De kortste afspraak is digitaal (${digCode} · ${minDig} min), maar jouw digitaal-regel plant die ${waar}. "Starten met korte afspraken" gebruikt daarom de kortste FYSIEKE afspraken (${fysCode} · ${minFys} min) voor de kop van het spreekuur.`,
+          fix:`Wil je dat digitale consulten meetellen voor de kop? Zet "Digitale consulten" op "Verdelen over dag" — dan mogen ze vooraan staan. Zo niet, dan is de huidige uitkomst precies volgens jouw twee regels samen.`})
+      }
+    }
+    if(rules.shortFirst && rules.shortWaar==='ochtend'){
+      if(kortOchtendRuil>0){
+        notices.push({level:'ok',interactie:true,rule:'Kort eerst — bereik: alleen ochtend',
+          msg:`${kortOchtendRuil} korte afspra${kortOchtendRuil===1?'ak is':'ken zijn'} van de middag naar de ochtend verhuisd (geruild met een langere ochtend-afspraak), zodat de kortste afspraken van de dag in de ochtend staan. Beide dagdelen bleven binnen de benuttingsband.`})
+      } else {
+        notices.push({level:'info',interactie:true,rule:'Kort eerst — bereik: alleen ochtend',
+          msg:`Er kon geen enkele korte middag-afspraak naar de ochtend verhuizen: elke ruil zou een dagdeel buiten de benuttingsband duwen, of de korte afspraken zaten al in de ochtend.`,
+          fix:`De ochtend opent met zijn eigen 3 kortste afspraken. Meer ruimte voor ruilen? Verlaag de benutting iets of kies bereik "elk spreekuur".`})
+      }
+    }
+    if(rules.baileyWelsh && rules.shortFirst && kpi.week.bwExtra>0){
+      notices.push({level:'ok',interactie:true,rule:'Bailey-Welsh × Kort eerst',
+        msg:`De ${kpi.week.bwExtra} Bailey-Welsh dubbelboeking${kpi.week.bwExtra===1?' volgt':'en volgen'} "kort eerst": op het eerste ochtendslot is de KORTSTE beschikbare rest-afspraak dubbelgeboekt, zodat de dag met twee korte afspraken tegelijk opent.`})
+    }
     // 5) Restruimte verwerkt — flexblokken die met een paar minuten zijn verruimd omdat
     // er een restant kleiner dan één heel blok overbleef aan het einde van het spreekuur.
     if(flexVerruimd.length){
@@ -1935,7 +2009,7 @@ export default function RasterTool(){
     ddDagen:{O:{...DEF_DD_DAGEN.O},M:{...DEF_DD_DAGEN.M},A:{...DEF_DD_DAGEN.A}}})
     setRules({shortFirst:false,spoedFirst:false,certainFirst:false,baileyWelsh:false,
       digitalMode:'spread',groupMode:'spread',flexMode:'end',
-      kamerVerdeling:'dagdeel',restDag:'uit',restOpruimen:true,spoedDagdeel:'both',flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30,
+      kamerVerdeling:'dagdeel',restDag:'uit',restOpruimen:true,shortWaar:'elk',spoedDagdeel:'both',flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30,
       order:['spoedFirst','shortFirst','certainFirst']})
     setSelDay(0); setRaster(null); setDrag(null)
     setShowFullReset(false)
@@ -2016,7 +2090,7 @@ export default function RasterTool(){
           const sr=state.rules
           setRules({shortFirst:false,spoedFirst:false,certainFirst:false,baileyWelsh:false,
             digitalMode:'spread',groupMode:'spread',flexMode:'end',
-            kamerVerdeling:'dagdeel',restDag:'uit',restOpruimen:true,spoedDagdeel:'both',flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30,...sr,
+            kamerVerdeling:'dagdeel',restDag:'uit',restOpruimen:true,shortWaar:'elk',spoedDagdeel:'both',flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30,...sr,
             ...(sr.kamerVerdeling==='kamer'?{kamerVerdeling:'dagdeel'}:{}),
             order:Array.isArray(sr.order)&&sr.order.length?sr.order:['spoedFirst','shortFirst','certainFirst']})
         }
@@ -3143,7 +3217,20 @@ export default function RasterTool(){
                   {/* Kort eerst: expliciete uitleg van de garantie */}
                   {key==='shortFirst'&&on&&(
                     <div style={{margin:'6px 0 0 34px',fontSize:11,color:C.muted}}>
-                      De <b style={{color:C.text}}>3 kortste</b> afspraken van elk spreekuur komen vooraan; de rest houdt de volgorde van de andere regels.
+                      De <b style={{color:C.text}}>3 kortste</b> fysieke afspraken komen vooraan; de rest houdt de volgorde van de andere regels.
+                      Digitale consulten tellen alleen mee als de digitaal-regel op "verdelen" staat.
+                      <div style={{display:'flex',alignItems:'center',gap:6,marginTop:7,flexWrap:'wrap'}}>
+                        <span style={{fontSize:10.5,fontWeight:700,color:C.text}}>Bereik:</span>
+                        {[{v:'elk',l:'Elk spreekuur'},{v:'ochtend',l:'Alleen ochtend (kortste van de dag → ochtend)'}].map(o=>{
+                          const aan=(rules.shortWaar||'elk')===o.v
+                          return(
+                            <button key={o.v} onClick={e=>{e.stopPropagation();setRules(p=>({...p,shortWaar:o.v}))}}
+                              style={{padding:'4px 11px',borderRadius:14,cursor:'pointer',fontSize:10.5,fontWeight:700,
+                                background:aan?C.primary:C.white,color:aan?'#fff':C.muted,
+                                border:`1px solid ${aan?C.primary:C.border}`}}>{o.l}</button>
+                          )
+                        })}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -4018,16 +4105,21 @@ export default function RasterTool(){
         {raster.notices&&raster.notices.length>0&&(
           <div style={{marginBottom:12,display:'flex',flexDirection:'column',gap:8}}>
             {raster.notices.map((n,i)=>{
-              const col=n.level==='warn'?'#B8860B':n.level==='ok'?C.green:C.primary
-              const bg=n.level==='warn'?'#FBF3E2':n.level==='ok'?'#EDF7F0':C.blueAccent
-              const ico=n.level==='warn'?'△':n.level==='ok'?'✓':'ℹ'
+              const col=n.interactie?'#7C3AED':n.level==='warn'?'#B8860B':n.level==='ok'?C.green:C.primary
+              const bg=n.interactie?'#F3EEFC':n.level==='warn'?'#FBF3E2':n.level==='ok'?'#EDF7F0':C.blueAccent
+              const ico=n.interactie?'⚡':n.level==='warn'?'△':n.level==='ok'?'✓':'ℹ'
               return(
                 <div key={i} style={{display:'flex',alignItems:'flex-start',gap:10,padding:'10px 14px',
-                  background:bg,border:`1px solid ${col}44`,borderRadius:10}}>
+                  background:bg,border:n.interactie?`1.5px solid ${col}66`:`1px solid ${col}44`,borderRadius:10,
+                  boxShadow:n.interactie?'0 2px 10px rgba(124,58,237,0.10)':'none'}}>
                   <span style={{width:22,height:22,borderRadius:'50%',background:col,color:'#fff',fontSize:13,fontWeight:700,
                     display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,marginTop:1}}>{ico}</span>
                   <div style={{flex:1}}>
-                    <div style={{fontSize:11.5,fontWeight:700,color:col,marginBottom:1}}>{n.rule}</div>
+                    <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:1}}>
+                      {n.interactie&&<span style={{fontSize:8.5,fontWeight:800,letterSpacing:'0.09em',textTransform:'uppercase',
+                        background:col,color:'#fff',padding:'2px 7px',borderRadius:10}}>Regel-interactie</span>}
+                      <span style={{fontSize:11.5,fontWeight:700,color:col}}>{n.rule}</span>
+                    </div>
                     <div style={{fontSize:11.5,color:C.text,lineHeight:1.45}}>{n.msg}</div>
                     {n.fix&&(
                       <div style={{display:'flex',alignItems:'flex-start',gap:7,marginTop:7,padding:'7px 10px',

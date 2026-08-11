@@ -42,6 +42,7 @@ const results = await page.evaluate(()=>{
     shortFirst:(r,rules)=>{ if(!rules.shortFirst) return []
       const v=[]
       perRoomPhys(r).forEach(({di,key,phys})=>{
+        if(rules.shortWaar==='ochtend' && key[0]!=='o') return   // bereik: alleen ochtend
         const fys=phys.filter(a=>!a.digitaal); if(fys.length<4) return
         const spoedKop=rules.spoedFirst?fys.filter(a=>a.spoed).length:0
         const naSpoed=fys.slice(spoedKop)
@@ -179,6 +180,7 @@ const results = await page.evaluate(()=>{
     if(c.certainFirst) extra.push(Object.assign({},c,{_cap:{mode:'vast',kamers:3}}))
     if(c.shortFirst) extra.push(Object.assign({},c,{_cap:{mode:'vast',kamers:2}}))
     if(c.spoedFirst&&c.flexMode==='end') extra.push(Object.assign({},c,{_cfg:{newPat:40,ctrlPat:80,newCodes:2,ctrlCodes:2}}))
+    if(c.shortFirst) extra.push(Object.assign({},c,{shortWaar:'ochtend'}))
   }
   const all=[...cases,...extra]
 
