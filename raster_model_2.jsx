@@ -11,6 +11,32 @@ const wbNaarHref=wb=>{
   return URL.createObjectURL(new Blob([data],
     {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}))
 }
+// Een gedeelde (gepubliceerde) pagina mag zelf géén bestand wegschrijven: een
+// <a download> of een script-save doet daar niets. De viewer biedt daarvoor
+// window.claude.downloads aan, maar die staat alleen een vaste lijst extensies
+// toe — .xlsx hoort daar niet bij. Vandaar: bij een lokaal geopend bestand een
+// echte Excel, en in de gedeelde pagina dezelfde gegevens als CSV.
+const kanViewerOpslaan=()=>typeof window!=='undefined'&&!!(window.claude&&window.claude.downloads)
+const wbNaarCsv=(wb,blad)=>{
+  const ws=wb.Sheets[blad]
+  return ws?XLSX.utils.sheet_to_csv(ws,{FS:';'}):''
+}
+// Opslaan via de viewer, met een eerlijke melding per uitkomst. Staat .csv niet
+// aan in deze weergave, dan bieden we exact dezelfde inhoud als .txt aan.
+const viewerOpslaan=async(basisnaam,tekst,ext='csv')=>{
+  try{
+    await window.claude.downloads.save({filename:`${basisnaam}.${ext}`, data:tekst})
+    return {ok:true, msg:`Opgeslagen als ${basisnaam}.${ext}`}
+  }catch(e){
+    const c=e&&e.code
+    if(c==='extension_not_enabled'&&ext==='csv') return viewerOpslaan(basisnaam,tekst,'txt')
+    return {ok:false, msg:
+      c==='declined'      ? 'Je hebt de download geweigerd — niets opgeslagen.'
+    : c==='rate_limited'  ? 'Er staat al een download open. Probeer het zo nog eens.'
+    : c==='too_large'     ? 'Het bestand is te groot om via de gedeelde pagina op te slaan (max 16 MB).'
+    : 'Opslaan lukt niet in deze weergave. Open de tool als los bestand voor de volledige Excel-export.'}
+  }
+}
 
 // ─── DESIGN TOKENS ────────────────────────────────────────────────────────────
 const C = {
@@ -544,7 +570,8 @@ export default function RasterTool(){
   const [expName,setExpName]=useState('slingeland_raster')
   const [expOk,setExpOk]=useState(false)
   const [exporting,setExporting]=useState(false)
-  const [exportLink,setExportLink]=useState(null) // {href, filename}
+  const [exportLink,setExportLink]=useState(null) // {wb, href, basis, filename}
+  const [dlMelding,setDlMelding]=useState(null)   // uitkomst van opslaan via de gedeelde pagina
   const [tplLink,setTplLink]=useState(null)       // voorbeeld-Excel {href, filename}
   const calRef=useRef(null)
   const fileRef=useRef(null)
@@ -2732,6 +2759,7 @@ export default function RasterTool(){
       // Blob-download-URL en tonen we een link die de gebruiker zelf aanklikt —
       // dat werkt betrouwbaar in alle omgevingen, ook in de gedeelde artifact.
       setTplLink({
+        wb,
         href:wbNaarHref(wb),
         filename:'spreekuurgegevens-voorbeeld.xlsx'})
     }catch(err){ alert('Kon voorbeeld niet maken: '+err.message) }
@@ -2815,7 +2843,9 @@ export default function RasterTool(){
         XLSX.utils.book_append_sheet(wb,wsS,'_rasterdata')
 
         setExportLink({
+          wb,
           href:wbNaarHref(wb),
+          basis:(expName.trim()||(poli.naam||'raster').toLowerCase().replace(/\s+/g,'_')||'raster'),
           filename:(expName.trim()||(poli.naam||'raster').toLowerCase().replace(/\s+/g,'_')||'raster')+'.xlsx'
         })
       }catch(err){console.error('Export:',err);alert('Export fout: '+err.message)}
@@ -3224,10 +3254,24 @@ export default function RasterTool(){
             {!tplLink
               ?<button onClick={downloadSpreekuurTemplate} style={{display:'inline-flex',alignItems:'center',gap:5,fontSize:11.5,fontWeight:700,color:'#7C3AED',
                 background:C.white,border:'1px solid #D9C9F7',borderRadius:9,padding:'8px 12px',cursor:'pointer'}}>⤓ Voorbeeld</button>
-              :<a href={tplLink.href} download={tplLink.filename} onClick={()=>setTimeout(()=>setTplLink(null),1500)}
-                style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:11.5,fontWeight:700,color:'#fff',
-                  background:'#7C3AED',border:'1px solid #7C3AED',borderRadius:9,padding:'8px 12px',
-                  textDecoration:'none',whiteSpace:'nowrap'}}>⬇ Download voorbeeld.xlsx</a>}
+              :kanViewerOpslaan()
+                ?<button onClick={async()=>{
+                    setDlMelding(null)
+                    const r=await viewerOpslaan('spreekuurgegevens-voorbeeld', wbNaarCsv(tplLink.wb,'Spreekuurgegevens'))
+                    setDlMelding(r); if(r.ok) setTimeout(()=>setTplLink(null),1500)
+                  }}
+                  title="In een gedeelde pagina kan geen .xlsx worden weggeschreven — je krijgt dezelfde kolommen als CSV"
+                  style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:11.5,fontWeight:700,color:'#fff',
+                    background:'#7C3AED',border:'1px solid #7C3AED',borderRadius:9,padding:'8px 12px',
+                    cursor:'pointer',whiteSpace:'nowrap'}}>⬇ Voorbeeld als CSV</button>
+                :<a href={tplLink.href} download={tplLink.filename} onClick={()=>setTimeout(()=>setTplLink(null),1500)}
+                  style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:11.5,fontWeight:700,color:'#fff',
+                    background:'#7C3AED',border:'1px solid #7C3AED',borderRadius:9,padding:'8px 12px',
+                    textDecoration:'none',whiteSpace:'nowrap'}}>⬇ Download voorbeeld.xlsx</a>}
+            {dlMelding&&(
+              <div style={{flexBasis:'100%',fontSize:11.5,fontWeight:600,
+                color:dlMelding.ok?C.green:C.danger}}>{dlMelding.ok?'✓ ':'△ '}{dlMelding.msg}</div>
+            )}
           </div>
 
           <Btn onClick={()=>{
@@ -5431,14 +5475,46 @@ export default function RasterTool(){
                     <div style={{fontWeight:700,color:C.green,fontSize:13,marginBottom:4}}>✅ Bestand klaar!</div>
                     <div style={{fontSize:12.5,color:C.muted}}>Klik hieronder om te downloaden.</div>
                   </div>
-                  <a href={exportLink.href} download={exportLink.filename}
-                    style={{display:'block',textAlign:'center',padding:'14px 20px',
-                      background:C.green,color:'#fff',borderRadius:10,
-                      fontWeight:700,fontSize:15,textDecoration:'none',marginBottom:14}}>
-                    ⬇ Download {exportLink.filename}
-                  </a>
+                  {kanViewerOpslaan()?(
+                    // Gedeelde pagina: .xlsx mag hier niet worden weggeschreven, dus
+                    // bieden we dezelfde gegevens als CSV aan — eerlijk benoemd.
+                    <>
+                      <div style={{fontSize:12,color:C.muted,lineHeight:1.6,marginBottom:12}}>
+                        Je bekijkt de tool als gedeelde pagina. Een <b style={{color:C.text}}>.xlsx</b> mag een gedeelde
+                        pagina niet wegschrijven, daarom krijg je hier dezelfde gegevens als <b style={{color:C.text}}>CSV</b>
+                        {' '}(puntkomma-gescheiden, opent direct in Excel). Wil je één Excel mét dagbladen en de
+                        herlaad-gegevens, open de tool dan als los bestand.
+                      </div>
+                      {[{blad:'Alle afspraken',l:'Alle afspraken',s:'elke afspraak met dag, dagdeel, kamer, code en duur'},
+                        {blad:'Configuratie',l:'Configuratie',s:'aantallen, tijden, benutting en actieve planregels'}].map(x=>(
+                        <button key={x.blad} onClick={async()=>{
+                            setDlMelding(null)
+                            const r=await viewerOpslaan(`${exportLink.basis}-${x.blad.toLowerCase().replace(/\s+/g,'-')}`, wbNaarCsv(exportLink.wb,x.blad))
+                            setDlMelding(r)
+                          }}
+                          style={{display:'block',width:'100%',textAlign:'left',padding:'12px 16px',marginBottom:9,
+                            background:C.white,color:C.text,border:`1.5px solid ${C.border}`,borderRadius:10,cursor:'pointer'}}
+                          onMouseEnter={e=>{e.currentTarget.style.borderColor=C.green}}
+                          onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border}}>
+                          <div style={{fontWeight:700,fontSize:13.5}}>⬇ {x.l} (CSV)</div>
+                          <div style={{fontSize:11,color:C.muted,marginTop:2}}>{x.s}</div>
+                        </button>
+                      ))}
+                      {dlMelding&&(
+                        <div style={{fontSize:12,fontWeight:600,marginBottom:12,
+                          color:dlMelding.ok?C.green:C.danger}}>{dlMelding.ok?'✓ ':'△ '}{dlMelding.msg}</div>
+                      )}
+                    </>
+                  ):(
+                    <a href={exportLink.href} download={exportLink.filename}
+                      style={{display:'block',textAlign:'center',padding:'14px 20px',
+                        background:C.green,color:'#fff',borderRadius:10,
+                        fontWeight:700,fontSize:15,textDecoration:'none',marginBottom:14}}>
+                      ⬇ Download {exportLink.filename}
+                    </a>
+                  )}
                   <div style={{display:'flex',justifyContent:'flex-end'}}>
-                    <Btn variant="secondary" onClick={()=>{setShowExport(false);setExportLink(null)}}>Sluiten</Btn>
+                    <Btn variant="secondary" onClick={()=>{setShowExport(false);setExportLink(null);setDlMelding(null)}}>Sluiten</Btn>
                   </div>
                 </>
               )}
