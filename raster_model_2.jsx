@@ -2291,6 +2291,79 @@ export default function RasterTool(){
   const doGenerate=useCallback(()=>{
     setRaster(computeRaster(cfg,newRows,ctrlRows,m2,rules,capacity))
   },[cfg,newRows,ctrlRows,m2,rules,capacity,computeRaster])
+
+  // ══ SCENARIO-OPTIMISER ══════════════════════════════════════════════════════
+  // Draait JOUW gegevens door alle zinvolle combinaties van de EFFICIËNTIE-knoppen
+  // (rest-dag × minimumbezetting × kamerverdeling) en rangschikt de uitkomsten. De
+  // VOORKEURSREGELS (spoed eerst, starten met, afwisselen, digitaal, flex) blijven
+  // staan zoals jij ze hebt gekozen — dat zijn inhoudelijke keuzes, geen rekenknoppen.
+  // Wél rekenen we per voorkeursregel uit wat hij kost, zodat je die afweging ziet.
+  const [optim,setOptim]=useState(null)
+  const meetRaster=useCallback(r=>{
+    let placed=0, kamerDagen=0
+    ;[0,1,2,3,4].forEach(di=>{ const s=r.days[di]; if(!s) return
+      const rooms=new Set()
+      Object.entries(s).forEach(([k,arr])=>{ if((arr||[]).some(a=>!a.isFlex&&!a.overbook)) rooms.add(k.slice(1)) })
+      kamerDagen+=rooms.size
+      Object.values(s).forEach(arr=>(arr||[]).forEach(a=>{ if(!a.isFlex) placed++ }))
+    })
+    return {placed, ntp:r.ntp.length, kamerDagen,
+      benut:(r.kpi&&r.kpi.week.benutting)||0, issues:((r.kpi&&r.kpi.issues)||[]).length}
+  },[])
+  // Doelfuncties — expliciet, zodat je zelf bepaalt wat "het beste" betekent.
+  //  plannen — zo min mogelijk op de restlijst (desnoods een kamer meer)
+  //  kamers  — zo min mogelijk kamer-dagen (desnoods iets op de restlijst)
+  //  balans  — één kamer-dag weegt ongeveer op tegen 20 afspraken (een volle kamer)
+  const scoreDoel=(m,doel)=> doel==='plannen' ? m.ntp*1000 + m.kamerDagen
+    : doel==='kamers' ? m.kamerDagen*1000 + m.ntp
+    : m.kamerDagen + m.ntp/20 - m.benut/1000
+  const startOptimiser=useCallback((doel)=>{
+    const dagen=['uit','auto','ma','di','wo','do','vr']
+    const minBez=[60,70,75,80,85]
+    const kvs=['dagdeel','gelijk']
+    const kand=[]
+    dagen.forEach(rd=>minBez.forEach(mb=>kvs.forEach(kv=>kand.push({restDag:rd,minBezetting:mb,kamerVerdeling:kv}))))
+    // Wat kost elke ACTIEVE voorkeursregel? (zelfde efficiëntie-instellingen, regel uit)
+    const voorkeur=[['spoedFirst','Spoed afspraken eerst'],['startNieuw','Starten met een nieuwe afspraak'],
+      ['startControle','Starten met een controle afspraak'],['mixNC','Nieuw en controle afwisselen']]
+      .filter(([k])=>rules[k]).map(([k,l])=>({k,l}))
+    setOptim({bezig:true, voortgang:0, totaal:kand.length+voorkeur.length, doel, resultaten:null, kosten:null})
+    const res=[], kosten=[]
+    let i=0, j=0
+    const huidigM=meetRaster(computeRaster(cfg,newRows,ctrlRows,m2,rules,capacity))
+    const stap=()=>{
+      const t0=(typeof performance!=='undefined'?performance.now():0)
+      while(i<kand.length && ((typeof performance!=='undefined'?performance.now():0)-t0)<45){
+        const k=kand[i++]
+        try{ res.push({k, m:meetRaster(computeRaster(cfg,newRows,ctrlRows,m2,{...rules,...k},capacity))}) }catch(e){}
+      }
+      if(i>=kand.length){
+        while(j<voorkeur.length && ((typeof performance!=='undefined'?performance.now():0)-t0)<45){
+          const v=voorkeur[j++]
+          try{ kosten.push({...v, m:meetRaster(computeRaster(cfg,newRows,ctrlRows,m2,{...rules,[v.k]:false},capacity))}) }catch(e){}
+        }
+      }
+      setOptim(o=>o&&({...o, voortgang:i+j}))
+      if(i<kand.length || j<voorkeur.length){ setTimeout(stap,0); return }
+      // Rangschikken + ontdubbelen op identieke uitkomst. De minimumbezetting is JOUW
+      // beleidskeuze, geen rekenknop: de hoofdlijst houdt jouw drempel aan. Levert een
+      // ándere drempel aantoonbaar meer op, dan tonen we dat apart als afweging — nooit
+      // stilzwijgend als "de beste".
+      const huidigeDrempel=rules.minBezetting??75
+      const rangschik=(lijst)=>{ const gezien=new Set()
+        return lijst.filter(x=>x.m.issues===0)
+          .sort((a,b)=>scoreDoel(a.m,doel)-scoreDoel(b.m,doel))
+          .filter(x=>{ const sig=`${x.m.ntp}|${x.m.kamerDagen}|${x.m.benut}`
+            if(gezien.has(sig)) return false; gezien.add(sig); return true }) }
+      const top=rangschik(res.filter(x=>x.k.minBezetting===huidigeDrempel)).slice(0,6)
+      const besteScore=top.length?scoreDoel(top[0].m,doel):Infinity
+      const alt=rangschik(res.filter(x=>x.k.minBezetting!==huidigeDrempel))
+        .filter(x=>scoreDoel(x.m,doel)<besteScore-1e-9).slice(0,3)
+      setOptim({bezig:false, voortgang:kand.length+voorkeur.length, totaal:kand.length+voorkeur.length,
+        doel, resultaten:top, alt, drempel:huidigeDrempel, huidig:huidigM, kosten})
+    }
+    setTimeout(stap,0)
+  },[cfg,newRows,ctrlRows,m2,rules,capacity,computeRaster,meetRaster])
   // Test-API voor de invariant-suite (test_invariants.mjs): stelt de pure engine
   // bloot zodat elke regel-combinatie headless gevalideerd kan worden.
   useEffect(()=>{ if(typeof window!=='undefined'){ window.__cr=(a,b,c,d,e,f)=>computeRaster(a,b,c,d,e,f) } },[computeRaster])
@@ -4368,6 +4441,142 @@ export default function RasterTool(){
             </div>
           )
         })()}
+
+        {/* ── SCENARIO-OPTIMISER — laat de tool zélf de beste instellingen zoeken ── */}
+        <div style={{marginBottom:12,border:`1px solid ${C.border}`,borderRadius:12,overflow:'hidden',background:C.white}}>
+          <div style={{display:'flex',alignItems:'center',gap:9,padding:'10px 15px',flexWrap:'wrap',
+            background:'linear-gradient(90deg,#123B57,#1C6EA4 60%,#39C6AC)',color:'#fff'}}>
+            <span style={{fontSize:15}}>🧠</span>
+            <span style={{fontSize:12.5,fontWeight:800,letterSpacing:'0.03em'}}>SCENARIO-OPTIMISER — WAT IS DE BESTE INSTELLING VOOR JOUW VRAAG?</span>
+            {optim&&optim.bezig&&(
+              <span style={{marginLeft:'auto',fontSize:10.5,fontWeight:700,background:'rgba(255,255,255,0.22)',padding:'2px 9px',borderRadius:10}}>
+                {optim.voortgang}/{optim.totaal} doorgerekend…
+              </span>
+            )}
+          </div>
+          <div style={{padding:'12px 14px'}}>
+            <p style={{fontSize:11.5,color:C.muted,margin:'0 0 10px',lineHeight:1.5}}>
+              De tool rekent jouw gegevens door <b style={{color:C.text}}>70 combinaties</b> van rest-dag × minimumbezetting ×
+              kamerverdeling en zet de uitkomsten op een rij. Je <b style={{color:C.text}}>voorkeursregels</b> (spoed, starten met,
+              afwisselen, digitaal, flex) blijven staan zoals jij ze koos — daaronder zie je wél wat elke regel je kost.
+            </p>
+            <div style={{display:'flex',gap:7,flexWrap:'wrap',alignItems:'center',marginBottom:optim&&optim.resultaten?12:0}}>
+              <span style={{fontSize:11,color:C.muted}}>Wat is voor jou "het beste"?</span>
+              {[{v:'balans',l:'Balans (aanbevolen)',s:'één kamer-dag weegt op tegen ± 20 afspraken'},
+                {v:'plannen',l:'Alles inplannen',s:'zo min mogelijk op de restlijst, desnoods een kamer meer'},
+                {v:'kamers',l:'Minste kamers',s:'zo min mogelijk kamer-dagen, desnoods iets op de restlijst'}].map(o=>(
+                <button key={o.v} title={o.s} disabled={!!(optim&&optim.bezig)}
+                  onClick={()=>startOptimiser(o.v)}
+                  style={{padding:'7px 13px',borderRadius:16,cursor:optim&&optim.bezig?'wait':'pointer',fontSize:11.5,fontWeight:700,
+                    background:optim&&optim.doel===o.v?C.primary:C.white,color:optim&&optim.doel===o.v?'#fff':C.text,
+                    border:`1px solid ${optim&&optim.doel===o.v?C.primary:C.border}`,opacity:optim&&optim.bezig?0.6:1}}>{o.l}</button>
+              ))}
+            </div>
+            {optim&&optim.bezig&&(
+              <div style={{height:6,background:C.surface2,borderRadius:4,overflow:'hidden',marginTop:10}}>
+                <div style={{height:'100%',width:`${Math.round(optim.voortgang/Math.max(1,optim.totaal)*100)}%`,
+                  background:'linear-gradient(90deg,#1C6EA4,#39C6AC)',transition:'width 0.15s'}}/>
+              </div>
+            )}
+            {optim&&!optim.bezig&&optim.resultaten&&(()=>{
+              const h=optim.huidig
+              const isHuidig=x=>x.k.restDag===(rules.restDag||'uit')&&x.k.minBezetting===(rules.minBezetting??75)&&x.k.kamerVerdeling===rules.kamerVerdeling
+              const dagL={uit:'geen rest-dag',auto:'rest-dag automatisch',ma:'rest-dag maandag',di:'rest-dag dinsdag',wo:'rest-dag woensdag',do:'rest-dag donderdag',vr:'rest-dag vrijdag'}
+              const Delta=({v,goed})=> v===0?<span style={{color:C.muted}}>±0</span>
+                :<span style={{color:goed?C.green:C.danger,fontWeight:700}}>{v>0?'+':''}{v}</span>
+              const Tabel=({rijen,besteBadge})=>(
+                <div style={{overflowX:'auto'}}>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:11.5,minWidth:640}}>
+                  <thead><tr style={{background:C.surface2}}>
+                    {['Instelling','Ingepland','Nog te plannen','Kamer-dagen','Benutting',''].map((c,i)=>(
+                      <th key={i} style={{textAlign:i===0?'left':i===5?'right':'center',padding:'7px 9px',
+                        fontSize:9.5,fontWeight:800,color:C.muted,textTransform:'uppercase',letterSpacing:'0.06em',
+                        borderBottom:`1px solid ${C.border}`}}>{c}</th>
+                    ))}
+                  </tr></thead>
+                  <tbody>
+                    {rijen.map((x,i)=>{
+                      const nu=isHuidig(x)
+                      return(
+                        <tr key={i} style={{background:nu?C.blueAccent:(i%2?C.rowAlt:C.white)}}>
+                          <td style={{padding:'8px 9px',borderBottom:`1px solid ${C.border}`}}>
+                            <div style={{display:'flex',gap:5,flexWrap:'wrap',alignItems:'center'}}>
+                              {i===0&&besteBadge&&<span style={{fontSize:9,fontWeight:800,background:C.green,color:'#fff',padding:'2px 7px',borderRadius:9}}>{besteBadge}</span>}
+                              {nu&&<span style={{fontSize:9,fontWeight:800,background:C.primary,color:'#fff',padding:'2px 7px',borderRadius:9}}>NU ACTIEF</span>}
+                              <span style={{fontWeight:600,color:C.text}}>{dagL[x.k.restDag]}</span>
+                              <span style={{color:C.muted}}>· drempel {x.k.minBezetting}%</span>
+                              <span style={{color:C.muted}}>· {x.k.kamerVerdeling==='gelijk'?'gelijk verdelen':'dagdeel voor dagdeel'}</span>
+                            </div>
+                          </td>
+                          <td style={{textAlign:'center',padding:'8px 9px',borderBottom:`1px solid ${C.border}`,fontWeight:700}}>
+                            {x.m.placed} <span style={{fontWeight:400,fontSize:10}}>(<Delta v={x.m.placed-h.placed} goed={x.m.placed>=h.placed}/>)</span>
+                          </td>
+                          <td style={{textAlign:'center',padding:'8px 9px',borderBottom:`1px solid ${C.border}`,fontWeight:700,
+                            color:x.m.ntp?'#B8860B':C.green}}>
+                            {x.m.ntp} <span style={{fontWeight:400,fontSize:10,color:C.muted}}>(<Delta v={x.m.ntp-h.ntp} goed={x.m.ntp<=h.ntp}/>)</span>
+                          </td>
+                          <td style={{textAlign:'center',padding:'8px 9px',borderBottom:`1px solid ${C.border}`,fontWeight:700}}>
+                            {x.m.kamerDagen} <span style={{fontWeight:400,fontSize:10,color:C.muted}}>(<Delta v={x.m.kamerDagen-h.kamerDagen} goed={x.m.kamerDagen<=h.kamerDagen}/>)</span>
+                          </td>
+                          <td style={{textAlign:'center',padding:'8px 9px',borderBottom:`1px solid ${C.border}`,fontWeight:700}}>{x.m.benut}%</td>
+                          <td style={{textAlign:'right',padding:'8px 9px',borderBottom:`1px solid ${C.border}`}}>
+                            <button disabled={nu} onClick={()=>setRules(p=>({...p,...x.k}))}
+                              style={{padding:'5px 12px',borderRadius:14,cursor:nu?'default':'pointer',fontSize:11,fontWeight:700,
+                                background:nu?C.surface2:C.primary,color:nu?C.muted:'#fff',border:'none',whiteSpace:'nowrap'}}>
+                              {nu?'Actief':'Toepassen'}</button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+                </div>
+              )
+              return(<>
+                <div style={{fontSize:9.5,fontWeight:800,color:C.muted,letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:7}}>
+                  Met jouw minimumbezetting van {optim.drempel}%
+                </div>
+                <Tabel rijen={optim.resultaten} besteBadge="BESTE"/>
+                {optim.alt&&optim.alt.length>0&&(
+                  <div style={{marginTop:14}}>
+                    <div style={{fontSize:9.5,fontWeight:800,color:'#8A6A12',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:5}}>
+                      Afweging — als je de drempel zou aanpassen
+                    </div>
+                    <div style={{fontSize:11,color:C.muted,marginBottom:7,lineHeight:1.45}}>
+                      De minimumbezetting is jouw beleidskeuze, geen rekenknop. Deze instellingen scoren beter,
+                      maar alleen doordat spreekuren bij een andere drempel wél/niet opengaan. Bekijk of dat past bij je poli.
+                    </div>
+                    <Tabel rijen={optim.alt} besteBadge="ANDERE DREMPEL"/>
+                  </div>
+                )}
+                {optim.kosten&&optim.kosten.length>0&&(
+                  <div style={{marginTop:14}}>
+                    <div style={{fontSize:9.5,fontWeight:800,color:C.muted,letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:7}}>
+                      Wat kost elke voorkeursregel?
+                    </div>
+                    <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:8}}>
+                      {optim.kosten.map((v,i)=>{
+                        const dNtp=h.ntp-v.m.ntp, dKd=h.kamerDagen-v.m.kamerDagen
+                        const gratis=dNtp<=0&&dKd<=0
+                        return(
+                          <div key={i} style={{border:`1px solid ${gratis?C.green+'55':'#B8860B55'}`,background:gratis?'#EDF7F0':'#FCF6E8',
+                            borderRadius:9,padding:'9px 12px'}}>
+                            <div style={{fontSize:11.5,fontWeight:700,color:C.text}}>{v.l}</div>
+                            <div style={{fontSize:11,color:gratis?C.green:'#8A6A12',marginTop:2,lineHeight:1.4}}>
+                              {gratis
+                                ? 'Kost je niets — deze regel gaat niet ten koste van inplannen of kamers.'
+                                : `Uitzetten zou ${dNtp>0?`${dNtp} afspra${dNtp===1?'ak':'ken'} méér inplannen`:''}${dNtp>0&&dKd>0?' en ':''}${dKd>0?`${dKd} kamer-dag${dKd===1?'':'en'} besparen`:''}.`}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+              </>)
+            })()}
+          </div>
+        </div>
 
         {/* ── OVERZICHT — één paneel: alles wat de engine deed + waar je op moet letten ──
              De aanpassingen-log (automatische ingrepen) en de meldingen (regel-interacties
