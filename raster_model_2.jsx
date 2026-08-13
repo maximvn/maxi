@@ -422,6 +422,116 @@ const INTAKE_LABELS={
 const specKey=s=>s||'(geen specialisme)'
 const datumKort=ts=>{ try{ return new Date(ts).toLocaleDateString('nl-NL',{day:'numeric',month:'short'}) }catch(e){ return '' } }
 
+// ═══ BEZETTING PER CEL ═══════════════════════════════════════════════════════
+// Eén meting van één kamer op één dag in één dagdeel. Dit is de basis onder de
+// bezettingskaart én onder de bijstuur-opdrachten van de assistent: allebei
+// praten over dezelfde cel, met hetzelfde getal.
+const DD_INFO=[{c:'o',l:'Ochtend',kort:'och'},{c:'m',l:'Middag',kort:'mid'},{c:'a',l:'Avond',kort:'avo'}]
+const celMeting=(r,di,room,ddIdx)=>{
+  if(!r||!r.days) return null
+  const dur=ddIdx===0?r.ochDur:ddIdx===1?r.midDur:r.avDur
+  const arr=(r.days[di]&&r.days[di][DD_INFO[ddIdx].c+room])||[]
+  const open=arr.some(a=>!a.isFlex)
+  let min=0, appts=0, flex=0
+  arr.forEach(a=>{ if(a.isFlex){flex+=a.duur; return} appts++; if(!a.overbook) min+=a.duur })
+  return {open, min, flex, appts, cap:dur||0, pct:(open&&dur>0)?Math.round(min/dur*100):0}
+}
+// Meting van een hele dag (alle kamers, alle dagdelen) — voor "dinsdag is leeg".
+const dagMeting=(r,di)=>{
+  if(!r) return {open:false,appts:0,pct:0,kamers:0}
+  const n=r.numRooms||1
+  let min=0,cap=0,appts=0; const kamers=new Set()
+  for(let room=0;room<n;room++) for(let dd=0;dd<3;dd++){
+    const c=celMeting(r,di,room,dd); if(!c||!c.open) continue
+    min+=c.min; cap+=c.cap; appts+=c.appts; kamers.add(room)
+  }
+  return {open:cap>0, appts, kamers:kamers.size, pct:cap>0?Math.round(min/cap*100):0}
+}
+// Kleurband: waar zit deze cel ten opzichte van jouw doel en jouw drempel?
+const bandKleur=(pct,doel,drempel)=>
+   pct>=doel+6   ? {bg:'#EDF1FB',brd:'#B9C6EA',fg:'#33509B',l:'boven doel'}
+ : pct>=doel-6   ? {bg:'#E9F5EE',brd:'#A9D4BB',fg:'#1F6B45',l:'op doel'}
+ : pct>=drempel  ? {bg:'#FDF6E3',brd:'#EBD08A',fg:'#8A6A12',l:'onder doel'}
+ :                 {bg:'#FBEDEA',brd:'#E8B3A8',fg:'#B3402C',l:'onder drempel'}
+
+// ═══ OPDRACHT-LEZER ══════════════════════════════════════════════════════════
+// Leest een losse instructie in gewoon Nederlands en zet die om in een opdracht
+// die de tool kan uitvoeren. Volledig op regels — geen taalmodel, dus geen
+// verzinsels: wat niet herkend wordt, wordt als "niet begrepen" teruggegeven in
+// plaats van gegokt. De herkende opdracht wordt altijd eerst teruggelezen aan de
+// gebruiker vóór er iets verandert.
+const DAGS_NL=['maandag','dinsdag','woensdag','donderdag','vrijdag']
+const DAG_PAT=[['maandag','ma'],['dinsdag','di'],['woensdag','wo'],['donderdag','do'],['vrijdag','vr']]
+const parseOpdracht=tekst=>{
+  const t=(tekst||'').toLowerCase().replace(/[.;!]/g,' ')
+  if(!t.trim()) return {type:'leeg'}
+  const g={}
+  DAG_PAT.forEach(([lang,kort],i)=>{ if(new RegExp(`(^|[^a-z])(${lang}|${kort})([^a-z]|$)`).test(t)) g.dag=i })
+  const mk=t.match(/kamer\s*(\d+)/)||t.match(/(^|[^a-z])k\s?(\d+)([^0-9]|$)/)
+  if(mk) g.kamer=parseInt(mk[1]||mk[2])-1
+  if(/ochtend/.test(t)) g.dd=0; else if(/middag/.test(t)) g.dd=1; else if(/avond/.test(t)) g.dd=2
+  // Percentages: een zin noemt vaak eerst de HUIDIGE waarde ("staat op 73%") en
+  // dan pas het doel ("richting 85%"). Een woord dat een richting aangeeft wint
+  // daarom altijd; staat er maar één percentage, dan is dát het doel.
+  const mDoel=t.match(/(?:naar|richting|minimaal|minstens|tenminste|onder de|boven de)\s*(\d{2,3})\s*%?/)
+  const alle=[...t.matchAll(/(\d{2,3})\s*%/g)].map(m=>parseInt(m[1]))
+  const mOp=t.match(/\bop\s*(\d{2,3})\s*%/)
+  const pct=mDoel?parseInt(mDoel[1]):(alle.length?alle[alle.length-1]:(mOp?parseInt(mOp[1]):null))
+  if(pct!=null&&pct>=1&&pct<=100) g.pct=pct
+
+  const benutWoord=/benut|bezetting|bezet|vullen|voller|voll?er|gevuld|percentage/.test(t)
+  const dichtWoord=/(niet|geen|nooit)\s+(meer\s+)?(in)?(ge)?plann?en|vrij\s?houden|dicht\s?houden|sluiten|leeg\s?houden|geen spreekuur|niet (meer )?(open|draaien|gebruiken)|schrappen|eruit/.test(t)
+  const openWoord=/(in)?plann?en|open|meedraaien|mee draaien|erbij|toevoegen|gebruiken|benutten|inzetten|ook (op )?/.test(t)
+  const restWoord=/restlijst|nog te plannen|niet ingepland|alles inplannen|overloop|overschot/.test(t)
+  const kamerMeer=/kamer.{0,12}(erbij|extra|meer|bij)|meer kamers|extra kamer/.test(t)
+  const kamerMinder=/kamer.{0,12}(minder|weg|eraf|schrappen)|minder kamers|kamer eraf/.test(t)
+
+  if(benutWoord&&g.pct!=null) return {type:'benutting', ...g, tekst}
+  if(restWoord)               return {type:'restlijst', ...g, tekst}
+  if(kamerMinder)             return {type:'kamers', delta:-1, ...g, tekst}
+  if(kamerMeer)               return {type:'kamers', delta:1, ...g, tekst}
+  if(dichtWoord&&g.dag!=null) return {type:'dag-dicht', ...g, tekst}
+  if(openWoord&&g.dag!=null)  return {type:'dag-open', ...g, tekst}
+  if(g.pct!=null&&(g.kamer!=null||g.dag!=null)) return {type:'benutting', ...g, tekst}
+  return {type:'onbekend', ...g, tekst}
+}
+const opdrachtOmschrijving=op=>{
+  const d=op.dag!=null?DAGS_NL[op.dag]:null
+  const k=op.kamer!=null?`kamer ${op.kamer+1}`:null
+  const dd=op.dd!=null?DD_INFO[op.dd].l.toLowerCase():null
+  switch(op.type){
+    case 'dag-open':   return `${d} moet meedraaien in de week — afspraken op ${d} inplannen.`
+    case 'dag-dicht':  return `${d} moet vrij blijven — geen spreekuren op ${d}.`
+    case 'benutting':  return `${[k,d&&`op ${d}`,dd].filter(Boolean).join(' ')||'De spreekuren'} moet${k?'':'en'} naar ongeveer ${op.pct}% bezetting.`
+    case 'kamers':     return op.delta>0?'Er mag een kamer bij.':'Het moet met één kamer minder.'
+    case 'restlijst':  return 'Alles moet ingepland worden — niets meer op de restlijst.'
+    default: return null
+  }
+}
+
+// Invoerveld voor een losse opdracht — eigen state, zodat typen niet het hele
+// raster laat herrekenen.
+const OpdrachtInvoer=({onZoek,bezig,initieel})=>{
+  const [t,setT]=useState(initieel||'')
+  const start=()=>{ if(t.trim()) onZoek(t) }
+  return(
+    <div>
+      <textarea value={t} onChange={e=>setT(e.target.value)} rows={2}
+        onKeyDown={e=>{ if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)) start() }}
+        placeholder="Bijvoorbeeld: op dinsdag staan geen afspraken, graag dinsdag ook inplannen"
+        style={{width:'100%',padding:'11px 13px',borderRadius:11,border:`1.5px solid ${C.border}`,
+          fontSize:13,fontFamily:'inherit',color:C.text,resize:'vertical',lineHeight:1.5}}/>
+      <div style={{display:'flex',alignItems:'center',gap:9,marginTop:8,flexWrap:'wrap'}}>
+        <button onClick={start} disabled={!t.trim()||bezig}
+          style={{padding:'9px 17px',borderRadius:10,border:'none',background:t.trim()&&!bezig?C.primary:C.surface2,
+            color:t.trim()&&!bezig?'#fff':C.muted,cursor:t.trim()&&!bezig?'pointer':'default',fontSize:12.5,fontWeight:700}}>
+          {bezig?'⏳ Aan het doorrekenen…':'Ga ermee aan de slag →'}</button>
+        <span style={{fontSize:11,color:C.muted}}>of ⌘/Ctrl + Enter</span>
+      </div>
+    </div>
+  )
+}
+
 // ─── VRIJ INVULLEN ────────────────────────────────────────────────────────────
 // Elke intake-vraag heeft naast de voorgekookte knoppen een eigen invulpaneel:
 // staat het antwoord er niet tussen, dan vul je het hier gewoon zelf in. De
@@ -2570,9 +2680,179 @@ export default function RasterTool(){
     }
     setTimeout(stap,0)
   },[cfg,newRows,ctrlRows,m2,rules,capacity,computeRaster,meetRaster,mem,poli.specialisme])
+  // ══ BIJSTUREN — de tool gaat met jouw losse opdracht aan de slag ════════════
+  // Een opdracht ("dinsdag ook inplannen", "kamer 3 op maandag naar 85%") wordt
+  // omgezet in een reeks KANDIDAAT-instellingen. Elke kandidaat wordt echt
+  // doorgerekend en gemeten op precies dát wat je vroeg; de eerste die het doel
+  // haalt wint, en anders de kandidaat die het dichtst komt. Je ziet het
+  // voorstel mét de cijfers vóór er iets verandert — er wordt nooit stilzwijgend
+  // aan je raster gesleuteld.
+  const [bijstuur,setBijstuur]=useState(null) // {bezig} | {op, voorstel, huidig}
+  const dagShare=useCallback((dagIdx,aan)=>{
+    // Verdeel de weekvraag opnieuw over de dagen die meedraaien.
+    const keys=WEEKDAY_KEYS
+    const actief=keys.filter((k,i)=> i===dagIdx ? aan : (m2.days[k]||0)>0)
+    if(!actief.length) return m2.days
+    const basis=Math.floor(100/actief.length), rest=100-basis*actief.length
+    const d={ma:0,di:0,wo:0,do:0,vr:0}
+    actief.forEach((k,i)=>{ d[k]=basis+(i<rest?1:0) })
+    return d
+  },[m2.days])
+  // Zet in de afspraakcodes een weekdag aan of uit. Zonder dit blijft een dag
+  // leeg ook al staat er een aandeel op: geen enkele code mag er dan komen.
+  const codesMetDag=useCallback((rows,dagIdx,aan)=>{
+    const k=DAY_ABBR[dagIdx]
+    return rows.map(r=>({...r, weekdagen:{...(r.weekdagen||{}), [k]:aan?1:0}}))
+  },[])
+  const bouwKandidaten=useCallback(op=>{
+    const K=[]
+    const nu={cfg,newRows,ctrlRows,m2,rules,capacity}
+    const huidigeKamers=capacity.mode==='vast'?capacity.kamers:(raster&&raster.numRooms)||3
+    if(op.type==='dag-open'){
+      const days=dagShare(op.dag,true)
+      const nr=codesMetDag(newRows,op.dag,true), cr=codesMetDag(ctrlRows,op.dag,true)
+      const ddD={...m2.ddDagen, O:{...m2.ddDagen.O,[DAY_ABBR[op.dag]]:1}, M:{...m2.ddDagen.M,[DAY_ABBR[op.dag]]:1}}
+      K.push({l:`${DAGS_NL[op.dag]} krijgt een aandeel van de weekvraag en de codes mogen op ${DAGS_NL[op.dag]}`,
+        knoppen:[`Dagverdeling → ${WEEKDAY_KEYS.map(k=>`${k} ${days[k]}%`).join(' · ')}`,
+                 `Alle afspraakcodes: ${DAY_ABBR[op.dag]} aangezet`,
+                 `Dagdelen ochtend + middag open op ${DAY_ABBR[op.dag]}`],
+        st:{...nu, m2:{...m2,days,ddDagen:ddD}, newRows:nr, ctrlRows:cr}})
+      K.push({l:`Hetzelfde, plus de restvraag bundelen op ${DAGS_NL[op.dag]}`,
+        knoppen:[`Dagverdeling → ${DAY_ABBR[op.dag]} mee`,`Alle afspraakcodes: ${DAY_ABBR[op.dag]} aangezet`,
+                 `Rest-dag → ${DAGS_NL[op.dag]}`],
+        st:{...nu, m2:{...m2,days,ddDagen:ddD}, newRows:nr, ctrlRows:cr, rules:{...rules,restDag:WEEKDAY_KEYS[op.dag]}}})
+    }
+    if(op.type==='dag-dicht'){
+      const days=dagShare(op.dag,false)
+      const nr=codesMetDag(newRows,op.dag,false), cr=codesMetDag(ctrlRows,op.dag,false)
+      K.push({l:`${DAGS_NL[op.dag]} draait niet meer mee; de vraag gaat naar de andere dagen`,
+        knoppen:[`Dagverdeling → ${WEEKDAY_KEYS.map(k=>`${k} ${days[k]}%`).join(' · ')}`,
+                 `Alle afspraakcodes: ${DAY_ABBR[op.dag]} uitgezet`],
+        st:{...nu, m2:{...m2,days}, newRows:nr, ctrlRows:cr}})
+    }
+    if(op.type==='benutting'){
+      const p=op.pct
+      K.push({l:`Spreekuren gaan pas open vanaf ${p}% bezetting`,
+        knoppen:[`Minimumbezetting → ${p}%`],
+        st:{...nu, rules:{...rules,restOpruimen:true,minBezetting:p}}})
+      K.push({l:`Drempel ${p}% én de restvraag automatisch bundelen op één dag`,
+        knoppen:[`Minimumbezetting → ${p}%`,'Rest-dag → automatisch'],
+        st:{...nu, rules:{...rules,restOpruimen:true,minBezetting:p,restDag:'auto'}}})
+      K.push({l:`Drempel ${p}% en kamers één voor één volmaken`,
+        knoppen:[`Minimumbezetting → ${p}%`,'Kamers vullen → dagdeel voor dagdeel'],
+        st:{...nu, rules:{...rules,restOpruimen:true,minBezetting:p,kamerVerdeling:'dagdeel'}}})
+      K.push({l:`Drempel ${p}% en de doelbenutting per spreekuur mee omhoog naar ${p}%`,
+        knoppen:[`Minimumbezetting → ${p}%`,`Doelbenutting → ${p}%`],
+        st:{...nu, m2:{...m2,benutting:p}, rules:{...rules,restOpruimen:true,minBezetting:p}}})
+      if(huidigeKamers>1) K.push({l:`Dezelfde vraag in één kamer minder (${huidigeKamers-1})`,
+        knoppen:[`Kamers → vast ${huidigeKamers-1}`,`Minimumbezetting → ${p}%`],
+        st:{...nu, rules:{...rules,restOpruimen:true,minBezetting:p}, capacity:{mode:'vast',kamers:huidigeKamers-1}}})
+    }
+    if(op.type==='kamers'){
+      const n=Math.max(1,huidigeKamers+op.delta)
+      K.push({l:`Werken met ${n} kamer${n===1?'':'s'}`, knoppen:[`Kamers → vast ${n}`],
+        st:{...nu, capacity:{mode:'vast',kamers:n}}})
+      if(op.delta>0) K.push({l:'De capaciteit vrij laten groeien tot wat de vraag nodig heeft',
+        knoppen:['Kamers → automatisch'], st:{...nu, capacity:{mode:'auto',kamers:capacity.kamers}}})
+    }
+    if(op.type==='restlijst'){
+      K.push({l:'De capaciteit vrij laten groeien tot alles past',
+        knoppen:['Kamers → automatisch'], st:{...nu, capacity:{mode:'auto',kamers:capacity.kamers}}})
+      K.push({l:'Capaciteit vrij én de restvraag bundelen op één dag',
+        knoppen:['Kamers → automatisch','Rest-dag → automatisch'],
+        st:{...nu, capacity:{mode:'auto',kamers:capacity.kamers}, rules:{...rules,restDag:'auto'}}})
+      K.push({l:'Drempel loslaten zodat ook half gevulde dagdelen opengaan',
+        knoppen:['Minimumbezetting → geen drempel'],
+        st:{...nu, rules:{...rules,restOpruimen:false}}})
+      K.push({l:'Een kamer erbij',
+        knoppen:[`Kamers → vast ${huidigeKamers+1}`],
+        st:{...nu, capacity:{mode:'vast',kamers:huidigeKamers+1}}})
+    }
+    return K
+  },[cfg,newRows,ctrlRows,m2,rules,capacity,raster,dagShare,codesMetDag])
+  // Meet precies dát waar de opdracht over ging, zodat de terugkoppeling over
+  // hetzelfde gaat als de vraag.
+  const meetDoel=useCallback((r,op)=>{
+    if(!r) return null
+    if(op.type==='dag-open'||op.type==='dag-dicht'){
+      const d=dagMeting(r,op.dag)
+      return {waarde:d.appts, tekst:`${d.appts} afspra${d.appts===1?'ak':'ken'} op ${DAGS_NL[op.dag]}${d.open?` in ${d.kamers} kamer${d.kamers===1?'':'s'} · ${d.pct}% bezet`:''}`,
+        gehaald: op.type==='dag-open' ? d.appts>0 : d.appts===0}
+    }
+    if(op.type==='benutting'){
+      const doel=op.pct
+      if(op.kamer!=null&&op.dag!=null){
+        const dds=op.dd!=null?[op.dd]:[0,1,2]
+        const cellen=dds.map(dd=>({dd, m:celMeting(r,op.dag,op.kamer,dd)})).filter(x=>x.m&&x.m.open)
+        if(!cellen.length) return {waarde:null, gehaald:true,
+          tekst:`kamer ${op.kamer+1} draait op ${DAGS_NL[op.dag]} niet meer — die afspraken zijn over de andere kamers verdeeld`}
+        const laagste=cellen.reduce((a,b)=>a.m.pct<b.m.pct?a:b)
+        return {waarde:laagste.m.pct, gehaald:laagste.m.pct>=doel-2,
+          tekst:cellen.map(c=>`${DD_INFO[c.dd].l.toLowerCase()} ${c.m.pct}%`).join(' · ')+` (kamer ${op.kamer+1}, ${DAGS_NL[op.dag]})`}
+      }
+      // geen kamer genoemd: het laagst bezette open dagdeel in de hele week
+      let laagste=null
+      for(let di=0;di<5;di++){ if(op.dag!=null&&di!==op.dag) continue
+        for(let room=0;room<(r.numRooms||1);room++) for(let dd=0;dd<3;dd++){
+          const m=celMeting(r,di,room,dd); if(!m||!m.open) continue
+          if(!laagste||m.pct<laagste.pct) laagste={pct:m.pct,di,room,dd} } }
+      if(!laagste) return {waarde:null, gehaald:false, tekst:'geen open spreekuren gevonden'}
+      return {waarde:laagste.pct, gehaald:laagste.pct>=doel-2,
+        tekst:`laagst bezette spreekuur: ${laagste.pct}% (${DAGS_NL[laagste.di]}, kamer ${laagste.room+1}, ${DD_INFO[laagste.dd].l.toLowerCase()})`}
+    }
+    if(op.type==='restlijst') return {waarde:r.ntp.length, gehaald:r.ntp.length===0,
+      tekst:`${r.ntp.length} op de restlijst`}
+    if(op.type==='kamers'){ const m=meetRaster(r)
+      return {waarde:m.kamerDagen, gehaald:true, tekst:`${m.kamerDagen} kamer-dagen, ${m.ntp} op de restlijst`} }
+    return null
+  },[meetRaster])
+  const zoekVoorstel=useCallback(op=>{
+    setBijstuur({bezig:true, op})
+    setTimeout(()=>{
+      const huidigR=computeRaster(cfg,newRows,ctrlRows,m2,rules,capacity)
+      const huidig={doel:meetDoel(huidigR,op), alg:meetRaster(huidigR)}
+      const kand=bouwKandidaten(op)
+      const uitkomsten=[]
+      kand.forEach(k=>{
+        try{
+          const r=computeRaster(k.st.cfg,k.st.newRows,k.st.ctrlRows,k.st.m2,k.st.rules,k.st.capacity)
+          uitkomsten.push({...k, doel:meetDoel(r,op), alg:meetRaster(r)})
+        }catch(e){}
+      })
+      // Eerst wie het doel haalt; daarbinnen zo min mogelijk restlijst en kamer-dagen.
+      const gesorteerd=uitkomsten.slice().sort((a,b)=>
+        (a.doel&&a.doel.gehaald?0:1)-(b.doel&&b.doel.gehaald?0:1)
+        || a.alg.ntp-b.alg.ntp || a.alg.kamerDagen-b.alg.kamerDagen)
+      setBijstuur({op, huidig, kandidaten:gesorteerd, keuze:0, bezig:false})
+    },30)
+  },[cfg,newRows,ctrlRows,m2,rules,capacity,computeRaster,meetDoel,meetRaster,bouwKandidaten])
+  const pasVoorstelToe=useCallback(k=>{
+    if(k.st.m2!==m2) setM2(k.st.m2)
+    if(k.st.rules!==rules) setRules(k.st.rules)
+    if(k.st.capacity!==capacity) setCapacity(k.st.capacity)
+    if(k.st.newRows!==newRows) setNewRows(k.st.newRows)
+    if(k.st.ctrlRows!==ctrlRows) setCtrlRows(k.st.ctrlRows)
+    if(k.st.cfg!==cfg) setCfg(k.st.cfg)
+  },[m2,rules,capacity,newRows,ctrlRows,cfg])
+
   // Test-API voor de invariant-suite (test_invariants.mjs): stelt de pure engine
   // bloot zodat elke regel-combinatie headless gevalideerd kan worden.
   useEffect(()=>{ if(typeof window!=='undefined'){ window.__cr=(a,b,c,d,e,f)=>computeRaster(a,b,c,d,e,f) } },[computeRaster])
+  // Test-API voor de bijstuur-suite (test_bijsturen.mjs): de opdracht-lezer en de
+  // huidige stand, zodat een test kan controleren dat er pas iets verandert ná
+  // akkoord en dat de belofte uitkomt.
+  useEffect(()=>{ if(typeof window==='undefined') return
+    window.__parse=parseOpdracht
+    window.__m2=()=>m2
+    window.__rules=()=>rules
+    window.__dag=di=>dagMeting(raster,di)
+    window.__laagste=()=>{ let laag=null
+      if(!raster) return null
+      for(let di=0;di<5;di++) for(let room=0;room<(raster.numRooms||1);room++) for(let dd=0;dd<3;dd++){
+        const c=celMeting(raster,di,room,dd); if(!c||!c.open) continue
+        if(!laag||c.pct<laag.pct) laag={pct:c.pct,di,room,dd} }
+      return laag }
+  },[m2,rules,raster])
 
   // ENGINE 2.0 — live sync (gedebounced): zodra er een raster is, wordt élke
   // wijziging in gegevens/tijden/regels/capaciteit doorgerekend. De debounce
@@ -4665,6 +4945,124 @@ export default function RasterTool(){
           )
         })()}
 
+        {/* ── BEZETTINGSKAART — de hele week in één beeld ────────────────────────
+             Elke cel is één kamer op één dag in één dagdeel, gekleurd naar jouw
+             doelbenutting en jouw drempel. Zo zie je in één oogopslag wat je
+             anders uit het raster moet puzzelen: welke dag helemaal leeg is en
+             welke kamer half gevuld draait. Klik een cel of een lege dag aan en
+             de assistent gaat er meteen mee aan de slag. */}
+        {(()=>{
+          const nRooms=raster.numRooms||1
+          const doel=m2.benutting||85
+          const drempel=rules.restOpruimen?(rules.minBezetting??75):0
+          const dds=[0,1].concat(raster.avondOn?[2]:[])
+          const dagen=[0,1,2,3,4].map(di=>({di, m:dagMeting(raster,di)}))
+          const legeDagen=dagen.filter(d=>!d.m.open)
+          const onderDrempel=[]
+          for(let di=0;di<5;di++) for(let room=0;room<nRooms;room++) for(const dd of dds){
+            const c=celMeting(raster,di,room,dd)
+            if(c&&c.open&&c.pct<doel-6) onderDrempel.push({di,room,dd,pct:c.pct})
+          }
+          onderDrempel.sort((a,b)=>a.pct-b.pct)
+          const Cel=({di,room,dd})=>{
+            const c=celMeting(raster,di,room,dd)
+            const leeg=!c||!c.open
+            const kl=leeg?null:bandKleur(c.pct,doel,drempel)
+            return(
+              <button onClick={()=>{
+                  const t= leeg
+                    ? `op ${DAGS_NL[di]} staan geen afspraken, graag ${DAGS_NL[di]} ook inplannen`
+                    : `kamer ${room+1} op ${DAGS_NL[di]} staat op ${c.pct}% bezetting, ik wil richting ${doel}%`
+                  setWiz({modus:'bijsturen', voorstelTekst:t}); zoekVoorstel(parseOpdracht(t)) }}
+                title={leeg?`Kamer ${room+1} · ${DAGS_NL[di]} · ${DD_INFO[dd].l.toLowerCase()}: geen spreekuur — klik om bij te sturen`
+                  :`Kamer ${room+1} · ${DAGS_NL[di]} · ${DD_INFO[dd].l.toLowerCase()}: ${c.appts} afspraken, ${c.min} van ${c.cap} min (${c.pct}%, ${kl.l}) — klik om bij te sturen`}
+                style={{display:'block',width:'100%',textAlign:'left',cursor:'pointer',marginBottom:3,
+                  padding:'3px 5px',borderRadius:6,position:'relative',overflow:'hidden',
+                  border:`1px solid ${leeg?C.border:kl.brd}`,
+                  background:leeg?`repeating-linear-gradient(45deg,${C.surface2},${C.surface2} 4px,${C.white} 4px,${C.white} 8px)`:kl.bg}}>
+                {!leeg&&<span style={{position:'absolute',left:0,top:0,bottom:0,width:`${Math.min(100,c.pct)}%`,
+                  background:kl.brd,opacity:0.32}}/>}
+                <span style={{position:'relative',display:'flex',alignItems:'center',gap:4,
+                  fontSize:9.5,fontWeight:700,color:leeg?C.muted:kl.fg}}>
+                  <span style={{opacity:0.75,fontSize:8.5,letterSpacing:'0.04em'}}>{DD_INFO[dd].kort}</span>
+                  <span style={{marginLeft:'auto',fontVariantNumeric:'tabular-nums'}}>{leeg?'—':`${c.pct}%`}</span>
+                </span>
+              </button>
+            )
+          }
+          return(
+            <div style={{marginBottom:12,border:`1px solid ${C.border}`,borderRadius:12,overflow:'hidden',background:C.white}}>
+              <div style={{display:'flex',alignItems:'center',gap:9,padding:'10px 15px',flexWrap:'wrap',
+                background:'linear-gradient(90deg,#0E3450,#1C6EA4 60%,#39C6AC)',color:'#fff'}}>
+                <span style={{fontSize:15}}>🗺</span>
+                <span style={{fontSize:12.5,fontWeight:800,letterSpacing:'0.03em'}}>BEZETTINGSKAART — WAAR ZIT RUIMTE, WAAR ZIT HET VOL?</span>
+                <span style={{marginLeft:'auto',fontSize:10,fontWeight:700,background:'rgba(255,255,255,0.2)',
+                  padding:'2px 9px',borderRadius:10,whiteSpace:'nowrap'}}>doel {doel}%{drempel?` · drempel ${drempel}%`:''}</span>
+              </div>
+              <div style={{padding:'12px 14px'}}>
+                <div style={{display:'grid',gridTemplateColumns:`52px repeat(5,minmax(0,1fr))`,gap:6}}>
+                  <div/>
+                  {dagen.map(({di,m})=>(
+                    <div key={di} style={{textAlign:'center',paddingBottom:4}}>
+                      <div style={{fontSize:10.5,fontWeight:800,color:m.open?C.text:'#B3402C',letterSpacing:'0.04em'}}>{DAY_ABBR[di]}</div>
+                      <div style={{fontSize:9.5,color:C.muted}}>{m.open?`${m.appts} afspr · ${m.pct}%`:'geen spreekuur'}</div>
+                    </div>
+                  ))}
+                  {Array.from({length:nRooms},(_,room)=>(
+                    <React.Fragment key={room}>
+                      <div style={{fontSize:10.5,fontWeight:700,color:C.muted,display:'flex',alignItems:'center'}}>K{room+1}</div>
+                      {[0,1,2,3,4].map(di=>(
+                        <div key={di}>{dds.map(dd=><Cel key={dd} di={di} room={room} dd={dd}/>)}</div>
+                      ))}
+                    </React.Fragment>
+                  ))}
+                </div>
+                {/* legenda */}
+                <div style={{display:'flex',gap:12,flexWrap:'wrap',alignItems:'center',marginTop:10,
+                  paddingTop:9,borderTop:`1px solid ${C.border}`}}>
+                  {[{p:doel+8,t:`boven doel`},{p:doel,t:'op doel'},{p:Math.max(drempel,doel-12),t:'onder doel'},
+                    ...(drempel?[{p:Math.max(0,drempel-10),t:'onder drempel'}]:[])].map((x,i)=>{
+                    const kl=bandKleur(x.p,doel,drempel)
+                    return(
+                      <span key={i} style={{display:'inline-flex',alignItems:'center',gap:5,fontSize:10.5,color:C.muted}}>
+                        <span style={{width:13,height:11,borderRadius:3,background:kl.bg,border:`1px solid ${kl.brd}`}}/>{x.t}
+                      </span>
+                    )
+                  })}
+                  <span style={{display:'inline-flex',alignItems:'center',gap:5,fontSize:10.5,color:C.muted}}>
+                    <span style={{width:13,height:11,borderRadius:3,border:`1px solid ${C.border}`,
+                      background:`repeating-linear-gradient(45deg,${C.surface2},${C.surface2} 3px,${C.white} 3px,${C.white} 6px)`}}/>geen spreekuur
+                  </span>
+                  <span style={{fontSize:10.5,color:C.muted,marginLeft:'auto'}}>klik een vak aan om het bij te sturen</span>
+                </div>
+                {/* wat springt eruit — met een directe opdracht aan de assistent */}
+                {(legeDagen.length>0||onderDrempel.length>0)&&(
+                  <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:10}}>
+                    {legeDagen.map(({di})=>(
+                      <button key={'d'+di} onClick={()=>{
+                          const t=`op ${DAGS_NL[di]} staan geen afspraken, graag ${DAGS_NL[di]} ook inplannen`
+                          setWiz({modus:'bijsturen', voorstelTekst:t}); zoekVoorstel(parseOpdracht(t)) }}
+                        style={{padding:'7px 12px',borderRadius:10,cursor:'pointer',fontSize:11.5,fontWeight:700,
+                          background:'#FBEDEA',color:'#B3402C',border:'1px solid #E8B3A8'}}>
+                        ⚑ {DAY_ABBR[di]} is leeg — laten meedraaien
+                      </button>
+                    ))}
+                    {onderDrempel.slice(0,3).map((x,i)=>(
+                      <button key={'k'+i} onClick={()=>{
+                          const t=`kamer ${x.room+1} op ${DAGS_NL[x.di]} staat op ${x.pct}% bezetting, ik wil richting ${doel}%`
+                          setWiz({modus:'bijsturen', voorstelTekst:t}); zoekVoorstel(parseOpdracht(t)) }}
+                        style={{padding:'7px 12px',borderRadius:10,cursor:'pointer',fontSize:11.5,fontWeight:700,
+                          background:'#FDF6E3',color:'#8A6A12',border:'1px solid #EBD08A'}}>
+                        △ {DAY_ABBR[x.di]} K{x.room+1} {DD_INFO[x.dd].kort} — {x.pct}% naar {doel}%
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })()}
+
         {/* ── SCENARIO-OPTIMISER — laat de tool zélf de beste instellingen zoeken ── */}
         <div style={{marginBottom:12,border:`1px solid ${C.border}`,borderRadius:12,overflow:'hidden',background:C.white}}>
           <div style={{display:'flex',alignItems:'center',gap:9,padding:'10px 15px',flexWrap:'wrap',
@@ -5572,7 +5970,8 @@ export default function RasterTool(){
           </div>
         </div>
         {/* Begeleide intake — stelt vragen en zet de hele planning klaar */}
-        <button onClick={()=>setWiz({stap:0,ant:{}})} title="Begeleide intake — laat de tool je stap voor stap door de opzet leiden"
+        <button onClick={()=>setWiz(raster?{modus:'kies'}:{modus:'intake',stap:0,ant:{}})}
+          title="Assistent — de hele opzet doorlopen, of dit raster bijsturen met een opdracht in gewone taal"
           style={{display:'flex',alignItems:'center',justifyContent:'center',gap:6,marginBottom:12,
             padding:'10px 6px',borderRadius:12,border:'1px solid rgba(93,214,188,0.45)',cursor:'pointer',
             background:'linear-gradient(135deg,rgba(93,214,188,0.24),rgba(28,110,164,0.24))',color:'#DFFAF2',
@@ -5719,6 +6118,321 @@ export default function RasterTool(){
            bedacht. Wat je antwoordt wordt per poli onthouden en kan een volgende
            keer in één klik worden overgenomen. */}
       {wiz&&(()=>{
+        // ── MODUS-KEUZE — nieuwe opzet of dit raster bijsturen? ────────────────
+        if(wiz.modus==='kies') return(
+          <div data-assistent style={{position:'fixed',inset:0,background:'rgba(10,22,34,0.6)',backdropFilter:'blur(7px)',
+            display:'flex',alignItems:'center',justifyContent:'center',zIndex:2100,padding:20}}>
+            <div style={{background:C.white,borderRadius:20,width:'min(680px,100%)',boxShadow:C.shadowLg,
+              border:`1px solid ${C.border}`,overflow:'hidden'}}>
+              <div style={{padding:'16px 22px',display:'flex',alignItems:'center',gap:11,
+                background:'linear-gradient(90deg,#0E3450,#1C6EA4 60%,#39C6AC)',color:'#fff'}}>
+                <span style={{fontSize:18}}>✨</span>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:13.5,fontWeight:800}}>Assistent</div>
+                  <div style={{fontSize:10.5,opacity:0.85}}>waar kan ik mee helpen?</div>
+                </div>
+                <button onClick={()=>setWiz(null)} title="Sluiten"
+                  style={{width:28,height:28,borderRadius:9,border:'1px solid rgba(255,255,255,0.3)',
+                    background:'rgba(255,255,255,0.12)',color:'#fff',cursor:'pointer',fontSize:15}}>×</button>
+              </div>
+              <div style={{padding:'20px 22px',display:'grid',gap:11}}>
+                <button onClick={()=>setWiz({modus:'bijsturen'})}
+                  style={{textAlign:'left',padding:'16px 18px',borderRadius:14,cursor:'pointer',
+                    border:`1.5px solid ${C.primary}`,background:C.blueAccent}}>
+                  <div style={{fontSize:15,fontWeight:800,color:C.text,marginBottom:3}}>🛠 Dit raster bijsturen</div>
+                  <div style={{fontSize:12,color:C.muted,lineHeight:1.55}}>
+                    Zeg in gewone taal wat er anders moet — "op dinsdag staan geen afspraken, graag ook inplannen"
+                    of "kamer 3 op maandag moet richting 85%". Ik reken door wat daarvoor nodig is, laat het je
+                    eerst zien en pas het pas toe als jij akkoord bent.
+                  </div>
+                </button>
+                <button onClick={()=>setWiz({modus:'intake',stap:0,ant:{}})}
+                  style={{textAlign:'left',padding:'16px 18px',borderRadius:14,cursor:'pointer',
+                    border:`1.5px solid ${C.border}`,background:C.white}}>
+                  <div style={{fontSize:15,fontWeight:800,color:C.text,marginBottom:3}}>📋 Opnieuw de hele opzet doorlopen</div>
+                  <div style={{fontSize:12,color:C.muted,lineHeight:1.55}}>
+                    De begeleide intake: twintig vragen die poli, zorgvraag, tijden, capaciteit en planregels
+                    van voren af aan klaarzetten.
+                  </div>
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+
+        // ── BIJSTUREN — losse opdracht in gewone taal ──────────────────────────
+        if(wiz.modus==='bijsturen'){
+          const doelBen=m2.benutting||85
+          const nRooms=(raster&&raster.numRooms)||1
+          const ddsB=[0,1].concat(raster&&raster.avondOn?[2]:[])
+          // Wat valt er nú op aan het raster? Elk signaal is meteen een opdracht.
+          const signalen=[]
+          if(raster){
+            ;[0,1,2,3,4].forEach(di=>{ const d=dagMeting(raster,di)
+              if(!d.open) signalen.push({ico:'⚑', kleur:'#B3402C', bg:'#FBEDEA', brd:'#E8B3A8',
+                t:`${DAGS_NL[di]}: geen enkel spreekuur`,
+                opdr:`op ${DAGS_NL[di]} staan geen afspraken, graag ${DAGS_NL[di]} ook inplannen`}) })
+            const laag=[]
+            for(let di=0;di<5;di++) for(let room=0;room<nRooms;room++) for(const dd of ddsB){
+              const c=celMeting(raster,di,room,dd)
+              if(c&&c.open&&c.pct<doelBen-6) laag.push({di,room,dd,pct:c.pct}) }
+            laag.sort((a,b)=>a.pct-b.pct)
+            laag.slice(0,3).forEach(x=>signalen.push({ico:'△', kleur:'#8A6A12', bg:'#FDF6E3', brd:'#EBD08A',
+              t:`${DAGS_NL[x.di]}, kamer ${x.room+1} (${DD_INFO[x.dd].l.toLowerCase()}): ${x.pct}% — doel is ${doelBen}%`,
+              opdr:`kamer ${x.room+1} op ${DAGS_NL[x.di]} staat op ${x.pct}% bezetting, ik wil richting ${doelBen}%`}))
+            if(raster.ntp&&raster.ntp.length) signalen.push({ico:'△', kleur:'#8A6A12', bg:'#FDF6E3', brd:'#EBD08A',
+              t:`${raster.ntp.length} afspraken staan op de restlijst`,
+              opdr:'alles moet ingepland worden, niets meer op de restlijst'})
+          }
+          const b=bijstuur
+          const start=t=>zoekVoorstel(parseOpdracht(t))
+          const keuze=b&&b.kandidaten?b.kandidaten[b.keuze||0]:null
+          const Getal=({voor,na,omlaagGoed,eenheid=''})=>{
+            const d=na-voor
+            return(
+              <span style={{fontWeight:700,color:C.text,fontVariantNumeric:'tabular-nums'}}>
+                {voor}{eenheid} → {na}{eenheid}{' '}
+                <span style={{fontWeight:700,fontSize:11,
+                  color:d===0?C.muted:((d<0)===!!omlaagGoed?C.green:C.danger)}}>
+                  {d===0?'±0':`${d>0?'+':''}${d}`}</span>
+              </span>
+            )
+          }
+          return(
+            <div data-assistent style={{position:'fixed',inset:0,background:'rgba(10,22,34,0.6)',backdropFilter:'blur(7px)',
+              display:'flex',alignItems:'center',justifyContent:'center',zIndex:2100,padding:20}}>
+              <div style={{background:C.white,borderRadius:20,width:'min(1040px,100%)',height:'min(90vh,780px)',
+                display:'flex',boxShadow:C.shadowLg,border:`1px solid ${C.border}`,overflow:'hidden'}}>
+
+                {/* links: wat de tool nu ziet */}
+                <aside style={{width:292,flexShrink:0,background:'linear-gradient(170deg,#0E3450 0%,#124D74 60%,#0F5F8C 100%)',
+                  color:'#fff',display:'flex',flexDirection:'column',padding:'20px 0 14px'}}>
+                  <div style={{padding:'0 18px 14px',borderBottom:'1px solid rgba(255,255,255,0.13)'}}>
+                    <div style={{display:'flex',alignItems:'center',gap:9}}>
+                      <div style={{width:34,height:34,borderRadius:11,background:'linear-gradient(140deg,#39C6AC,#1C8FBF)',
+                        display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,flexShrink:0}}>🛠</div>
+                      <div>
+                        <div style={{fontSize:13.5,fontWeight:800}}>Bijsturen</div>
+                        <div style={{fontSize:10,color:'#8FD8C6'}}>ik reken het eerst door</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{flex:1,overflowY:'auto',padding:'14px 14px 10px'}}>
+                    <div style={{fontSize:9,fontWeight:800,letterSpacing:'0.14em',color:'rgba(255,255,255,0.45)',
+                      textTransform:'uppercase',margin:'0 4px 8px'}}>Wat mij nu opvalt</div>
+                    {signalen.length===0&&(
+                      <div style={{fontSize:11.5,color:'rgba(255,255,255,0.55)',padding:'0 4px',lineHeight:1.55}}>
+                        Geen lege dagen, geen half gevulde kamers en niets op de restlijst. Je kunt hiernaast
+                        alsnog een eigen opdracht geven.
+                      </div>
+                    )}
+                    {signalen.map((s,i)=>(
+                      <button key={i} onClick={()=>start(s.opdr)}
+                        style={{display:'block',width:'100%',textAlign:'left',marginBottom:6,padding:'9px 11px',
+                          borderRadius:10,cursor:'pointer',border:'1px solid rgba(255,255,255,0.16)',
+                          background:'rgba(255,255,255,0.09)',color:'#fff'}}
+                        onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,0.17)'}
+                        onMouseLeave={e=>e.currentTarget.style.background='rgba(255,255,255,0.09)'}>
+                        <div style={{fontSize:11.5,fontWeight:600,lineHeight:1.4}}>{s.ico} {s.t}</div>
+                        <div style={{fontSize:10,color:'#8FD8C6',marginTop:3}}>→ pak dit op</div>
+                      </button>
+                    ))}
+                  </div>
+                </aside>
+
+                {/* rechts: de opdracht en het voorstel */}
+                <div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column',background:C.surface2}}>
+                  <div style={{padding:'14px 24px 12px',background:C.white,display:'flex',alignItems:'center',gap:10}}>
+                    <span style={{fontSize:9.5,fontWeight:800,color:C.primary,letterSpacing:'0.14em',textTransform:'uppercase'}}>Bijsturen</span>
+                    <div style={{flex:1}}/>
+                    <button onClick={()=>setWiz({modus:'intake',stap:0,ant:{}})}
+                      style={{padding:'6px 12px',borderRadius:9,border:`1px solid ${C.border}`,background:C.white,
+                        cursor:'pointer',fontSize:11,fontWeight:600,color:C.muted}}>Hele opzet opnieuw</button>
+                    <button onClick={()=>{setWiz(null);setBijstuur(null)}} title="Sluiten"
+                      style={{width:28,height:28,borderRadius:9,border:`1px solid ${C.border}`,background:C.white,
+                        color:C.muted,cursor:'pointer',fontSize:15,lineHeight:1}}>×</button>
+                  </div>
+
+                  <div style={{flex:1,overflowY:'auto',padding:'18px 24px 24px'}}>
+                    <div style={{fontFamily:"'Newsreader',Georgia,serif",fontSize:24,fontWeight:500,color:C.text,
+                      lineHeight:1.25,marginBottom:7}}>Wat moet er anders?</div>
+                    <p style={{fontSize:12.5,color:C.muted,lineHeight:1.6,margin:'0 0 14px',maxWidth:640}}>
+                      Schrijf het zoals je het tegen een collega zou zeggen. Ik lees er een opdracht uit, reken door
+                      welke instellingen dat vragen, en laat je zien wat het oplevert — pas als jij akkoord gaat,
+                      verandert er iets aan je raster.
+                    </p>
+                    <OpdrachtInvoer key={wiz.voorstelTekst||'leeg'} initieel={wiz.voorstelTekst||''}
+                      onZoek={start} bezig={!!(b&&b.bezig)}/>
+
+                    {!b&&(
+                      <div style={{marginTop:16,border:`1px solid ${C.border}`,background:C.white,borderRadius:12,padding:'12px 15px'}}>
+                        <div style={{fontSize:9.5,fontWeight:800,color:C.muted,letterSpacing:'0.1em',
+                          textTransform:'uppercase',marginBottom:7}}>Dit begrijp ik</div>
+                        <div style={{fontSize:12,color:C.text,lineHeight:1.9}}>
+                          · <b>Een dag laten meedraaien</b> — "op dinsdag staan geen afspraken, graag ook inplannen"<br/>
+                          · <b>Een dag vrijhouden</b> — "vrijdag niet meer inplannen"<br/>
+                          · <b>Bezetting van een kamer</b> — "kamer 3 op maandag moet richting 85%"<br/>
+                          · <b>Bezetting in het algemeen</b> — "ik wil nergens een spreekuur onder de 80%"<br/>
+                          · <b>Kamers</b> — "er mag een kamer bij" of "het moet met één kamer minder"<br/>
+                          · <b>Restlijst</b> — "alles moet ingepland worden"
+                        </div>
+                      </div>
+                    )}
+
+                    {b&&b.bezig&&(
+                      <div style={{marginTop:16,fontSize:12.5,color:C.muted}}>Ik reken de mogelijkheden door…</div>
+                    )}
+
+                    {b&&!b.bezig&&(b.op.type==='onbekend'||b.op.type==='leeg')&&(
+                      <div style={{marginTop:16,border:'1px solid #EBD08A',background:'#FDF6E3',borderRadius:12,padding:'13px 15px'}}>
+                        <div style={{fontSize:12.5,fontWeight:700,color:'#8A6A12',marginBottom:4}}>
+                          Hier haal ik geen opdracht uit — ik ga niet gokken
+                        </div>
+                        <div style={{fontSize:12,color:C.text,lineHeight:1.6}}>
+                          {b.op.dag!=null&&<>Ik zie wel dat het over <b>{DAGS_NL[b.op.dag]}</b> gaat. </>}
+                          {b.op.kamer!=null&&<>Ik zie <b>kamer {b.op.kamer+1}</b>. </>}
+                          {b.op.pct!=null&&<>Ik zie <b>{b.op.pct}%</b>. </>}
+                          Zeg er alsjeblieft bij wát er moet gebeuren — bijvoorbeeld "inplannen", "vrijhouden",
+                          "naar 85% bezetting", "een kamer erbij" of "alles inplannen".
+                        </div>
+                      </div>
+                    )}
+
+                    {b&&!b.bezig&&b.kandidaten&&b.kandidaten.length>0&&keuze&&(<>
+                      <div style={{marginTop:16,border:`1.5px solid ${C.primary}`,background:C.white,borderRadius:13,overflow:'hidden'}}>
+                        <div style={{padding:'10px 15px',background:C.blueAccent,borderBottom:`1px solid ${C.border}`}}>
+                          <div style={{fontSize:9.5,fontWeight:800,color:C.primary,letterSpacing:'0.1em',textTransform:'uppercase'}}>Zo lees ik je opdracht</div>
+                          <div style={{fontSize:13,fontWeight:700,color:C.text,marginTop:3}}>{opdrachtOmschrijving(b.op)}</div>
+                        </div>
+                        <div style={{padding:'13px 15px'}}>
+                          {b.toegepast&&(
+                            <div style={{fontSize:12.5,fontWeight:700,color:C.green,marginBottom:9}}>
+                              ✓ Toegepast — je raster is bijgewerkt.</div>
+                          )}
+                          <div style={{fontSize:9.5,fontWeight:800,color:C.muted,letterSpacing:'0.1em',
+                            textTransform:'uppercase',marginBottom:6}}>Wat ik daarvoor {b.toegepast?'heb gedaan':'ga doen'}</div>
+                          {keuze.knoppen.map((k,i)=>(
+                            <div key={i} style={{fontSize:12,color:C.text,lineHeight:1.7}}>· {k}</div>
+                          ))}
+                          <div style={{marginTop:11,paddingTop:11,borderTop:`1px solid ${C.border}`}}>
+                            <div style={{fontSize:9.5,fontWeight:800,color:C.muted,letterSpacing:'0.1em',
+                              textTransform:'uppercase',marginBottom:6}}>Wat dat oplevert</div>
+                            <div style={{fontSize:12.5,lineHeight:1.8,color:C.text}}>
+                              <div style={{display:'flex',gap:8,alignItems:'baseline',flexWrap:'wrap'}}>
+                                <span style={{color:C.muted,minWidth:104}}>Waar je om vroeg</span>
+                                <span style={{fontWeight:700,color:keuze.doel&&keuze.doel.gehaald?C.green:'#8A6A12'}}>
+                                  {keuze.doel&&keuze.doel.gehaald?'✓ ':'△ '}{keuze.doel?keuze.doel.tekst:'—'}
+                                </span>
+                              </div>
+                              <div style={{display:'flex',gap:8,alignItems:'baseline',flexWrap:'wrap'}}>
+                                <span style={{color:C.muted,minWidth:104}}>Was</span>
+                                <span>{b.huidig.doel?b.huidig.doel.tekst:'—'}</span>
+                              </div>
+                              <div style={{display:'flex',gap:8,alignItems:'baseline',flexWrap:'wrap',marginTop:5}}>
+                                <span style={{color:C.muted,minWidth:104}}>Ingepland</span>
+                                <Getal voor={b.huidig.alg.placed} na={keuze.alg.placed}/>
+                              </div>
+                              <div style={{display:'flex',gap:8,alignItems:'baseline',flexWrap:'wrap'}}>
+                                <span style={{color:C.muted,minWidth:104}}>Restlijst</span>
+                                <Getal voor={b.huidig.alg.ntp} na={keuze.alg.ntp} omlaagGoed/>
+                              </div>
+                              <div style={{display:'flex',gap:8,alignItems:'baseline',flexWrap:'wrap'}}>
+                                <span style={{color:C.muted,minWidth:104}}>Kamer-dagen</span>
+                                <Getal voor={b.huidig.alg.kamerDagen} na={keuze.alg.kamerDagen} omlaagGoed/>
+                              </div>
+                              <div style={{display:'flex',gap:8,alignItems:'baseline',flexWrap:'wrap'}}>
+                                <span style={{color:C.muted,minWidth:104}}>Benutting week</span>
+                                <Getal voor={b.huidig.alg.benut} na={keuze.alg.benut} eenheid="%"/>
+                              </div>
+                            </div>
+                            {(()=>{
+                              // Wat kost dit? Een winst op het ene punt gaat vaak ten koste
+                              // van het andere — dat hoort in woorden te staan, niet alleen
+                              // in een rood getal.
+                              const dNtp=keuze.alg.ntp-b.huidig.alg.ntp
+                              const dKd=keuze.alg.kamerDagen-b.huidig.alg.kamerDagen
+                              if(dNtp<=0&&dKd<=0) return null
+                              const delen=[]
+                              if(dNtp>0) delen.push(`${dNtp} afspra${dNtp===1?'ak':'ken'} méér op de restlijst`)
+                              if(dKd>0) delen.push(`${dKd} kamer-dag${dKd===1?'':'en'} extra`)
+                              return(
+                                <div style={{marginTop:9,fontSize:11.5,color:'#8A6A12',lineHeight:1.55,
+                                  background:'#FDF6E3',border:'1px solid #EBD08A',borderRadius:9,padding:'8px 11px'}}>
+                                  <b>Dit kost je wel iets:</b> {delen.join(' en ')}. Weegt dat op tegen wat je vroeg?
+                                  Bekijk anders de andere manieren hieronder — die maken een andere afweging.
+                                </div>
+                              )
+                            })()}
+                            {keuze.doel&&!keuze.doel.gehaald&&(
+                              <div style={{marginTop:9,fontSize:11.5,color:'#8A6A12',lineHeight:1.55,
+                                background:'#FDF6E3',border:'1px solid #EBD08A',borderRadius:9,padding:'8px 11px'}}>
+                                Dit haalt je doel niet helemaal. Dit is wél de instelling die er het dichtst bij komt —
+                                verder gaan kost je iets anders (meer op de restlijst of een kamer meer). Bekijk de
+                                andere mogelijkheden hieronder, of pas je vraag aan.
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {b.kandidaten.length>1&&(
+                        <div style={{marginTop:12}}>
+                          <div style={{fontSize:9.5,fontWeight:800,color:C.muted,letterSpacing:'0.1em',
+                            textTransform:'uppercase',marginBottom:7}}>Andere manieren om dit te bereiken</div>
+                          {b.kandidaten.map((k,i)=>i===(b.keuze||0)?null:(
+                            <button key={i} onClick={()=>setBijstuur(x=>({...x,keuze:i,toegepast:false}))}
+                              style={{display:'block',width:'100%',textAlign:'left',marginBottom:7,padding:'10px 13px',
+                                borderRadius:11,cursor:'pointer',border:`1px solid ${C.border}`,background:C.white}}
+                              onMouseEnter={e=>e.currentTarget.style.borderColor=C.primary}
+                              onMouseLeave={e=>e.currentTarget.style.borderColor=C.border}>
+                              <div style={{fontSize:12.5,fontWeight:700,color:C.text}}>
+                                {k.doel&&k.doel.gehaald?'✓ ':'△ '}{k.l}</div>
+                              <div style={{fontSize:11.5,color:C.muted,marginTop:2}}>
+                                {k.doel?k.doel.tekst:'—'} · restlijst {k.alg.ntp} · {k.alg.kamerDagen} kamer-dagen · {k.alg.benut}% benut
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </>)}
+
+                    {b&&!b.bezig&&b.kandidaten&&b.kandidaten.length===0&&(
+                      <div style={{marginTop:16,border:'1px solid #EBD08A',background:'#FDF6E3',borderRadius:12,padding:'13px 15px',
+                        fontSize:12.5,color:C.text,lineHeight:1.6}}>
+                        Ik begrijp de opdracht wel, maar ik kan er met de knoppen die ik heb niets zinnigs voor
+                        doorrekenen. Probeer het concreter te maken, of pas het handmatig aan in de panelen links.
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{padding:'12px 24px',borderTop:`1px solid ${C.border}`,background:C.white,
+                    display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+                    {b&&b.kandidaten&&b.kandidaten.length>0&&!b.toegepast&&(<>
+                      <button onClick={()=>{setBijstuur(null);setWiz({modus:'bijsturen'})}}
+                        style={{padding:'9px 14px',borderRadius:10,border:`1px solid ${C.border}`,background:C.white,
+                          cursor:'pointer',fontSize:12,fontWeight:600,color:C.muted}}>Toch niet</button>
+                      <button onClick={()=>{ pasVoorstelToe(keuze); setBijstuur(x=>({...x,toegepast:true})) }}
+                        style={{marginLeft:'auto',padding:'11px 20px',borderRadius:11,border:'none',background:C.primary,
+                          color:'#fff',cursor:'pointer',fontSize:12.5,fontWeight:700}}>Doe maar — pas dit toe →</button>
+                    </>)}
+                    {b&&b.toegepast&&(<>
+                      <button onClick={()=>{setBijstuur(null);setWiz({modus:'bijsturen'})}}
+                        style={{padding:'9px 14px',borderRadius:10,border:`1px solid ${C.border}`,background:C.white,
+                          cursor:'pointer',fontSize:12,fontWeight:600,color:C.text}}>Nog iets bijsturen</button>
+                      <button onClick={()=>{setWiz(null);setBijstuur(null)}}
+                        style={{marginLeft:'auto',padding:'11px 20px',borderRadius:11,border:'none',background:C.primary,
+                          color:'#fff',cursor:'pointer',fontSize:12.5,fontWeight:700}}>Naar het raster →</button>
+                    </>)}
+                    {(!b||!b.kandidaten)&&(
+                      <span style={{fontSize:11,color:C.muted}}>Er verandert niets aan je raster voordat jij op "pas dit toe" klikt.</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )
+        }
+
         const alleRows=[...newRows,...ctrlRows]
         const heeftSpoed=alleRows.some(r=>r.spoed)
         const heeftDig=alleRows.some(r=>r.digitaal||(r.modaliteit&&r.modaliteit!=='fysiek'))

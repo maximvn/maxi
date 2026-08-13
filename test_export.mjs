@@ -50,6 +50,8 @@ const log=[], errs=[]
   await page.click('button:has-text("Sluiten")'); await page.waitForTimeout(300)
   // via de assistent een specialisme kiezen — dan staat het handmatige codepaneel open
   await page.click('nav button:has-text("Assistent")'); await page.waitForTimeout(400)
+  const kies=page.locator('[data-assistent] button:has-text("Opnieuw de hele opzet")')
+  if(await kies.count()){ await kies.click(); await page.waitForTimeout(400) }
   await page.locator('[data-assistent] button:has-text("Dermatologie")').first().click(); await page.waitForTimeout(500)
   await page.locator('[data-assistent] button[title*="Sluiten"]').click(); await page.waitForTimeout(300)
   await page.click('nav button:has-text("Gegevens")'); await page.waitForTimeout(700)

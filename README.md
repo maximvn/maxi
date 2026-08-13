@@ -61,6 +61,41 @@ spoed en digitaal alleen verschijnen als die codes bestaan.
 - **Volledig deterministisch** — een antwoord zet gewoon een instelling. Er wordt niets bedacht;
   dezelfde antwoorden geven altijd hetzelfde resultaat.
 
+## Bezettingskaart — de hele week in één beeld
+
+Boven de optimiser staat de **bezettingskaart**: een raster van kamers × dagen waarin elke cel
+één kamer op één dag in één dagdeel is, gekleurd naar jouw doelbenutting en jouw drempel.
+Wat je anders uit het weekrooster moet puzzelen, zie je hier in één oogopslag — een dag
+zonder spreekuur is doorgestreept en rood gelabeld, een half gevulde kamer amber.
+
+Onder de kaart staan de opvallende punten meteen als knop: *"DI is leeg — laten meedraaien"*,
+*"MA K3 och — 73% naar 85%"*. Klik een cel of zo'n knop en de assistent gaat er direct mee
+aan de slag.
+
+## Assistent — bijsturen met een losse opdracht
+
+Naast de begeleide intake heeft de assistent een **bijstuur-modus**: je typt in gewone taal
+wat er anders moet en de tool gaat ermee aan het werk.
+
+- *"op dinsdag staan geen afspraken, graag dinsdag ook inplannen"*
+- *"kamer 3 op maandag staat op 73%, ik wil richting 85%"*
+- *"vrijdag niet meer inplannen"* · *"er mag een kamer bij"* · *"alles moet ingepland worden"*
+
+De opdracht-lezer werkt volledig op regels — geen taalmodel, dus geen verzinsels. Wat niet
+herkend wordt, krijgt eerlijk *"hier haal ik geen opdracht uit — ik ga niet gokken"* in
+plaats van een gok. De rest van de keten:
+
+1. **Teruglezen** — "zo lees ik je opdracht: dinsdag moet meedraaien in de week".
+2. **Doorrekenen** — de tool bouwt meerdere kandidaat-instellingen, rekent ze allemaal echt
+   door en meet precies dát waar je om vroeg (die kamer, die dag, dat percentage).
+3. **Voorstellen** — je ziet welke knoppen verzet worden, wat het oplevert (voor → na op
+   ingepland, restlijst, kamer-dagen en benutting) en **wat het kost**, plus de andere manieren
+   om hetzelfde te bereiken.
+4. **Pas dan uitvoeren** — er verandert niets aan je raster voordat jij op "pas dit toe" klikt.
+
+Links in het venster staat doorlopend **wat de tool nu ziet**: lege dagen, kamers onder het
+doel en de restlijst — elk als knop die de opdracht meteen oppakt.
+
 ## Geheugen — de tool leert van jouw keuzes
 
 Per poli wordt lokaal (in de browser) onthouden wat je doet. Zichtbaar, uitlegbaar en wisbaar:
@@ -93,5 +128,7 @@ npm run build
 
 ```
 node test_invariants.mjs   # engine-contracten over de hele regelmatrix (952 combinaties)
-node test_assistent.mjs    # assistent, vrij invullen, geheugen en optimiser in de browser
+node test_assistent.mjs    # intake, vrij invullen, geheugen en optimiser in de browser
+node test_bijsturen.mjs    # opdracht-lezer, bezettingskaart en de bijstuur-keten
+node test_export.mjs       # export als los bestand én als gedeelde pagina
 ```

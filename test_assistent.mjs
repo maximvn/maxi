@@ -17,6 +17,10 @@ const shot=async n=>{ await page.screenshot({path:`/tmp/claude-0/-home-user-maxi
 // open assistant
 await page.click('nav button:has-text("Assistent")')
 await page.waitForTimeout(400)
+// Met een bestaand raster begint de assistent met een moduskeuze
+const naarIntake=async()=>{ const k=W().locator('button:has-text("Opnieuw de hele opzet")')
+  if(await k.count()){ await k.click(); await page.waitForTimeout(400) } }
+await naarIntake()
 log.push('geopend: '+(await W().locator('text=Voor welke poli').count()))
 await shot('w1')
 
@@ -126,6 +130,7 @@ await shot('w11')
 // reopen assistant -> memory chips
 await page.click('nav button:has-text("Assistent")')
 await page.waitForTimeout(600)
+await naarIntake()
 log.push('overnemen-knop: '+await W().locator('text=Overnemen van').count())
 await shot('w12')
 const ov=W().locator('button:has-text("Overnemen van")')
