@@ -1117,6 +1117,47 @@ export default function RasterTool(){
         const kiesPhys=a=>{ let k=act.filter(s=>a.ddOpties.includes(s.dd)&&s.used+a.duur<=physCapOf(s))
           if(!k.length) k=act.filter(s=>past(s,a)); if(!k.length) return null; k.sort(ordSort); return k[0] }
         const alleFys=[...physVast,...physRest]
+        // ── SLOT-MAJOR BEST-FIT ('dagdeel') ────────────────────────────────────
+        // Vult één spreekuur zo DICHT MOGELIJK tot de bovenband voordat het volgende
+        // opengaat. Een pure first-fit (afspraak voor afspraak het vroegste passende
+        // slot) liet structureel ruimte liggen: zodra de eerstvolgende afspraak in de
+        // mix-volgorde net niet meer paste, sprong hij door naar het volgende slot en
+        // bleef het spreekuur op 170 van 184 min steken (81% — ónder de ondergrens).
+        // Die 10-15 verloren minuten per spreekuur stapelden zich over de week op tot
+        // een halve restkamer en afspraken op "nog te plannen", terwijl er ruimte was.
+        // Nu kiezen we per slot telkens de best passende afspraak, met behoud van een
+        // representatieve nieuw/controle-mix (de VOLGORDE binnen de kamer wordt later
+        // door applyPlanRules bepaald, dus dit raakt alleen de selectie).
+        const vulSlotsBestFit=(rest)=>{
+          const totN=rest.filter(a=>a.category==='nieuw').length
+          const ratioN=rest.length? totN/rest.length : 0
+          // twee rondes: eerst binnen de fysieke deelcap (ruimte voor digitaal blijft
+          // gereserveerd), daarna een top-up tot de volle bovenband.
+          ;[physCapOf, s=>s.cap].forEach(capOf=>{
+            act.slice().sort(ordSort).forEach(s=>{
+              let nIn=s.items.filter(a=>a.category==='nieuw').length, tot=s.items.length
+              for(;;){
+                const ruimte=capOf(s)-s.used
+                if(ruimte<=0) break
+                const kand=rest.filter(a=>a.ddOpties.includes(s.dd)&&a.duur<=ruimte+0.01)
+                if(!kand.length) break
+                // 1. afspraken die maar in één dagdeel kúnnen eerst (anders vallen ze uit)
+                const vast=kand.filter(a=>a.ddOpties.length===1)
+                let pool2=vast.length?vast:kand
+                // 2. de categorie die achterloopt op de dagverhouding krijgt voorrang,
+                //    zodat elk spreekuur een representatieve mix nieuw/controle houdt
+                const wilNieuw = tot===0 ? ratioN>=0.5 : (nIn/tot)<ratioN
+                const voork=pool2.filter(a=>(a.category==='nieuw')===wilNieuw)
+                if(voork.length) pool2=voork
+                // 3. binnen die groep de LANGSTE die nog past → het spreekuur loopt vol
+                const a=pool2.reduce((x,y)=>y.duur>x.duur?y:x)
+                plaats(s,a); rest.splice(rest.indexOf(a),1)
+                tot++; if(a.category==='nieuw') nIn++
+              }
+            })
+          })
+          return rest
+        }
         if(gelijk){
           // Spoed GELIJKMATIG over de spreekuren (elk spreekuur eerst één spoedgeval),
           // zodat élk spreekuur met een spoedgeval kan openen i.p.v. samen te klonteren.
@@ -1129,9 +1170,9 @@ export default function RasterTool(){
             k.sort((x,y)=>(spoedU.get(x)-spoedU.get(y))||ordSort(x,y)); plaats(k[0],a); spoedU.set(k[0],spoedU.get(k[0])+1) })
           restFys.forEach(a=>{ const s=kiesPhys(a); if(s) plaats(s,a); else ov.push(a) })
         } else {
-          // 'dagdeel': pure first-fit — vul het vroegste slot tot de bovenband voordat
-          // het volgende opengaat. Spoed staat via sorteerPool/applyPlanRules vooraan.
-          alleFys.forEach(a=>{ const s=kiesPhys(a); if(s) plaats(s,a); else ov.push(a) })
+          // 'dagdeel': slot voor slot vol tot de bovenband (best-fit, zie boven).
+          // Spoed komt via applyPlanRules vooraan te staan binnen elk spreekuur.
+          vulSlotsBestFit([...alleFys]).forEach(a=>ov.push(a))
         }
         const digU=new Map(act.map(s=>[s,0]))
         const kiesDig=a=>{ const k=act.filter(s=>past(s,a)); if(!k.length) return null
@@ -1252,6 +1293,49 @@ export default function RasterTool(){
       const VOL=0.82
       const beginSnap=snap()
       const rdBegin=totRD((()=>{ const m={}; weekDagen.forEach(di=>m[di]=meet(di)); return m })())
+
+      // ── RONDE 1 — de DRAGER GEEFT AF ─────────────────────────────────────────
+      // Vaak is dit de winnende richting: elke ándere dag heeft binnen zijn huidige
+      // kamers nog een restje ruimte (bv. 3 kamers die op 79% draaien). Vullen we die
+      // dagen bij tot hun kamers écht vol zijn, dan houdt de drager zó weinig over dat
+      // hij een kamer (of meer) kwijtraakt — en staat de énige deels gevulde kamer van
+      // de week op de drager. Precies wat deze regel belooft. Alles verhuizen naar de
+      // drager (ronde 2) werkt alleen als de andere dagen juist een kamer kunnen laten
+      // vallen; welke richting wint, bepaalt de kamer-dagen-telling onderaan.
+      // Doelgestuurd: bereken eerst de kamer-verdeling waarmee de HELE WEEK met zo min
+      // mogelijk kamer-dagen draait (elke kamer op ~de doelbenutting), en schuif de vraag
+      // dan naar die verdeling toe. De extra kamers gaan naar de niet-drager-dagen, zodat
+      // de drager de énige deels gevulde rest-kamer overhoudt.
+      ;(()=>{
+        const W=weekDagen.reduce((t,di)=>t+vraagVan(di),0)
+        if(capVolRoom<=0||W<=0) return
+        const totR=Math.max(weekDagen.length, Math.ceil(W/capVolRoom))
+        const basis=Math.floor(totR/weekDagen.length)
+        let extra=totR-basis*weekDagen.length
+        const kamers={}; weekDagen.forEach(di=>kamers[di]=basis)
+        weekDagen.filter(di=>di!==drager).forEach(di=>{ if(extra>0){ kamers[di]++; extra-- } })
+        kamers[drager]+=extra
+        const doel={}; weekDagen.forEach(di=>doel[di]=W*kamers[di]/totR)
+        const back=snap()
+        for(let guard=0; guard<600; guard++){
+          const bal=weekDagen.map(di=>({di,d:vraagVan(di)-doel[di]})).sort((a,b)=>b.d-a.d)
+          const geef=bal[0], neem=bal[bal.length-1]
+          if(!geef||!neem||geef.di===neem.di||geef.d<=1||neem.d>=-1) break
+          const ruimte=Math.min(geef.d,-neem.d)
+          const a=(grouped[geef.di]||[]).filter(x=>mag(x,neem.di)&&x.duur<=ruimte+0.01)
+            .sort((x,y)=>y.duur-x.duur)[0]
+          if(!a) break
+          grouped[geef.di]=(grouped[geef.di]||[]).filter(q=>q.id!==a.id)
+          grouped[neem.di]=[...(grouped[neem.di]||[]),{...a,day:neem.di,_verhuisd:geef.di}]
+        }
+        // Alleen houden als de week er daadwerkelijk kamer-dagen mee bespaart en er
+        // nergens iets op de restlijst belandt.
+        const na={}; weekDagen.forEach(di=>na[di]=meet(di))
+        const veilig=weekDagen.every(di=>na[di].over===0 && na[di].n<=maxRoom)
+        if(!(veilig && totRD(na)<rdBegin)) zet(back)
+      })()
+
+      // ── RONDE 2 — de drager ONTVANGT (klassieke bundeling) ───────────────────
       for(let guard=0; guard<60; guard++){
         const meas={}; weekDagen.forEach(di=>{ meas[di]=meet(di) })
         // Donor: de dag met de MINST gevulde laatste kamer waarvan afspraken naar de drager
@@ -1259,19 +1343,33 @@ export default function RasterTool(){
         // drager — zo verliest de donor een kamer en bundelt de rest op de drager, i.p.v.
         // losse dagdelen te verspreiden (wat door de ochtend/middag-verdeling niet past).
         const kand=weekDagen.filter(di=>di!==drager)
-          .filter(di=>meas[di].n>0 && meas[di].frac<VOL && meas[di].lastAppts.some(a=>mag(a,drager)))
+          .filter(di=>meas[di].n>1 && meas[di].frac<VOL && (grouped[di]||[]).some(a=>mag(a,drager)))
           .sort((a,b)=>meas[a].frac-meas[b].frac)
         if(!kand.length) break
         let vooruit=false
         for(const donorDi of kand){
           const donorN=meas[donorDi].n
-          const teVerhuizen=meas[donorDi].lastAppts.filter(a=>mag(a,drager))
-          if(!teVerhuizen.length) continue
+          // Hoevéél moet deze dag afstaan om in ÉÉN KAMER MINDER te passen? Vroeger
+          // verhuisde precies de inhoud van de laatste kamer — dan blijft de donor exact
+          // op zijn theoretische maximum staan, en dat haalt de pakker nooit (afspraken
+          // hebben vaste duren). Elke poging werd daardoor afgekeurd en het bundelen deed
+          // in de praktijk niets. Nu rekenen we de bovenband mét een kleine marge, zodat
+          // de donor daadwerkelijk een kamer kwijtraakt.
+          const doelCap=(donorN-1)*bandDag(donorDi)*0.97
+          let teVeel=vraagVan(donorDi)-doelCap
+          if(teVeel<=0) continue
+          // Eerst de afspraken uit de laatste (deels gevulde) kamer, daarna de kleinste
+          // elders — zo blijft de donor zo compact mogelijk achter.
+          const lastIds=new Set(meas[donorDi].lastAppts.map(a=>a.id))
+          const kiesbaar=(grouped[donorDi]||[]).filter(a=>mag(a,drager))
+            .sort((a,b)=>((lastIds.has(b.id)?1:0)-(lastIds.has(a.id)?1:0))||(a.duur-b.duur))
+          const teVerhuizen=[]
+          for(const a of kiesbaar){ if(teVeel<=0) break; teVerhuizen.push(a); teVeel-=a.duur }
+          if(teVeel>0 || !teVerhuizen.length) continue   // kan niet genoeg afstaan
           const back=snap()
-          teVerhuizen.forEach(a=>{
-            grouped[donorDi]=(grouped[donorDi]||[]).filter(q=>q.id!==a.id)
-            grouped[drager]=[...(grouped[drager]||[]),{...a,day:drager,_verhuisd:donorDi}]
-          })
+          const meeIds=new Set(teVerhuizen.map(a=>a.id))
+          grouped[donorDi]=(grouped[donorDi]||[]).filter(q=>!meeIds.has(q.id))
+          grouped[drager]=[...(grouped[drager]||[]), ...teVerhuizen.map(a=>({...a,day:drager,_verhuisd:donorDi}))]
           // Behouden als: geen overloop op de restlijst, de drager binnen de kamerlimiet
           // blijft, en de donor daadwerkelijk zijn deels gevulde kamer kwijtraakt.
           const na=meet(donorDi), dragerNa=meet(drager)
@@ -1324,6 +1422,13 @@ export default function RasterTool(){
     // voor zelfs een halve dag — belanden ze netjes op de restlijst. Dit gebeurt alléén op
     // dagen die al minstens één volwaardig spreekuur hebben (dus niet op een rustige dag
     // met weinig volume, waar één deels gevuld dagdeel juist het hele programma is).
+    // KADER (belangrijk): een half dagdeel wordt alléén gesloten als élke afspraak
+    // ervan ELDERS OP DEZELFDE DAG binnen de bovenband terecht kan. Vroeger werden ze
+    // onvoorwaardelijk op "nog te plannen" gezet — ook als er nergens plaats was.
+    // Daardoor verdwenen afspraken van het raster terwijl de week nog capaciteit had.
+    // Past niet alles, dan blijft het spreekuur gewoon open (en wordt dat gemeld):
+    // een afspraak inplannen gaat vóór een perfect gevulde kamer.
+    let restKamerVerhuisd=0, restKamerOpen=0
     if(rules.restOpruimen!==false) [0,1,2,3,4].forEach(di=>{
       if(!built[di]) return
       const odd=DD.filter(x=>ddOpenOp(x,di))
@@ -1335,15 +1440,31 @@ export default function RasterTool(){
       let L=-1
       odd.forEach(dd=>{ const arr=built[di][dd]||[]; for(let r=0;r<arr.length;r++) if(arr[r]&&arr[r].length) L=Math.max(L,r) })
       if(L<0) return
+      const bovenC=x=>Math.round(durFor2(x)*Math.min(100,(m2.benutting+2.5))/100)
       // Ruim in die laatste kamer elk dagdeel op dat de ondergrens niet haalt.
       odd.forEach(dd=>{
         const room=(built[di][dd]||[])[L]
         if(!room || !room.length) return
         const fill=room.reduce((t,a)=>t+a.duur,0)
-        if(fill < ondergrensCap(dd)){
-          room.forEach(a=>overflowInst.push({...a, day:di, dd:(a.ddOpties&&a.ddOpties[0])||dd, edited:false, _restKamer:true}))
-          built[di][dd][L]=[]
+        if(fill >= ondergrensCap(dd)) return
+        // Resterende ruimte in de ÁNDERE kamers van deze dag (binnen de bovenband).
+        const vrij={}
+        odd.forEach(dd2=>{ (built[di][dd2]||[]).forEach((rm,r)=>{
+          if(r===L || !rm || !rm.length) return
+          vrij[dd2+'|'+r]=bovenC(dd2)-rm.reduce((t,a)=>t+a.duur,0) }) })
+        // Probeer élke afspraak een plek te geven (grootste eerst, krapste passende plek).
+        const plan=[]; let allePassen=true
+        for(const a of [...room].sort((x,y)=>y.duur-x.duur)){
+          const opties=Object.keys(vrij).filter(k=>
+            (!a.ddOpties || a.ddOpties.includes(k.split('|')[0])) && vrij[k]>=a.duur-0.01)
+          if(!opties.length){ allePassen=false; break }
+          opties.sort((x,y)=>vrij[x]-vrij[y])
+          plan.push({a,key:opties[0]}); vrij[opties[0]]-=a.duur
         }
+        if(!allePassen){ restKamerOpen++; return }   // spreekuur blijft open
+        plan.forEach(({a,key})=>{ const p=key.split('|'); built[di][p[0]][+p[1]].push(a) })
+        built[di][dd][L]=[]
+        restKamerVerhuisd+=plan.length
       })
     })
 
@@ -1764,8 +1885,16 @@ export default function RasterTool(){
           msg:`Nu staan er ${huidigeRoomDays} kamer-dagen open op ~${kpi.week.benutting}% (op meerdere dagen een deels gevulde kamer).`,
           fix:`Bundel de restvraag tot ~${weekPlan.totRooms} vólle kamer-dagen: zet "Restvraag bundelen tot volle kamers" aan (bij Volgorde & regels) — de overige dagen worden volledig gevuld en de rest concentreert op de gekozen rest-dag.`})
       } else if((rules.restDag||'uit')!=='uit'){
-        notices.push({level:'ok',rule:'Restvraag gebundeld',
-          msg:`De restvraag is geconcentreerd: de overige dagen draaien volle kamers en de rest-kamer(s) staan op de gekozen dag — verdeling ${echteVerdeling} kamers per dag, benutting ~${kpi.week.benutting}%.`})
+        // Alleen "gebundeld" melden als er ook écht verplaatst is. Anders zou de tool
+        // een resultaat claimen dat er niet is (het bundelen wordt teruggedraaid zodra
+        // het geen kamer-dag bespaart).
+        let verh=0; [0,1,2,3,4].forEach(di=>{ const s=res.days[di]; if(!s) return
+          Object.values(s).forEach(arr=>(arr||[]).forEach(a=>{ if(a._verhuisd!=null) verh++ })) })
+        if(verh) notices.push({level:'ok',rule:'Restvraag gebundeld',
+          msg:`${verh} afspra${verh===1?'ak is':'ken zijn'} verplaatst: de overige dagen draaien volle kamers en de rest-kamer staat op de gekozen dag — verdeling ${echteVerdeling} kamers per dag, benutting ~${kpi.week.benutting}%.`})
+        else notices.push({level:'info',rule:'Restvraag bundelen — geen winst mogelijk',
+          msg:`Er is niets verplaatst: met deze vraag valt er geen kamer-dag te besparen. De dagen vullen elkaars kamers al zo goed dat verschuiven alleen een kamer zou verplaatsen, niet uitsparen. Het raster is daarom onveranderd gelaten — verdeling ${echteVerdeling} kamers per dag.`,
+          fix:`Wil je hier wél winst halen? Verdeel de weekdagen ongelijker (module Tijden), verlaag het aantal kamers, of verhoog de benutting — dan ontstaat er ruimte om een kamer-dag te laten vervallen.`})
       }
     }
     // 4) Vast aantal kamers — lege kamers die de vraag niet nodig had
@@ -1831,11 +1960,15 @@ export default function RasterTool(){
         v:`${flexSurplus.length}× · ${mn} min`,
         d:`Onderbezette spreekuren: meer flexruimte dan er tussen de afspraken past en de restlijst is leeg. Het surplus staat als één restruimte-blok aan het einde.`})
     }
-    const restKamerN=res.ntp.filter(a=>a._restKamer).length
-    if(restKamerN){
-      aanp.push({t:'wijziging',ico:'✕',k:'Dagdeel dichtgezet',
-        v:`${restKamerN} afspra${restKamerN===1?'ak':'ken'} → nog te plannen`,
-        d:`De laatste (rest-)kamer haalde in een dagdeel de ondergrens van de band niet; dat dagdeel is dichtgezet en die afspraken staan op de restlijst i.p.v. half-leeg te draaien.`})
+    if(restKamerVerhuisd){
+      aanp.push({t:'wijziging',ico:'✕',k:'Half dagdeel opgeruimd',
+        v:`${restKamerVerhuisd} afspra${restKamerVerhuisd===1?'ak':'ken'} herplaatst`,
+        d:`De laatste (rest-)kamer haalde in een dagdeel de ondergrens niet; dat dagdeel is dichtgezet en de afspraken zijn over de andere spreekuren van diezelfde dag verdeeld — er is er géén op de restlijst beland.`})
+    }
+    if(restKamerOpen){
+      aanp.push({t:'let-op',ico:'▽',k:'Spreekuur onder de ondergrens',
+        v:`${restKamerOpen}× opengehouden`,
+        d:`Dit halve dagdeel haalt de ondergrens van de band niet, maar de afspraken pasten nergens anders op die dag. Het spreekuur blijft daarom open: alles ingepland gaat vóór een perfect gevulde kamer. Minder kamers of de restvraag bundelen lost dit op.`})
     }
     if(navulTotaal){
       aanp.push({t:'ok',ico:'▲',k:'Spreekuren bijgevuld',

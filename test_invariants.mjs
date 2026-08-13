@@ -127,6 +127,25 @@ const results = await page.evaluate(()=>{
         })
       })
       return v },
+    // NIETS ONNODIG OP DE RESTLIJST: staat er een afspraak op "nog te plannen" terwijl
+    // er die dag nog een geopend spreekuur is waar hij binnen de bovenband in past, dan
+    // is hij ten onrechte blijven liggen. (Dit ving de rest-kamer-bug: een half dagdeel
+    // werd dichtgezet en de afspraken verdwenen naar de restlijst terwijl er ruimte was.)
+    geenLoosNTP:(r,rules)=>{ if(!r.ntp.length) return []
+      const v=[]; const gross={o:210,m:210,a:180}
+      const boven=x=>Math.round(gross[x]*0.875)
+      ;[0,1,2,3,4].forEach(di=>{
+        const ntpD=r.ntp.filter(a=>a.day===di); if(!ntpD.length) return
+        const s=r.days[di]; if(!s) return
+        const vrij={}
+        Object.entries(s).forEach(([k,arr])=>{ const phys=(arr||[]).filter(a=>!a.isFlex&&!a.overbook)
+          if(phys.length) vrij[k]=boven(k[0])-phys.reduce((t,a)=>t+a.duur,0) })
+        ntpD.forEach(a=>{ const kan=Object.keys(vrij).some(k=>{
+            const ddU=k[0]==='o'?'O':k[0]==='m'?'M':'A'
+            return (!a.ddOpties||a.ddOpties.includes(ddU)) && vrij[k]>=a.duur-0.01 })
+          if(kan) v.push(`d${di}: ${a.code} (${a.duur}m) op restlijst terwijl er ruimte is`) })
+      })
+      return v },
     // INVOER-GRENZEN: geen afspraak op een dag/dagdeel dat die code volgens de invoer niet mag.
     invoer:(r,rules)=>{ const v=[]
       const DAY=['MA','DI','WO','DO','VR']
@@ -185,11 +204,32 @@ const results = await page.evaluate(()=>{
     v.push(...CHECKS.digCluster(r,rules))
     v.push(...CHECKS.flexSpread(r,rules))
     v.push(...CHECKS.bandOnder(r,rules))
+    v.push(...CHECKS.geenLoosNTP(r,rules))
     v.push(...CHECKS.invoer(r,rules))
     if(v.length) failures.push({c,v:v.slice(0,4)})
     else pass++
   }
-  return {total:all.length, pass, failures:failures.slice(0,14)}
+  // ── EXTRA: "restvraag bundelen" mag het NOOIT slechter maken ────────────────
+  // De regel bundelt de restvraag om kamer-dagen te besparen. Hij mag daarbij nooit
+  // méér afspraken op "nog te plannen" zetten of méér kamer-dagen opleveren dan
+  // zonder bundelen — precies wat er misging toen "maandag" kiezen het raster brak.
+  const kdOf=r=>{ let k=0; [0,1,2,3,4].forEach(di=>{ const s=r.days[di]; if(!s) return
+    const rm=new Set(); Object.entries(s).forEach(([kk,arr])=>{ if((arr||[]).some(a=>!a.isFlex&&!a.overbook)) rm.add(kk.slice(1)) }); k+=rm.size }); return k }
+  const bundelFouten=[]
+  const dagSets=[{ma:20,di:20,wo:20,do:20,vr:20},{ma:30,di:25,wo:20,do:15,vr:10}]
+  const cfgSets=[{newPat:100,ctrlPat:200,newCodes:2,ctrlCodes:2},{newPat:40,ctrlPat:80,newCodes:2,ctrlCodes:2}]
+  for(const days of dagSets) for(const c of cfgSets) for(const fm of ['end','spread']) for(const sp of [false,true]){
+    const M=Object.assign({},M2,{days})
+    const basis=Object.assign({},BASE,{flexMode:fm,spoedFirst:sp,restDag:'uit'})
+    const r0=window.__cr(c,nr,cr,M,basis,{mode:'auto',kamers:6})
+    const lbl=`${c.newPat}/${c.ctrlPat} dagen:${Object.values(days).join('-')} flex:${fm}${sp?' spoed':''}`
+    for(const rd of ['ma','auto']){
+      const r1=window.__cr(c,nr,cr,M,Object.assign({},basis,{restDag:rd}),{mode:'auto',kamers:6})
+      if(r1.ntp.length>r0.ntp.length) bundelFouten.push(`rest:${rd} ${lbl} → NTP ${r0.ntp.length}→${r1.ntp.length}`)
+      if(kdOf(r1)>kdOf(r0)) bundelFouten.push(`rest:${rd} ${lbl} → kamer-dagen ${kdOf(r0)}→${kdOf(r1)}`)
+    }
+  }
+  return {total:all.length, pass, failures:failures.slice(0,14), bundelFouten:bundelFouten.slice(0,10)}
 })
 console.log(`PASS ${results.pass}/${results.total} (${Math.round(results.pass/results.total*100)}%)`)
 results.failures.forEach(f=>{
@@ -198,5 +238,9 @@ results.failures.forEach(f=>{
   console.log(`FAIL [${on||'-'} ${modes}]`)
   f.v.forEach(x=>console.log('   · '+x))
 })
+if(results.bundelFouten&&results.bundelFouten.length){
+  console.log(`BUNDEL-REGRESSIES (${results.bundelFouten.length}):`)
+  results.bundelFouten.forEach(x=>console.log('   · '+x))
+} else console.log('Bundelen maakt het nooit slechter: OK')
 console.log('PAGE ERRORS:',errs.length?errs:'none')
 await b.close()
