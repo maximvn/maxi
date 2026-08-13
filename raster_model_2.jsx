@@ -84,15 +84,15 @@ const PLAN_INFO = {
   spoedFirst:{label:'Spoed afspraken eerst',type:'toggle',
     desc:'Afspraken met het spoedvinkje komen vóór alle andere afspraken van hetzelfde spreekuur, en belanden NOOIT op "nog te plannen" zolang ze passen (spoed heeft voorrang bij de selectie). Instelbaar per dagdeel (ochtend, middag of beide). De overige (niet-spoed) afspraken volgen daarna de gekozen kop- en afwisselregels.'},
   startNieuw:{label:'Starten met een nieuwe afspraak',type:'toggle',
-    desc:'Het spreekuur opent (ná een eventueel spoedblok) met een NIEUWE afspraak. Staat ook "starten met een controle afspraak" aan, dan opent het spreekuur afwisselend beginnend met nieuw (nieuw, controle, nieuw…) — dit wordt gemeld bij de regel-interacties.'},
+    desc:'Het spreekuur opent (ná een eventueel spoedblok) met een NIEUWE afspraak. BEREIK: je kiest expliciet of dit geldt voor ochtend + middag, alléén de ochtend of alléén de middag — buiten dat bereik volgt het spreekuur de overige regels. Staat ook "starten met een controle afspraak" aan in hetzelfde dagdeel, dan opent het spreekuur afwisselend beginnend met nieuw (nieuw, controle, nieuw…) — dit wordt gemeld bij de regel-interacties.'},
   startControle:{label:'Starten met een controle afspraak',type:'toggle',
-    desc:'Het spreekuur opent (ná een eventueel spoedblok) met een CONTROLE afspraak. Staat ook "starten met een nieuwe afspraak" aan, dan opent het spreekuur afwisselend beginnend met nieuw (beide staan aan) — dit wordt gemeld bij de regel-interacties.'},
+    desc:'Het spreekuur opent (ná een eventueel spoedblok) met een CONTROLE afspraak. BEREIK: je kiest expliciet of dit geldt voor ochtend + middag, alléén de ochtend of alléén de middag. Staat ook "starten met een nieuwe afspraak" aan in hetzelfde dagdeel, dan opent het spreekuur afwisselend beginnend met nieuw — dit wordt gemeld bij de regel-interacties.'},
   mixNC:{label:'Nieuw en controle afwisselen',type:'toggle',
-    desc:'AAN = de volgorde binnen elk spreekuur is een gemengde afwisseling van nieuwe en controle afspraken naar rato van hun aantallen (bij 1:2 → N,C,C,N,C,C…), en binnen elke categorie wisselen ook de afzonderlijke codes af. UIT = ongemengd: eerst alle afspraken van de ene categorie, dan de andere (welke categorie eerst bepaal je met de "starten met"-schakelaars). Er wordt altijd gekeken naar de invoer: een afspraak komt alleen op een dag en dagdeel waar die code volgens Gegevens invoer is toegestaan.'},
+    desc:'AAN = de volgorde binnen elk spreekuur is een gemengde afwisseling van nieuwe en controle afspraken naar rato van hun aantallen (bij 1:2 → N,C,C,N,C,C…), en binnen elke categorie wisselen ook de afzonderlijke codes af. UIT = ongemengd: eerst alle afspraken van de ene categorie, dan de andere (welke categorie eerst bepaal je met de "starten met"-schakelaars). BEREIK: je kiest of het afwisselen geldt voor ochtend + middag, alléén de ochtend of alléén de middag. Er wordt altijd gekeken naar de invoer: een afspraak komt alleen op een dag en dagdeel waar die code volgens Gegevens invoer is toegestaan.'},
   // ── Digitale consulten ─────────────────────────────────────────────────────
   digitalMode:{label:'Digitale consulten',type:'radio',
     opts:[{v:'spread',l:'Verdelen over dag'},{v:'cluster',l:'Clusteren in blok'},{v:'end',l:'Aan het einde plannen'}],
-    desc:'De digitale consulten worden in alle drie de modi op basis van de aantallen per dagdeel over de benodigde spreekuren verdeeld (nooit als één grote bulk in één kamer). Het verschil zit in de plaatsing bínnen elk spreekuur: "Verdelen over dag" = tussen de fysieke afspraken ingespreid. "Clusteren in blok" = de digitale consulten van dat spreekuur staan als één aaneengesloten blok bij elkaar. "Aan het einde plannen" = dat blok staat in het laatste tijdvenster van het spreekuur (venster instelbaar in minuten). Kan een regel ergens niet worden toegepast, dan verschijnt er een melding bij het raster met de reden.'},
+    desc:'De digitale consulten worden in alle drie de modi op basis van de aantallen per dagdeel over de benodigde spreekuren verdeeld (nooit als één grote bulk in één kamer). Het verschil zit in de plaatsing bínnen elk spreekuur: "Verdelen over dag" = tussen de fysieke afspraken ingespreid. "Clusteren in blok" = de digitale consulten van dat spreekuur staan als één aaneengesloten blok bij elkaar. "Aan het einde plannen" = dat blok staat in het laatste tijdvenster van het spreekuur (venster instelbaar in minuten). BEREIK: je kiest expliciet in welk dagdeel deze plaatsing geldt (ochtend + middag, alléén ochtend of alléén middag); daarbuiten worden de digitale consulten neutraal over de dag verdeeld. Kan een regel ergens niet worden toegepast, dan verschijnt er een melding bij het raster met de reden.'},
   // ── Kamerverdeling ─────────────────────────────────────────────────────────
   kamerVerdeling:{label:'Verdeling over kamers en dagdelen',type:'radio',
     opts:[{v:'dagdeel',l:'Dagdeel voor dagdeel vol'},{v:'gelijk',l:'Gelijk verdelen'}],
@@ -100,7 +100,7 @@ const PLAN_INFO = {
   // ── Flex-tijd beheer ───────────────────────────────────────────────────────
   flexMode:{label:'Flex-tijd verdeling',type:'radio',
     opts:[{v:'end',l:'Flex-blok aan het einde'},{v:'spread',l:'Flex verspreid tussen afspraken'}],
-    desc:'"Aan het einde" = één aaneengesloten flexblok ná de laatste afspraak (het spreekuur eindigt dan op flex). "Verspreid tussen afspraken" = flexblokken van EXACT de ingestelde duur (nooit korter of langer), gelijkmatig tussen de afspraken verdeeld, nooit binnen de eerste N minuten; het spreekuur eindigt met een afspraak. Een restant kleiner dan één heel blok (hooguit blokduur−5 min) kan geen exact blok vormen en blijft als kleine, ongemarkeerde ruimte aan het einde.'},
+    desc:'"Aan het einde" = één aaneengesloten flexblok ná de laatste afspraak (het spreekuur eindigt dan op flex). "Verspreid tussen afspraken" = flexblokken van EXACT de ingestelde duur (nooit korter of langer), gelijkmatig tussen de afspraken verdeeld, nooit binnen de eerste N minuten; het spreekuur eindigt met een afspraak. Een restant kleiner dan één heel blok (hooguit blokduur−5 min) kan geen exact blok vormen en blijft als kleine, ongemarkeerde ruimte aan het einde. BEREIK: je kiest in welk dagdeel deze verdeling geldt; daarbuiten staat de flex als één blok aan het einde.'},
 }
 
 // Which keys are boolean toggles vs radio
@@ -394,8 +394,17 @@ export default function RasterTool(){
     digitalMode:'spread', flexMode:'end',
     kamerVerdeling:'dagdeel', // 'dagdeel' = kamer voor kamer afronden (och→mid→volgende kamer) | 'gelijk'
     restDag:'uit',            // 'uit' | 'auto' | 'ma'..'vr' — restvraag samenvoegen op één dag
-    restOpruimen:true,        // rest-kamer: dagdeel dat de ondergrens niet haalt → nog te plannen (dicht) i.p.v. half-leeg laten staan
-    spoedDagdeel:'both',      // 'both' | 'och' | 'mid' — in welk dagdeel geldt spoed-eerst
+    restOpruimen:true,        // spreekuren onder de minimumbezetting sluiten i.p.v. half-leeg laten draaien
+    minBezetting:75,          // een spreekuur gaat alléén open bij minimaal dit bezettingspercentage
+    // ── BEREIK per regel: 'both' (ochtend + middag) | 'och' | 'mid' ─────────────
+    // Elke regel is expliciet gekaderd in WELK dagdeel hij geldt, zodat de engine
+    // nooit zelf hoeft te raden of iets voor de ochtend, de middag of allebei bedoeld is.
+    spoedDagdeel:'both',      // in welk dagdeel geldt spoed-eerst
+    startNieuwWaar:'both',    // in welk dagdeel opent het spreekuur met een nieuwe afspraak
+    startControleWaar:'both', // in welk dagdeel opent het spreekuur met een controle afspraak
+    mixWaar:'both',           // in welk dagdeel wordt nieuw/controle afgewisseld
+    digitalWaar:'both',       // in welk dagdeel geldt de gekozen digitaal-plaatsing
+    flexWaar:'both',          // in welk dagdeel geldt de gekozen flex-verdeling
     flexNoFirstMin:60,        // geen verspreide flex in de eerste N minuten van een spreekuur
     flexBlokMin:10,           // grootte van één verspreid flexblokje (5/10/15/20 min)
     digitalEndMinutes:30,     // breedte van het digitale eindvenster (digitalMode='end')
@@ -852,12 +861,19 @@ export default function RasterTool(){
     const applyPlanRules=(room,dd)=>{
       if(!room||!room.length) return room||[]
       const isNieuw=a=>a.category==='nieuw'
+      // BEREIK: elke regel geldt in het dagdeel dat de gebruiker heeft gekozen
+      // (ochtend + middag / alleen ochtend / alleen middag). Zo hoeft de engine
+      // nergens zelf te bepalen of een regel voor de ochtend of de middag bedoeld is.
+      const inBereik=w=>(w||'both')==='both'||((w==='och')&&dd===0)||((w==='mid')&&dd===1)
+      const sNieuw=rules.startNieuw && inBereik(rules.startNieuwWaar)
+      const sCtrl =rules.startControle && inBereik(rules.startControleWaar)
+      const mixHier=rules.mixNC && inBereik(rules.mixWaar)
       // KOP-categorie: welke categorie het spreekuur opent (ná een eventueel spoedblok).
       // Beide "starten met"-schakelaars aan → afwisselen beginnend met NIEUW (gemeld bij
       // de regel-interacties). Geen enkele aan → geen kop-voorkeur (neutrale mix).
-      const leadCat = (rules.startNieuw && !rules.startControle) ? 'nieuw'
-        : (rules.startControle && !rules.startNieuw) ? 'controle'
-        : (rules.startNieuw && rules.startControle) ? 'nieuw'
+      const leadCat = (sNieuw && !sCtrl) ? 'nieuw'
+        : (sCtrl && !sNieuw) ? 'controle'
+        : (sNieuw && sCtrl) ? 'nieuw'
         : null
 
       // Gewogen mix: nieuw/controle (en de codes bínnen elke categorie) om-en-om naar
@@ -889,7 +905,7 @@ export default function RasterTool(){
         const nieuw=mixLijst(lst.filter(isNieuw)), ctrl=mixLijst(lst.filter(a=>!isNieuw(a)))
         return leadCat==='controle' ? [...ctrl,...nieuw] : [...nieuw,...ctrl]
       }
-      const ordenRomp=(lst)=> lst.length<=1 ? [...lst] : (rules.mixNC ? mixLijst(lst) : ongemengd(lst))
+      const ordenRomp=(lst)=> lst.length<=1 ? [...lst] : (mixHier ? mixLijst(lst) : ongemengd(lst))
 
       // AS 1 — SPOED vooraan (dagdeel-gated). Digitaal staat los (AS 4).
       const spoedAan=rules.spoedFirst&&(rules.spoedDagdeel==='both'
@@ -902,9 +918,11 @@ export default function RasterTool(){
       spoed=ordenRomp(spoed)   // spoedblok intern volgt dezelfde mix/kop-regels
       let pool=[...spoed, ...fys]
 
-      // AS 4 — DIGITALE CONSULTEN op de tijdas.
+      // AS 4 — DIGITALE CONSULTEN op de tijdas. Buiten het gekozen bereik vallen ze
+      // terug op "verdelen over de dag" (de neutrale plaatsing).
+      const digModus=inBereik(rules.digitalWaar)?rules.digitalMode:'spread'
       if(dig.length){
-        if(rules.digitalMode==='spread'){
+        if(digModus==='spread'){
           const out=[...pool]
           dig.forEach((d,i)=>out.splice(Math.min(Math.round((i+1)*(out.length+1)/(dig.length+1)),out.length),0,d))
           pool=out
@@ -1215,6 +1233,45 @@ export default function RasterTool(){
       return {perDd:uit, over}
     }
 
+    // ── MINIMUMBEZETTING (herbruikbaar) ─────────────────────────────────────────
+    // Een dagdeel dat de drempel niet haalt gaat NIET open. Deze zuivere functie past
+    // die regel toe op de kamers van één dag en geeft terug wat er open blijft en wat
+    // er op de restlijst belandt. Zowel de week-optimalisatie (die vooruit moet kunnen
+    // kijken naar het gevolg van verschuiven) als de definitieve opbouw gebruiken 'm,
+    // zodat beide exact dezelfde regel hanteren.
+    const minBezPct=Math.max(0,Math.min(100,rules.minBezetting??75))
+    const minBezAan=rules.restOpruimen!==false && minBezPct>0
+    const minBezCap=x=>durFor2(x)*minBezPct/100
+    const bovenCap2=x=>Math.round(durFor2(x)*Math.min(100,(m2.benutting+2.5))/100)
+    const pasMinBezettingToe=(perDd, odd)=>{
+      const R={}; odd.forEach(dd=>{ R[dd]=(perDd[dd]||[]).map(x=>[...(x||[])]) })
+      const rest=[]
+      if(!minBezAan) return {R, rest}
+      const vul=(dd,r)=>((R[dd]||[])[r]||[]).reduce((t,a)=>t+a.duur,0)
+      const openLijst=()=>{ const u=[]
+        odd.forEach(dd=>(R[dd]||[]).forEach((rm,r)=>{ if(rm&&rm.length) u.push({dd,r}) })); return u }
+      for(let g=0; g<40; g++){
+        const op=openLijst()
+        if(op.length<=1) break                       // de dag houdt altijd één spreekuur
+        const tekort=op.filter(x=>vul(x.dd,x.r)<minBezCap(x.dd)-0.01)
+          .sort((a,b)=>vul(a.dd,a.r)-vul(b.dd,b.r))
+        if(!tekort.length) break
+        const {dd,r}=tekort[0]
+        const vrij={}
+        op.forEach(x=>{ if(x.dd===dd&&x.r===r) return
+          vrij[x.dd+'|'+x.r]=bovenCap2(x.dd)-vul(x.dd,x.r) })
+        for(const a of [...R[dd][r]].sort((x,y)=>y.duur-x.duur)){
+          const opt=Object.keys(vrij).filter(k=>
+            (!a.ddOpties||a.ddOpties.includes(k.split('|')[0])) && vrij[k]>=a.duur-0.01)
+          if(!opt.length){ rest.push(a); continue }
+          opt.sort((x,y)=>vrij[x]-vrij[y])
+          const p=opt[0].split('|'); R[p[0]][+p[1]].push(a); vrij[opt[0]]-=a.duur
+        }
+        R[dd][r]=[]
+      }
+      return {R, rest}
+    }
+
     // ══ WEEK-OPTIMALISATIE — restvraag concentreren tot VOLLEDIGE kamers ═════════
     // Even verdelen over 5 dagen geeft vaak een gebroken aantal kamers per dag (bv.
     // 2,46) → elke dag een deels gevulde kamer op lage benutting. Efficiënter is de
@@ -1269,30 +1326,43 @@ export default function RasterTool(){
       const bandCap=dd=>Math.round(durFor2(dd)*Math.min(100,(m2.benutting||85)+2.5)/100)
       const openDdOf=di=>DD.filter(x=>ddOpenOp(x,di))
 
-      // meet(): TRIAL-FILL een dag met de echte pakker (vulDag) en lees af hoeveel kamers
-      // hij opent en welke afspraken in de LAATSTE (mogelijk deels gevulde) kamer staan.
-      // Zo werken we met de werkelijke vulling i.p.v. een schatting die er net naast zit.
+      // meet(): TRIAL-FILL een dag met de ÉCHTE pakker (vulDag) én pas daarna de
+      // minimumbezetting toe — precies zoals de definitieve opbouw dat doet. Zo weet
+      // het bundelen vooraf hoeveel kamers een dag écht opent en hoeveel afspraken de
+      // drempelregel op de restlijst zou zetten. Zonder die tweede stap optimaliseerde
+      // het bundelen naar een verdeling die de drempelregel daarna weer afbrak.
       const meet=di=>{
         const pool=grouped[di]||[]
-        if(!pool.length) return {n:0, lastAppts:[], frac:1, over:0}
+        if(!pool.length) return {n:0, lastAppts:[], frac:1, over:0, verlies:0}
         const res=vulDag(di, pool)
         const odd=openDdOf(di)
-        let n=0; odd.forEach(dd=>{ n=Math.max(n,(res.perDd[dd]||[]).length) })
-        if(n===0) return {n:0, lastAppts:[], frac:1, over:(res.over||[]).length}
+        const {R,rest}=pasMinBezettingToe(res.perDd, odd)
+        const gebruikteKamers=new Set()
+        odd.forEach(dd=>(R[dd]||[]).forEach((rm,r)=>{ if(rm&&rm.length) gebruikteKamers.add(r) }))
+        const n=gebruikteKamers.size
+        const verlies=(res.over||[]).length+rest.length
+        if(n===0) return {n:0, lastAppts:[], frac:1, over:(res.over||[]).length, verlies}
+        const L=Math.max(...gebruikteKamers)
         let appts=[], min=0, cap=0
-        odd.forEach(dd=>{ const arr=(res.perDd[dd]||[])[n-1]||[]; appts=appts.concat(arr)
+        odd.forEach(dd=>{ const arr=(R[dd]||[])[L]||[]; appts=appts.concat(arr)
           min+=arr.reduce((t,a)=>t+a.duur,0); cap+=bandCap(dd) })
-        return {n, lastAppts:appts, frac: cap>0?min/cap:1, over:(res.over||[]).length}
+        return {n, lastAppts:appts, frac: cap>0?min/cap:1, over:(res.over||[]).length, verlies}
       }
       const snap=()=>{ const s={}; weekDagen.forEach(di=>s[di]=[...(grouped[di]||[])]); return s }
       const zet=s=>{ weekDagen.forEach(di=>grouped[di]=s[di]) }
       const bandDag=di=>openDdOf(di).reduce((t,dd)=>t+bandCap(dd),0)
       const totRD=meas=>weekDagen.reduce((t,di)=>t+meas[di].n,0)
+      const totVerlies=meas=>weekDagen.reduce((t,di)=>t+(meas[di].verlies||0),0)
+      // Doelfunctie: eerst zo min mogelijk afspraken op de restlijst, dán zo min
+      // mogelijk kamer-dagen. Inplannen weegt zwaarder dan een kamer besparen.
+      const meetAlles=()=>{ const m={}; weekDagen.forEach(di=>m[di]=meet(di)); return m }
+      const beter=(a,b)=> a.v<b.v || (a.v===b.v && a.r<b.r)
+      const scoreVan=m=>({v:totVerlies(m), r:totRD(m)})
 
       // Een kamer geldt als "vol" vanaf 82% van de bovenband (binnen de benuttingsband).
       const VOL=0.82
       const beginSnap=snap()
-      const rdBegin=totRD((()=>{ const m={}; weekDagen.forEach(di=>m[di]=meet(di)); return m })())
+      const startScore=scoreVan(meetAlles())
 
       // ── RONDE 1 — de DRAGER GEEFT AF ─────────────────────────────────────────
       // Vaak is dit de winnende richting: elke ándere dag heeft binnen zijn huidige
@@ -1328,11 +1398,11 @@ export default function RasterTool(){
           grouped[geef.di]=(grouped[geef.di]||[]).filter(q=>q.id!==a.id)
           grouped[neem.di]=[...(grouped[neem.di]||[]),{...a,day:neem.di,_verhuisd:geef.di}]
         }
-        // Alleen houden als de week er daadwerkelijk kamer-dagen mee bespaart en er
-        // nergens iets op de restlijst belandt.
-        const na={}; weekDagen.forEach(di=>na[di]=meet(di))
-        const veilig=weekDagen.every(di=>na[di].over===0 && na[di].n<=maxRoom)
-        if(!(veilig && totRD(na)<rdBegin)) zet(back)
+        // Alleen houden als het resultaat écht beter is: minder afspraken op de
+        // restlijst, of bij gelijk verlies minder kamer-dagen.
+        const na=meetAlles()
+        const veilig=weekDagen.every(di=>na[di].n<=maxRoom)
+        if(!(veilig && beter(scoreVan(na),startScore))) zet(back)
       })()
 
       // ── RONDE 2 — de drager ONTVANGT (klassieke bundeling) ───────────────────
@@ -1372,17 +1442,16 @@ export default function RasterTool(){
           grouped[drager]=[...(grouped[drager]||[]), ...teVerhuizen.map(a=>({...a,day:drager,_verhuisd:donorDi}))]
           // Behouden als: geen overloop op de restlijst, de drager binnen de kamerlimiet
           // blijft, en de donor daadwerkelijk zijn deels gevulde kamer kwijtraakt.
-          const na=meet(donorDi), dragerNa=meet(drager)
-          if(dragerNa.over===0 && na.over===0 && dragerNa.n<=maxRoom && na.n<donorN){ vooruit=true; break }
+          const alles=meetAlles()
+          if(alles[drager].n<=maxRoom && alles[donorDi].n<donorN && !beter(startScore,scoreVan(alles))){ vooruit=true; break }
           zet(back)
         }
         if(!vooruit) break
       }
-      // Bundelen mag het totaal aantal kamer-dagen NOOIT verhogen (bv. wanneer de drager
-      // door de kamerlimiet vol zit): levert het geen winst op, draai dan alles terug naar
-      // de gelijkmatige verdeling — die is dan zelf al de beste optie.
-      const rdEind=totRD((()=>{ const m={}; weekDagen.forEach(di=>m[di]=meet(di)); return m })())
-      if(rdEind>=rdBegin) zet(beginSnap)
+      // Bundelen mag het NOOIT slechter maken: niet méér afspraken op de restlijst en
+      // niet méér kamer-dagen. Levert het geen winst op, draai dan alles terug naar de
+      // gelijkmatige verdeling — die is dan zelf al de beste optie.
+      if(!beter(scoreVan(meetAlles()), startScore)) zet(beginSnap)
     }
     herverdeelNaarVolleKamers()
 
@@ -1413,59 +1482,32 @@ export default function RasterTool(){
       }
     })
 
-    // ── REST-KAMER OPRUIMEN — geen half-lege dagdelen met gaten ───────────────────
-    // De laatste (rest-)kamer van een dag bevat de afspraken die niet meer in een volle
-    // kamer pasten. Een dagdeel daarvan is alléén een volwaardig (half dag-)spreekuur als
-    // het de ONDERGRENS van de band haalt. Haalt het dat niet, dan is het een half-lege
-    // kamer met een gat: die afspraken gaan naar "nog te plannen" en het dagdeel gaat dicht.
-    // Zo houd je óf een volle ochtend (met de middag dicht), óf — als er te weinig rest is
-    // voor zelfs een halve dag — belanden ze netjes op de restlijst. Dit gebeurt alléén op
-    // dagen die al minstens één volwaardig spreekuur hebben (dus niet op een rustige dag
-    // met weinig volume, waar één deels gevuld dagdeel juist het hele programma is).
-    // KADER (belangrijk): een half dagdeel wordt alléén gesloten als élke afspraak
-    // ervan ELDERS OP DEZELFDE DAG binnen de bovenband terecht kan. Vroeger werden ze
-    // onvoorwaardelijk op "nog te plannen" gezet — ook als er nergens plaats was.
-    // Daardoor verdwenen afspraken van het raster terwijl de week nog capaciteit had.
-    // Past niet alles, dan blijft het spreekuur gewoon open (en wordt dat gemeld):
-    // een afspraak inplannen gaat vóór een perfect gevulde kamer.
-    let restKamerVerhuisd=0, restKamerOpen=0
-    if(rules.restOpruimen!==false) [0,1,2,3,4].forEach(di=>{
+    // ── MINIMUMBEZETTING — een spreekuur gaat alleen open als het vol genoeg is ──
+    // HARDE REGEL: haalt een dagdeel de ingestelde minimumbezetting niet, dan is het
+    // geen rendabel spreekuur en gaat het NIET open. Een vierde kamer die 's ochtends
+    // op 24% draait en 's middags leeg staat kost een hele kamer-dag voor een handvol
+    // afspraken — dat is precies wat we willen voorkomen.
+    //
+    // Werkwijze (cascade, over ÁLLE kamers — niet alleen de laatste):
+    //   1. Zoek het minst gevulde dagdeel dat onder de minimumbezetting zit.
+    //   2. Haal het leeg en verdeel die afspraken over de ándere spreekuren van
+    //      diezelfde dag (tot de bovenband). Wat niet past → "nog te plannen".
+    //   3. Herhaal tot élk open dagdeel de minimumbezetting haalt.
+    // Een dag houdt altijd minstens één spreekuur over; anders zou een rustige dag
+    // in zijn geheel op de restlijst belanden.
+    // Wat op de restlijst komt, kun je met "Restvraag bundelen tot volle kamers" op
+    // één gekozen dag alsnog tot een VOLLE extra kamer maken (zie de melding).
+    let dichtgezetDd=0, naarRestlijst=0
+    ;[0,1,2,3,4].forEach(di=>{
       if(!built[di]) return
       const odd=DD.filter(x=>ddOpenOp(x,di))
-      // Bestaat er ergens deze dag een volwaardig spreekuur (dagdeel ≥ ondergrens)?
-      let heeftVol=false
-      odd.forEach(dd=>{ (built[di][dd]||[]).forEach(room=>{ if(room && room.reduce((t,a)=>t+a.duur,0)>=ondergrensCap(dd)) heeftVol=true }) })
-      if(!heeftVol) return
-      // Index van de laatste kamer met inhoud.
-      let L=-1
-      odd.forEach(dd=>{ const arr=built[di][dd]||[]; for(let r=0;r<arr.length;r++) if(arr[r]&&arr[r].length) L=Math.max(L,r) })
-      if(L<0) return
-      const bovenC=x=>Math.round(durFor2(x)*Math.min(100,(m2.benutting+2.5))/100)
-      // Ruim in die laatste kamer elk dagdeel op dat de ondergrens niet haalt.
-      odd.forEach(dd=>{
-        const room=(built[di][dd]||[])[L]
-        if(!room || !room.length) return
-        const fill=room.reduce((t,a)=>t+a.duur,0)
-        if(fill >= ondergrensCap(dd)) return
-        // Resterende ruimte in de ÁNDERE kamers van deze dag (binnen de bovenband).
-        const vrij={}
-        odd.forEach(dd2=>{ (built[di][dd2]||[]).forEach((rm,r)=>{
-          if(r===L || !rm || !rm.length) return
-          vrij[dd2+'|'+r]=bovenC(dd2)-rm.reduce((t,a)=>t+a.duur,0) }) })
-        // Probeer élke afspraak een plek te geven (grootste eerst, krapste passende plek).
-        const plan=[]; let allePassen=true
-        for(const a of [...room].sort((x,y)=>y.duur-x.duur)){
-          const opties=Object.keys(vrij).filter(k=>
-            (!a.ddOpties || a.ddOpties.includes(k.split('|')[0])) && vrij[k]>=a.duur-0.01)
-          if(!opties.length){ allePassen=false; break }
-          opties.sort((x,y)=>vrij[x]-vrij[y])
-          plan.push({a,key:opties[0]}); vrij[opties[0]]-=a.duur
-        }
-        if(!allePassen){ restKamerOpen++; return }   // spreekuur blijft open
-        plan.forEach(({a,key})=>{ const p=key.split('|'); built[di][p[0]][+p[1]].push(a) })
-        built[di][dd][L]=[]
-        restKamerVerhuisd+=plan.length
-      })
+      const voor=odd.reduce((t,dd)=>t+(built[di][dd]||[]).filter(rm=>rm&&rm.length).length,0)
+      const {R,rest}=pasMinBezettingToe(built[di], odd)
+      odd.forEach(dd=>{ built[di][dd]=R[dd] })
+      rest.forEach(a=>overflowInst.push({...a, day:di, dd:(a.ddOpties&&a.ddOpties[0])||odd[0], edited:false, _restKamer:true}))
+      naarRestlijst+=rest.length
+      const na=odd.reduce((t,dd)=>t+(built[di][dd]||[]).filter(rm=>rm&&rm.length).length,0)
+      dichtgezetDd+=Math.max(0,voor-na)
     })
 
     let navulTotaal=0   // afspraken die vanuit de restlijst een spreekuur zijn bijgevuld
@@ -1552,6 +1594,44 @@ export default function RasterTool(){
     }
     navullenAlle()
 
+    // ── RESTLIJST BUNDELEN TOT EEN VOLLE EXTRA KAMER OP DE GEKOZEN DAG ──────────
+    // De minimumbezetting zet dunne spreekuren niet open; die afspraken staan nu op
+    // "nog te plannen". Kiest de gebruiker een rest-dag, dan is dát het moment om ze
+    // alsnog te plannen: we voegen ze samen op die ene dag en pakken die dag opnieuw.
+    // Zo ontstaat er één VOLLE extra kamer i.p.v. vijf dunne restjes door de week.
+    // Wat ook op de rest-dag de drempel niet haalt, blijft op de restlijst staan.
+    let restDagGebundeld=0, restDagKamer=null
+    if((rules.restDag||'uit')!=='uit' && overflowInst.length){
+      const dagIdx={ma:0,di:1,wo:2,do:3,vr:4}
+      const open=[0,1,2,3,4].filter(di=>built[di])
+      const kies=rules.restDag
+      const dr = (kies in dagIdx && open.includes(dagIdx[kies])) ? dagIdx[kies]
+        : open.map(di=>({di,n:overflowInst.filter(a=>!a.dagOpties||a.dagOpties.includes(di)).length}))
+              .sort((a,b)=>b.n-a.n).map(x=>x.di)[0]
+      if(dr!=null && built[dr]){
+        const odd=DD.filter(x=>ddOpenOp(x,dr))
+        const kand=overflowInst.filter(a=>!a.dagOpties||a.dagOpties.includes(dr))
+        if(kand.length){
+          const huidig=[]
+          odd.forEach(dd=>(built[dr][dd]||[]).forEach(rm=>(rm||[]).forEach(a=>huidig.push(a))))
+          const pool=[...huidig, ...kand.map(a=>({...a, day:dr, _verhuisd:a.day}))]
+          const res=vulDag(dr, pool)
+          const {R,rest}=pasMinBezettingToe(res.perDd, odd)
+          const nieuwVerlies=(res.over||[]).length+rest.length
+          // Alleen doorvoeren als er per saldo méér afspraken ingepland raken.
+          if(nieuwVerlies<kand.length){
+            odd.forEach(dd=>{ built[dr][dd]=R[dd] })
+            const kandIds=new Set(kand.map(a=>a.id))
+            for(let i=overflowInst.length-1;i>=0;i--) if(kandIds.has(overflowInst[i].id)) overflowInst.splice(i,1)
+            ;[...(res.over||[]), ...rest].forEach(a=>overflowInst.push(
+              {...a, day:dr, dd:(a.ddOpties&&a.ddOpties[0])||odd[0], edited:false, _restKamer:true}))
+            restDagGebundeld=kand.length-nieuwVerlies
+            restDagKamer=dr
+          }
+        }
+      }
+    }
+
     // FASE 2b — VOLGORDE binnen elke kamer (ná structuur + selectie), zodat een omgeruilde
     // afspraak alsnog volgens de regels wordt geordend (bv. de 3 kortste vooraan).
     ;[0,1,2,3,4].forEach(di=>{
@@ -1603,7 +1683,11 @@ export default function RasterTool(){
       if(!appts.length) return []          // lege kamer → geen flex, geen slot
       const sessEnd=sessStart+dagdeelMin
       const out=[]
-      const isEndMode=rules.digitalMode==='end'
+      // BEREIK: buiten het gekozen dagdeel vallen digitaal en flex terug op de
+      // neutrale plaatsing (digitaal verdelen, flex aan het einde).
+      const inBer=w=>(w||'both')==='both'||((w==='och')&&dd===0)||((w==='mid')&&dd===1)
+      const isEndMode=rules.digitalMode==='end' && inBer(rules.digitalWaar)
+      const flexSpreadHier=rules.flexMode==='spread' && inBer(rules.flexWaar)
       const endWindow=Math.max(5, rules.digitalEndMinutes||30)
       const digAppts=isEndMode?appts.filter(a=>a.digitaal):[]
       const physAppts=isEndMode?appts.filter(a=>!a.digitaal):appts
@@ -1643,7 +1727,7 @@ export default function RasterTool(){
       }
 
       let t=sessStart
-      if(rules.flexMode==='spread' && flexTotal>=blokMin){
+      if(flexSpreadHier && flexTotal>=blokMin){
         // Elk gat krijgt HOOGSTENS ÉÉN blokje van exact de ingestelde grootte.
         // Vroeger stapelden blokjes op hetzelfde gat zodra er meer flex dan gaten
         // was — dat leverde één blok van twee uur op met daarachter nog één losse
@@ -1818,15 +1902,15 @@ export default function RasterTool(){
       const restKamer=res.ntp.filter(a=>a._restKamer).length
       const probleem=`${res.ntp.length} afspra${res.ntp.length===1?'ak':'ken'} niet ingepland (${dagTekst}). `+(capMode==='vast'
         ? `De vraag past niet binnen ${maxParallel} kamer${maxParallel===1?'':'s'} op maximale benutting.`
-        : restKamer===res.ntp.length
-          ? `Dit is de rest die geen vol (half dag-)spreekuur meer vormt: het betreffende dagdeel is dichtgezet i.p.v. half-leeg gelaten.`
+        : restKamer>0
+          ? `Hun spreekuur haalde de minimumbezetting van ${minBezPct}% niet. Zo'n dagdeel gaat bewust niet open: een kamer die maar voor een kwart gevuld is, kost een hele kamer-dag voor een handvol afspraken.`
           : `Er bleef een restant over dat geen vol spreekuur vormt.`)
       const oplossing = capMode==='vast'
         ? `Verhoog het aantal kamers, verruim de spreekuurtijden of verlaag de vraag. Of plan deze afspraken handmatig: sleep ze vanuit "nog te plannen" het raster in.`
-        : restKamer===res.ntp.length
+        : restKamer>0
           ? ((rules.restDag||'uit')==='uit'
-            ? `Zet "Restvraag bundelen tot volle kamers" aan (bij Volgorde & regels) om deze rest op één dag samen te voegen — dan blijft er veel minder over. Of sleep ze handmatig het raster in.`
-            : `Sleep deze afspraken handmatig het raster in, of zet "Rest-kamer: open laten" aan om het half gevulde dagdeel tóch te tonen.`)
+            ? `Zet "Restvraag bundelen tot volle kamers" aan en kies één dag (bv. maandag): deze afspraken worden dan op die dag samengevoegd tot een VOLLE extra kamer, in plaats van als dunne restjes over de week verspreid. Wat dan nog overblijft, kun je handmatig het raster in slepen.`
+            : `Er blijft een restant over dat ook op de rest-dag geen vol spreekuur vormt. Verlaag de minimumbezetting, verruim de spreekuurtijden, of sleep deze afspraken handmatig het raster in.`)
           : `Zet "Restvraag bundelen tot volle kamers" aan om het restant op één dag te bundelen.`
       notices.push({level:'warn',rule:'Nog te plannen',msg:probleem,fix:oplossing})
     }
@@ -1960,15 +2044,15 @@ export default function RasterTool(){
         v:`${flexSurplus.length}× · ${mn} min`,
         d:`Onderbezette spreekuren: meer flexruimte dan er tussen de afspraken past en de restlijst is leeg. Het surplus staat als één restruimte-blok aan het einde.`})
     }
-    if(restKamerVerhuisd){
-      aanp.push({t:'wijziging',ico:'✕',k:'Half dagdeel opgeruimd',
-        v:`${restKamerVerhuisd} afspra${restKamerVerhuisd===1?'ak':'ken'} herplaatst`,
-        d:`De laatste (rest-)kamer haalde in een dagdeel de ondergrens niet; dat dagdeel is dichtgezet en de afspraken zijn over de andere spreekuren van diezelfde dag verdeeld — er is er géén op de restlijst beland.`})
+    if(restDagGebundeld){
+      aanp.push({t:'ok',ico:'⇉',k:'Restlijst gebundeld tot volle kamer',
+        v:`${restDagGebundeld} afspra${restDagGebundeld===1?'ak':'ken'} op ${DAYS[restDagKamer]||'de rest-dag'}`,
+        d:`De afspraken waarvan het spreekuur de minimumbezetting niet haalde, zijn samengevoegd op de gekozen rest-dag. Daar vormen ze een VOLLE extra kamer in plaats van dunne restjes verspreid over de week.`})
     }
-    if(restKamerOpen){
-      aanp.push({t:'let-op',ico:'▽',k:'Spreekuur onder de ondergrens',
-        v:`${restKamerOpen}× opengehouden`,
-        d:`Dit halve dagdeel haalt de ondergrens van de band niet, maar de afspraken pasten nergens anders op die dag. Het spreekuur blijft daarom open: alles ingepland gaat vóór een perfect gevulde kamer. Minder kamers of de restvraag bundelen lost dit op.`})
+    if(dichtgezetDd){
+      aanp.push({t:'wijziging',ico:'✕',k:'Spreekuur niet geopend',
+        v:`${dichtgezetDd} dagdeel${dichtgezetDd===1?'':'en'} onder ${minBezPct}%`,
+        d:`Deze dagdelen haalden de minimumbezetting van ${minBezPct}% niet. Ze zijn niet geopend; hun afspraken zijn eerst over de andere spreekuren van diezelfde dag verdeeld${naarRestlijst?`, en ${naarRestlijst} afspra${naarRestlijst===1?'ak die':'ken die'} nergens meer paste${naarRestlijst===1?'':'n'} staan op "nog te plannen"`:` — er is er géén op de restlijst beland`}.`})
     }
     if(navulTotaal){
       aanp.push({t:'ok',ico:'▲',k:'Spreekuren bijgevuld',
@@ -2036,7 +2120,9 @@ export default function RasterTool(){
     ddDagen:{O:{...DEF_DD_DAGEN.O},M:{...DEF_DD_DAGEN.M},A:{...DEF_DD_DAGEN.A}}})
     setRules({spoedFirst:false,startNieuw:false,startControle:false,mixNC:true,
       digitalMode:'spread',flexMode:'end',
-      kamerVerdeling:'dagdeel',restDag:'uit',restOpruimen:true,spoedDagdeel:'both',flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30})
+      kamerVerdeling:'dagdeel',restDag:'uit',restOpruimen:true,minBezetting:75,spoedDagdeel:'both',
+      startNieuwWaar:'both',startControleWaar:'both',mixWaar:'both',digitalWaar:'both',flexWaar:'both',
+      flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30})
     setSelDay(0); setRaster(null); setDrag(null)
     setShowFullReset(false)
   }
@@ -2116,7 +2202,9 @@ export default function RasterTool(){
           const sr=state.rules
           setRules({spoedFirst:false,startNieuw:false,startControle:false,mixNC:true,
             digitalMode:'spread',flexMode:'end',
-            kamerVerdeling:'dagdeel',restDag:'uit',restOpruimen:true,spoedDagdeel:'both',flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30,...sr,
+            kamerVerdeling:'dagdeel',restDag:'uit',restOpruimen:true,minBezetting:75,spoedDagdeel:'both',
+            startNieuwWaar:'both',startControleWaar:'both',mixWaar:'both',digitalWaar:'both',flexWaar:'both',
+            flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30,...sr,
             ...(sr.kamerVerdeling==='kamer'?{kamerVerdeling:'dagdeel'}:{})})
         }
         // Note: raster is not stored (too large), it will be auto-generated
@@ -3084,7 +3172,12 @@ export default function RasterTool(){
           const all=sample.map((a,i)=>({...a,id:'s'+i,category:a.cat}))
           // Spiegelt exact de drie assen van applyPlanRules (spoed · nieuw/controle · digitaal).
           const isNieuw=a=>a.category==='nieuw'
-          const leadCat=(rules.startNieuw&&!rules.startControle)?'nieuw':(rules.startControle&&!rules.startNieuw)?'controle':(rules.startNieuw&&rules.startControle)?'nieuw':null
+          // Voorbeeld = een OCHTEND-spreekuur, dus de bereik-keuzes gelden hier voor dd=0.
+          const inBerV=w=>(w||'both')==='both'||w==='och'
+          const sN=rules.startNieuw&&inBerV(rules.startNieuwWaar)
+          const sC=rules.startControle&&inBerV(rules.startControleWaar)
+          const mixV=rules.mixNC&&inBerV(rules.mixWaar)
+          const leadCat=(sN&&!sC)?'nieuw':(sC&&!sN)?'controle':(sN&&sC)?'nieuw':null
           const mixLijst=(lst)=>{
             if(lst.length<=1) return [...lst]
             const n=lst.length,totCat={},totCode={}
@@ -3100,7 +3193,7 @@ export default function RasterTool(){
             return uit
           }
           const ongemengd=(lst)=>{const nw=mixLijst(lst.filter(isNieuw)),ct=mixLijst(lst.filter(a=>!isNieuw(a)));return leadCat==='controle'?[...ct,...nw]:[...nw,...ct]}
-          const ordenRomp=(lst)=>lst.length<=1?[...lst]:(rules.mixNC?mixLijst(lst):ongemengd(lst))
+          const ordenRomp=(lst)=>lst.length<=1?[...lst]:(mixV?mixLijst(lst):ongemengd(lst))
           // AS 1 — spoed apart (voorbeeld = ochtend); digitaal apart (AS 4).
           const dig=all.filter(a=>a.digitaal); let fys=all.filter(a=>!a.digitaal)
           const spoedAan=rules.spoedFirst&&(rules.spoedDagdeel==='both'||rules.spoedDagdeel==='och')
@@ -3110,7 +3203,7 @@ export default function RasterTool(){
           let rest=[...sp,...fys]
           // AS 4 — digitaal op de tijdas
           if(dig.length){
-            if(rules.digitalMode==='spread'){ const o=[...rest]
+            if(!inBerV(rules.digitalWaar)||rules.digitalMode==='spread'){ const o=[...rest]
               dig.forEach((d,i)=>o.splice(Math.min(Math.round((i+1)*(o.length+1)/(dig.length+1)),o.length),0,d)); rest=o }
             else rest=[...rest,...dig]
           }
@@ -3119,7 +3212,7 @@ export default function RasterTool(){
           const seq=[]
           rest.forEach((a,i)=>{
             seq.push({...a})
-            if(rules.flexMode==='spread'&&i>=1&&i<rest.length-1) seq.push({buffer:true,duur:10})
+            if(rules.flexMode==='spread'&&inBerV(rules.flexWaar)&&i>=1&&i<rest.length-1) seq.push({buffer:true,duur:10})
           })
           seq.push({buffer:true,duur:rules.flexMode==='end'?25:10,eind:true})
           const totMin=seq.reduce((s,b)=>s+b.duur,0)||1
@@ -3129,9 +3222,9 @@ export default function RasterTool(){
             : b.cat==='nieuw'?NEW_PALETTE[0]:CTRL_PALETTE[0]
           const actieveRegels=[
             ...(rules.spoedFirst?['Spoed eerst']:[]),
-            ...(rules.startNieuw?['Start met nieuw']:[]),
-            ...(rules.startControle?['Start met controle']:[]),
-            rules.mixNC?'Nieuw/controle afwisselen':'Nieuw/controle ongemengd',
+            ...(sN?['Start met nieuw']:[]),
+            ...(sC?['Start met controle']:[]),
+            mixV?'Nieuw/controle afwisselen':'Nieuw/controle ongemengd',
             rules.digitalMode==='end'?`Digitaal aan het einde (${rules.digitalEndMinutes||30}m venster)`:rules.digitalMode==='cluster'?'Digitaal geclusterd':'Digitaal verdeeld',
             rules.flexMode==='end'?'Buffer aan het einde':`Buffer verspreid (na ${rules.flexNoFirstMin??60}m)`,
           ]
@@ -3182,6 +3275,10 @@ export default function RasterTool(){
           {['spoedFirst','startNieuw','startControle','mixNC'].map(key=>{
             const info=PLAN_INFO[key]; const on=rules[key]
             const beide=key==='startControle'&&rules.startNieuw&&rules.startControle
+            // Elke regel heeft een expliciet BEREIK: in welk dagdeel geldt hij? Zo hoeft
+            // de engine nergens te raden of je de ochtend, de middag of allebei bedoelt.
+            const bereikKey={spoedFirst:'spoedDagdeel',startNieuw:'startNieuwWaar',
+              startControle:'startControleWaar',mixNC:'mixWaar'}[key]
             return(
               <div key={key} style={{marginBottom:8}}>
                 <div style={{display:'flex',alignItems:'center',gap:10,padding:'11px 14px',borderRadius:8,
@@ -3200,13 +3297,13 @@ export default function RasterTool(){
                     <div style={{width:16,height:16,borderRadius:'50%',background:'#fff',position:'absolute',top:3,left:on?19:3,transition:'left 0.18s'}}/>
                   </div>
                 </div>
-                {key==='spoedFirst'&&on&&(
+                {on&&bereikKey&&(
                   <div style={{margin:'6px 0 0 30px',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
                     <span style={{fontSize:11,color:C.muted}}>Geldt in:</span>
                     {[{v:'both',l:'Ochtend + middag'},{v:'och',l:'Alleen ochtend'},{v:'mid',l:'Alleen middag'}].map(o=>{
-                      const sel=(rules.spoedDagdeel||'both')===o.v
+                      const sel=(rules[bereikKey]||'both')===o.v
                       return(
-                        <button key={o.v} onClick={()=>setRules(p=>({...p,spoedDagdeel:o.v}))}
+                        <button key={o.v} onClick={()=>setRules(p=>({...p,[bereikKey]:o.v}))}
                           style={{padding:'4px 11px',borderRadius:16,cursor:'pointer',fontSize:11,fontWeight:600,
                             background:sel?C.blueAccent:C.white,color:sel?C.primary:C.muted,
                             border:`1px solid ${sel?C.primary:C.border}`}}>{sel?'✓ ':''}{o.l}</button>
@@ -3247,6 +3344,18 @@ export default function RasterTool(){
                   </div>
                   <span style={{fontSize:12.5,fontWeight:on?700:500,color:on?C.primary:C.text}}>{opt.l}</span>
                 </div>
+              )
+            })}
+          </div>
+          <div style={{marginTop:10,display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+            <span style={{fontSize:11,color:C.muted}}>Deze plaatsing geldt in:</span>
+            {[{v:'both',l:'Ochtend + middag'},{v:'och',l:'Alleen ochtend'},{v:'mid',l:'Alleen middag'}].map(o=>{
+              const sel=(rules.digitalWaar||'both')===o.v
+              return(
+                <button key={o.v} onClick={()=>setRules(p=>({...p,digitalWaar:o.v}))}
+                  style={{padding:'4px 11px',borderRadius:16,cursor:'pointer',fontSize:11,fontWeight:600,
+                    background:sel?C.blueAccent:C.white,color:sel?C.primary:C.muted,
+                    border:`1px solid ${sel?C.primary:C.border}`}}>{sel?'✓ ':''}{o.l}</button>
               )
             })}
           </div>
@@ -3327,15 +3436,16 @@ export default function RasterTool(){
               })}
             </div>
             <div style={{marginTop:12,paddingTop:11,borderTop:`1px solid ${C.border}`}}>
-              <div style={{fontSize:12,fontWeight:700,color:C.text,marginBottom:3}}>Rest-kamer: dagdeel dat niet vol wordt</div>
+              <div style={{fontSize:12,fontWeight:700,color:C.text,marginBottom:3}}>Minimumbezetting — wanneer gaat een spreekuur open?</div>
               <div style={{fontSize:11,color:C.muted,lineHeight:1.5,marginBottom:8}}>
-                De laatste (rest-)kamer houdt vaak één dagdeel over dat de ondergrens van de band niet haalt — een
-                half-leeg spreekuur met een gat. "Dichtzetten" houdt alleen de volle dagdelen aan (bv. een volle
-                ochtend) en zet die losse afspraken op "nog te plannen"; is er te weinig voor zelfs een halve dag, dan
-                gaat de hele rest-kamer daarheen. "Open laten" toont het dagdeel half gevuld zoals het is.
+                Een dagdeel gaat alléén open als het minstens dit percentage gevuld raakt. Een kamer die maar voor een
+                kwart gevuld is kost een hele kamer-dag voor een handvol afspraken. Haalt een dagdeel de drempel niet,
+                dan worden die afspraken eerst over de andere spreekuren van diezelfde dag verdeeld; wat dan nog
+                overblijft gaat naar "nog te plannen". Met <b style={{color:C.text}}>"Restvraag bundelen tot volle
+                kamers"</b> hierboven maak je daar op één gekozen dag alsnog een vólle extra kamer van.
               </div>
-              <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-                {[{v:true,l:'Dichtzetten → nog te plannen'},{v:false,l:'Open laten (half gevuld)'}].map(o=>{
+              <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+                {[{v:true,l:'Drempel aan'},{v:false,l:'Uit (alles open, ook half gevuld)'}].map(o=>{
                   const on=(rules.restOpruimen!==false)===o.v
                   return(
                     <button key={String(o.v)} onClick={()=>setRules(p=>({...p,restOpruimen:o.v}))}
@@ -3344,6 +3454,18 @@ export default function RasterTool(){
                         border:`1px solid ${on?C.primary:C.border}`}}>{o.l}</button>
                   )
                 })}
+                {rules.restOpruimen!==false&&(
+                  <div style={{display:'inline-flex',alignItems:'center',gap:7,marginLeft:2}}>
+                    <span style={{fontSize:11,color:C.muted}}>Drempel:</span>
+                    <div style={{display:'inline-flex',alignItems:'center',border:`1px solid ${C.border}`,borderRadius:8,overflow:'hidden',background:C.white}}>
+                      <button onClick={()=>setRules(p=>({...p,minBezetting:Math.max(0,(p.minBezetting??75)-5)}))}
+                        style={{width:30,height:30,border:'none',borderRight:`1px solid ${C.border}`,background:C.surface2,cursor:'pointer',fontWeight:700,color:C.primary,fontSize:15}}>−</button>
+                      <span style={{width:50,textAlign:'center',fontSize:13,fontWeight:700,color:C.text}}>{rules.minBezetting??75}%</span>
+                      <button onClick={()=>setRules(p=>({...p,minBezetting:Math.min(100,(p.minBezetting??75)+5)}))}
+                        style={{width:30,height:30,border:'none',borderLeft:`1px solid ${C.border}`,background:C.surface2,cursor:'pointer',fontWeight:700,color:C.primary,fontSize:15}}>+</button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -3372,6 +3494,18 @@ export default function RasterTool(){
                   </div>
                   <span style={{fontSize:12.5,fontWeight:on?700:500,color:on?C.primary:C.text}}>{opt.l}</span>
                 </div>
+              )
+            })}
+          </div>
+          <div style={{marginTop:10,display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+            <span style={{fontSize:11,color:C.muted}}>Deze verdeling geldt in:</span>
+            {[{v:'both',l:'Ochtend + middag'},{v:'och',l:'Alleen ochtend'},{v:'mid',l:'Alleen middag'}].map(o=>{
+              const sel=(rules.flexWaar||'both')===o.v
+              return(
+                <button key={o.v} onClick={()=>setRules(p=>({...p,flexWaar:o.v}))}
+                  style={{padding:'4px 11px',borderRadius:16,cursor:'pointer',fontSize:11,fontWeight:600,
+                    background:sel?C.blueAccent:C.white,color:sel?C.primary:C.muted,
+                    border:`1px solid ${sel?C.primary:C.border}`}}>{sel?'✓ ':''}{o.l}</button>
               )
             })}
           </div>

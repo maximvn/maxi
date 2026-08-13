@@ -9,7 +9,7 @@ await page.goto(url); await page.waitForFunction(()=>window.__cr,null,{timeout:8
 
 const results = await page.evaluate(()=>{
   const M2={ochStart:'08:30',ochEnd:'12:00',midStart:'13:00',midEnd:'16:30',avondOn:false,avondStart:'17:00',avondEnd:'20:00',verAvond:0,verOch:50,benutting:85,days:{ma:20,di:20,wo:20,do:20,vr:20},ddDagen:{O:{MA:1,DI:1,WO:1,DO:1,VR:1},M:{MA:1,DI:1,WO:1,DO:1,VR:1},A:{}}}
-  const BASE={spoedFirst:false,startNieuw:false,startControle:false,mixNC:true,digitalMode:'spread',flexMode:'end',kamerVerdeling:'dagdeel',restDag:'uit',restOpruimen:true,spoedDagdeel:'both',flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30}
+  const BASE={spoedFirst:false,startNieuw:false,startControle:false,mixNC:true,digitalMode:'spread',flexMode:'end',kamerVerdeling:'dagdeel',restDag:'uit',restOpruimen:true,minBezetting:75,spoedDagdeel:'both',startNieuwWaar:'both',startControleWaar:'both',mixWaar:'both',digitalWaar:'both',flexWaar:'both',flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30}
   const wd={MA:1,DI:1,WO:1,DO:1,VR:1},dd={O:true,M:true,A:false}
   const mk=o=>Object.assign({afspraakcode:'X',omschrijving:'x',duur:15,digitaal:false,spoed:false,onzeker:'gemiddeld',percentage:100,weekdagen:wd,dagdelen:dd},o)
   // Jouw testcase: 100 nieuw (70% NP 20m zeker, 30% NPX 25m spoed onzeker), 200 controle (75% CO 15m zeker, 25% TC 10m digitaal)
@@ -25,6 +25,8 @@ const results = await page.evaluate(()=>{
         if(phys.length) rooms.push({di,key:k,dd:k[0],arr:arr||[],phys}) })})
     return rooms }
 
+  // BEREIK-helper: geldt een regel in dit dagdeel? ('o'/'m'/'a' -> dd-index)
+  const berGeldt=(w,ddc)=>{ const w2=w||'both'; return w2==='both'||(w2==='och'&&ddc==='o')||(w2==='mid'&&ddc==='m') }
   const CHECKS={
     pool:(r,rules,exp)=>{ let placed=0
       ;[0,1,2,3,4].forEach(di=>{const s=r.days[di];if(!s)return;Object.values(s).forEach(arr=>(arr||[]).forEach(a=>{if(a.isFlex)return;placed++}))})
@@ -42,8 +44,7 @@ const results = await page.evaluate(()=>{
     spoedFirst:(r,rules)=>{ if(!rules.spoedFirst) return []
       const v=[]
       perRoomPhys(r).forEach(({di,key,dd,phys})=>{
-        if(rules.spoedDagdeel==='och'&&dd!=='o') return
-        if(rules.spoedDagdeel==='mid'&&dd!=='m') return
+        if(!berGeldt(rules.spoedDagdeel,dd)) return
         const fys=phys.filter(a=>!a.digitaal)
         let seenNon=false
         for(const a of fys){ if(!a.spoed) seenNon=true; else if(seenNon){ v.push(`${key}@d${di} spoed ná niet-spoed`); break } }
@@ -60,10 +61,13 @@ const results = await page.evaluate(()=>{
     // Beide aan → nieuw wint (afwisselend, nieuw eerst). Spoed wordt alléén in het
     // dagdeel waar de spoed-regel geldt uit de romp gehaald (spoedDagdeel).
     startKop:(r,rules)=>{ if(!rules.startNieuw && !rules.startControle) return []
-      const leadCat=rules.startNieuw?'nieuw':'controle'
-      const spoedIn=dd=>rules.spoedFirst&&(rules.spoedDagdeel==='both'||(rules.spoedDagdeel==='och'&&dd==='o')||(rules.spoedDagdeel==='mid'&&dd==='m'))
+      const spoedIn=dd=>rules.spoedFirst&&berGeldt(rules.spoedDagdeel,dd)
       const v=[]
       perRoomPhys(r).forEach(({di,key,dd,phys})=>{
+        const sN=rules.startNieuw&&berGeldt(rules.startNieuwWaar,dd)
+        const sC=rules.startControle&&berGeldt(rules.startControleWaar,dd)
+        if(!sN&&!sC) return                       // regel geldt hier niet
+        const leadCat=sN?'nieuw':'controle'
         let romp=phys.filter(a=>!a.digitaal)
         if(spoedIn(dd)) romp=romp.filter(a=>!a.spoed)
         if(!romp.length) return
@@ -73,21 +77,23 @@ const results = await page.evaluate(()=>{
       return v },
     // AFWISSELEN: mixNC aan → nieuw/controle gemengd (≥2 wissels); mixNC uit → ongemengd (≤1 wissel).
     volgorde:(r,rules)=>{ const v=[]
-      const spoedIn=dd=>rules.spoedFirst&&(rules.spoedDagdeel==='both'||(rules.spoedDagdeel==='och'&&dd==='o')||(rules.spoedDagdeel==='mid'&&dd==='m'))
+      const spoedIn=dd=>rules.spoedFirst&&berGeldt(rules.spoedDagdeel,dd)
       perRoomPhys(r).forEach(({di,key,dd,phys})=>{
+        const mixHier=rules.mixNC&&berGeldt(rules.mixWaar,dd)
         let romp=phys.filter(a=>!a.digitaal)
         if(spoedIn(dd)) romp=romp.filter(a=>!a.spoed)
         const cats=romp.map(a=>a.category)
         const cn=cats.filter(c=>c==='nieuw').length, cc=cats.length-cn
         if(cn<2||cc<2) return
         let sw=0; for(let i=1;i<cats.length;i++) if(cats[i]!==cats[i-1]) sw++
-        if(rules.mixNC){ if(sw<2) v.push(`${key}@d${di} mixNC aan maar ongemengd (sw=${sw})`) }
+        if(mixHier){ if(sw<2) v.push(`${key}@d${di} mixNC aan maar ongemengd (sw=${sw})`) }
         else { if(sw>1) v.push(`${key}@d${di} mixNC uit maar niet ongemengd (sw=${sw})`) }
       })
       return v },
     digCluster:(r,rules)=>{ if(rules.digitalMode!=='cluster'&&rules.digitalMode!=='end') return []
       const v=[]
-      perRoomPhys(r).forEach(({di,key,phys})=>{
+      perRoomPhys(r).forEach(({di,key,dd,phys})=>{
+        if(!berGeldt(rules.digitalWaar,dd)) return
         const idx=phys.map((a,i)=>a.digitaal?i:-1).filter(i=>i>=0)
         if(idx.length>1 && idx[idx.length-1]-idx[0]!==idx.length-1) v.push(`${key}@d${di} digitaal niet aaneengesloten`)
       })
@@ -97,6 +103,7 @@ const results = await page.evaluate(()=>{
       const sessStart={o:8.5*60,m:13*60,a:17*60}
       const sEnd={o:12*60,m:16.5*60,a:20*60}
       perRoomPhys(r).forEach(({di,key,dd,arr})=>{
+        if(!berGeldt(rules.flexWaar,dd)) return
         const flex=(arr||[]).filter(a=>a.isFlex)
         const alles=(arr||[]).filter(a=>!a.overbook).sort((x,y)=>x.start-y.start)
         flex.forEach(f=>{ const afw=f.duur-blok
@@ -146,6 +153,20 @@ const results = await page.evaluate(()=>{
           if(kan) v.push(`d${di}: ${a.code} (${a.duur}m) op restlijst terwijl er ruimte is`) })
       })
       return v },
+    // MINIMUMBEZETTING: elk geopend dagdeel haalt de drempel. Uitzondering: een dag
+    // houdt altijd minstens één spreekuur, ook als dat de drempel niet haalt.
+    minBez:(r,rules)=>{ if(rules.restOpruimen===false||!(rules.minBezetting>0)) return []
+      const v=[]; const gross={o:210,m:210,a:180}
+      const drempel=rules.minBezetting
+      ;[0,1,2,3,4].forEach(di=>{
+        const kamers=perRoomPhys(r).filter(x=>x.di===di)
+        if(kamers.length<=1) return                 // enige spreekuur van de dag mag blijven
+        kamers.forEach(({key,dd,phys})=>{
+          const pct=phys.reduce((t,a)=>t+a.duur,0)/gross[dd]*100
+          if(pct<drempel-0.5) v.push(`${key}@d${di} ${Math.round(pct)}% < drempel ${drempel}%`)
+        })
+      })
+      return v },
     // INVOER-GRENZEN: geen afspraak op een dag/dagdeel dat die code volgens de invoer niet mag.
     invoer:(r,rules)=>{ const v=[]
       const DAY=['MA','DI','WO','DO','VR']
@@ -182,6 +203,15 @@ const results = await page.evaluate(()=>{
     if(c.startNieuw||c.startControle) extra.push(Object.assign({},c,{_cap:{mode:'vast',kamers:2}}))
     if(c.spoedFirst&&c.flexMode==='end') extra.push(Object.assign({},c,{_cfg:{newPat:40,ctrlPat:80,newCodes:2,ctrlCodes:2}}))
     if(c.spoedFirst) extra.push(Object.assign({},c,{spoedDagdeel:'och'}))
+    // BEREIK-varianten: elke regel expliciet op alleen-ochtend / alleen-middag
+    if(c.startNieuw) extra.push(Object.assign({},c,{startNieuwWaar:'och'}))
+    if(c.startControle) extra.push(Object.assign({},c,{startControleWaar:'mid'}))
+    if(c.mixNC) extra.push(Object.assign({},c,{mixWaar:'och'}))
+    if(c.digitalMode!=='spread') extra.push(Object.assign({},c,{digitalWaar:'mid'}))
+    if(c.flexMode==='spread') extra.push(Object.assign({},c,{flexWaar:'och'}))
+    if(c.startNieuw&&c.mixNC) extra.push(Object.assign({},c,{startNieuwWaar:'mid',mixWaar:'mid',digitalWaar:'och'}))
+    extra.push(Object.assign({},c,{minBezetting:60}))
+    extra.push(Object.assign({},c,{restOpruimen:false}))
   }
   const all=[...cases,...extra]
 
@@ -205,6 +235,7 @@ const results = await page.evaluate(()=>{
     v.push(...CHECKS.flexSpread(r,rules))
     v.push(...CHECKS.bandOnder(r,rules))
     v.push(...CHECKS.geenLoosNTP(r,rules))
+    v.push(...CHECKS.minBez(r,rules))
     v.push(...CHECKS.invoer(r,rules))
     if(v.length) failures.push({c,v:v.slice(0,4)})
     else pass++
@@ -225,8 +256,12 @@ const results = await page.evaluate(()=>{
     const lbl=`${c.newPat}/${c.ctrlPat} dagen:${Object.values(days).join('-')} flex:${fm}${sp?' spoed':''}`
     for(const rd of ['ma','auto']){
       const r1=window.__cr(c,nr,cr,M,Object.assign({},basis,{restDag:rd}),{mode:'auto',kamers:6})
+      // Bundelen mag NOOIT meer afspraken op de restlijst opleveren. Méér kamer-dagen
+      // mag alleen als daar afspraken mee ingepland raken (dat is juist de bedoeling:
+      // de restlijst wordt op de gekozen dag tot een volle extra kamer gebundeld).
       if(r1.ntp.length>r0.ntp.length) bundelFouten.push(`rest:${rd} ${lbl} → NTP ${r0.ntp.length}→${r1.ntp.length}`)
-      if(kdOf(r1)>kdOf(r0)) bundelFouten.push(`rest:${rd} ${lbl} → kamer-dagen ${kdOf(r0)}→${kdOf(r1)}`)
+      else if(kdOf(r1)>kdOf(r0) && r1.ntp.length===r0.ntp.length)
+        bundelFouten.push(`rest:${rd} ${lbl} → kamer-dagen ${kdOf(r0)}→${kdOf(r1)} zonder winst op NTP`)
     }
   }
   return {total:all.length, pass, failures:failures.slice(0,14), bundelFouten:bundelFouten.slice(0,10)}
