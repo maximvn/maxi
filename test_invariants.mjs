@@ -98,6 +98,17 @@ const results = await page.evaluate(()=>{
         if(idx.length>1 && idx[idx.length-1]-idx[0]!==idx.length-1) v.push(`${key}@d${di} digitaal niet aaneengesloten`)
       })
       return v },
+    // CLUSTER ≠ EINDE: in cluster-modus staat het digitale blok VOORAAN, dus het
+    // spreekuur eindigt niet met digitale consulten zolang er fysieke afspraken zijn.
+    digPositie:(r,rules)=>{ if(rules.digitalMode!=='cluster') return []
+      const v=[]
+      perRoomPhys(r).forEach(({di,key,dd,phys})=>{
+        if(!berGeldt(rules.digitalWaar,dd)) return
+        const dig=phys.filter(a=>a.digitaal), fys=phys.filter(a=>!a.digitaal)
+        if(!dig.length||!fys.length) return
+        if(phys[phys.length-1].digitaal) v.push(`${key}@d${di} cluster staat achteraan (gelijk aan "einde")`)
+      })
+      return v },
     flexSpread:(r,rules)=>{ if(rules.flexMode!=='spread') return []
       const v=[]; const blok=rules.flexBlokMin||10, noFirst=rules.flexNoFirstMin??60
       const sessStart={o:8.5*60,m:13*60,a:17*60}
@@ -232,6 +243,7 @@ const results = await page.evaluate(()=>{
     v.push(...CHECKS.startKop(r,rules))
     v.push(...CHECKS.volgorde(r,rules))
     v.push(...CHECKS.digCluster(r,rules))
+    v.push(...CHECKS.digPositie(r,rules))
     v.push(...CHECKS.flexSpread(r,rules))
     v.push(...CHECKS.bandOnder(r,rules))
     v.push(...CHECKS.geenLoosNTP(r,rules))

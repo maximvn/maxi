@@ -920,13 +920,26 @@ export default function RasterTool(){
 
       // AS 4 — DIGITALE CONSULTEN op de tijdas. Buiten het gekozen bereik vallen ze
       // terug op "verdelen over de dag" (de neutrale plaatsing).
+      // De drie modi zijn ECHT verschillend — vroeger deden "clusteren" en "aan het
+      // einde" hetzelfde (beide als blok achteraan), waardoor de keuze niets uithaalde:
+      //   spread  — één voor één tussen de fysieke afspraken gespreid.
+      //   cluster — één aaneengesloten blok VOORAAN, direct ná de opening (het spoedblok
+      //             en de afspraak die de "starten met"-regel voorschrijft). Zo is het
+      //             écht een blok bij elkaar, en niet stiekem hetzelfde als "einde".
+      //   end     — één blok in het LAATSTE tijdvenster van het spreekuur (layoutSlot
+      //             schuift het daar naartoe en zet er één buffer vóór).
       const digModus=inBereik(rules.digitalWaar)?rules.digitalMode:'spread'
       if(dig.length){
         if(digModus==='spread'){
           const out=[...pool]
           dig.forEach((d,i)=>out.splice(Math.min(Math.round((i+1)*(out.length+1)/(dig.length+1)),out.length),0,d))
           pool=out
-        } else pool=[...pool,...dig]   // cluster / einde: als blok achteraan
+        } else if(digModus==='cluster'){
+          // Positie = ná het spoedblok en ná de kop-afspraak van de start-regel, zodat
+          // die expliciete keuzes voorgaan en het cluster daarna aaneengesloten begint.
+          const naOpening=Math.min(spoed.length+(leadCat?1:0), pool.length)
+          pool=[...pool.slice(0,naOpening), ...dig, ...pool.slice(naOpening)]
+        } else pool=[...pool,...dig]   // 'end': blok achteraan (venster in layoutSlot)
       }
       return pool
     }
@@ -1594,6 +1607,55 @@ export default function RasterTool(){
     }
     navullenAlle()
 
+    // ── ELK SPREEKUUR ZO DICHT MOGELIJK OP DE DOELBENUTTING ─────────────────────
+    // Bijvullen (navullenAlle) kan alleen een afspraak TOEVOEGEN die nog past. Blijft
+    // een spreekuur daardoor op 81% steken terwijl er een langere afspraak op de
+    // restlijst staat, dan helpt RUILEN wel: wissel een korte geplande afspraak om
+    // voor een langere van de restlijst. Zo komt elk geopend spreekuur meteen zo dicht
+    // mogelijk bij de ingestelde benutting — niet pas wanneer je er een kamer bij zet.
+    let ruilTotaal=0
+    const optimaliseerVulling=()=>{
+      const doelCap=dd=>durFor2(dd)*m2.benutting/100
+      ;[0,1,2,3,4].forEach(di=>{
+        if(!built[di]) return
+        const odd=DD.filter(x=>ddOpenOp(x,di))
+        let guard=0, beter=true
+        while(beter && guard++<300){
+          beter=false
+          for(const dd of odd){
+            const rooms=built[di][dd]||[]
+            for(let r=0;r<rooms.length;r++){
+              const room=rooms[r]; if(!room||!room.length) continue
+              const fill=room.reduce((t,a)=>t+a.duur,0)
+              if(fill>=doelCap(dd)-0.01) continue          // zit al op/boven het doel
+              const ruimte=bovengrensCap(dd)-fill
+              // Beste ruil: korte geplande afspraak P eruit, langere rest-afspraak O erin.
+              let best=null, bestWinst=0
+              for(const O of overflowInst){
+                if(O.day!==di) continue
+                if(O.ddOpties && !O.ddOpties.includes(dd)) continue
+                for(const P of room){
+                  if(P.spoed) continue                      // spoed blijft staan
+                  const winst=O.duur-P.duur
+                  if(winst<=0) continue
+                  if(winst>ruimte+0.01) continue            // zou de bovenband breken
+                  if(winst>bestWinst){ bestWinst=winst; best={O,P} }
+                }
+              }
+              if(best){
+                room[room.indexOf(best.P)]=best.O
+                const oi=overflowInst.indexOf(best.O); if(oi>=0) overflowInst.splice(oi,1)
+                overflowInst.push({...best.P, day:di, dd:(best.P.ddOpties&&best.P.ddOpties[0])||dd, edited:false})
+                ruilTotaal++; beter=true
+              }
+            }
+          }
+        }
+      })
+      navullenAlle()   // na het ruilen past er soms alsnog een korte afspraak bij
+    }
+    optimaliseerVulling()
+
     // ── RESTLIJST BUNDELEN TOT EEN VOLLE EXTRA KAMER OP DE GEKOZEN DAG ──────────
     // De minimumbezetting zet dunne spreekuren niet open; die afspraken staan nu op
     // "nog te plannen". Kiest de gebruiker een rest-dag, dan is dát het moment om ze
@@ -1738,16 +1800,15 @@ export default function RasterTool(){
         //    begin, en NOOIT direct na de laatste afspraak.
         // Staat "digitaal clusteren" aan, dan mag er GEEN flex tussen de digitale
         // consulten komen — anders wordt het cluster juist opengebroken (consult,
-        // flexblok, consult). We bepalen waar de aaneengesloten digitale staart
-        // begint en slaan de gaten binnen dat cluster over.
-        const clusterAan=rules.digitalMode==='cluster'
-        let clusterVanaf=physAppts.length
-        if(clusterAan){ while(clusterVanaf>0 && physAppts[clusterVanaf-1].digitaal) clusterVanaf-- }
+        // flexblok, consult). Het cluster staat nu vooraan (niet meer achteraan), dus
+        // we beschermen élke aaneengesloten digitale reeks, waar hij ook zit: een gat
+        // ná een digitale afspraak vervalt als de vólgende ook digitaal is.
+        const clusterAan=rules.digitalMode==='cluster' && inBer(rules.digitalWaar)
         const verzamelGaten=(naMin)=>{
           let sim=sessStart; const g=[]
           physAppts.forEach((a,i)=>{
             sim+=a.duur
-            const binnenCluster=clusterAan && i>=clusterVanaf
+            const binnenCluster=clusterAan && a.digitaal && physAppts[i+1] && physAppts[i+1].digitaal
             if(sim-sessStart>=naMin && i<physAppts.length-1 && !binnenCluster) g.push(i)
           })
           return g
@@ -2079,6 +2140,151 @@ export default function RasterTool(){
         d:`Afspraken zijn naar de rest-dag verhuisd zodat de overige dagen volle kamers draaien.`})
     }
     res.aanpassingen=aanp
+
+    // ══ REGELRAPPORT — per regel: wat is er gedaan, en waaróm (niet)? ═══════════
+    // Voor elke actieve regel een regel tekst met MEETBAAR resultaat (aantallen,
+    // posities) en, als iets niet (helemaal) kon, de reden. Zo is nooit onduidelijk
+    // wat de engine heeft gedaan of waarom een spreekuur niet voller kan.
+    const spre=[]
+    ;[0,1,2,3,4].forEach(di=>{ const sl=res.days[di]; if(!sl) return
+      Object.entries(sl).forEach(([k,arr])=>{
+        const fys=(arr||[]).filter(a=>!a.isFlex&&!a.overbook)
+        if(!fys.length) return
+        const ddi=k[0]==='o'?0:k[0]==='m'?1:2
+        spre.push({di, dd:ddi, key:k, appts:fys.slice().sort((a,b)=>a.start-b.start),
+          flex:(arr||[]).filter(a=>a.isFlex), gross:ddi===0?ochDur:ddi===1?midDur:avDur,
+          eind:ddi===0?ochEnd:ddi===1?midEnd:avondEnd})
+      })
+    })
+    const inB=(w,dd)=>(w||'both')==='both'||((w==='och')&&dd===0)||((w==='mid')&&dd===1)
+    const berTxt=w=>(w||'both')==='both'?'ochtend + middag':w==='och'?'alleen de ochtend':'alleen de middag'
+    const ddNaam=dd=>dd===0?'ochtend':dd===1?'middag':'avond'
+    const rap=[]
+    const R=(regel,status,wat,waarom)=>rap.push({regel,status,wat,waarom:waarom||null})
+
+    if(rules.spoedFirst){
+      const scope=spre.filter(x=>inB(rules.spoedDagdeel,x.dd))
+      let goed=0,tot=0
+      scope.forEach(x=>{ const f=x.appts.filter(a=>!a.digitaal)
+        if(!f.some(a=>a.spoed)) return
+        tot++; let gezien=false, ok=true
+        for(const a of f){ if(!a.spoed) gezien=true; else if(gezien){ ok=false; break } }
+        if(ok) goed++ })
+      const spNtp=res.ntp.filter(a=>a.spoed).length
+      R('Spoed afspraken eerst', spNtp?'deels':'ok',
+        tot?`In ${goed} van de ${tot} spreekuren mét spoed staat het spoedblok vooraan (bereik: ${berTxt(rules.spoedDagdeel)}).`
+           :`Geen enkel spreekuur in het bereik (${berTxt(rules.spoedDagdeel)}) bevat een spoedafspraak.`,
+        spNtp?`${spNtp} spoedafspra${spNtp===1?'ak staat':'ken staan'} op "nog te plannen": er paste er niets meer binnen de bovenband.`:null)
+    }
+    ;[['startNieuw','nieuw','startNieuwWaar'],['startControle','controle','startControleWaar']].forEach(([key,cat,wk])=>{
+      if(!rules[key]) return
+      const scope=spre.filter(x=>inB(rules[wk],x.dd))
+      let goed=0,tot=0,geenCat=0,doorSpoed=0
+      scope.forEach(x=>{
+        let romp=x.appts.filter(a=>!a.digitaal)
+        const spoedHier=rules.spoedFirst&&inB(rules.spoedDagdeel,x.dd)
+        const opendeMetSpoed=romp.length&&romp[0].spoed
+        if(spoedHier) romp=romp.filter(a=>!a.spoed)
+        if(!romp.length) return
+        if(!romp.some(a=>a.category===cat)){ geenCat++; return }
+        tot++
+        if(romp[0].category===cat) goed++
+        else if(opendeMetSpoed) doorSpoed++
+      })
+      const redenen=[]
+      if(geenCat) redenen.push(`${geenCat} spreekur${geenCat===1?' bevat':'en bevatten'} geen enkele ${cat}-afspraak — daar geldt de regel niet.`)
+      if(doorSpoed) redenen.push(`In ${doorSpoed} spreekur${doorSpoed===1?' staat':'en staat'} spoed op positie 1; de kop-keuze geldt dan voor de eerste niet-spoed afspraak.`)
+      if(rules.startNieuw&&rules.startControle) redenen.push('Beide "starten met"-regels staan aan: het spreekuur opent afwisselend, beginnend met nieuw.')
+      R(PLAN_INFO[key].label, tot&&goed<tot?'deels':'ok',
+        `${goed} van de ${tot} spreekuren openen met een ${cat==='nieuw'?'nieuwe':'controle'} afspraak (bereik: ${berTxt(rules[wk])}).`,
+        redenen.join(' ')||null)
+    })
+    if(rules.mixNC){
+      const scope=spre.filter(x=>inB(rules.mixWaar,x.dd))
+      let gemengd=0,telt=0
+      scope.forEach(x=>{ const cats=x.appts.filter(a=>!a.digitaal).map(a=>a.category)
+        const n=cats.filter(c=>c==='nieuw').length
+        if(n<2||cats.length-n<2) return
+        telt++; let sw=0; for(let i=1;i<cats.length;i++) if(cats[i]!==cats[i-1]) sw++
+        if(sw>=2) gemengd++ })
+      R('Nieuw en controle afwisselen','ok',
+        `In ${gemengd} van de ${telt} spreekuren met beide categorieën staan nieuw en controle om-en-om (bereik: ${berTxt(rules.mixWaar)}).`,
+        scope.length>telt?`${scope.length-telt} spreekur${scope.length-telt===1?' bevat':'en bevatten'} maar één categorie — daar valt niets af te wisselen.`:null)
+    }
+    const digTot=spre.reduce((t,x)=>t+x.appts.filter(a=>a.digitaal).length,0)
+    if(digTot){
+      const scope=spre.filter(x=>inB(rules.digitalWaar,x.dd))
+      const mn=rules.digitalMode==='spread'?'Verdelen over dag':rules.digitalMode==='cluster'?'Clusteren in blok':'Aan het einde plannen'
+      if(rules.digitalMode==='spread'){
+        R('Digitale consulten — '+mn,'ok',
+          `${digTot} digitale consulten zijn één voor één tússen de fysieke afspraken gespreid (bereik: ${berTxt(rules.digitalWaar)}).`,
+          `Ze staan bewust niet bij elkaar; wil je één blok, kies dan "Clusteren in blok" of "Aan het einde plannen".`)
+      } else if(rules.digitalMode==='cluster'){
+        let aaneen=0,met=0,posSom=0
+        scope.forEach(x=>{ const idx=x.appts.map((a,i)=>a.digitaal?i:-1).filter(i=>i>=0)
+          if(!idx.length) return; met++
+          if(idx[idx.length-1]-idx[0]===idx.length-1) aaneen++
+          posSom+=idx[0]+1 })
+        R('Digitale consulten — '+mn, met&&aaneen<met?'deels':'ok',
+          `In ${aaneen} van de ${met} spreekuren staan de digitale consulten als één aaneengesloten blok, gemiddeld startend op positie ${met?Math.round(posSom/met):0} — dus VOORAAN, direct ná de opening.`,
+          `Spoed en de "starten met"-afspraak gaan vóór het cluster. Dit is bewust iets anders dan "Aan het einde plannen": daar staat hetzelfde blok juist in het laatste tijdvenster van het spreekuur.`)
+      } else {
+        const venster=rules.digitalEndMinutes||30
+        let inV=0,met=0
+        scope.forEach(x=>{ const d=x.appts.filter(a=>a.digitaal); if(!d.length) return; met++
+          if(d[0].start>=x.eind-venster-0.01) inV++ })
+        R('Digitale consulten — '+mn, met&&inV<met?'deels':'ok',
+          `In ${met} spreekuren staan de digitale consulten als één blok in de laatste ${venster} minuten (bereik: ${berTxt(rules.digitalWaar)}).`,
+          inV<met?`In ${met-inV} spreekur${met-inV===1?' paste':'en pasten'} de consulten niet volledig in het venster van ${venster} min; ze staan dan zo laat als mogelijk. Verruim het venster als je ze strakker aan het einde wilt.`
+                 :`Vóór het blok staat één buffer, zodat het spreekuur exact op de eindtijd eindigt.`)
+      }
+    }
+    const flexBlok=spre.reduce((t,x)=>t+x.flex.length,0)
+    const flexMin=spre.reduce((t,x)=>t+x.flex.reduce((q,f)=>q+f.duur,0),0)
+    if(rules.flexMode==='spread'){
+      R('Flex-tijd — verspreid tussen afspraken','ok',
+        `${flexBlok} flexblokken van exact ${rules.flexBlokMin||10} min (samen ${flexMin} min) staan tússen de afspraken, nooit in de eerste ${rules.flexNoFirstMin??60} min (bereik: ${berTxt(rules.flexWaar)}).`,
+        flexVerruimd.length?`Op ${flexVerruimd.length} spreekuren bleef een restant kleiner dan één blok over; dat is in het laatste blok opgenomen zodat het spreekuur op een afspraak eindigt.`
+          :`Het spreekuur eindigt met een afspraak, niet met flex.`)
+    } else {
+      R('Flex-tijd — blok aan het einde','ok',
+        `Per spreekuur staat de resterende tijd als één blok aan het einde: ${flexBlok} blokken, samen ${flexMin} min.`,
+        `Wil je de ruimte juist tússen de afspraken als opvang, kies dan "Flex verspreid tussen afspraken".`)
+    }
+    // Waarom is het minst gevulde spreekuur niet voller? (de kernvraag bij benutting)
+    if(spre.length){
+      const perDd=spre.map(x=>({...x, min:x.appts.reduce((t,a)=>t+a.duur,0)}))
+      const laag=perDd.slice().sort((a,b)=>(a.min/a.gross)-(b.min/b.gross))[0]
+      const pct=Math.round(laag.min/laag.gross*100)
+      const boven=Math.round(laag.gross*Math.min(100,m2.benutting+2.5)/100)
+      const ruimte=boven-laag.min
+      const ddU=laag.dd===0?'O':laag.dd===1?'M':'A'
+      const kand=res.ntp.filter(a=>a.day===laag.di&&(!a.ddOpties||a.ddOpties.includes(ddU)))
+      const kleinste=kand.length?Math.min(...kand.map(a=>a.duur)):null
+      R('Vulling van de spreekuren', pct>=m2.benutting-2.5?'ok':'deels',
+        `Het minst gevulde spreekuur is ${DAYS[laag.di]} ${ddNaam(laag.dd)}, kamer ${(+laag.key.slice(1))+1}: ${pct}% (${laag.min} van ${laag.gross} min). Alle andere spreekuren zitten daarboven.`,
+        ruimte<=0 ? `Er is geen ruimte meer tot de bovenband (${boven} min).`
+          : kleinste==null ? `Er staat voor die dag niets meer op "nog te plannen", dus verder vullen kan niet.`
+          : kleinste>ruimte ? `Er is nog ${ruimte} min over tot de bovenband (${boven} min), maar de kórtste nog te plannen afspraak van die dag duurt ${kleinste} min — die past er niet meer bij. Daarom blijft dit spreekuur op ${pct}%; een kortere afspraak zou er wél in passen.`
+          : `Er is ${ruimte} min ruimte tot de bovenband; de engine vult bij tot dat vol is.`)
+    }
+    if(minBezAan){
+      R(`Minimumbezetting ${minBezPct}%`, dichtgezetDd?'ok':'ok',
+        dichtgezetDd?`${dichtgezetDd} dagdeel/dagdelen haalden de drempel niet en zijn NIET geopend; hun afspraken zijn eerst over dezelfde dag verdeeld, ${naarRestlijst} kwam${naarRestlijst===1?'':'en'} op "nog te plannen".`
+                   :`Alle geopende dagdelen halen de drempel van ${minBezPct}%.`,
+        (dichtgezetDd&&(rules.restDag||'uit')==='uit')?`Kies bij "Restvraag bundelen tot volle kamers" een dag om hier alsnog één volle extra kamer van te maken.`:null)
+    }
+    if((rules.restDag||'uit')!=='uit'){
+      R('Restvraag bundelen tot volle kamers', restDagGebundeld?'ok':'niet',
+        restDagGebundeld?`${restDagGebundeld} afspra${restDagGebundeld===1?'ak is':'ken zijn'} samengevoegd op ${DAYS[restDagKamer]} tot een volle extra kamer.`
+                        :`Er is niets gebundeld; het raster is onveranderd gelaten.`,
+        restDagGebundeld?null:`Een extra kamer op de gekozen dag zou de minimumbezetting niet halen, of er is niets meer te verplaatsen.`)
+    }
+    if(ruilTotaal){
+      R('Spreekuren maximaal gevuld','ok',
+        `${ruilTotaal} keer is een korte geplande afspraak geruild voor een langere van de restlijst, zodat het spreekuur dichter bij de ${m2.benutting}% komt.`, null)
+    }
+    res.regelrapport=rap
     return res
   },[])
 
@@ -4167,7 +4373,7 @@ export default function RasterTool(){
              De aanpassingen-log (automatische ingrepen) en de meldingen (regel-interacties
              en aandachtspunten) staan onder één kop, gegroepeerd en compact, zodat in één
              oogopslag zichtbaar is wát er speelt. */}
-        {((raster.aanpassingen&&raster.aanpassingen.length)||(raster.notices&&raster.notices.length))>0&&(()=>{
+        {((raster.aanpassingen&&raster.aanpassingen.length)||(raster.notices&&raster.notices.length)||(raster.regelrapport&&raster.regelrapport.length))>0&&(()=>{
           // Eén uniform item-model uit twee bronnen. sev bepaalt de groep + volgorde:
           // 0 regel-interactie · 1 let op / niet gelukt · 2 info · 3 toegepast/aangepast.
           const STYLE={
@@ -4236,6 +4442,33 @@ export default function RasterTool(){
                   <div style={{fontSize:9.5,fontWeight:800,color:C.muted,letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:7}}>Automatisch toegepast &amp; aangepast</div>
                   <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(300px,1fr))',gap:8}}>
                     {gedaan.map((it,i)=>Kaart(it,'g'+i))}
+                  </div>
+                </>)}
+                {/* ── PER REGEL: wat is er gedaan, en waarom (niet)? ── */}
+                {raster.regelrapport&&raster.regelrapport.length>0&&(<>
+                  <div style={{fontSize:9.5,fontWeight:800,color:C.muted,letterSpacing:'0.1em',textTransform:'uppercase',margin:'14px 0 7px'}}>
+                    Per regel — wat heeft de engine gedaan?
+                  </div>
+                  <div style={{border:`1px solid ${C.border}`,borderRadius:9,overflow:'hidden'}}>
+                    {raster.regelrapport.map((x,i)=>{
+                      const col=x.status==='niet'?C.danger:x.status==='deels'?'#B8860B':C.green
+                      const ico=x.status==='niet'?'✕':x.status==='deels'?'◐':'✓'
+                      return(
+                        <div key={i} style={{display:'flex',gap:10,padding:'9px 12px',alignItems:'flex-start',
+                          borderTop:i?`1px solid ${C.border}`:'none',background:i%2?C.rowAlt:C.white}}>
+                          <span style={{width:18,height:18,borderRadius:'50%',background:col,color:'#fff',fontSize:10,fontWeight:800,
+                            display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,marginTop:1}}>{ico}</span>
+                          <div style={{minWidth:0,flex:1}}>
+                            <div style={{fontSize:11.5,fontWeight:700,color:C.text}}>{x.regel}</div>
+                            <div style={{fontSize:11,color:C.text,lineHeight:1.45,marginTop:1}}>{x.wat}</div>
+                            {x.waarom&&(
+                              <div style={{fontSize:10.8,color:C.muted,lineHeight:1.45,marginTop:3,paddingLeft:9,
+                                borderLeft:`2px solid ${col}44`}}>{x.waarom}</div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
                 </>)}
               </div>
