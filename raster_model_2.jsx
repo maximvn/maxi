@@ -414,6 +414,10 @@ export default function RasterTool(){
   const [calZoom,setCalZoom]=useState(3.0) // px per minute, range 1.5–6
   const [viewMode,setViewMode]=useState('dag') // 'dag' | 'week' (multi-dynamisch overzicht)
   // Inklapbare rasterpanelen (minimaliseren/maximaliseren)
+  // Begeleide intake ("assistent"): stapsgewijze vragen met keuze-opties die de hele
+  // configuratie invullen. Volledig deterministisch — elk antwoord zet gewoon een
+  // instelling; er wordt niets "bedacht". {stap, ant, klaar}
+  const [wiz,setWiz]=useState(null)
   const [openPanels,setOpenPanels]=useState({kpi:true,analyse:true,capaciteit:true})
   const togglePanel=k=>setOpenPanels(p=>({...p,[k]:!p[k]}))
   const [drag,setDrag]=useState(null)
@@ -5141,6 +5145,16 @@ export default function RasterTool(){
             <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:7.5,color:'#7FD4C0',letterSpacing:'0.18em'}}>STUDIO 2.1</div>
           </div>
         </div>
+        {/* Begeleide intake — stelt vragen en zet de hele planning klaar */}
+        <button onClick={()=>setWiz({stap:0,ant:{}})} title="Begeleide intake — laat de tool je stap voor stap door de opzet leiden"
+          style={{display:'flex',alignItems:'center',justifyContent:'center',gap:6,marginBottom:12,
+            padding:'10px 6px',borderRadius:12,border:'1px solid rgba(93,214,188,0.45)',cursor:'pointer',
+            background:'linear-gradient(135deg,rgba(93,214,188,0.24),rgba(28,110,164,0.24))',color:'#DFFAF2',
+            fontSize:10.5,fontWeight:700,letterSpacing:'0.02em'}}
+          onMouseEnter={e=>e.currentTarget.style.background='linear-gradient(135deg,rgba(93,214,188,0.4),rgba(28,110,164,0.4))'}
+          onMouseLeave={e=>e.currentTarget.style.background='linear-gradient(135deg,rgba(93,214,188,0.24),rgba(28,110,164,0.24))'}>
+          ✨ Assistent
+        </button>
         {/* stappen */}
         <div style={{display:'flex',flexDirection:'column',gap:6,flex:1}}>
           {RAIL.map((r,i)=>{
@@ -5270,6 +5284,168 @@ export default function RasterTool(){
             )}
         </div>
       </section>
+
+      {/* ══ BEGELEIDE INTAKE — stapsgewijze vragen die de hele opzet invullen ══ */}
+      {wiz&&(()=>{
+        const alleRows=[...newRows,...ctrlRows]
+        const heeftSpoed=alleRows.some(r=>r.spoed)
+        const heeftDig=alleRows.some(r=>r.digitaal||(r.modaliteit&&r.modaliteit!=='fysiek'))
+        const A=wiz.ant||{}
+        const zet=(k,v,label,fn)=>{ if(fn) fn(); setWiz(w=>({...w, ant:{...w.ant,[k]:label}, stap:w.stap+1})) }
+        // Stappen worden pas opgebouwd wanneer ze aan de beurt zijn, zodat vragen over
+        // spoed/digitaal alleen verschijnen als die codes ook echt bestaan.
+        const S=[]
+        S.push({k:'specialisme', v:'Voor welke poli maken we dit raster?',
+          u:'Ik laad meteen passende voorbeeldcodes met duur en verdeling. Die kun je later aanpassen.',
+          o:[...SPECIALISMEN.map(sp=>({l:sp, fn:()=>kiesSpecialisme(sp)})),
+             {l:'Eigen invoer — leeg beginnen', s:'je voert zelf de afspraakcodes in', fn:()=>{}}]})
+        S.push({k:'newPat', v:'Hoeveel NIEUWE patiënten per week?',
+          u:'Het totaal over de hele week; de verdeling over de dagen regelt de tool.',
+          o:[10,25,50,75,100,150].map(n=>({l:String(n), fn:()=>setCfg(c=>({...c,newPat:n}))})), vrij:'newPat'})
+        S.push({k:'ctrlPat', v:'Hoeveel CONTROLE patiënten per week?', u:'Ook het weektotaal.',
+          o:[20,50,100,150,200,300].map(n=>({l:String(n), fn:()=>setCfg(c=>({...c,ctrlPat:n}))})), vrij:'ctrlPat'})
+        S.push({k:'dagen', v:'Op hoeveel dagen draait de poli?',
+          u:'Bepaalt over hoeveel dagen de weekvraag wordt verdeeld.',
+          o:[{l:'5 dagen (ma t/m vr)', fn:()=>setM2(m=>({...m,days:{ma:20,di:20,wo:20,do:20,vr:20}}))},
+             {l:'4 dagen (ma t/m do)', fn:()=>setM2(m=>({...m,days:{ma:25,di:25,wo:25,do:25,vr:0}}))},
+             {l:'3 dagen (ma, wo, vr)', fn:()=>setM2(m=>({...m,days:{ma:34,di:0,wo:33,do:0,vr:33}}))}]})
+        S.push({k:'benutting', v:'Welke benutting streef je na per spreekuur?',
+          u:'De tool vult elk spreekuur tot dit percentage (±2,5 procentpunt); de rest is flexruimte.',
+          o:[{l:'80%', s:'ruim, veel opvang'},{l:'85%', s:'gangbaar'},{l:'90%', s:'strak, weinig marge'}]
+             .map(x=>({...x, fn:()=>setM2(m=>({...m,benutting:parseInt(x.l)}))}))})
+        S.push({k:'kamers', v:'Hoeveel behandelkamers zijn er beschikbaar?',
+          u:'"Automatisch" laat het rooster groeien tot wat de vraag nodig heeft.',
+          o:[{l:'Automatisch', s:'groeit mee met de vraag', fn:()=>setCapacity(c=>({...c,mode:'auto'}))},
+             ...[2,3,4,5,6].map(n=>({l:`Vast: ${n} kamers`, fn:()=>setCapacity({mode:'vast',kamers:n})}))]})
+        S.push({k:'opening', v:'Waarmee moet een spreekuur openen?',
+          u:'De eerste afspraak na een eventueel spoedblok.',
+          o:[{l:'Geen voorkeur', fn:()=>setRules(p=>({...p,startNieuw:false,startControle:false}))},
+             {l:'Met een nieuwe afspraak', fn:()=>setRules(p=>({...p,startNieuw:true,startControle:false}))},
+             {l:'Met een controle afspraak', fn:()=>setRules(p=>({...p,startNieuw:false,startControle:true}))}]})
+        S.push({k:'mix', v:'Nieuw en controle door elkaar plannen?',
+          u:'Afwisselen naar rato van de aantallen, of eerst de ene categorie en dan de andere.',
+          o:[{l:'Ja, afwisselen', s:'N, C, C, N, C, C…', fn:()=>setRules(p=>({...p,mixNC:true}))},
+             {l:'Nee, ongemengd', s:'eerst alle nieuwe, dan de controles', fn:()=>setRules(p=>({...p,mixNC:false}))}]})
+        if(heeftSpoed) S.push({k:'spoed', v:'Moeten spoedafspraken vooraan in het spreekuur?',
+          u:'Spoed komt dan vóór alle andere afspraken en belandt nooit op "nog te plannen".',
+          o:[{l:'Ja — ochtend + middag', fn:()=>setRules(p=>({...p,spoedFirst:true,spoedDagdeel:'both'}))},
+             {l:'Ja — alleen de ochtend', fn:()=>setRules(p=>({...p,spoedFirst:true,spoedDagdeel:'och'}))},
+             {l:'Nee', fn:()=>setRules(p=>({...p,spoedFirst:false}))}]})
+        if(heeftDig) S.push({k:'digitaal', v:'Waar wil je de digitale consulten?',
+          u:'Deze drie opties leveren echt verschillende roosters op.',
+          o:[{l:'Verdelen over de dag', s:'één voor één tussen de fysieke afspraken', fn:()=>setRules(p=>({...p,digitalMode:'spread'}))},
+             {l:'Clusteren in blok', s:'één aaneengesloten blok vooraan', fn:()=>setRules(p=>({...p,digitalMode:'cluster'}))},
+             {l:'Aan het einde', s:'één blok in het laatste tijdvenster', fn:()=>setRules(p=>({...p,digitalMode:'end'}))}]})
+        S.push({k:'flex', v:'Waar wil je de flexruimte?',
+          u:'De ruimte die overblijft binnen de benutting — je opvang voor uitloop.',
+          o:[{l:'Eén blok aan het einde', fn:()=>setRules(p=>({...p,flexMode:'end'}))},
+             {l:'Verspreid tussen de afspraken', s:'vangt uitloop gedurende de dag op', fn:()=>setRules(p=>({...p,flexMode:'spread'}))}]})
+        S.push({k:'drempel', v:'Vanaf welke bezetting mag een spreekuur opengaan?',
+          u:'Onder deze drempel gaat een dagdeel niet open; die afspraken kun je bundelen op één dag.',
+          o:[...[70,75,80].map(n=>({l:`${n}%`, s:n===75?'aanbevolen':undefined, fn:()=>setRules(p=>({...p,restOpruimen:true,minBezetting:n}))})),
+             {l:'Geen drempel', s:'elk dagdeel gaat open, ook half gevuld', fn:()=>setRules(p=>({...p,restOpruimen:false}))}]})
+
+        const klaar=wiz.stap>=S.length
+        const huidig=klaar?null:S[wiz.stap]
+        const pct=Math.round(Math.min(wiz.stap,S.length)/S.length*100)
+        const Bubble=({children,bot})=>(
+          <div style={{display:'flex',justifyContent:bot?'flex-start':'flex-end',marginBottom:7}}>
+            <div style={{maxWidth:'82%',padding:'8px 13px',borderRadius:bot?'12px 12px 12px 4px':'12px 12px 4px 12px',
+              background:bot?C.surface2:C.primary,color:bot?C.text:'#fff',fontSize:12,lineHeight:1.5}}>{children}</div>
+          </div>
+        )
+        return(
+          <div style={{position:'fixed',inset:0,background:'rgba(14,26,38,0.55)',backdropFilter:'blur(6px)',
+            display:'flex',alignItems:'center',justifyContent:'center',zIndex:2100,padding:20}}>
+            <div style={{background:C.white,borderRadius:16,width:'min(680px,100%)',maxHeight:'92vh',
+              display:'flex',flexDirection:'column',boxShadow:C.shadowLg,border:`1px solid ${C.border}`,overflow:'hidden'}}>
+              <div style={{padding:'13px 18px',background:'linear-gradient(90deg,#0E3450,#1C6EA4 60%,#39C6AC)',color:'#fff',
+                display:'flex',alignItems:'center',gap:10}}>
+                <span style={{fontSize:17}}>✨</span>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:13,fontWeight:800,letterSpacing:'0.02em'}}>BEGELEIDE INTAKE</div>
+                  <div style={{fontSize:10.5,opacity:0.85}}>{klaar?'Klaar — alles staat ingesteld':`Vraag ${wiz.stap+1} van ${S.length}`}</div>
+                </div>
+                <button onClick={()=>setWiz(null)} title="Sluiten"
+                  style={{width:28,height:28,borderRadius:8,border:'1px solid rgba(255,255,255,0.3)',
+                    background:'rgba(255,255,255,0.12)',color:'#fff',cursor:'pointer',fontSize:14}}>×</button>
+              </div>
+              <div style={{height:4,background:'rgba(0,0,0,0.06)'}}>
+                <div style={{height:'100%',width:pct+'%',background:'linear-gradient(90deg,#1C6EA4,#39C6AC)',transition:'width 0.25s'}}/>
+              </div>
+              <div style={{flex:1,overflowY:'auto',padding:'16px 18px',background:C.surface}}>
+                <Bubble bot>Hoi! Ik stel je een paar korte vragen en zet daarna de hele planning voor je klaar. Je kunt alles achteraf nog aanpassen.</Bubble>
+                {S.slice(0,wiz.stap).map((s,i)=>(
+                  <React.Fragment key={s.k}>
+                    <Bubble bot>{s.v}</Bubble>
+                    {A[s.k]&&<Bubble>{A[s.k]}</Bubble>}
+                  </React.Fragment>
+                ))}
+                {huidig&&(<>
+                  <Bubble bot>
+                    <div style={{fontWeight:700,marginBottom:huidig.u?3:0}}>{huidig.v}</div>
+                    {huidig.u&&<div style={{fontSize:11,color:C.muted}}>{huidig.u}</div>}
+                  </Bubble>
+                  <div style={{display:'flex',flexWrap:'wrap',gap:7,marginTop:10,justifyContent:'flex-end'}}>
+                    {huidig.o.map((o,i)=>(
+                      <button key={i} onClick={()=>zet(huidig.k,o.l,o.l,o.fn)} title={o.s||''}
+                        style={{padding:'9px 14px',borderRadius:14,cursor:'pointer',fontSize:12,fontWeight:600,textAlign:'left',
+                          background:C.white,color:C.text,border:`1.5px solid ${C.border}`,transition:'all 0.12s'}}
+                        onMouseEnter={e=>{e.currentTarget.style.borderColor=C.primary;e.currentTarget.style.background=C.blueAccent}}
+                        onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.background=C.white}}>
+                        <div>{o.l}</div>
+                        {o.s&&<div style={{fontSize:10,color:C.muted,fontWeight:400,marginTop:1}}>{o.s}</div>}
+                      </button>
+                    ))}
+                    {huidig.vrij&&(
+                      <div style={{display:'flex',alignItems:'center',gap:6,background:C.white,
+                        border:`1.5px solid ${C.border}`,borderRadius:14,padding:'5px 8px 5px 12px'}}>
+                        <span style={{fontSize:11,color:C.muted}}>anders:</span>
+                        <input type="number" min={1} max={2000} defaultValue=""
+                          onKeyDown={e=>{ if(e.key==='Enter'){ const n=parseInt(e.target.value)
+                            if(n>0) zet(huidig.k,String(n),String(n),()=>setCfg(c=>({...c,[huidig.vrij]:n}))) } }}
+                          placeholder="aantal"
+                          style={{width:78,border:'none',outline:'none',fontSize:12,fontWeight:700,color:C.text,fontFamily:'inherit'}}/>
+                      </div>
+                    )}
+                  </div>
+                </>)}
+                {klaar&&(<>
+                  <Bubble bot>
+                    <div style={{fontWeight:700,marginBottom:4}}>Dit heb ik voor je ingesteld:</div>
+                    <div style={{fontSize:11,lineHeight:1.7}}>
+                      {Object.entries(A).map(([k,v])=>(
+                        <div key={k}>· <b>{({specialisme:'Poli',newPat:'Nieuwe patiënten',ctrlPat:'Controle patiënten',
+                          dagen:'Dagen',benutting:'Benutting',kamers:'Kamers',opening:'Opening',mix:'Volgorde',
+                          spoed:'Spoed',digitaal:'Digitaal',flex:'Flex',drempel:'Drempel'})[k]||k}:</b> {v}</div>
+                      ))}
+                    </div>
+                  </Bubble>
+                  <Bubble bot>Ik open nu het raster en laat de scenario-optimiser meteen zoeken welke rest-dag en kamerverdeling voor jouw vraag het meeste opleveren.</Bubble>
+                </>)}
+              </div>
+              <div style={{padding:'11px 18px',borderTop:`1px solid ${C.border}`,display:'flex',gap:8,alignItems:'center',background:C.white}}>
+                {wiz.stap>0&&!klaar&&(
+                  <button onClick={()=>setWiz(w=>({...w,stap:Math.max(0,w.stap-1)}))}
+                    style={{padding:'8px 13px',borderRadius:9,border:`1px solid ${C.border}`,background:C.white,
+                      cursor:'pointer',fontSize:11.5,fontWeight:600,color:C.muted}}>← Vorige</button>
+                )}
+                {!klaar&&(
+                  <button onClick={()=>setWiz(w=>({...w,stap:S.length}))}
+                    style={{padding:'8px 13px',borderRadius:9,border:`1px solid ${C.border}`,background:C.white,
+                      cursor:'pointer',fontSize:11.5,fontWeight:600,color:C.muted}}>Overslaan — gebruik standaard</button>
+                )}
+                {klaar&&(
+                  <button onClick={()=>{ setWiz(null); setActive(3); setVisited(p=>new Set([...p,0,1,2,3]))
+                      setTimeout(()=>{ doGenerate(); setTimeout(()=>startOptimiser('balans'),350) },60) }}
+                    style={{marginLeft:'auto',padding:'10px 18px',borderRadius:10,border:'none',background:C.primary,
+                      color:'#fff',cursor:'pointer',fontSize:12.5,fontWeight:700}}>Raster tonen &amp; beste instelling zoeken →</button>
+                )}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Full reset dialog */}
       {showFullReset&&(
