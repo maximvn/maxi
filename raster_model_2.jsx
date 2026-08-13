@@ -367,6 +367,123 @@ const IBtn=({tip})=>(
   </Tip>
 )
 
+// ═══ GEHEUGEN ════════════════════════════════════════════════════════════════
+// De tool onthoudt PER SPECIALISME welke scenario's je toepast of afwijst, welke
+// antwoorden je in de intake geeft en welke uitkomsten je als ijkpunt bewaart.
+// Alles staat lokaal in de browser (localStorage) — er gaat niets naar buiten.
+// Faalt localStorage (afgeschermde iframe, privémodus), dan werkt het geheugen
+// gewoon binnen de sessie door; er wordt nooit een fout aan de gebruiker getoond.
+const MEM_KEY='poliraster.geheugen.v1'
+const LEEG_MEM={scenarios:[],intake:{},ijkpunten:[]}
+const memLees=()=>{
+  try{
+    const raw=window.localStorage.getItem(MEM_KEY)
+    if(!raw) return {...LEEG_MEM}
+    const o=JSON.parse(raw)
+    return {scenarios:o.scenarios||[], intake:o.intake||{}, ijkpunten:o.ijkpunten||[]}
+  }catch(e){ return {...LEEG_MEM} }
+}
+const memSchrijf=m=>{ try{ window.localStorage.setItem(MEM_KEY,JSON.stringify(m)) }catch(e){} }
+const scenSleutel=k=>`${k.restDag}|${k.minBezetting}|${k.kamerVerdeling}`
+// Leesbare namen van de intake-vragen — gebruikt in de samenvatting én het geheugen.
+const INTAKE_LABELS={
+  spec:'Poli', newPat:'Nieuwe patiënten', ctrlPat:'Controles', duur:'Consultduur', groei:'Groeimarge',
+  dagen:'Poli-dagen', ochtend:'Ochtend', middag:'Middag', avond:'Avondspreekuur', verdeling:'Verdeling O/M',
+  benutting:'Benutting', kamers:'Kamers', opening:'Opening', mix:'Volgorde N/C', spoed:'Spoed',
+  digitaal:'Digitale consulten', flex:'Flexruimte', drempel:'Minimumbezetting', restdag:'Rest-dag',
+  kamerverdeling:'Kamers vullen', doel:'Optimaliseren op',
+}
+const specKey=s=>s||'(geen specialisme)'
+const datumKort=ts=>{ try{ return new Date(ts).toLocaleDateString('nl-NL',{day:'numeric',month:'short'}) }catch(e){ return '' } }
+
+// ─── VRIJ INVULLEN ────────────────────────────────────────────────────────────
+// Elke intake-vraag heeft naast de voorgekookte knoppen een eigen invulpaneel:
+// staat het antwoord er niet tussen, dan vul je het hier gewoon zelf in. De
+// velden zijn generiek beschreven (nummer / tijd / tekst / keuze / dagen), zodat
+// élke vraag een echte handmatige route heeft in plaats van alleen drie knoppen.
+const VELD_BREEDTE={nummer:150,tijd:130,tekst:280,keuze:244,dagen:'100%'}
+const VrijPaneel=({vrij,onKlaar,kleur=C.primary})=>{
+  const [w,setW]=useState(()=>{ const o={}; (vrij.velden||[]).forEach(v=>{o[v.k]=v.def}); return o })
+  const [fout,setFout]=useState('')
+  const zetVeld=(k,v)=>setW(p=>({...p,[k]:v}))
+  const bevestig=()=>{
+    for(const v of (vrij.velden||[])){
+      const val=w[v.k]
+      if(v.type==='nummer'){
+        const n=Number(val)
+        if(!Number.isFinite(n)||n<(v.min??0)||n>(v.max??1e9)){ setFout(`${v.label}: vul een getal in tussen ${v.min??0} en ${v.max??1e9}.`); return }
+      }
+      if(v.type==='tijd'&&!/^\d{2}:\d{2}$/.test(val||'')){ setFout(`${v.label}: vul een tijd in (uu:mm).`); return }
+      if(v.type==='dagen'&&(!val||!val.length)){ setFout(`${v.label}: kies minstens één dag.`); return }
+      if(v.type==='tekst'&&v.verplicht&&!String(val||'').trim()){ setFout(`${v.label}: mag niet leeg zijn.`); return }
+    }
+    const genormaliseerd={}
+    ;(vrij.velden||[]).forEach(v=>{ genormaliseerd[v.k]= v.type==='nummer'?Number(w[v.k]):w[v.k] })
+    setFout('')
+    onKlaar(genormaliseerd)
+  }
+  return(
+    <div style={{marginTop:12,border:`1.5px solid ${kleur}44`,background:C.white,borderRadius:14,padding:'13px 15px'}}>
+      <div style={{fontSize:11,fontWeight:800,color:kleur,letterSpacing:'0.09em',textTransform:'uppercase',marginBottom:3}}>
+        Zelf invullen
+      </div>
+      <div style={{fontSize:11.5,color:C.muted,lineHeight:1.5,marginBottom:11}}>
+        {vrij.uitleg||'Staat jouw antwoord er niet bij? Vul hier precies in wat er bij jouw poli geldt.'}
+      </div>
+      <div style={{display:'flex',flexWrap:'wrap',gap:12,alignItems:'flex-end'}}>
+        {(vrij.velden||[]).map(v=>(
+          <div key={v.k} style={{width:VELD_BREEDTE[v.type]||160,maxWidth:'100%'}}>
+            <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:4}}>{v.label}</div>
+            {v.type==='nummer'&&(
+              <div style={{display:'flex',alignItems:'center',gap:6}}>
+                <input type="number" min={v.min} max={v.max} step={v.step||1} value={w[v.k]??''}
+                  onChange={e=>zetVeld(v.k,e.target.value)}
+                  style={{width:v.unit?86:'100%',padding:'8px 10px',borderRadius:9,border:`1px solid ${C.border}`,
+                    fontSize:13,fontWeight:700,color:C.text,fontFamily:'inherit'}}/>
+                {v.unit&&<span style={{fontSize:11.5,color:C.muted}}>{v.unit}</span>}
+              </div>
+            )}
+            {v.type==='tijd'&&(
+              <input type="time" step={300} value={w[v.k]||''} onChange={e=>zetVeld(v.k,e.target.value)}
+                style={{width:'100%',padding:'8px 10px',borderRadius:9,border:`1px solid ${C.border}`,
+                  fontSize:13,fontWeight:700,color:C.text,fontFamily:'inherit'}}/>
+            )}
+            {v.type==='tekst'&&(
+              <input type="text" value={w[v.k]||''} placeholder={v.ph||''} onChange={e=>zetVeld(v.k,e.target.value)}
+                style={{width:'100%',padding:'8px 10px',borderRadius:9,border:`1px solid ${C.border}`,
+                  fontSize:13,fontWeight:600,color:C.text,fontFamily:'inherit'}}/>
+            )}
+            {v.type==='keuze'&&(
+              <select value={w[v.k]||''} onChange={e=>zetVeld(v.k,e.target.value)}
+                style={{width:'100%',padding:'8px 10px',borderRadius:9,border:`1px solid ${C.border}`,
+                  fontSize:12.5,fontWeight:600,color:C.text,fontFamily:'inherit',background:C.white,cursor:'pointer'}}>
+                {(v.opts||[]).map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
+              </select>
+            )}
+            {v.type==='dagen'&&(
+              <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                {WEEKDAY_KEYS.map((d,i)=>{
+                  const aan=(w[v.k]||[]).includes(d)
+                  return(
+                    <button key={d} onClick={()=>zetVeld(v.k, aan?(w[v.k]||[]).filter(x=>x!==d):[...(w[v.k]||[]),d])}
+                      style={{padding:'7px 12px',borderRadius:9,cursor:'pointer',fontSize:11.5,fontWeight:700,
+                        background:aan?kleur:C.white,color:aan?'#fff':C.muted,
+                        border:`1.5px solid ${aan?kleur:C.border}`}}>{DAY_ABBR[i]}</button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        ))}
+        <button onClick={bevestig}
+          style={{padding:'9px 18px',borderRadius:10,border:'none',background:kleur,color:'#fff',
+            cursor:'pointer',fontSize:12.5,fontWeight:700}}>Gebruik dit</button>
+      </div>
+      {fout&&<div style={{fontSize:11.5,color:C.danger,fontWeight:600,marginTop:9}}>{fout}</div>}
+    </div>
+  )
+}
+
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
 export default function RasterTool(){
   const [active,setActive]=useState(0)
@@ -2303,6 +2420,44 @@ export default function RasterTool(){
   // staan zoals jij ze hebt gekozen — dat zijn inhoudelijke keuzes, geen rekenknoppen.
   // Wél rekenen we per voorkeursregel uit wat hij kost, zodat je die afweging ziet.
   const [optim,setOptim]=useState(null)
+  // ── GEHEUGEN: wat heeft deze gebruiker eerder gekozen? ──────────────────────
+  const [mem,setMem]=useState(()=>memLees())
+  const [toonAfgewezen,setToonAfgewezen]=useState(false)
+  const memUpdate=useCallback(fn=>setMem(m=>{ const n=fn(m); memSchrijf(n); return n }),[])
+  const huidigeSpec=specKey(poli.specialisme)
+  // Een scenario toepassen of afwijzen wordt onthouden — inclusief hoe vaak.
+  const onthoudScenario=useCallback((k,actie,meting,doel,spec)=>{
+    const sp=specKey(spec)
+    const sl=scenSleutel(k)
+    memUpdate(g=>{
+      const oud=g.scenarios.find(s=>s.spec===sp&&s.sleutel===sl)
+      return {...g, scenarios:[...g.scenarios.filter(s=>!(s.spec===sp&&s.sleutel===sl)),
+        {spec:sp, sleutel:sl, k, actie, doel:doel||null, m:meting||null,
+         keer:(oud&&oud.actie===actie?(oud.keer||1)+1:1), ts:Date.now()}]}
+    })
+  },[memUpdate])
+  const vergeetScenario=useCallback((sleutel,spec)=>{
+    const sp=specKey(spec)
+    memUpdate(g=>({...g, scenarios:g.scenarios.filter(s=>!(s.spec===sp&&s.sleutel===sleutel))}))
+  },[memUpdate])
+  // Intake-antwoorden onthouden per specialisme (label + eventuele vrije invoer,
+  // zodat een volgende keer letterlijk overgenomen kan worden).
+  const onthoudIntake=useCallback((spec,k,label,vrij)=>{
+    const sp=specKey(spec)
+    memUpdate(g=>{
+      const perSpec={...(g.intake[sp]||{})}
+      const oud=perSpec[k]
+      perSpec[k]={label, vrij:vrij||null, keer:(oud&&oud.label===label?(oud.keer||1)+1:1), ts:Date.now()}
+      return {...g, intake:{...g.intake,[sp]:perSpec}}
+    })
+  },[memUpdate])
+  const bewaarIJkpunt=useCallback((spec,naam,meting)=>{
+    const sp=specKey(spec)
+    memUpdate(g=>({...g, ijkpunten:[...g.ijkpunten.slice(-49), {spec:sp, naam:naam||sp, m:meting, ts:Date.now()}]}))
+  },[memUpdate])
+  const wisGeheugen=useCallback(()=>{ memSchrijf({...LEEG_MEM}); setMem({...LEEG_MEM}) },[])
+  const scenGeheugen=useCallback((k,spec)=>
+    mem.scenarios.find(s=>s.spec===specKey(spec)&&s.sleutel===scenSleutel(k)),[mem])
   const meetRaster=useCallback(r=>{
     let placed=0, kamerDagen=0
     ;[0,1,2,3,4].forEach(di=>{ const s=r.days[di]; if(!s) return
@@ -2354,20 +2509,40 @@ export default function RasterTool(){
       // ándere drempel aantoonbaar meer op, dan tonen we dat apart als afweging — nooit
       // stilzwijgend als "de beste".
       const huidigeDrempel=rules.minBezetting??75
+      // GELEERD: combinaties die je voor deze poli eerder afwees, worden niet meer
+      // als suggestie opgedrongen — ze verhuizen naar een apart, uitklapbaar lijstje.
+      // De rangschikking zelf blijft objectief; het geheugen verbergt en markeert,
+      // het herschrijft nooit stilzwijgend de cijfers.
+      const spec=specKey(poli.specialisme)
+      const afgewezenSet=new Set(mem.scenarios.filter(s=>s.spec===spec&&s.actie==='afgewezen').map(s=>s.sleutel))
       const rangschik=(lijst)=>{ const gezien=new Set()
         return lijst.filter(x=>x.m.issues===0)
           .sort((a,b)=>scoreDoel(a.m,doel)-scoreDoel(b.m,doel))
           .filter(x=>{ const sig=`${x.m.ntp}|${x.m.kamerDagen}|${x.m.benut}`
             if(gezien.has(sig)) return false; gezien.add(sig); return true }) }
-      const top=rangschik(res.filter(x=>x.k.minBezetting===huidigeDrempel)).slice(0,6)
+      const opDrempel=res.filter(x=>x.k.minBezetting===huidigeDrempel)
+      const gerangschikt=rangschik(opDrempel)
+      const top=gerangschikt.filter(x=>!afgewezenSet.has(scenSleutel(x.k))).slice(0,6)
+      const verborgen=gerangschikt.filter(x=>afgewezenSet.has(scenSleutel(x.k))).slice(0,6)
       const besteScore=top.length?scoreDoel(top[0].m,doel):Infinity
       const alt=rangschik(res.filter(x=>x.k.minBezetting!==huidigeDrempel))
+        .filter(x=>!afgewezenSet.has(scenSleutel(x.k)))
         .filter(x=>scoreDoel(x.m,doel)<besteScore-1e-9).slice(0,3)
+      // "Jullie gewoonte": het scenario dat je voor deze poli het vaakst toepaste,
+      // doorgerekend op de gegevens van vandaag — zodat je ziet of die gewoonte nog klopt.
+      const eerder=mem.scenarios.filter(s=>s.spec===spec&&s.actie==='toegepast')
+        .sort((a,b)=>(b.keer||1)-(a.keer||1)||b.ts-a.ts)[0]
+      let gewoonte=null
+      if(eerder){
+        const hit=res.find(x=>scenSleutel(x.k)===eerder.sleutel)
+        if(hit) gewoonte={...hit, keer:eerder.keer||1, ts:eerder.ts,
+          verschil: besteScore===Infinity?null:scoreDoel(hit.m,doel)-besteScore}
+      }
       setOptim({bezig:false, voortgang:kand.length+voorkeur.length, totaal:kand.length+voorkeur.length,
-        doel, resultaten:top, alt, drempel:huidigeDrempel, huidig:huidigM, kosten})
+        doel, resultaten:top, alt, verborgen, gewoonte, spec, drempel:huidigeDrempel, huidig:huidigM, kosten})
     }
     setTimeout(stap,0)
-  },[cfg,newRows,ctrlRows,m2,rules,capacity,computeRaster,meetRaster])
+  },[cfg,newRows,ctrlRows,m2,rules,capacity,computeRaster,meetRaster,mem,poli.specialisme])
   // Test-API voor de invariant-suite (test_invariants.mjs): stelt de pure engine
   // bloot zodat elke regel-combinatie headless gevalideerd kan worden.
   useEffect(()=>{ if(typeof window!=='undefined'){ window.__cr=(a,b,c,d,e,f)=>computeRaster(a,b,c,d,e,f) } },[computeRaster])
@@ -4488,7 +4663,7 @@ export default function RasterTool(){
               const dagL={uit:'geen rest-dag',auto:'rest-dag automatisch',ma:'rest-dag maandag',di:'rest-dag dinsdag',wo:'rest-dag woensdag',do:'rest-dag donderdag',vr:'rest-dag vrijdag'}
               const Delta=({v,goed})=> v===0?<span style={{color:C.muted}}>±0</span>
                 :<span style={{color:goed?C.green:C.danger,fontWeight:700}}>{v>0?'+':''}{v}</span>
-              const Tabel=({rijen,besteBadge})=>(
+              const Tabel=({rijen,besteBadge,afgewezenLijst})=>(
                 <div style={{overflowX:'auto'}}>
                 <table style={{width:'100%',borderCollapse:'collapse',fontSize:11.5,minWidth:640}}>
                   <thead><tr style={{background:C.surface2}}>
@@ -4501,12 +4676,23 @@ export default function RasterTool(){
                   <tbody>
                     {rijen.map((x,i)=>{
                       const nu=isHuidig(x)
+                      const her=scenGeheugen(x.k,poli.specialisme)
                       return(
                         <tr key={i} style={{background:nu?C.blueAccent:(i%2?C.rowAlt:C.white)}}>
                           <td style={{padding:'8px 9px',borderBottom:`1px solid ${C.border}`}}>
                             <div style={{display:'flex',gap:5,flexWrap:'wrap',alignItems:'center'}}>
                               {i===0&&besteBadge&&<span style={{fontSize:9,fontWeight:800,background:C.green,color:'#fff',padding:'2px 7px',borderRadius:9}}>{besteBadge}</span>}
                               {nu&&<span style={{fontSize:9,fontWeight:800,background:C.primary,color:'#fff',padding:'2px 7px',borderRadius:9}}>NU ACTIEF</span>}
+                              {her&&her.actie==='toegepast'&&(
+                                <span title={`Je koos deze instelling eerder voor ${optim.spec} — laatst op ${datumKort(her.ts)}`}
+                                  style={{fontSize:9,fontWeight:800,background:'#7C3AED',color:'#fff',padding:'2px 7px',borderRadius:9}}>
+                                  ★ EERDER GEKOZEN{(her.keer||1)>1?` ${her.keer}×`:''}</span>
+                              )}
+                              {her&&her.actie==='afgewezen'&&(
+                                <span title={`Je wees deze instelling eerder af voor ${optim.spec} — ${datumKort(her.ts)}`}
+                                  style={{fontSize:9,fontWeight:800,background:'#8A6A12',color:'#fff',padding:'2px 7px',borderRadius:9}}>
+                                  ✕ EERDER AFGEWEZEN</span>
+                              )}
                               <span style={{fontWeight:600,color:C.text}}>{dagL[x.k.restDag]}</span>
                               <span style={{color:C.muted}}>· drempel {x.k.minBezetting}%</span>
                               <span style={{color:C.muted}}>· {x.k.kamerVerdeling==='gelijk'?'gelijk verdelen':'dagdeel voor dagdeel'}</span>
@@ -4524,10 +4710,23 @@ export default function RasterTool(){
                           </td>
                           <td style={{textAlign:'center',padding:'8px 9px',borderBottom:`1px solid ${C.border}`,fontWeight:700}}>{x.m.benut}%</td>
                           <td style={{textAlign:'right',padding:'8px 9px',borderBottom:`1px solid ${C.border}`}}>
-                            <button disabled={nu} onClick={()=>setRules(p=>({...p,...x.k}))}
-                              style={{padding:'5px 12px',borderRadius:14,cursor:nu?'default':'pointer',fontSize:11,fontWeight:700,
-                                background:nu?C.surface2:C.primary,color:nu?C.muted:'#fff',border:'none',whiteSpace:'nowrap'}}>
-                              {nu?'Actief':'Toepassen'}</button>
+                            <div style={{display:'flex',gap:5,justifyContent:'flex-end',alignItems:'center'}}>
+                              <button disabled={nu}
+                                onClick={()=>{ setRules(p=>({...p,...x.k})); onthoudScenario(x.k,'toegepast',x.m,optim.doel,poli.specialisme) }}
+                                title="Deze instelling toepassen — de tool onthoudt dat je hem koos"
+                                style={{padding:'5px 12px',borderRadius:14,cursor:nu?'default':'pointer',fontSize:11,fontWeight:700,
+                                  background:nu?C.surface2:C.primary,color:nu?C.muted:'#fff',border:'none',whiteSpace:'nowrap'}}>
+                                {nu?'Actief':'Toepassen'}</button>
+                              {afgewezenLijst
+                                ? <button onClick={()=>{ vergeetScenario(scenSleutel(x.k),poli.specialisme); setToonAfgewezen(true) }}
+                                    title="Toch weer meenemen als suggestie"
+                                    style={{padding:'5px 10px',borderRadius:14,cursor:'pointer',fontSize:11,fontWeight:700,
+                                      background:C.white,color:C.primary,border:`1px solid ${C.border}`,whiteSpace:'nowrap'}}>↺ Terug</button>
+                                : <button onClick={()=>onthoudScenario(x.k,'afgewezen',x.m,optim.doel,poli.specialisme)}
+                                    title="Niet passend voor deze poli — verberg deze combinatie voortaan"
+                                    style={{padding:'5px 10px',borderRadius:14,cursor:'pointer',fontSize:11,fontWeight:700,
+                                      background:C.white,color:C.muted,border:`1px solid ${C.border}`,whiteSpace:'nowrap'}}>✕ Niet voor ons</button>}
+                            </div>
                           </td>
                         </tr>
                       )
@@ -4537,10 +4736,38 @@ export default function RasterTool(){
                 </div>
               )
               return(<>
+                {optim.gewoonte&&(
+                  <div style={{marginBottom:14,border:'1px solid #C9B6F0',background:'#F7F3FE',borderRadius:11,padding:'11px 13px'}}>
+                    <div style={{fontSize:9.5,fontWeight:800,color:'#6D28D9',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:5}}>
+                      ★ Jullie gewoonte — {optim.gewoonte.keer}× eerder gekozen voor {optim.spec}
+                    </div>
+                    <div style={{fontSize:11.5,color:C.text,lineHeight:1.5}}>
+                      <b>{dagL[optim.gewoonte.k.restDag]} · drempel {optim.gewoonte.k.minBezetting}% · {optim.gewoonte.k.kamerVerdeling==='gelijk'?'gelijk verdelen':'dagdeel voor dagdeel'}</b>
+                      {' — '}met de gegevens van nu: {optim.gewoonte.m.placed} ingepland, {optim.gewoonte.m.ntp} op de restlijst, {optim.gewoonte.m.kamerDagen} kamer-dagen, {optim.gewoonte.m.benut}% benut.
+                    </div>
+                    <div style={{fontSize:11.5,marginTop:4,lineHeight:1.5,
+                      color:optim.gewoonte.verschil!=null&&optim.gewoonte.verschil>1e-9?'#8A6A12':C.green,fontWeight:600}}>
+                      {optim.gewoonte.verschil==null?'Er is nu geen betere combinatie doorgerekend om mee te vergelijken.'
+                        : optim.gewoonte.verschil<=1e-9
+                          ? '✓ Die gewoonte is voor deze vraag nog steeds de beste keuze.'
+                          : `△ Voor déze vraag scoort de bovenste instelling hieronder beter — ${optim.gewoonte.m.ntp-optim.resultaten[0].m.ntp>0?`${optim.gewoonte.m.ntp-optim.resultaten[0].m.ntp} afspraken minder op de restlijst`:''}${(optim.gewoonte.m.ntp-optim.resultaten[0].m.ntp>0&&optim.gewoonte.m.kamerDagen-optim.resultaten[0].m.kamerDagen>0)?' en ':''}${optim.gewoonte.m.kamerDagen-optim.resultaten[0].m.kamerDagen>0?`${optim.gewoonte.m.kamerDagen-optim.resultaten[0].m.kamerDagen} kamer-dagen minder`:''}. Kijk of dat verschil de moeite waard is.`}
+                    </div>
+                  </div>
+                )}
                 <div style={{fontSize:9.5,fontWeight:800,color:C.muted,letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:7}}>
                   Met jouw minimumbezetting van {optim.drempel}%
                 </div>
                 <Tabel rijen={optim.resultaten} besteBadge="BESTE"/>
+                {optim.verborgen&&optim.verborgen.length>0&&(
+                  <div style={{marginTop:9}}>
+                    <button onClick={()=>setToonAfgewezen(v=>!v)}
+                      style={{padding:'5px 11px',borderRadius:14,border:`1px solid ${C.border}`,background:C.white,
+                        cursor:'pointer',fontSize:11,fontWeight:600,color:C.muted}}>
+                      {toonAfgewezen?'▾':'▸'} {optim.verborgen.length} combinatie{optim.verborgen.length===1?'':'s'} verborgen — je wees {optim.verborgen.length===1?'die':'die'} eerder af voor deze poli
+                    </button>
+                    {toonAfgewezen&&<div style={{marginTop:8}}><Tabel rijen={optim.verborgen} afgewezenLijst/></div>}
+                  </div>
+                )}
                 {optim.alt&&optim.alt.length>0&&(
                   <div style={{marginTop:14}}>
                     <div style={{fontSize:9.5,fontWeight:800,color:'#8A6A12',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:5}}>
@@ -4581,6 +4808,129 @@ export default function RasterTool(){
             })()}
           </div>
         </div>
+
+        {/* ── GEHEUGEN — wat heeft de tool van jou geleerd? ──────────────────────
+             Alles wat hier staat is door jóu gekozen: toegepaste en afgewezen
+             scenario's, intake-antwoorden en bewaarde ijkpunten. Het staat lokaal
+             in de browser en stuurt de suggesties hierboven aan. Zichtbaar en
+             wisbaar, zodat er nooit een onzichtbaar profiel ontstaat. */}
+        {(()=>{
+          const spec=specKey(poli.specialisme)
+          const eigenScen=mem.scenarios.filter(s=>s.spec===spec)
+          const andereScen=mem.scenarios.filter(s=>s.spec!==spec)
+          const eigenIntake=Object.entries(mem.intake[spec]||{})
+          const eigenIJk=mem.ijkpunten.filter(p=>p.spec===spec)
+          const nu=meetRaster(raster)
+          const leeg=!eigenScen.length&&!eigenIntake.length&&!eigenIJk.length&&!andereScen.length
+          const dagL={uit:'geen rest-dag',auto:'rest-dag automatisch',ma:'rest-dag maandag',di:'rest-dag dinsdag',wo:'rest-dag woensdag',do:'rest-dag donderdag',vr:'rest-dag vrijdag'}
+          const per100=m=>m.placed>0?Math.round(m.kamerDagen/m.placed*1000)/10:0
+          const gem=lijst=>lijst.length?Math.round(lijst.reduce((s,x)=>s+per100(x.m),0)/lijst.length*10)/10:null
+          const ijkGem=gem(eigenIJk)
+          return(
+            <div style={{marginBottom:12,border:`1px solid ${C.border}`,borderRadius:12,overflow:'hidden',background:C.white}}>
+              <div style={{display:'flex',alignItems:'center',gap:9,padding:'10px 15px',flexWrap:'wrap',
+                background:'linear-gradient(90deg,#3B2E63,#6D28D9 60%,#9F7AEA)',color:'#fff'}}>
+                <span style={{fontSize:15}}>📚</span>
+                <span style={{fontSize:12.5,fontWeight:800,letterSpacing:'0.03em'}}>GEHEUGEN — WAT DE TOOL VAN JOU HEEFT GELEERD</span>
+                <span style={{marginLeft:'auto',fontSize:10,fontWeight:700,background:'rgba(255,255,255,0.2)',
+                  padding:'2px 9px',borderRadius:10,whiteSpace:'nowrap'}}>{spec}</span>
+              </div>
+              <div style={{padding:'12px 14px'}}>
+                {leeg&&(
+                  <p style={{fontSize:11.5,color:C.muted,margin:'0 0 10px',lineHeight:1.55}}>
+                    Nog niets geleerd. Zodra je hierboven een scenario <b style={{color:C.text}}>toepast</b> of als
+                    <b style={{color:C.text}}> "niet voor ons"</b> wegzet, onthoudt de tool dat per poli: toegepaste keuzes
+                    komen terug als <b style={{color:C.text}}>"jullie gewoonte"</b>, afgewezen combinaties worden niet meer
+                    voorgesteld. Ook je antwoorden in de assistent en bewaarde ijkpunten komen hier te staan.
+                  </p>
+                )}
+                <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(310px,1fr))',gap:10}}>
+                  {/* Voorkeuren uit toegepaste/afgewezen scenario's */}
+                  {eigenScen.length>0&&(
+                    <div style={{border:`1px solid ${C.border}`,borderRadius:10,padding:'10px 12px'}}>
+                      <div style={{fontSize:9.5,fontWeight:800,color:C.muted,letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:7}}>
+                        Jullie scenariokeuzes
+                      </div>
+                      {eigenScen.sort((a,b)=>b.ts-a.ts).map(s=>(
+                        <div key={s.sleutel} style={{display:'flex',gap:8,alignItems:'flex-start',padding:'6px 0',
+                          borderTop:`1px solid ${C.border}`}}>
+                          <span style={{fontSize:9,fontWeight:800,padding:'2px 7px',borderRadius:9,whiteSpace:'nowrap',flexShrink:0,
+                            background:s.actie==='toegepast'?'#7C3AED':'#8A6A12',color:'#fff'}}>
+                            {s.actie==='toegepast'?`★ ${s.keer||1}×`:'✕ afgewezen'}</span>
+                          <div style={{minWidth:0,flex:1}}>
+                            <div style={{fontSize:11.5,color:C.text,fontWeight:600,lineHeight:1.4}}>
+                              {dagL[s.k.restDag]} · drempel {s.k.minBezetting}% · {s.k.kamerVerdeling==='gelijk'?'gelijk verdelen':'dagdeel voor dagdeel'}
+                            </div>
+                            <div style={{fontSize:10.5,color:C.muted}}>{datumKort(s.ts)}{s.doel?` · doel: ${s.doel}`:''}</div>
+                          </div>
+                          <button onClick={()=>vergeetScenario(s.sleutel,poli.specialisme)} title="Vergeet deze keuze"
+                            style={{border:'none',background:'transparent',cursor:'pointer',color:C.muted,fontSize:13,flexShrink:0}}>×</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {/* Onthouden intake-antwoorden */}
+                  {eigenIntake.length>0&&(
+                    <div style={{border:`1px solid ${C.border}`,borderRadius:10,padding:'10px 12px'}}>
+                      <div style={{fontSize:9.5,fontWeight:800,color:C.muted,letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:7}}>
+                        Jouw antwoorden in de assistent
+                      </div>
+                      <div style={{fontSize:11.3,lineHeight:1.75,color:C.text}}>
+                        {eigenIntake.map(([k,v])=>(
+                          <div key={k} style={{display:'flex',gap:6}}>
+                            <span style={{color:C.muted,minWidth:118,flexShrink:0}}>{INTAKE_LABELS[k]||k}</span>
+                            <span style={{fontWeight:600,minWidth:0}}>{v.label}</span>
+                            {(v.keer||1)>1&&<span style={{color:'#6D28D9',fontWeight:700,fontSize:10}}>{v.keer}×</span>}
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{fontSize:10.5,color:C.muted,marginTop:7,lineHeight:1.45}}>
+                        De assistent zet deze antwoorden een volgende keer klaar — je kunt ze in één klik overnemen.
+                      </div>
+                    </div>
+                  )}
+                  {/* Benchmark op basis van bewaarde ijkpunten */}
+                  <div style={{border:`1px solid ${C.border}`,borderRadius:10,padding:'10px 12px'}}>
+                    <div style={{fontSize:9.5,fontWeight:800,color:C.muted,letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:7}}>
+                      IJkpunten &amp; vergelijking
+                    </div>
+                    <div style={{fontSize:11.5,color:C.text,lineHeight:1.6,marginBottom:8}}>
+                      Dit raster: <b>{nu.placed}</b> afspraken op <b>{nu.kamerDagen}</b> kamer-dagen
+                      {' '}(<b>{per100(nu)}</b> kamer-dagen per 100 afspraken, {nu.benut}% benut).
+                      {ijkGem!=null&&(
+                        <> Eerder bewaard voor {spec}: gemiddeld <b>{ijkGem}</b> per 100 —{' '}
+                          <span style={{fontWeight:700,color:per100(nu)<=ijkGem?C.green:'#8A6A12'}}>
+                            {per100(nu)<=ijkGem?'dit raster is zuiniger of gelijk':'dit raster gebruikt meer kamer-dagen'}
+                          </span>.</>
+                      )}
+                    </div>
+                    {eigenIJk.length>0&&(
+                      <div style={{fontSize:11,color:C.muted,lineHeight:1.6,marginBottom:8}}>
+                        {eigenIJk.slice().reverse().slice(0,4).map((p,i)=>(
+                          <div key={i}>· {datumKort(p.ts)} — {p.m.placed} afspr · {p.m.kamerDagen} kamer-dagen · {p.m.benut}% benut</div>
+                        ))}
+                      </div>
+                    )}
+                    <button onClick={()=>bewaarIJkpunt(poli.specialisme,poli.naam,nu)}
+                      style={{padding:'7px 13px',borderRadius:10,border:`1px solid ${C.border}`,background:C.white,
+                        cursor:'pointer',fontSize:11.5,fontWeight:700,color:C.primary}}>📌 Bewaar dit raster als ijkpunt</button>
+                  </div>
+                </div>
+                {(andereScen.length>0||mem.ijkpunten.length>eigenIJk.length)&&(
+                  <div style={{fontSize:11,color:C.muted,marginTop:10,lineHeight:1.5}}>
+                    Er staat ook geheugen voor andere poli's ({[...new Set(andereScen.map(s=>s.spec))].join(', ')||'—'}).
+                    Elke poli heeft een eigen geheugen; wat je bij de ene afwijst geldt niet voor de andere.
+                  </div>
+                )}
+                {!leeg&&(
+                  <button onClick={()=>{ if(window.confirm('Alles wat de tool van jou heeft geleerd wissen?\n\nToegepaste en afgewezen scenario\'s, intake-antwoorden en ijkpunten — voor álle poli\'s. Dit kan niet ongedaan worden gemaakt.')) wisGeheugen() }}
+                    style={{marginTop:10,padding:'6px 12px',borderRadius:10,border:`1px solid ${C.border}`,background:C.white,
+                      cursor:'pointer',fontSize:11,fontWeight:600,color:C.muted}}>↺ Geheugen wissen</button>
+                )}
+              </div>
+            </div>
+          )
+        })()}
 
         {/* ── OVERZICHT — één paneel: alles wat de engine deed + waar je op moet letten ──
              De aanpassingen-log (automatische ingrepen) en de meldingen (regel-interacties
@@ -5285,167 +5635,513 @@ export default function RasterTool(){
         </div>
       </section>
 
-      {/* ══ BEGELEIDE INTAKE — stapsgewijze vragen die de hele opzet invullen ══ */}
+      {/* ══ ASSISTENT — begeleide intake ═══════════════════════════════════════
+           Stapsgewijze vragen die de héle opzet klaarzetten. Twee dingen staan
+           voorop: (1) élke vraag heeft naast de knoppen een eigen invulpaneel, dus
+           je zit nooit vast aan drie voorgekookte opties; (2) alles blijft
+           deterministisch — een antwoord zet gewoon een instelling, er wordt niets
+           bedacht. Wat je antwoordt wordt per poli onthouden en kan een volgende
+           keer in één klik worden overgenomen. */}
       {wiz&&(()=>{
         const alleRows=[...newRows,...ctrlRows]
         const heeftSpoed=alleRows.some(r=>r.spoed)
         const heeftDig=alleRows.some(r=>r.digitaal||(r.modaliteit&&r.modaliteit!=='fysiek'))
         const A=wiz.ant||{}
-        const zet=(k,v,label,fn)=>{ if(fn) fn(); setWiz(w=>({...w, ant:{...w.ant,[k]:label}, stap:w.stap+1})) }
-        // Stappen worden pas opgebouwd wanneer ze aan de beurt zijn, zodat vragen over
-        // spoed/digitaal alleen verschijnen als die codes ook echt bestaan.
-        const S=[]
-        S.push({k:'specialisme', v:'Voor welke poli maken we dit raster?',
-          u:'Ik laad meteen passende voorbeeldcodes met duur en verdeling. Die kun je later aanpassen.',
-          o:[...SPECIALISMEN.map(sp=>({l:sp, fn:()=>kiesSpecialisme(sp)})),
-             {l:'Eigen invoer — leeg beginnen', s:'je voert zelf de afspraakcodes in', fn:()=>{}}]})
-        S.push({k:'newPat', v:'Hoeveel NIEUWE patiënten per week?',
-          u:'Het totaal over de hele week; de verdeling over de dagen regelt de tool.',
-          o:[10,25,50,75,100,150].map(n=>({l:String(n), fn:()=>setCfg(c=>({...c,newPat:n}))})), vrij:'newPat'})
-        S.push({k:'ctrlPat', v:'Hoeveel CONTROLE patiënten per week?', u:'Ook het weektotaal.',
-          o:[20,50,100,150,200,300].map(n=>({l:String(n), fn:()=>setCfg(c=>({...c,ctrlPat:n}))})), vrij:'ctrlPat'})
-        S.push({k:'dagen', v:'Op hoeveel dagen draait de poli?',
-          u:'Bepaalt over hoeveel dagen de weekvraag wordt verdeeld.',
-          o:[{l:'5 dagen (ma t/m vr)', fn:()=>setM2(m=>({...m,days:{ma:20,di:20,wo:20,do:20,vr:20}}))},
-             {l:'4 dagen (ma t/m do)', fn:()=>setM2(m=>({...m,days:{ma:25,di:25,wo:25,do:25,vr:0}}))},
-             {l:'3 dagen (ma, wo, vr)', fn:()=>setM2(m=>({...m,days:{ma:34,di:0,wo:33,do:0,vr:33}}))}]})
-        S.push({k:'benutting', v:'Welke benutting streef je na per spreekuur?',
-          u:'De tool vult elk spreekuur tot dit percentage (±2,5 procentpunt); de rest is flexruimte.',
-          o:[{l:'80%', s:'ruim, veel opvang'},{l:'85%', s:'gangbaar'},{l:'90%', s:'strak, weinig marge'}]
-             .map(x=>({...x, fn:()=>setM2(m=>({...m,benutting:parseInt(x.l)}))}))})
-        S.push({k:'kamers', v:'Hoeveel behandelkamers zijn er beschikbaar?',
-          u:'"Automatisch" laat het rooster groeien tot wat de vraag nodig heeft.',
-          o:[{l:'Automatisch', s:'groeit mee met de vraag', fn:()=>setCapacity(c=>({...c,mode:'auto'}))},
-             ...[2,3,4,5,6].map(n=>({l:`Vast: ${n} kamers`, fn:()=>setCapacity({mode:'vast',kamers:n})}))]})
-        S.push({k:'opening', v:'Waarmee moet een spreekuur openen?',
-          u:'De eerste afspraak na een eventueel spoedblok.',
-          o:[{l:'Geen voorkeur', fn:()=>setRules(p=>({...p,startNieuw:false,startControle:false}))},
-             {l:'Met een nieuwe afspraak', fn:()=>setRules(p=>({...p,startNieuw:true,startControle:false}))},
-             {l:'Met een controle afspraak', fn:()=>setRules(p=>({...p,startNieuw:false,startControle:true}))}]})
-        S.push({k:'mix', v:'Nieuw en controle door elkaar plannen?',
-          u:'Afwisselen naar rato van de aantallen, of eerst de ene categorie en dan de andere.',
-          o:[{l:'Ja, afwisselen', s:'N, C, C, N, C, C…', fn:()=>setRules(p=>({...p,mixNC:true}))},
-             {l:'Nee, ongemengd', s:'eerst alle nieuwe, dan de controles', fn:()=>setRules(p=>({...p,mixNC:false}))}]})
-        if(heeftSpoed) S.push({k:'spoed', v:'Moeten spoedafspraken vooraan in het spreekuur?',
-          u:'Spoed komt dan vóór alle andere afspraken en belandt nooit op "nog te plannen".',
-          o:[{l:'Ja — ochtend + middag', fn:()=>setRules(p=>({...p,spoedFirst:true,spoedDagdeel:'both'}))},
-             {l:'Ja — alleen de ochtend', fn:()=>setRules(p=>({...p,spoedFirst:true,spoedDagdeel:'och'}))},
-             {l:'Nee', fn:()=>setRules(p=>({...p,spoedFirst:false}))}]})
-        if(heeftDig) S.push({k:'digitaal', v:'Waar wil je de digitale consulten?',
-          u:'Deze drie opties leveren echt verschillende roosters op.',
-          o:[{l:'Verdelen over de dag', s:'één voor één tussen de fysieke afspraken', fn:()=>setRules(p=>({...p,digitalMode:'spread'}))},
-             {l:'Clusteren in blok', s:'één aaneengesloten blok vooraan', fn:()=>setRules(p=>({...p,digitalMode:'cluster'}))},
-             {l:'Aan het einde', s:'één blok in het laatste tijdvenster', fn:()=>setRules(p=>({...p,digitalMode:'end'}))}]})
-        S.push({k:'flex', v:'Waar wil je de flexruimte?',
-          u:'De ruimte die overblijft binnen de benutting — je opvang voor uitloop.',
-          o:[{l:'Eén blok aan het einde', fn:()=>setRules(p=>({...p,flexMode:'end'}))},
-             {l:'Verspreid tussen de afspraken', s:'vangt uitloop gedurende de dag op', fn:()=>setRules(p=>({...p,flexMode:'spread'}))}]})
-        S.push({k:'drempel', v:'Vanaf welke bezetting mag een spreekuur opengaan?',
-          u:'Onder deze drempel gaat een dagdeel niet open; die afspraken kun je bundelen op één dag.',
-          o:[...[70,75,80].map(n=>({l:`${n}%`, s:n===75?'aanbevolen':undefined, fn:()=>setRules(p=>({...p,restOpruimen:true,minBezetting:n}))})),
-             {l:'Geen drempel', s:'elk dagdeel gaat open, ook half gevuld', fn:()=>setRules(p=>({...p,restOpruimen:false}))}]})
+        const spec=wiz.spec!==undefined&&wiz.spec!==null?wiz.spec:(poli.specialisme||'')
+        const her=mem.intake[specKey(spec)]||{}
 
+        // ── toepassers ───────────────────────────────────────────────────────
+        const zetDagen=keys=>{
+          const n=keys.length||1, basis=Math.floor(100/n), rest=100-basis*n
+          const d={ma:0,di:0,wo:0,do:0,vr:0}
+          keys.forEach((k,i)=>{ d[k]=basis+(i<rest?1:0) })
+          setM2(m=>({...m,days:d}))
+        }
+        const zetDuur=(nw,ct)=>{
+          if(nw) setNewRows(rs=>rs.map(r=>({...r,duur:nw})))
+          if(ct) setCtrlRows(rs=>rs.map(r=>({...r,duur:ct})))
+        }
+        const basisNew=()=>A.newPat&&A.newPat.val!=null?A.newPat.val:cfg.newPat
+        const basisCtrl=()=>A.ctrlPat&&A.ctrlPat.val!=null?A.ctrlPat.val:cfg.ctrlPat
+        const zetMarge=p=>setCfg(c=>({...c,
+          newPat:Math.max(1,Math.round(basisNew()*(1+p/100))),
+          ctrlPat:Math.max(1,Math.round(basisCtrl()*(1+p/100)))}))
+
+        // ── de vragen ────────────────────────────────────────────────────────
+        // `o` = knoppen, `vrij` = het handmatige alternatief (altijd aanwezig).
+        const bouw=({spoed,dig})=>{
+          const S=[]
+          S.push({k:'spec', sec:'Poli', v:'Voor welke poli maken we dit raster?',
+            u:'Kies een specialisme en ik laad meteen een realistische set afspraakcodes met duur, verdeling en modaliteit. Staat jouw poli er niet bij, vul dan hieronder je eigen naam in — dan begin je met een lege codelijst.',
+            o:[...SPECIALISMEN.map(sp=>({l:sp, spec:sp, fn:()=>kiesSpecialisme(sp)})),
+               {l:'Leeg beginnen', s:'geen voorbeeldcodes', spec:'', fn:()=>{}}],
+            vrij:{uitleg:'Een eigen poli die niet in de lijst staat. Je voert de afspraakcodes daarna zelf in bij Gegevens.',
+              velden:[{k:'naam',type:'tekst',label:'Naam van de poli',ph:'bijv. Pijnpoli, Prikpoli, MDL',def:'',verplicht:true}],
+              fn:w=>{ setPoli(p=>({...p,naam:w.naam,specialisme:''})); return {l:w.naam, spec:''} }}})
+
+          S.push({k:'newPat', sec:'Zorgvraag', v:'Hoeveel NIEUWE patiënten per week?',
+            u:'Het weektotaal over alle nieuwe-patiëntcodes samen. De verdeling over dagen en dagdelen regelt de tool zelf.',
+            o:[10,25,50,75,100,150].map(n=>({l:String(n), val:n, fn:()=>setCfg(c=>({...c,newPat:n}))})),
+            vrij:{uitleg:'Vul het exacte aantal in dat jullie per week zien.',
+              velden:[{k:'n',type:'nummer',label:'Nieuwe patiënten',min:1,max:5000,unit:'per week',def:cfg.newPat}],
+              fn:w=>{ setCfg(c=>({...c,newPat:w.n})); return {l:`${w.n} per week`, val:w.n} }}})
+
+          S.push({k:'ctrlPat', sec:'Zorgvraag', v:'Hoeveel CONTROLE patiënten per week?',
+            u:'Ook het weektotaal — inclusief telefonische en video-controles als die codes bestaan.',
+            o:[20,50,100,150,200,300].map(n=>({l:String(n), val:n, fn:()=>setCfg(c=>({...c,ctrlPat:n}))})),
+            vrij:{uitleg:'Vul het exacte aantal controles per week in.',
+              velden:[{k:'n',type:'nummer',label:'Controles',min:1,max:5000,unit:'per week',def:cfg.ctrlPat}],
+              fn:w=>{ setCfg(c=>({...c,ctrlPat:w.n})); return {l:`${w.n} per week`, val:w.n} }}})
+
+          S.push({k:'duur', sec:'Zorgvraag', v:'Kloppen de consultduren?',
+            u:'De duur per consult bepaalt alles: hoeveel er in een spreekuur past, hoeveel kamers je nodig hebt en hoeveel er op de restlijst belandt.',
+            o:[{l:'Laat staan zoals ze zijn', s:'de geladen of ingevoerde duren blijven ongewijzigd', fn:()=>{}},
+               {l:'Nieuw 30 · controle 15', s:'ruime nieuwe intake', fn:()=>zetDuur(30,15)},
+               {l:'Nieuw 20 · controle 15', s:'gangbaar', fn:()=>zetDuur(20,15)},
+               {l:'Nieuw 15 · controle 10', s:'kort spreekuur', fn:()=>zetDuur(15,10)}],
+            vrij:{uitleg:'Zet je eigen duur per categorie. Dit overschrijft de duur van álle codes in die categorie — losse codes stel je daarna bij Gegevens fijn af.',
+              velden:[{k:'nw',type:'nummer',label:'Nieuw',min:5,max:120,unit:'min',def:20},
+                      {k:'ct',type:'nummer',label:'Controle',min:5,max:120,unit:'min',def:15}],
+              fn:w=>{ zetDuur(w.nw,w.ct); return {l:`Nieuw ${w.nw} · controle ${w.ct} min`} }}})
+
+          S.push({k:'groei', sec:'Zorgvraag', v:'Reken je met een marge bovenop deze aantallen?',
+            u:`Een opslag voor groei, vakantie-inhaal of onzekerheid. De marge wordt gerekend over ${basisNew()} nieuwe en ${basisCtrl()} controles — opnieuw antwoorden stapelt dus niet.`,
+            o:[{l:'Nee, exacte aantallen', fn:()=>zetMarge(0)},
+               {l:'+5%', s:'lichte groei', fn:()=>zetMarge(5)},
+               {l:'+10%', s:'duidelijke groei of inhaalzorg', fn:()=>zetMarge(10)},
+               {l:'+20%', s:'fors — test of het dan nog past', fn:()=>zetMarge(20)}],
+            vrij:{uitleg:'Vul je eigen marge in; ook een negatieve waarde mag, bijvoorbeeld bij krimp of een vakantieweek.',
+              velden:[{k:'p',type:'nummer',label:'Marge',min:-50,max:100,unit:'%',def:0}],
+              fn:w=>{ zetMarge(w.p); return {l:`${w.p>0?'+':''}${w.p}%`} }}})
+
+          S.push({k:'dagen', sec:'Tijden', v:'Op welke dagen draait de poli?',
+            u:'Bepaalt over hoeveel dagen de weekvraag wordt verdeeld. Minder dagen betekent vollere dagen en meer kamers.',
+            o:[{l:'5 dagen', s:'ma t/m vr', fn:()=>zetDagen(['ma','di','wo','do','vr'])},
+               {l:'4 dagen', s:'ma t/m do', fn:()=>zetDagen(['ma','di','wo','do'])},
+               {l:'3 dagen', s:'ma, wo, vr', fn:()=>zetDagen(['ma','wo','vr'])},
+               {l:'2 dagen', s:'di, do', fn:()=>zetDagen(['di','do'])}],
+            vrij:{uitleg:'Klik precies de dagen aan waarop deze poli draait. De weekvraag wordt gelijk over die dagen verdeeld; een ongelijke verdeling stel je daarna bij Tijden in.',
+              velden:[{k:'d',type:'dagen',label:'Poli-dagen',def:['ma','di','wo','do','vr']}],
+              fn:w=>{ zetDagen(w.d); return {l:w.d.map(x=>x.toUpperCase()).join(', ')} }}})
+
+          S.push({k:'ochtend', sec:'Tijden', v:'Hoe laat loopt het ochtendspreekuur?',
+            u:'Het bruto tijdvak van het ochtenddagdeel. Binnen dit venster plant de tool tot je doelbenutting.',
+            o:[{l:'08:30 – 12:00', fn:()=>setM2(m=>({...m,ochStart:'08:30',ochEnd:'12:00'}))},
+               {l:'08:00 – 12:30', s:'ruimer', fn:()=>setM2(m=>({...m,ochStart:'08:00',ochEnd:'12:30'}))},
+               {l:'09:00 – 12:30', s:'latere start', fn:()=>setM2(m=>({...m,ochStart:'09:00',ochEnd:'12:30'}))}],
+            vrij:{uitleg:'Vul de exacte begin- en eindtijd van het ochtendspreekuur in.',
+              velden:[{k:'a',type:'tijd',label:'Begin',def:m2.ochStart},{k:'b',type:'tijd',label:'Einde',def:m2.ochEnd}],
+              fn:w=>{ setM2(m=>({...m,ochStart:w.a,ochEnd:w.b})); return {l:`${w.a} – ${w.b}`} }}})
+
+          S.push({k:'middag', sec:'Tijden', v:'En het middagspreekuur?',
+            u:'Het bruto tijdvak van het middagdagdeel.',
+            o:[{l:'13:00 – 16:30', fn:()=>setM2(m=>({...m,midStart:'13:00',midEnd:'16:30'}))},
+               {l:'13:30 – 17:00', s:'latere start', fn:()=>setM2(m=>({...m,midStart:'13:30',midEnd:'17:00'}))},
+               {l:'12:30 – 17:00', s:'ruimer', fn:()=>setM2(m=>({...m,midStart:'12:30',midEnd:'17:00'}))}],
+            vrij:{uitleg:'Vul de exacte begin- en eindtijd van het middagspreekuur in.',
+              velden:[{k:'a',type:'tijd',label:'Begin',def:m2.midStart},{k:'b',type:'tijd',label:'Einde',def:m2.midEnd}],
+              fn:w=>{ setM2(m=>({...m,midStart:w.a,midEnd:w.b})); return {l:`${w.a} – ${w.b}`} }}})
+
+          S.push({k:'avond', sec:'Tijden', v:'Is er een avondspreekuur?',
+            u:'Een avonddagdeel neemt een deel van de weekvraag over en verlicht de dag.',
+            o:[{l:'Nee', fn:()=>setM2(m=>({...m,avondOn:false,verAvond:0}))},
+               {l:'Ja — 17:00 tot 20:00', s:'10% van de vraag', fn:()=>setM2(m=>({...m,avondOn:true,avondStart:'17:00',avondEnd:'20:00',verAvond:10}))},
+               {l:'Ja — 18:00 tot 20:30', s:'15% van de vraag', fn:()=>setM2(m=>({...m,avondOn:true,avondStart:'18:00',avondEnd:'20:30',verAvond:15}))}],
+            vrij:{uitleg:'Eigen avondvenster en eigen aandeel van de weekvraag dat daarnaartoe gaat.',
+              velden:[{k:'a',type:'tijd',label:'Begin',def:m2.avondStart},{k:'b',type:'tijd',label:'Einde',def:m2.avondEnd},
+                      {k:'p',type:'nummer',label:'Aandeel',min:0,max:60,unit:'%',def:m2.verAvond||10}],
+              fn:w=>{ setM2(m=>({...m,avondOn:w.p>0,avondStart:w.a,avondEnd:w.b,verAvond:w.p}))
+                return {l:w.p>0?`${w.a} – ${w.b} · ${w.p}%`:'Nee'} }}})
+
+          S.push({k:'verdeling', sec:'Tijden', v:'Hoe verdeel je de vraag over ochtend en middag?',
+            u:'Het aandeel dat in de ochtend wordt gepland; de rest gaat naar de middag (en eventueel de avond).',
+            o:[{l:'50 / 50', s:'gelijk', fn:()=>setM2(m=>({...m,verOch:50}))},
+               {l:'60 / 40', s:'ochtend zwaarder', fn:()=>setM2(m=>({...m,verOch:60}))},
+               {l:'40 / 60', s:'middag zwaarder', fn:()=>setM2(m=>({...m,verOch:40}))}],
+            vrij:{uitleg:'Vul zelf het ochtendaandeel in.',
+              velden:[{k:'p',type:'nummer',label:'Ochtendaandeel',min:0,max:100,unit:'%',def:m2.verOch}],
+              fn:w=>{ setM2(m=>({...m,verOch:w.p})); return {l:`${w.p} / ${100-w.p}`} }}})
+
+          S.push({k:'benutting', sec:'Capaciteit', v:'Welke benutting streef je na per spreekuur?',
+            u:'De tool vult elk spreekuur tot dit percentage (±2,5 procentpunt). Wat overblijft is flexruimte voor uitloop.',
+            o:[{l:'80%', s:'ruim, veel opvang'},{l:'85%', s:'gangbaar'},{l:'90%', s:'strak, weinig marge'}]
+               .map(x=>({...x, val:parseInt(x.l), fn:()=>setM2(m=>({...m,benutting:parseInt(x.l)}))})),
+            vrij:{uitleg:'Een eigen doelbenutting — bijvoorbeeld 75% bij veel onzekere consulten of 95% bij een strak protocol.',
+              velden:[{k:'p',type:'nummer',label:'Benutting',min:50,max:100,unit:'%',def:m2.benutting}],
+              fn:w=>{ setM2(m=>({...m,benutting:w.p})); return {l:`${w.p}%`, val:w.p} }}})
+
+          S.push({k:'kamers', sec:'Capaciteit', v:'Hoeveel behandelkamers zijn er beschikbaar?',
+            u:'"Automatisch" laat het rooster groeien tot precies wat de vraag nodig heeft. Bij een vast aantal gaat wat niet past naar de restlijst — dat is juist informatief.',
+            o:[{l:'Automatisch', s:'groeit mee met de vraag', fn:()=>setCapacity(c=>({...c,mode:'auto'}))},
+               ...[2,3,4,5,6].map(n=>({l:`Vast: ${n} kamers`, val:n, fn:()=>setCapacity({mode:'vast',kamers:n})}))],
+            vrij:{uitleg:'Meer dan zes kamers, of een ander aantal? Vul het hier in.',
+              velden:[{k:'n',type:'nummer',label:'Kamers',min:1,max:40,unit:'kamers',def:capacity.kamers||3}],
+              fn:w=>{ setCapacity({mode:'vast',kamers:w.n}); return {l:`Vast: ${w.n} kamers`, val:w.n} }}})
+
+          S.push({k:'opening', sec:'Volgorde', v:'Waarmee moet een spreekuur openen?',
+            u:'De eerste afspraak na een eventueel spoedblok. Openen met een nieuwe patiënt geeft de arts een rustige start; openen met controles komt sneller op gang.',
+            o:[{l:'Geen voorkeur', fn:()=>setRules(p=>({...p,startNieuw:false,startControle:false}))},
+               {l:'Met een nieuwe afspraak', fn:()=>setRules(p=>({...p,startNieuw:true,startControle:false,startNieuwWaar:'both'}))},
+               {l:'Met een controle afspraak', fn:()=>setRules(p=>({...p,startNieuw:false,startControle:true,startControleWaar:'both'}))}],
+            vrij:{uitleg:'Wil je het per dagdeel verschillend? Kies waarmee er geopend wordt én in welk dagdeel die regel geldt.',
+              velden:[{k:'wat',type:'keuze',label:'Openen met',def:'nieuw',opts:[{v:'nieuw',l:'Een nieuwe afspraak'},{v:'controle',l:'Een controle afspraak'},{v:'geen',l:'Geen voorkeur'}]},
+                      {k:'waar',type:'keuze',label:'Geldt in',def:'both',opts:[{v:'both',l:'Ochtend + middag'},{v:'och',l:'Alleen de ochtend'},{v:'mid',l:'Alleen de middag'}]}],
+              fn:w=>{ setRules(p=>({...p, startNieuw:w.wat==='nieuw', startControle:w.wat==='controle',
+                  startNieuwWaar:w.waar, startControleWaar:w.waar}))
+                const waarL={both:'ochtend + middag',och:'alleen ochtend',mid:'alleen middag'}[w.waar]
+                return {l: w.wat==='geen'?'Geen voorkeur':`${w.wat==='nieuw'?'Nieuwe':'Controle'} afspraak · ${waarL}`} }}})
+
+          S.push({k:'mix', sec:'Volgorde', v:'Nieuw en controle door elkaar plannen?',
+            u:'Afwisselen naar rato van de aantallen, of eerst de ene categorie afmaken en dan de andere.',
+            o:[{l:'Ja, afwisselen', s:'N, C, C, N, C, C…', fn:()=>setRules(p=>({...p,mixNC:true,mixWaar:'both'}))},
+               {l:'Nee, ongemengd', s:'eerst alle nieuwe, dan de controles', fn:()=>setRules(p=>({...p,mixNC:false}))}],
+            vrij:{uitleg:'Afwisselen in maar één dagdeel — bijvoorbeeld gemengd in de ochtend en blokken in de middag.',
+              velden:[{k:'waar',type:'keuze',label:'Afwisselen in',def:'both',opts:[{v:'both',l:'Ochtend + middag'},{v:'och',l:'Alleen de ochtend'},{v:'mid',l:'Alleen de middag'}]}],
+              fn:w=>{ setRules(p=>({...p,mixNC:true,mixWaar:w.waar}))
+                return {l:`Afwisselen · ${{both:'ochtend + middag',och:'alleen ochtend',mid:'alleen middag'}[w.waar]}`} }}})
+
+          if(spoed) S.push({k:'spoed', sec:'Volgorde', v:'Moeten spoedafspraken vooraan in het spreekuur?',
+            u:'Spoed komt dan vóór alle andere afspraken en belandt nooit op de restlijst.',
+            o:[{l:'Ja — ochtend + middag', fn:()=>setRules(p=>({...p,spoedFirst:true,spoedDagdeel:'both'}))},
+               {l:'Ja — alleen de ochtend', fn:()=>setRules(p=>({...p,spoedFirst:true,spoedDagdeel:'och'}))},
+               {l:'Ja — alleen de middag', fn:()=>setRules(p=>({...p,spoedFirst:true,spoedDagdeel:'mid'}))},
+               {l:'Nee', s:'spoed schuift gewoon mee in de rij', fn:()=>setRules(p=>({...p,spoedFirst:false}))}],
+            vrij:{uitleg:'Zelf bepalen of spoed vooraan gaat en in welk dagdeel die regel geldt.',
+              velden:[{k:'aan',type:'keuze',label:'Spoed eerst',def:'ja',opts:[{v:'ja',l:'Ja'},{v:'nee',l:'Nee'}]},
+                      {k:'waar',type:'keuze',label:'Geldt in',def:'both',opts:[{v:'both',l:'Ochtend + middag'},{v:'och',l:'Alleen de ochtend'},{v:'mid',l:'Alleen de middag'}]}],
+              fn:w=>{ setRules(p=>({...p,spoedFirst:w.aan==='ja',spoedDagdeel:w.waar}))
+                return {l: w.aan==='nee'?'Nee':`Ja · ${{both:'ochtend + middag',och:'alleen ochtend',mid:'alleen middag'}[w.waar]}`} }}})
+
+          if(dig) S.push({k:'digitaal', sec:'Volgorde', v:'Waar wil je de digitale consulten?',
+            u:'Telefonische en videoconsulten. Deze keuzes leveren echt verschillende roosters op — clusteren spaart wisselingen, verspreiden houdt de dag gelijkmatig.',
+            o:[{l:'Verdelen over de dag', s:'één voor één tussen de fysieke afspraken', fn:()=>setRules(p=>({...p,digitalMode:'spread',digitalWaar:'both'}))},
+               {l:'Clusteren in blok', s:'één aaneengesloten blok vooraan', fn:()=>setRules(p=>({...p,digitalMode:'cluster',digitalWaar:'both'}))},
+               {l:'Aan het einde', s:'één blok in het laatste tijdvenster', fn:()=>setRules(p=>({...p,digitalMode:'end',digitalWaar:'both'}))}],
+            vrij:{uitleg:'Kies de plaatsing, in welk dagdeel die geldt, en hoe breed het eindvenster is als je voor "aan het einde" kiest.',
+              velden:[{k:'mode',type:'keuze',label:'Plaatsing',def:'spread',opts:[{v:'spread',l:'Verdelen over de dag'},{v:'cluster',l:'Clusteren in blok'},{v:'end',l:'Aan het einde'}]},
+                      {k:'waar',type:'keuze',label:'Geldt in',def:'both',opts:[{v:'both',l:'Ochtend + middag'},{v:'och',l:'Alleen de ochtend'},{v:'mid',l:'Alleen de middag'}]},
+                      {k:'min',type:'nummer',label:'Eindvenster',min:10,max:180,step:5,unit:'min',def:rules.digitalEndMinutes}],
+              fn:w=>{ setRules(p=>({...p,digitalMode:w.mode,digitalWaar:w.waar,digitalEndMinutes:w.min}))
+                const modeL={spread:'verdelen',cluster:'clusteren',end:`einde (${w.min} min)`}[w.mode]
+                return {l:`${modeL} · ${{both:'ochtend + middag',och:'alleen ochtend',mid:'alleen middag'}[w.waar]}`} }}})
+
+          S.push({k:'flex', sec:'Ruimte', v:'Waar wil je de flexruimte?',
+            u:'De ruimte die binnen de benutting overblijft — je opvang voor uitloop en inloop.',
+            o:[{l:'Eén blok aan het einde', s:'uitlooptijd aan de staart', fn:()=>setRules(p=>({...p,flexMode:'end',flexWaar:'both'}))},
+               {l:'Verspreid tussen de afspraken', s:'vangt uitloop gedurende de dag op', fn:()=>setRules(p=>({...p,flexMode:'spread',flexWaar:'both'}))}],
+            vrij:{uitleg:'Zelf de verdeling bepalen: hoe groot elk flexblokje is en hoe lang aan het begin van een spreekuur geen flex mag vallen.',
+              velden:[{k:'mode',type:'keuze',label:'Verdeling',def:'spread',opts:[{v:'end',l:'Eén blok aan het einde'},{v:'spread',l:'Verspreid tussen de afspraken'}]},
+                      {k:'blok',type:'nummer',label:'Blokgrootte',min:5,max:60,step:5,unit:'min',def:rules.flexBlokMin},
+                      {k:'start',type:'nummer',label:'Niet in eerste',min:0,max:180,step:5,unit:'min',def:rules.flexNoFirstMin},
+                      {k:'waar',type:'keuze',label:'Geldt in',def:'both',opts:[{v:'both',l:'Ochtend + middag'},{v:'och',l:'Alleen de ochtend'},{v:'mid',l:'Alleen de middag'}]}],
+              fn:w=>{ setRules(p=>({...p,flexMode:w.mode,flexBlokMin:w.blok,flexNoFirstMin:w.start,flexWaar:w.waar}))
+                return {l:`${w.mode==='end'?'Blok aan het einde':`Verspreid, ${w.blok} min`} · niet in eerste ${w.start} min`} }}})
+
+          S.push({k:'drempel', sec:'Ruimte', v:'Vanaf welke bezetting mag een spreekuur opengaan?',
+            u:'Onder deze drempel gaat een dagdeel niet open — die afspraken worden gebundeld in plaats van een half lege kamer te openen. Dit is een beleidskeuze, geen rekenknop.',
+            o:[...[70,75,80].map(n=>({l:`${n}%`, val:n, s:n===75?'aanbevolen':undefined, fn:()=>setRules(p=>({...p,restOpruimen:true,minBezetting:n}))})),
+               {l:'Geen drempel', s:'elk dagdeel gaat open, ook half gevuld', fn:()=>setRules(p=>({...p,restOpruimen:false}))}],
+            vrij:{uitleg:'Een eigen drempel — bijvoorbeeld 60% als een half spreekuur bij jullie prima te doen is, of 85% als een kamer echt vol moet.',
+              velden:[{k:'p',type:'nummer',label:'Minimumbezetting',min:0,max:100,unit:'%',def:rules.minBezetting??75}],
+              fn:w=>{ setRules(p=>({...p,restOpruimen:true,minBezetting:w.p})); return {l:`${w.p}%`, val:w.p} }}})
+
+          S.push({k:'restdag', sec:'Ruimte', v:'Mag de restvraag op één dag gebundeld worden?',
+            u:'Wat niet in de gewone spreekuren past, kan op één dag worden samengebracht — dat scheelt half gevulde kamers verspreid over de week.',
+            o:[{l:'Nee, niet bundelen', fn:()=>setRules(p=>({...p,restDag:'uit'}))},
+               {l:'Automatisch kiezen', s:'de tool zoekt de gunstigste dag', fn:()=>setRules(p=>({...p,restDag:'auto'}))},
+               {l:'Op vrijdag', fn:()=>setRules(p=>({...p,restDag:'vr'}))}],
+            vrij:{uitleg:'Kies zelf de vaste dag waarop de restvraag wordt gebundeld.',
+              velden:[{k:'d',type:'keuze',label:'Rest-dag',def:'wo',opts:WEEKDAY_KEYS.map((d,i)=>({v:d,l:DAYS[i]}))}],
+              fn:w=>{ setRules(p=>({...p,restDag:w.d})); return {l:`Op ${DAYS[WEEKDAY_KEYS.indexOf(w.d)].toLowerCase()}`} }}})
+
+          S.push({k:'kamerverdeling', sec:'Ruimte', v:'Hoe moeten de kamers gevuld worden?',
+            u:'Kamer voor kamer volmaken houdt het aantal kamer-dagen laag; gelijk verdelen geeft rustiger, gelijkmatiger spreekuren.',
+            o:[{l:'Dagdeel voor dagdeel', s:'eerst deze kamer vol, dan de volgende', fn:()=>setRules(p=>({...p,kamerVerdeling:'dagdeel'}))},
+               {l:'Gelijk verdelen', s:'alle kamers even zwaar belasten', fn:()=>setRules(p=>({...p,kamerVerdeling:'gelijk'}))}],
+            vrij:{uitleg:'Deze vraag heeft maar twee zinvolle antwoorden. Kies hier expliciet welke, dan staat je keuze vast in de samenvatting.',
+              velden:[{k:'v',type:'keuze',label:'Vullen',def:'dagdeel',opts:[{v:'dagdeel',l:'Dagdeel voor dagdeel'},{v:'gelijk',l:'Gelijk verdelen'}]}],
+              fn:w=>{ setRules(p=>({...p,kamerVerdeling:w.v})); return {l:w.v==='gelijk'?'Gelijk verdelen':'Dagdeel voor dagdeel'} }}})
+
+          S.push({k:'doel', sec:'Afronden', v:'Waar moet ik straks op optimaliseren?',
+            u:'Na het genereren zoek ik alle combinaties van rest-dag × drempel × kamerverdeling door. Wat is voor jou "het beste"?',
+            o:[{l:'Balans', s:'één kamer-dag weegt op tegen ± 20 afspraken', val:'balans', fn:()=>{}},
+               {l:'Alles inplannen', s:'zo min mogelijk op de restlijst', val:'plannen', fn:()=>{}},
+               {l:'Minste kamers', s:'zo min mogelijk kamer-dagen', val:'kamers', fn:()=>{}},
+               {l:'Niet optimaliseren', s:'toon alleen het raster met mijn instellingen', val:'geen', fn:()=>{}}],
+            vrij:{uitleg:'Hetzelfde als hierboven, maar expliciet vastgelegd.',
+              velden:[{k:'d',type:'keuze',label:'Optimaliseren op',def:'balans',opts:[{v:'balans',l:'Balans'},{v:'plannen',l:'Alles inplannen'},{v:'kamers',l:'Minste kamers'},{v:'geen',l:'Niet optimaliseren'}]}],
+              fn:w=>({l:{balans:'Balans',plannen:'Alles inplannen',kamers:'Minste kamers',geen:'Niet optimaliseren'}[w.d], val:w.d})}})
+          return S
+        }
+
+        const S=bouw({spoed:heeftSpoed,dig:heeftDig})
         const klaar=wiz.stap>=S.length
         const huidig=klaar?null:S[wiz.stap]
+        const beantwoord=S.filter(s=>A[s.k]).length
         const pct=Math.round(Math.min(wiz.stap,S.length)/S.length*100)
-        const Bubble=({children,bot})=>(
-          <div style={{display:'flex',justifyContent:bot?'flex-start':'flex-end',marginBottom:7}}>
-            <div style={{maxWidth:'82%',padding:'8px 13px',borderRadius:bot?'12px 12px 12px 4px':'12px 12px 4px 12px',
-              background:bot?C.surface2:C.primary,color:bot?C.text:'#fff',fontSize:12,lineHeight:1.5}}>{children}</div>
-          </div>
+        const secties=[...new Set(S.map(s=>s.sec))]
+        const secIndex=huidig?secties.indexOf(huidig.sec):secties.length
+
+        // ── antwoord vastleggen ──────────────────────────────────────────────
+        const kies=(s,o,vrijW)=>{
+          const nwSpec = s.k==='spec' ? (o.spec!==undefined?o.spec:spec) : spec
+          if(o.fn) o.fn()
+          onthoudIntake(nwSpec, s.k, o.l, vrijW||null)
+          setWiz(w=>({...w, spec:nwSpec, vrijOpen:false, stap:w.stap+1,
+            ant:{...w.ant,[s.k]:{l:o.l, vrij:vrijW||null, val:o.val!=null?o.val:null}}}))
+        }
+        const vrijKlaar=(s,w)=>{
+          const r=s.vrij.fn(w)
+          const o=typeof r==='string'?{l:r}:r
+          kies(s,{...o,fn:null},w)
+        }
+        // Alles van een vorige keer overnemen — antwoorden worden letterlijk
+        // opnieuw toegepast, inclusief wat je toen zelf invulde.
+        const neemOver=bronSpec=>{
+          const bron=mem.intake[specKey(bronSpec)]||{}
+          const reg=bouw({spoed:true,dig:true})
+          const ant={}
+          reg.forEach(s=>{
+            const h=bron[s.k]; if(!h) return
+            try{
+              if(h.vrij&&s.vrij) s.vrij.fn(h.vrij)
+              else { const o=(s.o||[]).find(x=>x.l===h.label); if(o&&o.fn) o.fn() }
+            }catch(e){}
+            ant[s.k]={l:h.label, vrij:h.vrij||null, val:null}
+          })
+          setWiz(w=>({...w, spec:bronSpec, ant, stap:999, vrijOpen:false}))
+        }
+        const bekendeSpecs=Object.keys(mem.intake).filter(k=>Object.keys(mem.intake[k]||{}).length>=3)
+        const doelKeuze=(A.doel&&A.doel.val)||({'Balans':'balans','Alles inplannen':'plannen','Minste kamers':'kamers','Niet optimaliseren':'geen'}[A.doel&&A.doel.l])||'balans'
+        const afronden=metOptim=>{
+          setWiz(null); setActive(3); setVisited(p=>new Set([...p,0,1,2,3]))
+          setTimeout(()=>{ doGenerate()
+            if(metOptim&&doelKeuze!=='geen') setTimeout(()=>startOptimiser(doelKeuze),350) },60)
+        }
+
+        const OptieKaart=({o,s,i})=>(
+          <button key={i} onClick={()=>kies(s,o)} title={o.s||''}
+            style={{padding:'12px 14px',borderRadius:12,cursor:'pointer',textAlign:'left',
+              background:C.white,color:C.text,border:`1.5px solid ${C.border}`,transition:'all 0.12s',
+              display:'flex',flexDirection:'column',gap:2,minHeight:52}}
+            onMouseEnter={e=>{e.currentTarget.style.borderColor=C.primary;e.currentTarget.style.background=C.blueAccent;e.currentTarget.style.transform='translateY(-1px)'}}
+            onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.background=C.white;e.currentTarget.style.transform='none'}}>
+            <span style={{fontSize:13,fontWeight:700,letterSpacing:'-0.01em'}}>{o.l}</span>
+            {o.s&&<span style={{fontSize:11,color:C.muted,fontWeight:400,lineHeight:1.35}}>{o.s}</span>}
+          </button>
         )
+
         return(
-          <div style={{position:'fixed',inset:0,background:'rgba(14,26,38,0.55)',backdropFilter:'blur(6px)',
+          <div data-assistent style={{position:'fixed',inset:0,background:'rgba(10,22,34,0.6)',backdropFilter:'blur(7px)',
             display:'flex',alignItems:'center',justifyContent:'center',zIndex:2100,padding:20}}>
-            <div style={{background:C.white,borderRadius:16,width:'min(680px,100%)',maxHeight:'92vh',
-              display:'flex',flexDirection:'column',boxShadow:C.shadowLg,border:`1px solid ${C.border}`,overflow:'hidden'}}>
-              <div style={{padding:'13px 18px',background:'linear-gradient(90deg,#0E3450,#1C6EA4 60%,#39C6AC)',color:'#fff',
-                display:'flex',alignItems:'center',gap:10}}>
-                <span style={{fontSize:17}}>✨</span>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:13,fontWeight:800,letterSpacing:'0.02em'}}>BEGELEIDE INTAKE</div>
-                  <div style={{fontSize:10.5,opacity:0.85}}>{klaar?'Klaar — alles staat ingesteld':`Vraag ${wiz.stap+1} van ${S.length}`}</div>
+            <div style={{background:C.white,borderRadius:20,width:'min(1040px,100%)',height:'min(90vh,780px)',
+              display:'flex',boxShadow:C.shadowLg,border:`1px solid ${C.border}`,overflow:'hidden'}}>
+
+              {/* ── LINKERKOLOM: secties + wat er al staat ── */}
+              <aside style={{width:262,flexShrink:0,background:'linear-gradient(170deg,#0E3450 0%,#124D74 60%,#0F5F8C 100%)',
+                color:'#fff',display:'flex',flexDirection:'column',padding:'20px 0 14px'}}>
+                <div style={{padding:'0 20px 16px',borderBottom:'1px solid rgba(255,255,255,0.13)'}}>
+                  <div style={{display:'flex',alignItems:'center',gap:9}}>
+                    <div style={{width:34,height:34,borderRadius:11,background:'linear-gradient(140deg,#39C6AC,#1C8FBF)',
+                      display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,flexShrink:0}}>✨</div>
+                    <div style={{minWidth:0}}>
+                      <div style={{fontSize:13.5,fontWeight:800,letterSpacing:'-0.01em'}}>Assistent</div>
+                      <div style={{fontSize:10,color:'#8FD8C6',letterSpacing:'0.05em'}}>
+                        {klaar?'alles staat klaar':`vraag ${wiz.stap+1} van ${S.length}`}
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <button onClick={()=>setWiz(null)} title="Sluiten"
-                  style={{width:28,height:28,borderRadius:8,border:'1px solid rgba(255,255,255,0.3)',
-                    background:'rgba(255,255,255,0.12)',color:'#fff',cursor:'pointer',fontSize:14}}>×</button>
-              </div>
-              <div style={{height:4,background:'rgba(0,0,0,0.06)'}}>
-                <div style={{height:'100%',width:pct+'%',background:'linear-gradient(90deg,#1C6EA4,#39C6AC)',transition:'width 0.25s'}}/>
-              </div>
-              <div style={{flex:1,overflowY:'auto',padding:'16px 18px',background:C.surface}}>
-                <Bubble bot>Hoi! Ik stel je een paar korte vragen en zet daarna de hele planning voor je klaar. Je kunt alles achteraf nog aanpassen.</Bubble>
-                {S.slice(0,wiz.stap).map((s,i)=>(
-                  <React.Fragment key={s.k}>
-                    <Bubble bot>{s.v}</Bubble>
-                    {A[s.k]&&<Bubble>{A[s.k]}</Bubble>}
-                  </React.Fragment>
-                ))}
-                {huidig&&(<>
-                  <Bubble bot>
-                    <div style={{fontWeight:700,marginBottom:huidig.u?3:0}}>{huidig.v}</div>
-                    {huidig.u&&<div style={{fontSize:11,color:C.muted}}>{huidig.u}</div>}
-                  </Bubble>
-                  <div style={{display:'flex',flexWrap:'wrap',gap:7,marginTop:10,justifyContent:'flex-end'}}>
-                    {huidig.o.map((o,i)=>(
-                      <button key={i} onClick={()=>zet(huidig.k,o.l,o.l,o.fn)} title={o.s||''}
-                        style={{padding:'9px 14px',borderRadius:14,cursor:'pointer',fontSize:12,fontWeight:600,textAlign:'left',
-                          background:C.white,color:C.text,border:`1.5px solid ${C.border}`,transition:'all 0.12s'}}
-                        onMouseEnter={e=>{e.currentTarget.style.borderColor=C.primary;e.currentTarget.style.background=C.blueAccent}}
-                        onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.background=C.white}}>
-                        <div>{o.l}</div>
-                        {o.s&&<div style={{fontSize:10,color:C.muted,fontWeight:400,marginTop:1}}>{o.s}</div>}
-                      </button>
-                    ))}
-                    {huidig.vrij&&(
-                      <div style={{display:'flex',alignItems:'center',gap:6,background:C.white,
-                        border:`1.5px solid ${C.border}`,borderRadius:14,padding:'5px 8px 5px 12px'}}>
-                        <span style={{fontSize:11,color:C.muted}}>anders:</span>
-                        <input type="number" min={1} max={2000} defaultValue=""
-                          onKeyDown={e=>{ if(e.key==='Enter'){ const n=parseInt(e.target.value)
-                            if(n>0) zet(huidig.k,String(n),String(n),()=>setCfg(c=>({...c,[huidig.vrij]:n}))) } }}
-                          placeholder="aantal"
-                          style={{width:78,border:'none',outline:'none',fontSize:12,fontWeight:700,color:C.text,fontFamily:'inherit'}}/>
+                <div style={{padding:'14px 14px 10px'}}>
+                  {secties.map((sec,i)=>{
+                    const stappen=S.filter(s=>s.sec===sec)
+                    const gedaan=stappen.filter(s=>A[s.k]).length
+                    const nu=i===secIndex&&!klaar
+                    return(
+                      <div key={sec} style={{display:'flex',alignItems:'center',gap:9,padding:'7px 8px',borderRadius:9,
+                        background:nu?'rgba(255,255,255,0.14)':'transparent',marginBottom:2}}>
+                        <span style={{width:19,height:19,borderRadius:'50%',flexShrink:0,fontSize:9.5,fontWeight:800,
+                          display:'flex',alignItems:'center',justifyContent:'center',
+                          background:gedaan===stappen.length?'#39C6AC':nu?'#fff':'rgba(255,255,255,0.18)',
+                          color:gedaan===stappen.length?'#04120D':nu?'#0E3450':'rgba(255,255,255,0.75)'}}>
+                          {gedaan===stappen.length?'✓':i+1}</span>
+                        <span style={{fontSize:11.5,fontWeight:nu?700:600,color:nu?'#fff':'rgba(255,255,255,0.72)',flex:1}}>{sec}</span>
+                        <span style={{fontSize:9.5,color:'rgba(255,255,255,0.5)',fontVariantNumeric:'tabular-nums'}}>{gedaan}/{stappen.length}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+                {/* live samenvatting — klikbaar om terug te springen */}
+                <div style={{flex:1,overflowY:'auto',padding:'6px 14px 10px',borderTop:'1px solid rgba(255,255,255,0.11)'}}>
+                  <div style={{fontSize:9,fontWeight:800,letterSpacing:'0.14em',color:'rgba(255,255,255,0.45)',
+                    textTransform:'uppercase',margin:'10px 6px 7px'}}>Jouw antwoorden</div>
+                  {beantwoord===0&&<div style={{fontSize:11,color:'rgba(255,255,255,0.45)',padding:'0 6px',lineHeight:1.5}}>
+                    Nog niets ingevuld. Elk antwoord verschijnt hier — klik erop om het te wijzigen.</div>}
+                  {S.map((s,i)=>A[s.k]&&(
+                    <button key={s.k} onClick={()=>setWiz(w=>({...w,stap:i,vrijOpen:false}))}
+                      title="Terug naar deze vraag"
+                      style={{display:'block',width:'100%',textAlign:'left',border:'none',background:'transparent',
+                        cursor:'pointer',padding:'4px 6px',borderRadius:7,color:'#fff'}}
+                      onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,0.09)'}
+                      onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                      <div style={{fontSize:9.5,color:'rgba(255,255,255,0.5)',letterSpacing:'0.04em'}}>{INTAKE_LABELS[s.k]||s.k}</div>
+                      <div style={{fontSize:11.5,fontWeight:600,lineHeight:1.35}}>{A[s.k].l}</div>
+                    </button>
+                  ))}
+                </div>
+              </aside>
+
+              {/* ── RECHTERKOLOM: de vraag ── */}
+              <div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column',background:C.surface2}}>
+                <div style={{padding:'14px 24px 0',display:'flex',alignItems:'center',gap:10,background:C.white}}>
+                  <span style={{fontSize:9.5,fontWeight:800,color:C.primary,letterSpacing:'0.14em',textTransform:'uppercase'}}>
+                    {klaar?'Samenvatting':huidig.sec}
+                  </span>
+                  <div style={{flex:1}}/>
+                  <button onClick={()=>setWiz(null)} title="Sluiten — je instellingen blijven staan"
+                    style={{width:28,height:28,borderRadius:9,border:`1px solid ${C.border}`,background:C.white,
+                      color:C.muted,cursor:'pointer',fontSize:15,lineHeight:1}}>×</button>
+                </div>
+                <div style={{background:C.white,padding:'10px 24px 12px'}}>
+                  <div style={{height:4,background:C.surface2,borderRadius:3,overflow:'hidden'}}>
+                    <div style={{height:'100%',width:pct+'%',background:'linear-gradient(90deg,#1C6EA4,#39C6AC)',transition:'width 0.25s'}}/>
+                  </div>
+                </div>
+
+                <div style={{flex:1,overflowY:'auto',padding:'20px 24px 24px'}}>
+                  {huidig&&(<>
+                    <div style={{fontFamily:"'Newsreader',Georgia,serif",fontSize:25,fontWeight:500,color:C.text,
+                      lineHeight:1.25,letterSpacing:'-0.01em',marginBottom:8}}>{huidig.v}</div>
+                    {huidig.u&&<p style={{fontSize:12.5,color:C.muted,lineHeight:1.6,margin:'0 0 16px',maxWidth:620}}>{huidig.u}</p>}
+
+                    {/* wat koos je hier de vorige keer? */}
+                    {her[huidig.k]&&(
+                      <div style={{display:'flex',alignItems:'center',gap:9,flexWrap:'wrap',marginBottom:14,
+                        border:'1px solid #C9B6F0',background:'#F7F3FE',borderRadius:11,padding:'8px 12px'}}>
+                        <span style={{fontSize:10,fontWeight:800,color:'#6D28D9',letterSpacing:'0.08em',textTransform:'uppercase'}}>★ Vorige keer</span>
+                        <span style={{fontSize:12,color:C.text,fontWeight:600}}>{her[huidig.k].label}</span>
+                        {(her[huidig.k].keer||1)>1&&<span style={{fontSize:10.5,color:'#6D28D9',fontWeight:700}}>{her[huidig.k].keer}× gekozen</span>}
+                        <button onClick={()=>{
+                            const h=her[huidig.k]
+                            if(h.vrij&&huidig.vrij) vrijKlaar(huidig,h.vrij)
+                            else { const o=(huidig.o||[]).find(x=>x.l===h.label); kies(huidig, o||{l:h.label,fn:null}) }
+                          }}
+                          style={{marginLeft:'auto',padding:'5px 12px',borderRadius:14,border:'none',background:'#6D28D9',
+                            color:'#fff',cursor:'pointer',fontSize:11,fontWeight:700}}>Weer zo doen</button>
                       </div>
                     )}
-                  </div>
-                </>)}
-                {klaar&&(<>
-                  <Bubble bot>
-                    <div style={{fontWeight:700,marginBottom:4}}>Dit heb ik voor je ingesteld:</div>
-                    <div style={{fontSize:11,lineHeight:1.7}}>
-                      {Object.entries(A).map(([k,v])=>(
-                        <div key={k}>· <b>{({specialisme:'Poli',newPat:'Nieuwe patiënten',ctrlPat:'Controle patiënten',
-                          dagen:'Dagen',benutting:'Benutting',kamers:'Kamers',opening:'Opening',mix:'Volgorde',
-                          spoed:'Spoed',digitaal:'Digitaal',flex:'Flex',drempel:'Drempel'})[k]||k}:</b> {v}</div>
-                      ))}
+
+                    {/* eerste vraag: alles van een vorige keer overnemen */}
+                    {wiz.stap===0&&bekendeSpecs.length>0&&(
+                      <div style={{marginBottom:16,border:`1px solid #C9B6F0`,background:'#FBF9FF',borderRadius:12,padding:'12px 14px'}}>
+                        <div style={{fontSize:11.5,color:C.muted,marginBottom:8,lineHeight:1.5}}>
+                          Ik heb een eerdere intake onthouden. In één klik neem ik álle antwoorden daarvan over —
+                          je kunt daarna nog elke vraag los aanpassen.
+                        </div>
+                        <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                          {bekendeSpecs.map(sp=>(
+                            <button key={sp} onClick={()=>neemOver(sp==='(geen specialisme)'?'':sp)}
+                              style={{padding:'8px 14px',borderRadius:11,cursor:'pointer',fontSize:12,fontWeight:700,
+                                background:'#F7F3FE',color:'#6D28D9',border:'1.5px solid #C9B6F0'}}>
+                              ★ Overnemen van {sp} ({Object.keys(mem.intake[sp]).length} antwoorden)
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {/* de knoppen */}
+                    <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(198px,1fr))',gap:9}}>
+                      {huidig.o.map((o,i)=><OptieKaart key={i} o={o} s={huidig} i={i}/>)}
                     </div>
-                  </Bubble>
-                  <Bubble bot>Ik open nu het raster en laat de scenario-optimiser meteen zoeken welke rest-dag en kamerverdeling voor jouw vraag het meeste opleveren.</Bubble>
-                </>)}
-              </div>
-              <div style={{padding:'11px 18px',borderTop:`1px solid ${C.border}`,display:'flex',gap:8,alignItems:'center',background:C.white}}>
-                {wiz.stap>0&&!klaar&&(
-                  <button onClick={()=>setWiz(w=>({...w,stap:Math.max(0,w.stap-1)}))}
-                    style={{padding:'8px 13px',borderRadius:9,border:`1px solid ${C.border}`,background:C.white,
-                      cursor:'pointer',fontSize:11.5,fontWeight:600,color:C.muted}}>← Vorige</button>
-                )}
-                {!klaar&&(
-                  <button onClick={()=>setWiz(w=>({...w,stap:S.length}))}
-                    style={{padding:'8px 13px',borderRadius:9,border:`1px solid ${C.border}`,background:C.white,
-                      cursor:'pointer',fontSize:11.5,fontWeight:600,color:C.muted}}>Overslaan — gebruik standaard</button>
-                )}
-                {klaar&&(
-                  <button onClick={()=>{ setWiz(null); setActive(3); setVisited(p=>new Set([...p,0,1,2,3]))
-                      setTimeout(()=>{ doGenerate(); setTimeout(()=>startOptimiser('balans'),350) },60) }}
-                    style={{marginLeft:'auto',padding:'10px 18px',borderRadius:10,border:'none',background:C.primary,
-                      color:'#fff',cursor:'pointer',fontSize:12.5,fontWeight:700}}>Raster tonen &amp; beste instelling zoeken →</button>
-                )}
+
+                    {/* het handmatige alternatief — bij ELKE vraag */}
+                    {huidig.vrij&&(
+                      <div style={{marginTop:14}}>
+                        <button onClick={()=>setWiz(w=>({...w,vrijOpen:!w.vrijOpen}))}
+                          style={{padding:'9px 15px',borderRadius:11,cursor:'pointer',fontSize:12,fontWeight:700,
+                            background:wiz.vrijOpen?C.primary:C.white,color:wiz.vrijOpen?'#fff':C.primary,
+                            border:`1.5px dashed ${C.primary}`,display:'flex',alignItems:'center',gap:7}}>
+                          ✎ Staat mijn antwoord er niet bij — zelf invullen {wiz.vrijOpen?'▴':'▾'}
+                        </button>
+                        {wiz.vrijOpen&&(
+                          <VrijPaneel key={huidig.k} vrij={huidig.vrij} onKlaar={w=>vrijKlaar(huidig,w)}/>
+                        )}
+                      </div>
+                    )}
+
+                  </>)}
+
+                  {klaar&&(<>
+                    <div style={{fontFamily:"'Newsreader',Georgia,serif",fontSize:25,fontWeight:500,color:C.text,
+                      lineHeight:1.25,marginBottom:6}}>Dit heb ik voor je klaargezet</div>
+                    <p style={{fontSize:12.5,color:C.muted,lineHeight:1.6,margin:'0 0 16px',maxWidth:620}}>
+                      Klik op een regel om dat antwoord alsnog te wijzigen. Alles is achteraf ook gewoon in de panelen links aan te passen.
+                    </p>
+                    {secties.map(sec=>{
+                      const rijen=S.map((s,i)=>({s,i})).filter(({s})=>s.sec===sec&&A[s.k])
+                      if(!rijen.length) return null
+                      return(
+                        <div key={sec} style={{marginBottom:12,border:`1px solid ${C.border}`,borderRadius:12,
+                          background:C.white,overflow:'hidden'}}>
+                          <div style={{padding:'8px 14px',background:C.surface2,fontSize:9.5,fontWeight:800,
+                            color:C.muted,letterSpacing:'0.12em',textTransform:'uppercase'}}>{sec}</div>
+                          {rijen.map(({s,i})=>(
+                            <button key={s.k} onClick={()=>setWiz(w=>({...w,stap:i,vrijOpen:false}))}
+                              style={{display:'flex',width:'100%',gap:12,alignItems:'center',padding:'9px 14px',
+                                border:'none',borderTop:`1px solid ${C.border}`,background:C.white,cursor:'pointer',textAlign:'left'}}
+                              onMouseEnter={e=>e.currentTarget.style.background=C.blueAccent}
+                              onMouseLeave={e=>e.currentTarget.style.background=C.white}>
+                              <span style={{fontSize:11.5,color:C.muted,width:132,flexShrink:0}}>{INTAKE_LABELS[s.k]||s.k}</span>
+                              <span style={{fontSize:12.5,fontWeight:700,color:C.text,flex:1,minWidth:0}}>{A[s.k].l}</span>
+                              {A[s.k].vrij&&<span style={{fontSize:9,fontWeight:800,color:C.primary,background:C.blueAccent,
+                                padding:'2px 7px',borderRadius:9,whiteSpace:'nowrap'}}>ZELF INGEVULD</span>}
+                              <span style={{fontSize:11,color:C.muted}}>wijzigen ›</span>
+                            </button>
+                          ))}
+                        </div>
+                      )
+                    })}
+                    <div style={{fontSize:11.5,color:C.muted,lineHeight:1.6,marginTop:4}}>
+                      Deze antwoorden zijn onthouden voor <b style={{color:C.text}}>{specKey(spec)}</b>. Een volgende keer
+                      staan ze bij de eerste vraag klaar om in één klik over te nemen.
+                    </div>
+                  </>)}
+                </div>
+
+                {/* ── voettekst ── */}
+                <div style={{padding:'12px 24px',borderTop:`1px solid ${C.border}`,background:C.white,
+                  display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+                  {wiz.stap>0&&(
+                    <button onClick={()=>setWiz(w=>({...w,stap:Math.max(0,Math.min(w.stap,S.length)-1),vrijOpen:false}))}
+                      style={{padding:'9px 14px',borderRadius:10,border:`1px solid ${C.border}`,background:C.white,
+                        cursor:'pointer',fontSize:12,fontWeight:600,color:C.muted}}>← Vorige</button>
+                  )}
+                  {!klaar&&(<>
+                    <button onClick={()=>setWiz(w=>({...w,stap:w.stap+1,vrijOpen:false}))}
+                      title="Deze vraag overslaan — de huidige instelling blijft staan"
+                      style={{padding:'9px 14px',borderRadius:10,border:`1px solid ${C.border}`,background:C.white,
+                        cursor:'pointer',fontSize:12,fontWeight:600,color:C.muted}}>Deze vraag overslaan</button>
+                    <button onClick={()=>setWiz(w=>({...w,stap:S.length,vrijOpen:false}))}
+                      style={{padding:'9px 14px',borderRadius:10,border:'none',background:'transparent',
+                        cursor:'pointer',fontSize:12,fontWeight:600,color:C.muted}}>Alle resterende overslaan →</button>
+                    <span style={{marginLeft:'auto',fontSize:11,color:C.muted}}>{beantwoord} van {S.length} beantwoord</span>
+                  </>)}
+                  {klaar&&(<>
+                    <button onClick={()=>afronden(false)}
+                      style={{padding:'10px 16px',borderRadius:10,border:`1px solid ${C.border}`,background:C.white,
+                        cursor:'pointer',fontSize:12,fontWeight:700,color:C.text}}>Alleen het raster tonen</button>
+                    <button onClick={()=>afronden(true)}
+                      style={{marginLeft:'auto',padding:'11px 20px',borderRadius:11,border:'none',background:C.primary,
+                        color:'#fff',cursor:'pointer',fontSize:12.5,fontWeight:700}}>
+                      {doelKeuze==='geen'?'Raster tonen →':'Raster tonen & beste instelling zoeken →'}</button>
+                  </>)}
+                </div>
               </div>
             </div>
           </div>
         )
       })()}
+
 
       {/* Full reset dialog */}
       {showFullReset&&(

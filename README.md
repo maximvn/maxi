@@ -43,6 +43,40 @@ Losse, klikbare versie: `dist/polimodel.html` (alles ingebundeld, direct in de b
   - *Analyse & advies* — concrete signalen over tekort/overschot, onzekerheid vs. buffer,
     aandeel consulten op afstand en te hoge benutting.
 
+## Assistent — begeleide intake
+
+De knop **✨ Assistent** linksboven zet in een reeks korte vragen de héle opzet klaar:
+poli, zorgvraag, consultduur, marge, poli-dagen, dagdeeltijden, avondspreekuur, verdeling,
+benutting, kamers, openingsvolgorde, afwisselen, spoed, digitale consulten, flexruimte,
+minimumbezetting, rest-dag, kamervulling en het optimaliseerdoel — twintig vragen, waarvan
+spoed en digitaal alleen verschijnen als die codes bestaan.
+
+- **Elke vraag heeft een handmatige route.** Naast de knoppen zit bij *iedere* vraag
+  "✎ Staat mijn antwoord er niet bij — zelf invullen": een invulpaneel met precies de velden
+  die bij die vraag horen (aantallen, tijden, percentages, dagen-selectie, dagdeel-bereik,
+  blokgroottes). Je zit dus nooit vast aan drie voorgekookte opties.
+- **Sectie-navigatie met live samenvatting** — links de zeven secties met voortgang, daaronder
+  elk gegeven antwoord; klik erop om terug te springen. Aan het eind een samenvatting per
+  sectie, waarin zelf ingevulde antwoorden gemerkt zijn.
+- **Volledig deterministisch** — een antwoord zet gewoon een instelling. Er wordt niets bedacht;
+  dezelfde antwoorden geven altijd hetzelfde resultaat.
+
+## Geheugen — de tool leert van jouw keuzes
+
+Per poli wordt lokaal (in de browser) onthouden wat je doet. Zichtbaar, uitlegbaar en wisbaar:
+
+- **Toegepaste scenario's** komen terug als **"jullie gewoonte"** boven de optimiser, doorgerekend
+  op de gegevens van vandaag — mét de mededeling of die gewoonte nog steeds de beste keuze is.
+- **Afgewezen scenario's** ("✕ Niet voor ons") worden niet meer als suggestie opgedrongen; ze
+  verhuizen naar een uitklapbaar lijstje en zijn met één klik terug te halen. De rangschikking
+  zelf blijft objectief — het geheugen verbergt en markeert, het herschrijft nooit de cijfers.
+- **Intake-antwoorden** worden per poli bewaard; bij de eerste vraag neem je een vorige intake
+  in één klik volledig over, en bij elke vraag staat "★ Vorige keer … — weer zo doen".
+- **IJkpunten** — bewaar een raster als referentie en vergelijk kamer-dagen per 100 afspraken
+  met eerdere rasters van dezelfde poli.
+- Het paneel **📚 Geheugen** onder het raster toont alles wat er is geleerd, per onderdeel
+  wisbaar en met één knop volledig te legen.
+
 ## Losse HTML-versie bouwen
 
 `dist/polimodel.html` is volledig zelfstandig (React + xlsx ingebundeld) en opent direct
@@ -54,3 +88,10 @@ npm run build
 ```
 
 `build.js` bundelt `entry.jsx` met esbuild en injecteert het in `html-shell.html`.
+
+## Tests
+
+```
+node test_invariants.mjs   # engine-contracten over de hele regelmatrix (952 combinaties)
+node test_assistent.mjs    # assistent, vrij invullen, geheugen en optimiser in de browser
+```
