@@ -1,7 +1,9 @@
-// Twee gemelde punten:
-//  1. "Clusteren in blok" = één telefonisch spreekuur; wat daar niet in past wordt
-//     over de andere spreekuren verdeeld.
-//  2. Restvraag bundelen mag de week niet scheeftrekken.
+// EIGEN DIGITAAL SPREEKUUR
+//  · een dagdeel wordt alleen digitaal spreekuur als het tot de benuttingsband
+//    gevuld raakt met uitsluitend digitale consulten;
+//  · lukt dat niet, dan komt er géén digitaal spreekuur en worden ze verdeeld;
+//  · de gebruiker kiest dag én dagdeel.
+// Plus: restvraag bundelen mag de week niet scheeftrekken.
 import { chromium } from 'playwright'
 import { pathToFileURL } from 'url'
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' })
@@ -21,83 +23,96 @@ const R = await page.evaluate(()=>{
     ddDagen:{O:{MA:1,DI:1,WO:1,DO:1,VR:1},M:{MA:1,DI:1,WO:1,DO:1,VR:1},A:{}}}
   const BASIS={spoedFirst:false,startNieuw:false,startControle:true,mixNC:true,digitalMode:'cluster',
     flexMode:'end',kamerVerdeling:'gelijk',restDag:'uit',restOpruimen:true,minBezetting:75,spoedDagdeel:'both',
-    startNieuwWaar:'both',startControleWaar:'both',mixWaar:'both',digitalWaar:'both',flexWaar:'both',
-    flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30}
-  // per dag: hoe liggen de digitale consulten over de spreekuren?
-  const digBeeld=r=>{
-    const dagen=[]
-    for(let di=0;di<5;di++){
-      const cellen=[]
-      for(let k=0;k<(r.numRooms||1);k++) for(const pre of ['o','m']){
-        const arr=((r.days[di]||{})[pre+k]||[]).filter(a=>!a.isFlex)
-        if(!arr.length) continue
-        const dig=arr.filter(a=>a.digitaal).length
-        cellen.push({key:pre+k, n:arr.length, dig})
-      }
-      const metDig=cellen.filter(c=>c.dig>0)
-      dagen.push({totDig:cellen.reduce((s,c)=>s+c.dig,0), spreekurenMetDig:metDig.length,
-        grootste:metDig.length?Math.max(...metDig.map(c=>c.dig)):0, cellen})
+    digitalSlots:[],startNieuwWaar:'both',startControleWaar:'both',mixWaar:'both',digitalWaar:'both',
+    flexWaar:'both',flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30}
+  // per (dag,dagdeel,kamer): telt de cel, hoeveel digitaal, en de bezetting
+  const cellen=r=>{
+    const uit=[]
+    for(let di=0;di<5;di++) for(let k=0;k<(r.numRooms||1);k++) for(const [pre,ddk] of [['o','O'],['m','M']]){
+      const arr=((r.days[di]||{})[pre+k]||[]).filter(a=>!a.isFlex)
+      if(!arr.length) continue
+      const min=arr.filter(a=>!a.overbook).reduce((s,a)=>s+a.duur,0)
+      const cap=ddk==='O'?r.ochDur:r.midDur
+      uit.push({di,dd:ddk,k,n:arr.length,dig:arr.filter(a=>a.digitaal).length,
+        pct:Math.round(min/cap*100)})
     }
-    return dagen
+    return uit
   }
   const kamersPerDag=r=>[0,1,2,3,4].map(di=>{ const s=new Set()
     for(let k=0;k<(r.numRooms||1);k++) for(const pre of ['o','m'])
       if(((r.days[di]||{})[pre+k]||[]).some(a=>!a.isFlex)) s.add(k)
     return s.size })
 
+  const nr=[mk({afspraakcode:'NP',duur:20,percentage:100})]
+  const veelDig=[mk({afspraakcode:'CO',duur:15,percentage:80}),
+                 mk({afspraakcode:'TC',duur:10,percentage:20,digitaal:true,modaliteit:'telefonisch'})]
+  const weinigDig=[mk({afspraakcode:'CO',duur:15,percentage:97}),
+                   mk({afspraakcode:'TC',duur:10,percentage:3,digitaal:true,modaliteit:'telefonisch'})]
+  const cfg={newPat:100,ctrlPat:200,newCodes:1,ctrlCodes:2}
   const uit={}
-  // A. VEEL digitaal (meer dan één spreekuur aankan): 300 telefonische consulten
-  {
-    const nr=[mk({afspraakcode:'NP',duur:20,percentage:100})]
-    const cr=[mk({afspraakcode:'TC',duur:10,percentage:100,digitaal:true,modaliteit:'telefonisch'})]
-    const cfg={newPat:50,ctrlPat:300,newCodes:1,ctrlCodes:1}
-    uit.veelCluster=digBeeld(window.__cr(cfg,nr,cr,M2,{...BASIS,digitalMode:'cluster'},{mode:'auto',kamers:3}))
-    uit.veelSpread =digBeeld(window.__cr(cfg,nr,cr,M2,{...BASIS,digitalMode:'spread'},{mode:'auto',kamers:3}))
-  }
-  // B. WEINIG digitaal (past ruim in één spreekuur): jouw testcase
-  {
-    const nr=[mk({afspraakcode:'NP',duur:20,percentage:70}),mk({afspraakcode:'NP-C',duur:30,percentage:30,spoed:true})]
-    const cr=[mk({afspraakcode:'CO',duur:15,percentage:75}),mk({afspraakcode:'TC',duur:10,percentage:25,digitaal:true,modaliteit:'telefonisch'})]
-    const cfg={newPat:100,ctrlPat:200,newCodes:2,ctrlCodes:2}
-    uit.weinigCluster=digBeeld(window.__cr(cfg,nr,cr,M2,{...BASIS,digitalMode:'cluster'},{mode:'auto',kamers:3}))
-    uit.weinigSpread =digBeeld(window.__cr(cfg,nr,cr,M2,{...BASIS,digitalMode:'spread'},{mode:'auto',kamers:3}))
-    // C. bundelen × dagdeel voor dagdeel vol — mag de week niet scheeftrekken
-    const bundel=window.__cr(cfg,nr,cr,M2,{...BASIS,kamerVerdeling:'dagdeel',restDag:'auto'},{mode:'auto',kamers:3})
-    const zonder=window.__cr(cfg,nr,cr,M2,{...BASIS,kamerVerdeling:'dagdeel',restDag:'uit'},{mode:'auto',kamers:3})
-    uit.bundel={kamers:kamersPerDag(bundel), ntp:bundel.ntp.length}
-    uit.zonder={kamers:kamersPerDag(zonder), ntp:zonder.ntp.length}
-  }
+  const auto=window.__cr(cfg,nr,veelDig,M2,BASIS,{mode:'auto',kamers:3})
+  uit.auto={plan:auto.digPlan, cellen:cellen(auto), band:{och:auto.ochDur}}
+  const kies=window.__cr(cfg,nr,veelDig,M2,{...BASIS,digitalSlots:[{di:1,dd:'O'},{di:3,dd:'M'}]},{mode:'auto',kamers:3})
+  uit.kies={plan:kies.digPlan, cellen:cellen(kies)}
+  const weinig=window.__cr(cfg,nr,weinigDig,M2,BASIS,{mode:'auto',kamers:3})
+  uit.weinig={plan:weinig.digPlan, cellen:cellen(weinig)}
+  const spread=window.__cr(cfg,nr,veelDig,M2,{...BASIS,digitalMode:'spread'},{mode:'auto',kamers:3})
+  uit.spread={cellen:cellen(spread)}
+  // onmogelijke keuze: een dag die niet meedraait
+  const M2b={...M2, days:{ma:25,di:0,wo:25,do:25,vr:25}}
+  const onmogelijk=window.__cr(cfg,nr,veelDig,M2b,{...BASIS,digitalSlots:[{di:1,dd:'O'}]},{mode:'auto',kamers:3})
+  uit.onmogelijk={plan:onmogelijk.digPlan}
+  // bundelen mag de week niet scheeftrekken
+  const bundel=window.__cr(cfg,nr,veelDig,M2,{...BASIS,kamerVerdeling:'dagdeel',restDag:'auto'},{mode:'auto',kamers:3})
+  const zonder=window.__cr(cfg,nr,veelDig,M2,{...BASIS,kamerVerdeling:'dagdeel',restDag:'uit'},{mode:'auto',kamers:3})
+  uit.bundel={kamers:kamersPerDag(bundel), ntp:bundel.ntp.length, zonderNtp:zonder.ntp.length}
   return uit
 })
 
-// ── 1. Clusteren met VEEL digitaal: één spreekuur helemaal vol, rest verdeeld ──
+// ── 1. Automatisch: hele dagdelen, volledig digitaal, binnen de band ────────
 {
-  const d=R.veelCluster[0]
-  const puurVol=d.cellen.filter(c=>c.dig===c.n && c.n>0).length
-  ok('clusteren vult een heel spreekuur met digitaal', puurVol>=1,
-    `${puurVol} spreekuur/spreekuren volledig digitaal, grootste blok ${d.grootste} consulten`)
-  ok('overloop wordt over de andere spreekuren verdeeld', d.spreekurenMetDig>puurVol,
-    `${d.spreekurenMetDig} spreekuren met digitaal`)
-  const s=R.veelSpread[0]
-  ok('verdelen levert een ander beeld op dan clusteren', d.grootste>s.grootste,
-    `cluster grootste blok ${d.grootste} vs verdelen ${s.grootste}`)
+  const p=R.auto.plan
+  ok('digitale spreekuren gepland', p.gepland.length>0, `${p.gepland.length} van ${p.mogelijk} mogelijk`)
+  ok('elk digitaal spreekuur zit in de band 82,5–87,5%',
+    p.gepland.every(g=>g.pct>=82&&g.pct<=88), p.gepland.map(g=>g.pct+'%').join(', '))
+  const puur=R.auto.cellen.filter(c=>c.dig===c.n&&c.n>0)
+  ok('die spreekuren bevatten uitsluitend digitale consulten', puur.length===p.gepland.length,
+    `${puur.length} volledig digitale cellen · ${puur.map(c=>`${['MA','DI','WO','DO','VR'][c.di]}${c.dd}:${c.n}@${c.pct}%`).join(' ')}`)
+  ok('de rest is over gewone spreekuren verdeeld',
+    p.rest===0 || R.auto.cellen.some(c=>c.dig>0&&c.dig<c.n), `${p.rest} losse consulten`)
 }
-// ── 2. Clusteren met WEINIG digitaal: alles in één spreekuur ─────────────────
+// ── 2. Jouw keuze van dag én dagdeel wordt gevolgd ──────────────────────────
 {
-  const d=R.weinigCluster[0]
-  ok('alle telefonische consulten van de dag in één spreekuur', d.spreekurenMetDig===1,
-    `${d.totDig} digitaal in ${d.spreekurenMetDig} spreekuur/spreekuren`)
-  const s=R.weinigSpread[0]
-  ok('verdelen spreidt ze juist wél', s.spreekurenMetDig>1, `${s.spreekurenMetDig} spreekuren`)
+  const p=R.kies.plan
+  const opPlek=p.gepland.map(g=>`${g.di}${g.dd}`).sort().join(',')
+  ok('digitaal spreekuur staat op de gekozen dag+dagdeel', opPlek==='1O,3M',
+    `gepland op ${p.gepland.map(g=>`${['MA','DI','WO','DO','VR'][g.di]} ${g.dd}`).join(' + ')||'—'}`)
+  const puurDI=R.kies.cellen.some(c=>c.di===1&&c.dd==='O'&&c.dig===c.n&&c.n>0)
+  const puurDO=R.kies.cellen.some(c=>c.di===3&&c.dd==='M'&&c.dig===c.n&&c.n>0)
+  ok('en staat er ook echt in het raster', puurDI&&puurDO, `DI-och ${puurDI}, DO-mid ${puurDO}`)
+  ok('geen digitaal spreekuur op andere dagdelen',
+    !R.kies.cellen.some(c=>c.dig===c.n&&c.n>0&&!((c.di===1&&c.dd==='O')||(c.di===3&&c.dd==='M'))))
 }
-// ── 3. Bundelen trekt de week niet scheef ───────────────────────────────────
+// ── 3. Te weinig digitaal → géén digitaal spreekuur ─────────────────────────
 {
-  const k=R.bundel.kamers
-  const max=Math.max(...k), rest=k.slice().sort((a,b)=>b-a)[1]
-  ok('rest-dag hooguit één kamer drukker dan de drukste andere dag', max<=rest+1,
-    `kamers per dag ${k.join('/')} (restlijst ${R.bundel.ntp}, zonder bundelen ${R.zonder.ntp})`)
-  ok('bundelen plant nog steeds meer in dan niet bundelen', R.bundel.ntp<R.zonder.ntp,
-    `${R.zonder.ntp} → ${R.bundel.ntp} op de restlijst`)
+  const p=R.weinig.plan
+  ok('geen digitaal spreekuur als een dagdeel niet vol te krijgen is',
+    p.mogelijk===0&&p.gepland.length===0, `${p.rest} consulten verdeeld`)
+  ok('ze zijn dan wél gewoon ingepland', R.weinig.cellen.some(c=>c.dig>0&&c.dig<c.n))
+}
+// ── 4. Verdelen blijft verdelen ─────────────────────────────────────────────
+ok('bij "verdelen over dag" is er geen volledig digitaal spreekuur',
+  !R.spread.cellen.some(c=>c.dig===c.n&&c.n>1))
+// ── 5. Onmogelijke keuze wordt gemeld, niet stilzwijgend genegeerd ──────────
+ok('een keuze op een dag die niet draait wordt niet gepland',
+  R.onmogelijk.plan.gepland.every(g=>g.di!==1))
+// ── 6. Bundelen trekt de week niet scheef ───────────────────────────────────
+{
+  const k=R.bundel.kamers, max=Math.max(...k), tweede=k.slice().sort((a,b)=>b-a)[1]
+  ok('rest-dag hooguit één kamer drukker dan de drukste andere dag', max<=tweede+1,
+    `kamers per dag ${k.join('/')}`)
+  ok('bundelen plant nog steeds meer in dan niet bundelen', R.bundel.ntp<R.bundel.zonderNtp,
+    `${R.bundel.zonderNtp} → ${R.bundel.ntp} op de restlijst`)
 }
 
 console.log(log.join('\n'))

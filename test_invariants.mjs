@@ -283,6 +283,7 @@ results.failures.forEach(f=>{
   const on=Object.entries(f.c).filter(([k,v])=>v===true).map(([k])=>k).join('+')
   const modes=`${f.c.digitalMode}/${f.c.flexMode}${f.c.restDag?'/rest:'+f.c.restDag:''}${f.c.spoedDagdeel?'/spoed:'+f.c.spoedDagdeel:''}`
   console.log(`FAIL [${on||'-'} ${modes}]`)
+  console.log('   regels: '+JSON.stringify(f.c))
   f.v.forEach(x=>console.log('   · '+x))
 })
 if(results.bundelFouten&&results.bundelFouten.length){

@@ -98,20 +98,24 @@ tegenover `4 och / 2 mid`), met de reden als tooltip.
 
 ## Digitale consulten: een eigen digitaal spreekuur
 
-De optie heette "clusteren in blok" en betekende: *binnen* elk spreekuur staan de digitale
-consulten bij elkaar — ze bleven dus over alle spreekuren verdeeld. Dat is nu wat de naam
-belooft: **alle telefonische en videoconsulten van een dag komen samen in één spreekuur.**
+Kies je **"Eigen digitaal spreekuur"**, dan wordt een **heel dagdeel** uitsluitend met digitale
+consulten gevuld — tot de doelbenutting, met de gebruikelijke speling van ±2,5 procentpunt en
+bij voorkeur aan de bovenkant. Bij 85% betekent dat: het dagdeel moet tussen 82,5% en 87,5%
+gevuld raken met alléén telefonische en videoconsulten.
 
-- Past niet alles in dat ene spreekuur, dan worden de overgebleven consulten over de andere
-  spreekuren verdeeld.
-- Blijft er in dat spreekuur ruimte over, dan wordt die met gewone afspraken gevuld. Zonder
-  die aanvulling zou het spreekuur onder de minimumbezetting blijven, door de drempelregel
-  gesloten worden en raakten de consulten alsnog over de dag verspreid — precies wat er
-  gebeurde.
+- **Lukt dat niet**, dan komt er géén digitaal spreekuur. De consulten worden dan gewoon over
+  de gewone spreekuren verdeeld. Er ontstaat dus nooit een half leeg telefonisch spreekuur.
+- **Blijft er een restje over** dat geen heel dagdeel meer vult, dan gaat dat restje over de
+  andere spreekuren. Voorbeeld: 40 consulten leveren twee volle digitale dagdelen op van elk
+  18 consulten (86%); de resterende 4 worden verdeeld.
+- **Jij kiest waar ze vallen.** Onder de keuze staat hoeveel digitale spreekuren er bij jouw
+  aantallen te vullen zijn, met een rooster van dag × dagdeel waarin je aanvinkt waar ze moeten
+  komen — bijvoorbeeld dinsdagochtend en donderdagmiddag. Vink je niets aan, dan spreidt de tool
+  ze zelf over de week. Kies je een dagdeel waar het niet lukt, dan wordt dat gemeld met de reden
+  in plaats van er stilzwijgend iets half-vols neer te zetten.
 
-Gemeten op een testset van 50 nieuw + 300 telefonische consulten: één volledig digitaal
-spreekuur van 18 consulten plus de overloop in de andere spreekuren. Met 10 digitale
-consulten per dag: alle 10 in één spreekuur (bij "verdelen over dag" verspreid over zes).
+Vastgepinde digitale spreekuren blijven staan waar jij ze zette: het herverdelen tussen dagen
+raakt ze niet aan.
 
 ## Bundelen zonder de week scheef te trekken
 
