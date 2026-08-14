@@ -479,6 +479,7 @@ const parseOpdracht=tekst=>{
   const pct=mDoel?parseInt(mDoel[1]):(alle.length?alle[alle.length-1]:(mOp?parseInt(mOp[1]):null))
   if(pct!=null&&pct>=1&&pct<=100) g.pct=pct
 
+  const strakWoord=/zo (strak|efficient|efficiënt)|strak inplannen|strakker|zo efficient|zo efficiënt|halve dag|hele dag|volledig inplannen|geen halve/.test(t)
   const benutWoord=/benut|bezetting|bezet|vullen|voller|voll?er|gevuld|percentage/.test(t)
   const dichtWoord=/(niet|geen|nooit)\s+(meer\s+)?(in)?(ge)?plann?en|vrij\s?houden|dicht\s?houden|sluiten|leeg\s?houden|geen spreekuur|niet (meer )?(open|draaien|gebruiken)|schrappen|eruit/.test(t)
   const openWoord=/(in)?plann?en|open|meedraaien|mee draaien|erbij|toevoegen|gebruiken|benutten|inzetten|ook (op )?/.test(t)
@@ -486,6 +487,7 @@ const parseOpdracht=tekst=>{
   const kamerMeer=/kamer.{0,12}(erbij|extra|meer|bij)|meer kamers|extra kamer/.test(t)
   const kamerMinder=/kamer.{0,12}(minder|weg|eraf|schrappen)|minder kamers|kamer eraf/.test(t)
 
+  if(strakWoord)              return {type:'strak', ...g, tekst}
   if(benutWoord&&g.pct!=null) return {type:'benutting', ...g, tekst}
   if(restWoord)               return {type:'restlijst', ...g, tekst}
   if(kamerMinder)             return {type:'kamers', delta:-1, ...g, tekst}
@@ -515,6 +517,7 @@ const VRAAGBOOM={
     {l:'De volgorde in het spreekuur', s:'spoed, nieuw/controle, digitaal, flex', volg:'volgorde'},
     {l:'De aantallen of consultduur', s:'meer patiënten of andere duur', volg:'vraagkant'},
     {l:'De restlijst', s:'alles ingepland krijgen', opdr:{type:'restlijst'}},
+    {l:'Zo strak mogelijk', s:'alles gepland, minste kamer-dagen, geen halve dagen', opdr:{type:'strak'}},
   ]},
   verdeling:{v:'Wat zit er scheef in de verdeling?', u:'Elke keuze grijpt op een andere knop aan.', o:[
     {l:'Over de dagen', s:'welke dag hoeveel patiënten krijgt', volg:'verdeling-dagen'},
@@ -616,6 +619,7 @@ const opdrachtOmschrijving=op=>{
     case 'benutting':  return `${[k,d&&`op ${d}`,dd].filter(Boolean).join(' ')||'De spreekuren'} moet${k?'':'en'} naar ongeveer ${op.pct}% bezetting.`
     case 'kamers':     return op.delta>0?'Er mag een kamer bij.':'Het moet met één kamer minder.'
     case 'restlijst':  return 'Alles moet ingepland worden — niets meer op de restlijst.'
+    case 'strak':      return 'Zo strak mogelijk inplannen: alles gepland, zo min mogelijk kamer-dagen en geen halve dagen.'
     case 'verdeling':  return {gelijk:'De weekvraag gelijk over alle dagen verdelen.',
       begin:'Het zwaartepunt van de week naar voren halen.', eind:'Het zwaartepunt van de week naar achteren leggen.',
       best:'De verdeling over de dagen zo gelijkmatig mogelijk gevuld krijgen.'}[op.vorm]
@@ -1605,11 +1609,17 @@ export default function RasterTool(){
       let uitkomst
       if(gelijk){
         // 'gelijk': hele kamers openen (ochtend + middag samen), vraag gebalanceerd
-        // over het minimale aantal kamers verdelen; groeit alleen als bin-packing dat
-        // afdwingt (tot het maximale aantal kamers). Vast = exact het gekozen aantal.
+        // over het MINIMALE aantal kamers verdelen; groeit alleen als bin-packing dat
+        // afdwingt (tot het maximale aantal kamers).
+        //
+        // Ook bij een VAST aantal kamers nemen we het minimum dat past, niet klakkeloos
+        // alle kamers. "Vast" is een BOVENGRENS, geen opdracht om alles te gebruiken:
+        // de vraag over méér kamers uitsmeren dan nodig maakt elke kamer dunner, waarna
+        // de minimumbezetting die kamers weer sluit en het werk op de restlijst belandt
+        // terwijl er kamers leegstaan. Precies dát ging hier mis.
         const roomsAct=n=>slots.filter(s=>s.r<n)
-        let nRooms= capMode==='vast' ? kap
-          : Math.max(1,Math.min(kap,Math.ceil(totMin/Math.max(1,capPerRoom))))
+        const start=Math.max(1,Math.min(kap,Math.ceil(totMin/Math.max(1,capPerRoom))))
+        let nRooms=start
         uitkomst=probeer(roomsAct(nRooms))
         while(uitkomst.ov.length && nRooms<kap){ nRooms++; uitkomst=probeer(roomsAct(nRooms)) }
       } else {
@@ -2274,6 +2284,39 @@ export default function RasterTool(){
       return out
     }
     const sessInfo={O:[ochStart,ochDur],M:[midStart,midDur],A:[avondStart,avDur]}
+
+    // ── KAMERS COMPACT MAKEN — geen gaten, hele dagen eerst ────────────────────
+    // De minimumbezetting maakt een kamer leeg (R[dd][r]=[]) en het bundelen kan
+    // kamers verschuiven. Wat overbleef was een GAT: kamer 3 leeg terwijl kamer 4
+    // draait — op een rooster onbegrijpelijk, en het suggereert een halve dag die
+    // er niet is. Hier hernummeren we per dag de kamers: eerst de kamers die de
+    // hele dag draaien (ochtend én middag), dan de halve, altijd vanaf kamer 1 en
+    // zonder gaten. Er verandert niets aan wát er gepland is — alleen het
+    // kamernummer, zodat het rooster leesbaar is en personeel hele dagen krijgt.
+    // Elk dagdeel wordt apart vanaf kamer 1 opnieuw genummerd. Daarmee schuift de
+    // eerste middag automatisch naast de eerste ochtend: een kamer die alléén een
+    // ochtend had en een kamer die alléén een middag had, worden samen één kamer
+    // die de hele dag draait. Dat scheelt echte kamer-dagen (personeel werkt hele
+    // dagen in plaats van losse dagdelen) zonder dat er ook maar één afspraak
+    // verschuift in tijd.
+    const compacteerKamers=dag=>{
+      const nieuw={}; let n=0
+      DD.forEach(dd=>{
+        const blokken=((dag&&dag[dd])||[]).filter(arr=>arr&&arr.length)
+        nieuw[dd]=blokken
+        n=Math.max(n,blokken.length)
+      })
+      return {dag:nieuw, n}
+    }
+    let compactMax=0
+    ;[0,1,2,3,4].forEach(di=>{
+      if(!built[di]) return
+      const c=compacteerKamers(built[di])
+      built[di]=c.dag
+      compactMax=Math.max(compactMax,c.n)
+    })
+    maxRooms = capMode==='vast' ? Math.max(1,maxParallel) : Math.max(1,compactMax)
+    res.numRooms = maxRooms   // was vóór de compactie vastgelegd; nu de echte breedte
 
     ;[0,1,2,3,4].forEach(di=>{
       if(!built[di]){ res.days[di]=null; return }
@@ -2956,6 +2999,21 @@ export default function RasterTool(){
         knoppen:[`Consultduur → ${op.delta>0?'+':''}${op.delta} min op elke code`],
         st:{...nu, newRows:pas(newRows), ctrlRows:pas(ctrlRows)}})
     }
+    // ── ZO STRAK MOGELIJK ──
+    // Alles gepland, zo min mogelijk kamer-dagen en geen kamer die maar één dagdeel
+    // draait. We proberen de zinvolle combinaties van kamervulling × rest-dag ×
+    // drempel en laten de meting kiezen; de gebruiker ziet welke wint en waarom.
+    if(op.type==='strak'){
+      const vari=[]
+      ;['gelijk','dagdeel'].forEach(kv=>['auto','uit'].forEach(rd=>[60,75,80].forEach(mb=>
+        vari.push({kv,rd,mb}))))
+      vari.forEach(v=>K.push({
+        l:`${v.kv==='gelijk'?'Kamers gelijk belasten':'Kamer voor kamer volmaken'} · ${v.rd==='auto'?'restvraag bundelen':'niet bundelen'} · drempel ${v.mb}%`,
+        knoppen:[`Kamers vullen → ${v.kv==='gelijk'?'gelijk verdelen':'dagdeel voor dagdeel'}`,
+                 `Rest-dag → ${v.rd==='auto'?'automatisch':'niet bundelen'}`,
+                 `Minimumbezetting → ${v.mb}%`],
+        st:{...nu, rules:{...rules, kamerVerdeling:v.kv, restDag:v.rd, restOpruimen:true, minBezetting:v.mb}}}))
+    }
     if(op.type==='restlijst'){
       K.push({l:'De capaciteit vrij laten groeien tot alles past',
         knoppen:['Kamers → automatisch'], st:{...nu, capacity:{mode:'auto',kamers:capacity.kamers}}})
@@ -3003,6 +3061,23 @@ export default function RasterTool(){
     }
     if(op.type==='restlijst') return {waarde:r.ntp.length, gehaald:r.ntp.length===0,
       tekst:`${r.ntp.length} op de restlijst`}
+    if(op.type==='strak'){
+      // Halve dagen = kamers die op een dag maar één dagdeel draaien terwijl het
+      // andere dagdeel die dag wél open is. Precies wat je niet wilt op een rooster.
+      let halve=0, kamerDagen=0
+      for(let di=0;di<5;di++){
+        for(let room=0;room<(r.numRooms||1);room++){
+          const o=celMeting(r,di,room,0), m=celMeting(r,di,room,1)
+          const oO=o&&o.open, mO=m&&m.open
+          if(!oO&&!mO) continue
+          kamerDagen++
+          if(oO!==mO) halve++
+        }
+      }
+      const m=meetRaster(r)
+      return {waarde:r.ntp.length*100+halve, gehaald:r.ntp.length===0&&halve===0,
+        tekst:`${m.placed} gepland · ${r.ntp.length} op de restlijst · ${kamerDagen} kamer-dagen · ${halve} halve dag${halve===1?'':'en'} · ${m.benut}% benut`}
+    }
     if(op.type==='kamers'){ const m=meetRaster(r)
       return {waarde:m.kamerDagen, gehaald:true, tekst:`${m.kamerDagen} kamer-dagen, ${m.ntp} op de restlijst`} }
     // Voor de overige opdrachten meten we het kenmerk dat er het meest toe doet.
@@ -3045,6 +3120,7 @@ export default function RasterTool(){
       // Eerst wie het doel haalt; daarbinnen zo min mogelijk restlijst en kamer-dagen.
       const gesorteerd=uitkomsten.slice().sort((a,b)=>
         (a.doel&&a.doel.gehaald?0:1)-(b.doel&&b.doel.gehaald?0:1)
+        || (op.type==='strak' ? (((a.doel&&a.doel.waarde)||0)-((b.doel&&b.doel.waarde)||0)) : 0)
         || a.alg.ntp-b.alg.ntp || a.alg.kamerDagen-b.alg.kamerDagen)
       setBijstuur({op, huidig, kandidaten:gesorteerd, keuze:0, bezig:false})
     },30)
@@ -5294,6 +5370,25 @@ export default function RasterTool(){
                         <div title={dagReden(di).lang}
                           style={{fontSize:9,color:C.muted,lineHeight:1.3,marginTop:1,cursor:'help'}}>{dagReden(di).kort}</div>
                       )}
+                      {m.open&&(()=>{
+                        // Draaien de kamers hele dagen, of zijn er halve? Dat is precies
+                        // wat je op een rooster wilt weten en anders moet uitpuzzelen.
+                        const perDd=dds.map(dd=>{ let n=0
+                          for(let room=0;room<nRooms;room++){ const c=celMeting(raster,di,room,dd); if(c&&c.open) n++ }
+                          return {dd,n} }).filter(x=>x.n>0)
+                        if(!perDd.length) return null
+                        const gelijk=perDd.every(x=>x.n===perDd[0].n)
+                        return(
+                          <div style={{fontSize:9,color:gelijk?C.muted:'#8A6A12',marginTop:1,cursor:'help'}}
+                            title={gelijk
+                              ? `${perDd[0].n} kamer(s), de hele dag open.`
+                              : `Ongelijk: ${perDd.map(x=>`${x.n} kamer(s) ${DD_INFO[x.dd].l.toLowerCase()}`).join(', ')}. Dat komt doordat de vraag ongelijk over de dagdelen ligt (verdeling ochtend/middag). Vraag de assistent om "zo strak mogelijk" — dan maak ik er hele dagen van waar dat kan.`}>
+                            {gelijk
+                              ? `${perDd[0].n} kamer${perDd[0].n===1?'':'s'} · hele dag`
+                              : perDd.map(x=>`${x.n} ${DD_INFO[x.dd].kort}`).join(' / ')}
+                          </div>
+                        )
+                      })()}
                     </div>
                   ))}
                   {Array.from({length:nRooms},(_,room)=>(

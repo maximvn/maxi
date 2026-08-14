@@ -76,6 +76,26 @@ Onder de kaart staan de opvallende punten meteen als knop: *"DI is leeg — late
 *"MA K3 och — 73% naar 85%"*. Klik een cel of zo'n knop en de assistent gaat er direct mee
 aan de slag.
 
+## Kamers zonder gaten, hele dagen waar het kan
+
+Twee fouten die tot losse halve dagdelen leidden, zijn verholpen:
+
+- **Geen gaten meer in de kamernummering.** De minimumbezetting maakte een kamer leeg
+  (`kamer 3`) terwijl een hogere kamer bleef draaien (`kamer 4`), en het bundelen kon
+  kamers verschuiven. Elk dagdeel wordt nu opnieuw genummerd vanaf kamer 1. Daarmee schuift
+  de eerste middag automatisch naast de eerste ochtend: een kamer die alléén een ochtend had
+  en een kamer die alléén een middag had, worden samen één kamer die de hele dag draait —
+  minder kamer-dagen, zonder dat er één afspraak in tijd verschuift. Gecontroleerd over
+  180 instellingcombinaties: nul gaten.
+- **"Vast aantal kamers" is een bovengrens, geen opdracht.** Bij *gelijk verdelen* werd de
+  vraag over álle vaste kamers uitgesmeerd; geen enkele kamer haalde dan de drempel, waarna
+  de drempelregel ze sloot en het werk op de restlijst belandde terwijl er kamers leegstonden.
+  De tool gebruikt nu het minimum aantal kamers dat past. In de gemeten praktijkcase
+  (100 nieuw, 200 controle, vast 4 kamers, gelijk verdelen): **35 afspraken op de restlijst → 0**.
+
+In de bezettingskaart staat per dag of de kamers hele dagen draaien of niet (`3 kamers · hele dag`
+tegenover `4 och / 2 mid`), met de reden als tooltip.
+
 ## Eenvoud voorop
 
 Het rasterscherm toont standaard alleen wat je nodig hebt om te beginnen: de capaciteitsbalk,
@@ -153,4 +173,5 @@ node test_assistent.mjs    # intake, vrij invullen, geheugen en optimiser in de 
 node test_bijsturen.mjs    # opdracht-lezer, bezettingskaart en de bijstuur-keten
 node test_export.mjs       # export als los bestand én als gedeelde pagina
 node test_gesprek.mjs      # doorvragen: onderwerpherkenning en de hele gespreksboom
+node test_strak.mjs        # geen gaten in de kamernummering + "zo strak mogelijk"
 ```
