@@ -96,6 +96,35 @@ Twee fouten die tot losse halve dagdelen leidden, zijn verholpen:
 In de bezettingskaart staat per dag of de kamers hele dagen draaien of niet (`3 kamers · hele dag`
 tegenover `4 och / 2 mid`), met de reden als tooltip.
 
+## Digitale consulten: een eigen digitaal spreekuur
+
+De optie heette "clusteren in blok" en betekende: *binnen* elk spreekuur staan de digitale
+consulten bij elkaar — ze bleven dus over alle spreekuren verdeeld. Dat is nu wat de naam
+belooft: **alle telefonische en videoconsulten van een dag komen samen in één spreekuur.**
+
+- Past niet alles in dat ene spreekuur, dan worden de overgebleven consulten over de andere
+  spreekuren verdeeld.
+- Blijft er in dat spreekuur ruimte over, dan wordt die met gewone afspraken gevuld. Zonder
+  die aanvulling zou het spreekuur onder de minimumbezetting blijven, door de drempelregel
+  gesloten worden en raakten de consulten alsnog over de dag verspreid — precies wat er
+  gebeurde.
+
+Gemeten op een testset van 50 nieuw + 300 telefonische consulten: één volledig digitaal
+spreekuur van 18 consulten plus de overloop in de andere spreekuren. Met 10 digitale
+consulten per dag: alle 10 in één spreekuur (bij "verdelen over dag" verspreid over zes).
+
+## Bundelen zonder de week scheef te trekken
+
+"Restvraag bundelen tot volle kamers" kon één dag laten uitgroeien tot zes kamers terwijl de
+rest van de week op twee bleef staan — rekenkundig gunstig, als rooster onwerkbaar. Er geldt
+nu een harde grens: **de rest-dag mag hooguit één kamer drukker draaien dan de drukste andere
+dag.** Wat daar niet binnen past blijft zichtbaar op de restlijst staan, met een melding die
+uitlegt waarom en wat je eraan kunt doen. Ook het herverdelen tussen dagen weegt de spreiding
+nu mee: kost een verschuiving even veel kamer-dagen, dan wint de gelijkmatigste week.
+
+In de gemeten testcase ging de verdeling van 6/2/2/2/2 kamers naar 4/2/3/3/3, terwijl het
+bundelen nog steeds ruim zijn werk doet (40 → 15 op de restlijst).
+
 ## Eenvoud voorop
 
 Het rasterscherm toont standaard alleen wat je nodig hebt om te beginnen: de capaciteitsbalk,
@@ -174,4 +203,5 @@ node test_bijsturen.mjs    # opdracht-lezer, bezettingskaart en de bijstuur-kete
 node test_export.mjs       # export als los bestand én als gedeelde pagina
 node test_gesprek.mjs      # doorvragen: onderwerpherkenning en de hele gespreksboom
 node test_strak.mjs        # geen gaten in de kamernummering + "zo strak mogelijk"
+node test_digitaal.mjs     # eigen digitaal spreekuur + bundelen zonder scheve week
 ```
