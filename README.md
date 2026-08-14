@@ -117,6 +117,25 @@ gevuld raken met alléén telefonische en videoconsulten.
 Vastgepinde digitale spreekuren blijven staan waar jij ze zette: het herverdelen tussen dagen
 raakt ze niet aan.
 
+## De drempel laat nooit patiënten ongepland
+
+De minimumbezetting sloot een te dun spreekuur en zette de afspraken die nergens meer
+pasten op de restlijst — óók als datzelfde dagdeel in een bestaande kamer gewoon vrij was.
+Uit een gemelde praktijkcase: maandag vier kamers open, kamer 4 alleen 's ochtends gepland,
+en tegelijk 30 afspraken op "nog te plannen". Dat is geen efficiëntie maar verspilling.
+
+De regel is nu: **een te dun spreekuur gaat alleen dicht als ál zijn afspraken elders binnen
+de band passen.** Lukt dat niet, dan blijft het gewoon open — liever een spreekuur op 57% dan
+acht patiënten ongepland terwijl de kamer die middag leegstaat. Zo'n gedwongen open spreekuur
+wordt apart gemeld, met wat je eraan kunt doen (bundelen, doelbenutting omhoog, kamer erbij).
+
+In die praktijkcase gaat de restlijst daarmee van **30 naar 0**.
+
+Er is een harde invariant bijgekomen die dit bewaakt over de hele regelmatrix: *er staat nooit
+een afspraak op de restlijst terwijl er die dag nog een heel dagdeel vrij is in een kamer die
+er al is.* Bij écht te krappe capaciteit (bijvoorbeeld twee kamers voor 300 afspraken) mag de
+restlijst uiteraard wél vollopen.
+
 ## Bundelen zonder de week scheef te trekken
 
 "Restvraag bundelen tot volle kamers" kon één dag laten uitgroeien tot zes kamers terwijl de
@@ -208,4 +227,5 @@ node test_export.mjs       # export als los bestand én als gedeelde pagina
 node test_gesprek.mjs      # doorvragen: onderwerpherkenning en de hele gespreksboom
 node test_strak.mjs        # geen gaten in de kamernummering + "zo strak mogelijk"
 node test_digitaal.mjs     # eigen digitaal spreekuur + bundelen zonder scheve week
+node test_efficient.mjs    # nooit restlijst terwijl er een dagdeel vrij staat
 ```

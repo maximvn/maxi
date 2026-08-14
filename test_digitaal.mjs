@@ -111,8 +111,10 @@ ok('een keuze op een dag die niet draait wordt niet gepland',
   const k=R.bundel.kamers, max=Math.max(...k), tweede=k.slice().sort((a,b)=>b-a)[1]
   ok('rest-dag hooguit één kamer drukker dan de drukste andere dag', max<=tweede+1,
     `kamers per dag ${k.join('/')}`)
-  ok('bundelen plant nog steeds meer in dan niet bundelen', R.bundel.ntp<R.bundel.zonderNtp,
-    `${R.bundel.zonderNtp} → ${R.bundel.ntp} op de restlijst`)
+  // Sinds de drempel geen patiënten meer ongepland laat, is de restlijst vaak al leeg
+  // zónder bundelen. Bundelen mag het dan in elk geval niet slechter maken.
+  ok('bundelen maakt de restlijst niet slechter', R.bundel.ntp<=R.bundel.zonderNtp,
+    `zonder bundelen ${R.bundel.zonderNtp} → met bundelen ${R.bundel.ntp}`)
 }
 
 console.log(log.join('\n'))

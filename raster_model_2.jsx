@@ -1751,26 +1751,37 @@ export default function RasterTool(){
       const vul=(dd,r)=>((R[dd]||[])[r]||[]).reduce((t,a)=>t+a.duur,0)
       const openLijst=()=>{ const u=[]
         odd.forEach(dd=>(R[dd]||[]).forEach((rm,r)=>{ if(rm&&rm.length) u.push({dd,r}) })); return u }
+      // KADER: de drempel bepaalt of het ZINVOL is een extra spreekuur te openen —
+      // hij mag nooit een reden zijn om patiënten ONGEPLAND te laten terwijl er
+      // ruimte is. Een te dun spreekuur gaat daarom alleen dicht als ÁLLE afspraken
+      // ervan elders binnen de band passen. Lukt dat niet, dan blijft het gewoon
+      // open (en wordt het als onderbezet gemeld). Liever een spreekuur op 57% dan
+      // acht patiënten op de restlijst terwijl de kamer die middag leegstaat.
+      const geblokkeerd=new Set()
       for(let g=0; g<40; g++){
         const op=openLijst()
         if(op.length<=1) break                       // de dag houdt altijd één spreekuur
-        const tekort=op.filter(x=>vul(x.dd,x.r)<minBezCap(x.dd)-0.01)
+        const tekort=op.filter(x=>vul(x.dd,x.r)<minBezCap(x.dd)-0.01 && !geblokkeerd.has(x.dd+'|'+x.r))
           .sort((a,b)=>vul(a.dd,a.r)-vul(b.dd,b.r))
         if(!tekort.length) break
         const {dd,r}=tekort[0]
         const vrij={}
         op.forEach(x=>{ if(x.dd===dd&&x.r===r) return
           vrij[x.dd+'|'+x.r]=bovenCap2(x.dd)-vul(x.dd,x.r) })
+        // Eerst PLANNEN, dan pas verplaatsen: past niet alles, dan gebeurt er niets.
+        const plan=[]; let allesPast=true
         for(const a of [...R[dd][r]].sort((x,y)=>y.duur-x.duur)){
           const opt=Object.keys(vrij).filter(k=>
             (!a.ddOpties||a.ddOpties.includes(k.split('|')[0])) && vrij[k]>=a.duur-0.01)
-          if(!opt.length){ rest.push(a); continue }
+          if(!opt.length){ allesPast=false; break }
           opt.sort((x,y)=>vrij[x]-vrij[y])
-          const p=opt[0].split('|'); R[p[0]][+p[1]].push(a); vrij[opt[0]]-=a.duur
+          plan.push({a, k:opt[0]}); vrij[opt[0]]-=a.duur
         }
+        if(!allesPast){ geblokkeerd.add(dd+'|'+r); continue }   // blijft open
+        plan.forEach(({a,k})=>{ const p=k.split('|'); R[p[0]][+p[1]].push(a) })
         R[dd][r]=[]
       }
-      return {R, rest}
+      return {R, rest, gedwongen:[...geblokkeerd].map(k=>{ const p=k.split('|'); return {dd:p[0], r:+p[1]} })}
     }
 
     // ══ WEEK-OPTIMALISATIE — restvraag concentreren tot VOLLEDIGE kamers ═════════
@@ -2021,12 +2032,13 @@ export default function RasterTool(){
     // in zijn geheel op de restlijst belanden.
     // Wat op de restlijst komt, kun je met "Restvraag bundelen tot volle kamers" op
     // één gekozen dag alsnog tot een VOLLE extra kamer maken (zie de melding).
-    let dichtgezetDd=0, naarRestlijst=0
+    let dichtgezetDd=0, naarRestlijst=0, gedwongenOpen=0
     ;[0,1,2,3,4].forEach(di=>{
       if(!built[di]) return
       const odd=DD.filter(x=>ddOpenOp(x,di))
       const voor=odd.reduce((t,dd)=>t+(built[di][dd]||[]).filter(rm=>rm&&rm.length).length,0)
-      const {R,rest}=pasMinBezettingToe(built[di], odd)
+      const {R,rest,gedwongen}=pasMinBezettingToe(built[di], odd)
+      gedwongenOpen+=(gedwongen||[]).length
       odd.forEach(dd=>{ built[di][dd]=R[dd] })
       rest.forEach(a=>overflowInst.push({...a, day:di, dd:(a.ddOpties&&a.ddOpties[0])||odd[0], edited:false, _restKamer:true}))
       naarRestlijst+=rest.length
@@ -2699,7 +2711,12 @@ export default function RasterTool(){
     if(dichtgezetDd){
       aanp.push({t:'wijziging',ico:'✕',k:'Spreekuur niet geopend',
         v:`${dichtgezetDd} dagdeel${dichtgezetDd===1?'':'en'} onder ${minBezPct}%`,
-        d:`Deze dagdelen haalden de minimumbezetting van ${minBezPct}% niet. Ze zijn niet geopend; hun afspraken zijn eerst over de andere spreekuren van diezelfde dag verdeeld${naarRestlijst?`, en ${naarRestlijst} afspra${naarRestlijst===1?'ak die':'ken die'} nergens meer paste${naarRestlijst===1?'':'n'} staan op "nog te plannen"`:` — er is er géén op de restlijst beland`}.`})
+        d:`Deze dagdelen haalden de minimumbezetting van ${minBezPct}% niet. Ze zijn niet geopend; hun afspraken pasten volledig in de andere spreekuren van diezelfde dag en zijn daarheen verplaatst.`})
+    }
+    if(gedwongenOpen){
+      aanp.push({t:'let-op',ico:'◐',k:'Dun spreekuur tóch geopend',
+        v:`${gedwongenOpen} dagdeel${gedwongenOpen===1?'':'en'} onder ${minBezPct}%`,
+        d:`Deze dagdelen halen de minimumbezetting van ${minBezPct}% niet, maar hun afspraken pasten nergens anders. Ze zijn daarom wél geopend: liever een dun spreekuur dan patiënten op "nog te plannen" terwijl de kamer leegstaat. Wil je ze tóch dicht: bundel de restvraag op één dag, verhoog de doelbenutting of zet er een kamer bij.`})
     }
     if(navulTotaal){
       aanp.push({t:'ok',ico:'▲',k:'Spreekuren bijgevuld',
@@ -2865,8 +2882,9 @@ export default function RasterTool(){
           : `Er is ${ruimte} min ruimte tot de bovenband; de engine vult bij tot dat vol is.`)
     }
     if(minBezAan){
-      R(`Minimumbezetting ${minBezPct}%`, dichtgezetDd?'ok':'ok',
-        dichtgezetDd?`${dichtgezetDd} dagdeel/dagdelen haalden de drempel niet en zijn NIET geopend; hun afspraken zijn eerst over dezelfde dag verdeeld, ${naarRestlijst} kwam${naarRestlijst===1?'':'en'} op "nog te plannen".`
+      R(`Minimumbezetting ${minBezPct}%`, gedwongenOpen?'deels':'ok',
+        dichtgezetDd||gedwongenOpen
+          ?`${dichtgezetDd} dagdeel/dagdelen haalden de drempel niet en zijn NIET geopend; hun afspraken zijn over dezelfde dag verdeeld.${gedwongenOpen?` ${gedwongenOpen} dagdeel/dagdelen bleven wél open omdat hun afspraken nergens anders pasten — de drempel mag geen patiënten ongepland laten terwijl er ruimte is.`:''}`
                    :`Alle geopende dagdelen halen de drempel van ${minBezPct}%.`,
         (dichtgezetDd&&(rules.restDag||'uit')==='uit')?`Kies bij "Restvraag bundelen tot volle kamers" een dag om hier alsnog één volle extra kamer van te maken.`:null)
     }

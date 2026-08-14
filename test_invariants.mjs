@@ -164,17 +164,55 @@ const results = await page.evaluate(()=>{
           if(kan) v.push(`d${di}: ${a.code} (${a.duur}m) op restlijst terwijl er ruimte is`) })
       })
       return v },
-    // MINIMUMBEZETTING: elk geopend dagdeel haalt de drempel. Uitzondering: een dag
-    // houdt altijd minstens één spreekuur, ook als dat de drempel niet haalt.
-    minBez:(r,rules)=>{ if(rules.restOpruimen===false||!(rules.minBezetting>0)) return []
+    // EFFICIËNTIE (hard): er staat NOOIT een afspraak op de restlijst terwijl er die
+    // dag nog een heel dagdeel vrij is in een kamer die er al is. Een halve dag
+    // vrijlaten terwijl patiënten ongepland blijven, is verspilling.
+    geenLeegDagdeel:(r)=>{ const v=[]
+      const nR=r.numRooms||1
+      ;[0,1,2,3,4].forEach(di=>{
+        if(!r.days[di]) return
+        const ntpD=r.ntp.filter(a=>a.day===di)
+        if(!ntpD.length) return
+        for(let k=0;k<nR;k++) for(const [pre,ddU] of [['o','O'],['m','M']]){
+          const arr=(r.days[di][pre+k]||[]).filter(a=>!a.isFlex)
+          if(arr.length) continue                       // dagdeel is in gebruik
+          // dagdeel bestaat alleen als het die dag open staat: dat blijkt uit het feit
+          // dat een ándere kamer datzelfde dagdeel wél gebruikt
+          const ddBestaat=[...Array(nR).keys()].some(x=>(r.days[di][pre+x]||[]).some(a=>!a.isFlex))
+          if(!ddBestaat) continue
+          const kan=ntpD.some(a=>!a.ddOpties||a.ddOpties.includes(ddU))
+          if(kan) v.push(`d${di} ${pre}${k} leeg terwijl ${ntpD.length} op de restlijst staan`)
+        }
+      })
+      return v },
+    // MINIMUMBEZETTING: een geopend dagdeel haalt de drempel — TENZIJ zijn afspraken
+    // nergens anders die dag passen. De drempel bepaalt of het zinvol is een extra
+    // spreekuur te openen, maar mag nooit patiënten ongepland laten terwijl er ruimte
+    // is. Uitzondering blijft: een dag houdt altijd minstens één spreekuur.
+    minBez:(r,rules,exp,m2)=>{ if(rules.restOpruimen===false||!(rules.minBezetting>0)) return []
       const v=[]; const gross={o:210,m:210,a:180}
+      const boven=dd=>gross[dd]*Math.min(100,(m2?m2.benutting:85)+2.5)/100
       const drempel=rules.minBezetting
       ;[0,1,2,3,4].forEach(di=>{
         const kamers=perRoomPhys(r).filter(x=>x.di===di)
         if(kamers.length<=1) return                 // enige spreekuur van de dag mag blijven
         kamers.forEach(({key,dd,phys})=>{
           const pct=phys.reduce((t,a)=>t+a.duur,0)/gross[dd]*100
-          if(pct<drempel-0.5) v.push(`${key}@d${di} ${Math.round(pct)}% < drempel ${drempel}%`)
+          if(pct>=drempel-0.5) return
+          // Past de inhoud van dit dunne spreekuur elders binnen de band? Dan had het
+          // dicht gemoeten; zo niet, dan is openhouden juist het gewenste gedrag.
+          const vrij={}
+          kamers.forEach(x=>{ if(x.key===key) return
+            vrij[x.key]=boven(x.dd)-x.phys.reduce((t,a)=>t+a.duur,0) })
+          let allesPast=true
+          for(const a of [...phys].sort((x,y)=>y.duur-x.duur)){
+            const opt=Object.keys(vrij).filter(k=>{
+              const ddU=k[0]==='o'?'O':k[0]==='m'?'M':'A'
+              return (!a.ddOpties||a.ddOpties.includes(ddU)) && vrij[k]>=a.duur-0.01 })
+            if(!opt.length){ allesPast=false; break }
+            opt.sort((x,y)=>vrij[x]-vrij[y]); vrij[opt[0]]-=a.duur
+          }
+          if(allesPast) v.push(`${key}@d${di} ${Math.round(pct)}% < drempel ${drempel}% terwijl het elders paste`)
         })
       })
       return v },
@@ -247,7 +285,8 @@ const results = await page.evaluate(()=>{
     v.push(...CHECKS.flexSpread(r,rules))
     v.push(...CHECKS.bandOnder(r,rules))
     v.push(...CHECKS.geenLoosNTP(r,rules))
-    v.push(...CHECKS.minBez(r,rules))
+    v.push(...CHECKS.minBez(r,rules,exp,M2))
+    v.push(...CHECKS.geenLeegDagdeel(r))
     v.push(...CHECKS.invoer(r,rules))
     if(v.length) failures.push({c,v:v.slice(0,4)})
     else pass++
