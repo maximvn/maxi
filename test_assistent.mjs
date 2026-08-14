@@ -95,9 +95,15 @@ log.push('aantal ZELF INGEVULD badges: '+sam)
 await W().locator('button:has-text("Raster tonen")').last().click()
 await page.waitForTimeout(4000)
 log.push('raster zichtbaar: '+await page.locator('text=Kerncijfers').count())
+// het geheugenpaneel staat nu bij de details
+{ const g=page.locator('button:has-text("MEER DETAILS")')
+  if(await g.count()){ await g.click(); await page.waitForTimeout(500) } }
 log.push('geheugen paneel: '+await page.locator('text=GEHEUGEN — WAT DE TOOL VAN JOU HEEFT GELEERD').count())
 await shot('w7')
 
+// open de details zodat de volledige tabel zichtbaar is
+const geav0=page.locator('button:has-text("MEER DETAILS")')
+if(await geav0.count()){ await geav0.click(); await page.waitForTimeout(600) }
 // wait for optimiser to finish
 for(let i=0;i<40;i++){ if(await page.locator('text=BESTE').count()) break; await page.waitForTimeout(700) }
 log.push('optimiser klaar (BESTE badge): '+await page.locator('text=BESTE').count())
@@ -121,7 +127,9 @@ if(await ijk.count()){ await ijk.first().click(); await page.waitForTimeout(600)
 log.push('ijkpunt bewaard, vergelijking: '+await page.locator('text=Eerder bewaard voor').count())
 await shot('w10')
 
-// rerun optimiser to see rejected hidden
+// rerun optimiser to see rejected hidden — de doelknoppen staan achter "meer details"
+const geav=page.locator('button:has-text("MEER DETAILS")')
+if(await geav.count()){ await geav.click(); await page.waitForTimeout(500) }
 await page.click('button:has-text("Balans")')
 await page.waitForTimeout(6000)
 log.push('verborgen-melding: '+await page.locator('text=verborgen').count())

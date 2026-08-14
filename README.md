@@ -68,9 +68,23 @@ Boven de optimiser staat de **bezettingskaart**: een raster van kamers × dagen 
 Wat je anders uit het weekrooster moet puzzelen, zie je hier in één oogopslag — een dag
 zonder spreekuur is doorgestreept en rood gelabeld, een half gevulde kamer amber.
 
+Een lege dag krijgt er de **reden** bij — *"staat op 0% van de weekvraag"*, *"geen afspraakcode
+mag op DI"* of *"haalde de drempel van 75% niet"* — met de volledige uitleg als tooltip. Zo is
+een dag zonder spreekuur nooit een raadsel.
+
 Onder de kaart staan de opvallende punten meteen als knop: *"DI is leeg — laten meedraaien"*,
 *"MA K3 och — 73% naar 85%"*. Klik een cel of zo'n knop en de assistent gaat er direct mee
 aan de slag.
+
+## Eenvoud voorop
+
+Het rasterscherm toont standaard alleen wat je nodig hebt om te beginnen: de capaciteitsbalk,
+de kerncijfers, de bezettingskaart, één advies-kaart (**"Kan dit beter?"** — één knop, één zin,
+één "Doe maar") en het raster zelf. De scenario-optimiser met al zijn varianten, het
+engine-logboek, de analyse en het geheugen staan achter één strip **"Meer details"**.
+Ze zijn er nog, maar je hoeft ze niet te zien om te kunnen werken.
+
+De knop **✨ Vraag de assistent** staat bovenaan bij het raster zelf, niet weggestopt in een menu.
 
 ## Assistent — bijsturen met een losse opdracht
 
@@ -81,9 +95,16 @@ wat er anders moet en de tool gaat ermee aan het werk.
 - *"kamer 3 op maandag staat op 73%, ik wil richting 85%"*
 - *"vrijdag niet meer inplannen"* · *"er mag een kamer bij"* · *"alles moet ingepland worden"*
 
-De opdracht-lezer werkt volledig op regels — geen taalmodel, dus geen verzinsels. Wat niet
-herkend wordt, krijgt eerlijk *"hier haal ik geen opdracht uit — ik ga niet gokken"* in
-plaats van een gok. De rest van de keten:
+**Begrijpt hij je maar half, dan vraagt hij door.** Typ je *"de verdeling is niet goed"*, dan
+volgt de vraag *"Wat zit er scheef in de verdeling?"* met concrete keuzes — over de dagen,
+ochtend/middag, nieuw tegenover controle, over de kamers — en daarna nog een vraag tot er
+een uitvoerbare opdracht ligt. Herkent hij helemaal niets, dan krijg je de onderwerpenlijst.
+Er is dus nooit een doodlopend "dat kan ik niet". De gespreksboom telt zestien knopen en dekt
+verdeling, dagen, bezetting, kamers, tijden, spoed, digitaal, flex, aantallen, consultduur
+en de restlijst.
+
+De lezer werkt volledig op regels — geen taalmodel, dus geen verzinsels: elke knop die verzet
+wordt is een bestaande instelling van de tool. De rest van de keten:
 
 1. **Teruglezen** — "zo lees ik je opdracht: dinsdag moet meedraaien in de week".
 2. **Doorrekenen** — de tool bouwt meerdere kandidaat-instellingen, rekent ze allemaal echt
@@ -131,4 +152,5 @@ node test_invariants.mjs   # engine-contracten over de hele regelmatrix (952 com
 node test_assistent.mjs    # intake, vrij invullen, geheugen en optimiser in de browser
 node test_bijsturen.mjs    # opdracht-lezer, bezettingskaart en de bijstuur-keten
 node test_export.mjs       # export als los bestand én als gedeelde pagina
+node test_gesprek.mjs      # doorvragen: onderwerpherkenning en de hele gespreksboom
 ```

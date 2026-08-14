@@ -53,7 +53,7 @@ await page.waitForTimeout(3000)
 ok('bezettingskaart aanwezig', await page.locator('text=BEZETTINGSKAART').count()>0)
 const geenSpreekuur=await page.locator('text=geen spreekuur').count()
 ok('lege dag zichtbaar in de kaart', geenSpreekuur>0, `${geenSpreekuur} markeringen`)
-const leegChip=page.locator('button:has-text("is leeg — laten meedraaien")')
+const leegChip=page.locator('button:has-text("is leeg")')
 ok('signaal-knop voor de lege dag', await leegChip.count()>0)
 await page.screenshot({path:SC+'kaart.png',fullPage:false})
 
@@ -116,7 +116,7 @@ const voorOnzin=await page.evaluate(()=>JSON.stringify({r:window.__rules(),m:win
 await W().locator('textarea').fill('doe eens iets leuks met de planning')
 await W().locator('button:has-text("Ga ermee aan de slag")').click()
 await page.waitForTimeout(1500)
-ok('onbegrepen opdracht wordt gemeld', await W().locator('text=ik ga niet gokken').count()>0)
+ok('onbegrepen opdracht leidt naar een onderwerpkeuze', await W().locator('text=Waar gaat het over').count()>0)
 const naOnzin=await page.evaluate(()=>JSON.stringify({r:window.__rules(),m:window.__m2()}))
 ok('niets gewijzigd bij een onbegrepen opdracht', voorOnzin===naOnzin)
 

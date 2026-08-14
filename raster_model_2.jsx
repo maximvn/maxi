@@ -464,7 +464,7 @@ const DAGS_NL=['maandag','dinsdag','woensdag','donderdag','vrijdag']
 const DAG_PAT=[['maandag','ma'],['dinsdag','di'],['woensdag','wo'],['donderdag','do'],['vrijdag','vr']]
 const parseOpdracht=tekst=>{
   const t=(tekst||'').toLowerCase().replace(/[.;!]/g,' ')
-  if(!t.trim()) return {type:'leeg'}
+  if(!t.trim()) return {type:'onbekend', knoop:'start'}
   const g={}
   DAG_PAT.forEach(([lang,kort],i)=>{ if(new RegExp(`(^|[^a-z])(${lang}|${kort})([^a-z]|$)`).test(t)) g.dag=i })
   const mk=t.match(/kamer\s*(\d+)/)||t.match(/(^|[^a-z])k\s?(\d+)([^0-9]|$)/)
@@ -493,8 +493,119 @@ const parseOpdracht=tekst=>{
   if(dichtWoord&&g.dag!=null) return {type:'dag-dicht', ...g, tekst}
   if(openWoord&&g.dag!=null)  return {type:'dag-open', ...g, tekst}
   if(g.pct!=null&&(g.kamer!=null||g.dag!=null)) return {type:'benutting', ...g, tekst}
-  return {type:'onbekend', ...g, tekst}
+  // Geen complete opdracht? Dan pakken we het ONDERWERP en vragen we door — dat
+  // is beter dan een doodlopend "niet begrepen".
+  const ow=ONDERWERP_WOORDEN.find(([,re])=>re.test(t))
+  if(ow) return {type:'onderwerp', knoop:ow[0], ...g, tekst}
+  return {type:'onbekend', knoop:'start', ...g, tekst}
 }
+// ═══ GESPREKSBOOM ════════════════════════════════════════════════════════════
+// Een opdracht hoeft niet in één zin compleet te zijn. Herkent de tool alleen het
+// ONDERWERP ("de verdeling klopt niet"), dan vraagt hij door met concrete keuzes
+// tot er een uitvoerbare opdracht ligt. Elke knop hieronder eindigt óf in een
+// vervolgvraag (`volg`) óf in een opdracht die echt doorgerekend wordt (`opdr`).
+// Zo is er nooit een doodlopend "dat kan ik niet".
+const VRAAGBOOM={
+  start:{v:'Waar gaat het over?', u:'Kies het onderwerp, dan stel ik daarna de juiste vraag.', o:[
+    {l:'De verdeling', s:'over dagen, dagdelen, kamers of categorieën', volg:'verdeling'},
+    {l:'Een dag', s:'laten meedraaien of juist vrijhouden', volg:'dagen'},
+    {l:'De bezetting', s:'spreekuren voller of juist ruimer', volg:'bezetting'},
+    {l:'De kamers', s:'meer, minder of automatisch', volg:'kamers'},
+    {l:'De tijden', s:'ochtend en middag korter of langer', volg:'tijden'},
+    {l:'De volgorde in het spreekuur', s:'spoed, nieuw/controle, digitaal, flex', volg:'volgorde'},
+    {l:'De aantallen of consultduur', s:'meer patiënten of andere duur', volg:'vraagkant'},
+    {l:'De restlijst', s:'alles ingepland krijgen', opdr:{type:'restlijst'}},
+  ]},
+  verdeling:{v:'Wat zit er scheef in de verdeling?', u:'Elke keuze grijpt op een andere knop aan.', o:[
+    {l:'Over de dagen', s:'welke dag hoeveel patiënten krijgt', volg:'verdeling-dagen'},
+    {l:'Ochtend tegenover middag', s:'het aandeel dat vóór de lunch valt', volg:'verdeling-dagdeel'},
+    {l:'Nieuw tegenover controle', s:'door elkaar of in blokken', volg:'verdeling-nc'},
+    {l:'Over de kamers', s:'gelijk belasten of één voor één volmaken', volg:'verdeling-kamers'},
+  ]},
+  'verdeling-dagen':{v:'Hoe moet de vraag over de dagen liggen?', u:'De weekvraag wordt opnieuw verdeeld over de dagen die meedraaien.', o:[
+    {l:'Gelijk over alle werkdagen', s:'elke dag even zwaar', opdr:{type:'verdeling', vorm:'gelijk'}},
+    {l:'Zwaarder aan het begin van de week', s:'ma/di voller, do/vr rustiger', opdr:{type:'verdeling', vorm:'begin'}},
+    {l:'Zwaarder aan het eind van de week', s:'do/vr voller, ma/di rustiger', opdr:{type:'verdeling', vorm:'eind'}},
+    {l:'Zo gelijkmatig mogelijk gevuld', s:'ik zoek de verdeling met de beste spreiding', opdr:{type:'verdeling', vorm:'best'}},
+  ]},
+  'verdeling-dagdeel':{v:'Hoeveel van de vraag hoort in de ochtend?', u:'De rest gaat naar de middag (en een eventuele avond).', o:[
+    {l:'Gelijk — 50 / 50', opdr:{type:'dagdeelverdeling', verOch:50}},
+    {l:'Ochtend zwaarder — 60 / 40', opdr:{type:'dagdeelverdeling', verOch:60}},
+    {l:'Ochtend veel zwaarder — 70 / 30', opdr:{type:'dagdeelverdeling', verOch:70}},
+    {l:'Middag zwaarder — 40 / 60', opdr:{type:'dagdeelverdeling', verOch:40}},
+  ]},
+  'verdeling-nc':{v:'Hoe moeten nieuw en controle door de dag lopen?', o:[
+    {l:'Door elkaar', s:'naar rato afwisselen: N, C, C, N, C, C…', opdr:{type:'volgorde', mix:true}},
+    {l:'In blokken', s:'eerst alle nieuwe, dan de controles', opdr:{type:'volgorde', mix:false}},
+    {l:'Openen met een nieuwe patiënt', s:'rustige start van het spreekuur', opdr:{type:'opening', wat:'nieuw'}},
+    {l:'Openen met een controle', s:'snel op gang komen', opdr:{type:'opening', wat:'controle'}},
+  ]},
+  'verdeling-kamers':{v:'Hoe moeten de kamers gevuld worden?', o:[
+    {l:'Kamer voor kamer volmaken', s:'zo min mogelijk kamer-dagen', opdr:{type:'kamerverdeling', v:'dagdeel'}},
+    {l:'Alle kamers gelijk belasten', s:'rustiger, gelijkmatiger spreekuren', opdr:{type:'kamerverdeling', v:'gelijk'}},
+  ]},
+  dagen:{v:'Wat moet er met die dag gebeuren?', o:[
+    {l:'Een dag laten meedraaien', s:'er moeten afspraken op komen', volg:'dag-open-kies'},
+    {l:'Een dag vrijhouden', s:'geen spreekuur meer op die dag', volg:'dag-dicht-kies'},
+  ]},
+  'dag-open-kies':{v:'Welke dag moet gaan meedraaien?', o:
+    DAGS_NL.map((d,i)=>({l:d.charAt(0).toUpperCase()+d.slice(1), opdr:{type:'dag-open', dag:i}}))},
+  'dag-dicht-kies':{v:'Welke dag moet vrij blijven?', o:
+    DAGS_NL.map((d,i)=>({l:d.charAt(0).toUpperCase()+d.slice(1), opdr:{type:'dag-dicht', dag:i}}))},
+  bezetting:{v:'Hoe vol moeten de spreekuren zitten?', u:'Een spreekuur gaat alleen open als het minstens zo vol zit; de rest wordt herverdeeld.', o:[
+    {l:'Ruim — 70%', s:'veel opvang, meer kamers', opdr:{type:'benutting', pct:70}},
+    {l:'Gangbaar — 80%', opdr:{type:'benutting', pct:80}},
+    {l:'Strak — 85%', opdr:{type:'benutting', pct:85}},
+    {l:'Heel strak — 90%', s:'weinig marge voor uitloop', opdr:{type:'benutting', pct:90}},
+  ]},
+  kamers:{v:'Wat moet er met de kamers?', o:[
+    {l:'Er mag een kamer bij', opdr:{type:'kamers', delta:1}},
+    {l:'Het moet met één kamer minder', opdr:{type:'kamers', delta:-1}},
+    {l:'Laat de tool het zelf bepalen', s:'groeit tot wat de vraag nodig heeft', opdr:{type:'kamers', delta:0, auto:true}},
+  ]},
+  tijden:{v:'Wat moet er met de spreekuurtijden?', o:[
+    {l:'Ochtend eerder beginnen', s:'een half uur eerder open', opdr:{type:'tijden', wat:'och-eerder'}},
+    {l:'Ochtend later doorlopen', s:'een half uur langer door', opdr:{type:'tijden', wat:'och-langer'}},
+    {l:'Middag later doorlopen', s:'een half uur langer door', opdr:{type:'tijden', wat:'mid-langer'}},
+    {l:'Een avondspreekuur erbij', s:'17:00–20:00 met 10% van de vraag', opdr:{type:'tijden', wat:'avond'}},
+  ]},
+  volgorde:{v:'Wat moet er anders in het spreekuur zelf?', o:[
+    {l:'Spoed vooraan', s:'spoedafspraken eerst, nooit op de restlijst', opdr:{type:'spoed', aan:true}},
+    {l:'Spoed gewoon meelopen', opdr:{type:'spoed', aan:false}},
+    {l:'Digitale consulten anders plaatsen', volg:'digitaal'},
+    {l:'Flexruimte anders verdelen', volg:'flex'},
+  ]},
+  digitaal:{v:'Waar moeten de digitale consulten staan?', o:[
+    {l:'Verdeeld over de dag', s:'één voor één tussen de fysieke afspraken', opdr:{type:'digitaal', mode:'spread'}},
+    {l:'In één blok vooraan', s:'scheelt wisselingen', opdr:{type:'digitaal', mode:'cluster'}},
+    {l:'Aan het einde van het spreekuur', opdr:{type:'digitaal', mode:'end'}},
+  ]},
+  flex:{v:'Waar moet de flexruimte zitten?', o:[
+    {l:'Eén blok aan het einde', s:'uitlooptijd aan de staart', opdr:{type:'flex', mode:'end'}},
+    {l:'Verspreid tussen de afspraken', s:'vangt uitloop gedurende de dag op', opdr:{type:'flex', mode:'spread'}},
+  ]},
+  vraagkant:{v:'Wat klopt er niet aan de vraag?', o:[
+    {l:'Er komen meer patiënten', s:'10% erbij', opdr:{type:'aantallen', delta:10}},
+    {l:'Er komen minder patiënten', s:'10% eraf', opdr:{type:'aantallen', delta:-10}},
+    {l:'De consulten duren langer', s:'5 minuten erbij', opdr:{type:'duur', delta:5}},
+    {l:'De consulten kunnen korter', s:'5 minuten eraf', opdr:{type:'duur', delta:-5}},
+  ]},
+}
+// Woorden die naar een knoop in de boom wijzen — de brug tussen vrije tekst en
+// de gespreksboom.
+const ONDERWERP_WOORDEN=[
+  ['verdeling', /verdeling|verdeeld|verdelen|spreiding|scheef|ongelijk|onevenwichtig|balans/],
+  ['verdeling-dagdeel', /ochtend.{0,20}middag|middag.{0,20}ochtend|voor de lunch|na de lunch/],
+  ['verdeling-nc', /nieuw.{0,15}controle|controle.{0,15}nieuw|afwissel|door elkaar|gemengd|blokken/],
+  ['dagen', /\bdag(en)?\b|weekdag/],
+  ['bezetting', /benut|bezetting|bezet|voller|leger|half leeg|te leeg|te vol/],
+  ['kamers', /kamer/],
+  ['tijden', /tijd|begintijd|eindtijd|eerder|later|langer|korter open|avond|ochtend|middag/],
+  ['volgorde', /volgorde|spoed|urgent/],
+  ['digitaal', /digitaal|telefonisch|beeldbell|video|op afstand/],
+  ['flex', /flex|buffer|uitloop|marge|ruimte/],
+  ['vraagkant', /aantal|patiënt|patient|duur|consultduur|drukker|rustiger|groei/],
+]
 const opdrachtOmschrijving=op=>{
   const d=op.dag!=null?DAGS_NL[op.dag]:null
   const k=op.kamer!=null?`kamer ${op.kamer+1}`:null
@@ -505,6 +616,23 @@ const opdrachtOmschrijving=op=>{
     case 'benutting':  return `${[k,d&&`op ${d}`,dd].filter(Boolean).join(' ')||'De spreekuren'} moet${k?'':'en'} naar ongeveer ${op.pct}% bezetting.`
     case 'kamers':     return op.delta>0?'Er mag een kamer bij.':'Het moet met één kamer minder.'
     case 'restlijst':  return 'Alles moet ingepland worden — niets meer op de restlijst.'
+    case 'verdeling':  return {gelijk:'De weekvraag gelijk over alle dagen verdelen.',
+      begin:'Het zwaartepunt van de week naar voren halen.', eind:'Het zwaartepunt van de week naar achteren leggen.',
+      best:'De verdeling over de dagen zo gelijkmatig mogelijk gevuld krijgen.'}[op.vorm]
+    case 'dagdeelverdeling': return `${op.verOch}% van de vraag in de ochtend, ${100-op.verOch}% in de middag.`
+    case 'volgorde':   return op.mix?'Nieuw en controle door elkaar plannen.':'Nieuw en controle in blokken plannen.'
+    case 'opening':    return `Het spreekuur opent met een ${op.wat==='nieuw'?'nieuwe patiënt':'controle'}.`
+    case 'kamerverdeling': return op.v==='gelijk'?'Alle kamers gelijk belasten.':'Kamers één voor één volmaken.'
+    case 'tijden':     return {'och-eerder':'Het ochtendspreekuur een half uur eerder laten beginnen.',
+      'och-langer':'Het ochtendspreekuur een half uur langer laten doorlopen.',
+      'mid-langer':'Het middagspreekuur een half uur langer laten doorlopen.',
+      'avond':'Een avondspreekuur toevoegen (17:00–20:00, 10% van de vraag).'}[op.wat]
+    case 'spoed':      return op.aan?'Spoedafspraken vooraan in het spreekuur.':'Spoedafspraken gewoon mee laten lopen.'
+    case 'digitaal':   return {spread:'Digitale consulten verdeeld over de dag.',
+      cluster:'Digitale consulten in één blok vooraan.', end:'Digitale consulten aan het einde van het spreekuur.'}[op.mode]
+    case 'flex':       return op.mode==='end'?'Flexruimte in één blok aan het einde.':'Flexruimte verspreid tussen de afspraken.'
+    case 'aantallen':  return `${op.delta>0?'Meer':'Minder'} patiënten — ${op.delta>0?'+':''}${op.delta}% op de weekaantallen.`
+    case 'duur':       return `Consulten ${op.delta>0?`${op.delta} minuten langer`:`${-op.delta} minuten korter`}.`
     default: return null
   }
 }
@@ -672,6 +800,8 @@ export default function RasterTool(){
   // instelling; er wordt niets "bedacht". {stap, ant, klaar}
   const [wiz,setWiz]=useState(null)
   const [openPanels,setOpenPanels]=useState({kpi:true,analyse:true,capaciteit:true})
+  // Alles wat je niet hoeft te zien om te beginnen staat standaard dicht.
+  const [toonGeav,setToonGeav]=useState(false)
   const togglePanel=k=>setOpenPanels(p=>({...p,[k]:!p[k]}))
   const [drag,setDrag]=useState(null)
   const [showExport,setShowExport]=useState(false)
@@ -2604,7 +2734,8 @@ export default function RasterTool(){
       Object.values(s).forEach(arr=>(arr||[]).forEach(a=>{ if(!a.isFlex) placed++ }))
     })
     return {placed, ntp:r.ntp.length, kamerDagen,
-      benut:(r.kpi&&r.kpi.week.benutting)||0, issues:((r.kpi&&r.kpi.issues)||[]).length}
+      benut:(r.kpi&&r.kpi.week.benutting)||0, spreiding:(r.kpi&&r.kpi.week.spreiding)||0,
+      issues:((r.kpi&&r.kpi.issues)||[]).length}
   },[])
   // Doelfuncties — expliciet, zodat je zelf bepaalt wat "het beste" betekent.
   //  plannen — zo min mogelijk op de restlijst (desnoods een kamer meer)
@@ -2748,12 +2879,82 @@ export default function RasterTool(){
         knoppen:[`Kamers → vast ${huidigeKamers-1}`,`Minimumbezetting → ${p}%`],
         st:{...nu, rules:{...rules,restOpruimen:true,minBezetting:p}, capacity:{mode:'vast',kamers:huidigeKamers-1}}})
     }
-    if(op.type==='kamers'){
+    if(op.type==='kamers'&&op.auto){
+      K.push({l:'De capaciteit groeit tot wat de vraag nodig heeft',
+        knoppen:['Kamers → automatisch'], st:{...nu, capacity:{mode:'auto',kamers:capacity.kamers}}})
+    }
+    if(op.type==='kamers'&&!op.auto){
       const n=Math.max(1,huidigeKamers+op.delta)
       K.push({l:`Werken met ${n} kamer${n===1?'':'s'}`, knoppen:[`Kamers → vast ${n}`],
         st:{...nu, capacity:{mode:'vast',kamers:n}}})
       if(op.delta>0) K.push({l:'De capaciteit vrij laten groeien tot wat de vraag nodig heeft',
         knoppen:['Kamers → automatisch'], st:{...nu, capacity:{mode:'auto',kamers:capacity.kamers}}})
+    }
+    // ── verdeling over de dagen ──
+    if(op.type==='verdeling'){
+      const actief=WEEKDAY_KEYS.filter(k=>(m2.days[k]||0)>0)
+      const lijst=actief.length?actief:WEEKDAY_KEYS
+      const maakDagen=gewichten=>{
+        const som=gewichten.reduce((a,b)=>a+b,0)||1
+        const d={ma:0,di:0,wo:0,do:0,vr:0}
+        let rest=100
+        lijst.forEach((k,i)=>{ const v=i===lijst.length-1?rest:Math.round(gewichten[i]/som*100); d[k]=v; rest-=v })
+        return d
+      }
+      const vormen = op.vorm==='best'
+        ? [{l:'Gelijk over alle dagen die meedraaien', g:lijst.map(()=>1)},
+           {l:'Zwaartepunt naar voren', g:lijst.map((_,i)=>lijst.length-i+1)},
+           {l:'Zwaartepunt naar achteren', g:lijst.map((_,i)=>i+2)},
+           {l:'Midden van de week zwaarder', g:lijst.map((_,i)=>1+Math.min(i,lijst.length-1-i))}]
+        : op.vorm==='begin' ? [{l:'Zwaartepunt naar voren', g:lijst.map((_,i)=>lijst.length-i+1)}]
+        : op.vorm==='eind'  ? [{l:'Zwaartepunt naar achteren', g:lijst.map((_,i)=>i+2)}]
+        :                     [{l:'Gelijk over alle dagen die meedraaien', g:lijst.map(()=>1)}]
+      vormen.forEach(v=>{ const days=maakDagen(v.g)
+        K.push({l:v.l, knoppen:[`Dagverdeling → ${WEEKDAY_KEYS.map(k=>`${k} ${days[k]}%`).join(' · ')}`],
+          st:{...nu, m2:{...m2,days}}}) })
+    }
+    if(op.type==='dagdeelverdeling') K.push({l:`${op.verOch}% ochtend, ${100-op.verOch}% middag`,
+      knoppen:[`Verdeling ochtend/middag → ${op.verOch} / ${100-op.verOch}`], st:{...nu, m2:{...m2,verOch:op.verOch}}})
+    if(op.type==='volgorde') K.push({l:op.mix?'Nieuw en controle door elkaar':'Nieuw en controle in blokken',
+      knoppen:[`Afwisselen → ${op.mix?'aan':'uit'}`], st:{...nu, rules:{...rules,mixNC:op.mix}}})
+    if(op.type==='opening') K.push({l:`Openen met een ${op.wat==='nieuw'?'nieuwe patiënt':'controle'}`,
+      knoppen:[`Openen met → ${op.wat==='nieuw'?'nieuwe afspraak':'controle afspraak'}`],
+      st:{...nu, rules:{...rules,startNieuw:op.wat==='nieuw',startControle:op.wat==='controle'}}})
+    if(op.type==='kamerverdeling') K.push({l:op.v==='gelijk'?'Alle kamers gelijk belasten':'Kamers één voor één volmaken',
+      knoppen:[`Kamers vullen → ${op.v==='gelijk'?'gelijk verdelen':'dagdeel voor dagdeel'}`],
+      st:{...nu, rules:{...rules,kamerVerdeling:op.v}}})
+    if(op.type==='tijden'){
+      const verschuif=(t,min)=>toTime(clamp(toMin(t)+min,0,23*60+55))
+      const varianten={
+        'och-eerder':{l:'Ochtend een half uur eerder open', m2:{...m2, ochStart:verschuif(m2.ochStart,-30)}, k:`Ochtend → ${verschuif(m2.ochStart,-30)}–${m2.ochEnd}`},
+        'och-langer':{l:'Ochtend een half uur langer door', m2:{...m2, ochEnd:verschuif(m2.ochEnd,30)}, k:`Ochtend → ${m2.ochStart}–${verschuif(m2.ochEnd,30)}`},
+        'mid-langer':{l:'Middag een half uur langer door', m2:{...m2, midEnd:verschuif(m2.midEnd,30)}, k:`Middag → ${m2.midStart}–${verschuif(m2.midEnd,30)}`},
+        'avond':{l:'Avondspreekuur 17:00–20:00', m2:{...m2, avondOn:true, avondStart:'17:00', avondEnd:'20:00', verAvond:10}, k:'Avondspreekuur → 17:00–20:00 · 10% van de vraag'},
+      }
+      const v=varianten[op.wat]
+      if(v) K.push({l:v.l, knoppen:[v.k], st:{...nu, m2:v.m2}})
+    }
+    if(op.type==='spoed') K.push({l:op.aan?'Spoed vooraan in het spreekuur':'Spoed loopt gewoon mee',
+      knoppen:[`Spoed eerst → ${op.aan?'aan (ochtend + middag)':'uit'}`],
+      st:{...nu, rules:{...rules,spoedFirst:op.aan,spoedDagdeel:'both'}}})
+    if(op.type==='digitaal') K.push({l:{spread:'Digitaal verdeeld over de dag',cluster:'Digitaal in één blok vooraan',end:'Digitaal aan het einde'}[op.mode],
+      knoppen:[`Digitale consulten → ${op.mode==='spread'?'verdelen':op.mode==='cluster'?'clusteren':'aan het einde'}`],
+      st:{...nu, rules:{...rules,digitalMode:op.mode,digitalWaar:'both'}}})
+    if(op.type==='flex') K.push({l:op.mode==='end'?'Flex in één blok aan het einde':'Flex verspreid tussen de afspraken',
+      knoppen:[`Flexruimte → ${op.mode==='end'?'blok aan het einde':'verspreid'}`],
+      st:{...nu, rules:{...rules,flexMode:op.mode,flexWaar:'both'}}})
+    if(op.type==='aantallen'){
+      const f=1+op.delta/100
+      const nw=Math.max(1,Math.round(cfg.newPat*f)), ct=Math.max(1,Math.round(cfg.ctrlPat*f))
+      K.push({l:`${nw} nieuwe en ${ct} controles per week`,
+        knoppen:[`Nieuwe patiënten → ${cfg.newPat} wordt ${nw}`,`Controles → ${cfg.ctrlPat} wordt ${ct}`],
+        st:{...nu, cfg:{...cfg,newPat:nw,ctrlPat:ct}}})
+    }
+    if(op.type==='duur'){
+      const pas=rows=>rows.map(r=>({...r, duur:Math.max(5,(r.duur||15)+op.delta)}))
+      K.push({l:`Alle consulten ${op.delta>0?`${op.delta} minuten langer`:`${-op.delta} minuten korter`}`,
+        knoppen:[`Consultduur → ${op.delta>0?'+':''}${op.delta} min op elke code`],
+        st:{...nu, newRows:pas(newRows), ctrlRows:pas(ctrlRows)}})
     }
     if(op.type==='restlijst'){
       K.push({l:'De capaciteit vrij laten groeien tot alles past',
@@ -2804,9 +3005,31 @@ export default function RasterTool(){
       tekst:`${r.ntp.length} op de restlijst`}
     if(op.type==='kamers'){ const m=meetRaster(r)
       return {waarde:m.kamerDagen, gehaald:true, tekst:`${m.kamerDagen} kamer-dagen, ${m.ntp} op de restlijst`} }
-    return null
+    // Voor de overige opdrachten meten we het kenmerk dat er het meest toe doet.
+    const m=meetRaster(r)
+    if(op.type==='verdeling'){
+      const perDag=[0,1,2,3,4].map(di=>dagMeting(r,di))
+      return {waarde:m.spreiding, gehaald:true,
+        tekst:`spreiding ${m.spreiding}% · ${perDag.map((d,i)=>`${DAY_ABBR[i]} ${d.open?d.appts:'—'}`).join(' · ')}`}
+    }
+    if(op.type==='dagdeelverdeling'){
+      let och=0, mid=0
+      for(let di=0;di<5;di++) for(let room=0;room<(r.numRooms||1);room++){
+        const o=celMeting(r,di,room,0), mm=celMeting(r,di,room,1)
+        if(o) och+=o.appts; if(mm) mid+=mm.appts }
+      const tot=och+mid||1
+      return {waarde:Math.round(och/tot*100), gehaald:true,
+        tekst:`${och} afspraken in de ochtend, ${mid} in de middag (${Math.round(och/tot*100)} / ${Math.round(mid/tot*100)})`}
+    }
+    if(op.type==='aantallen'||op.type==='duur')
+      return {waarde:m.ntp, gehaald:true, tekst:`${m.placed} ingepland, ${m.ntp} op de restlijst, ${m.kamerDagen} kamer-dagen`}
+    return {waarde:m.ntp, gehaald:true,
+      tekst:`${m.placed} ingepland, ${m.ntp} op de restlijst, ${m.benut}% benut`}
   },[meetRaster])
   const zoekVoorstel=useCallback(op=>{
+    // Nog geen uitvoerbare opdracht? Dan wordt er niets doorgerekend — de
+    // gespreksboom stelt eerst een vervolgvraag.
+    if(op.type==='onderwerp'||op.type==='onbekend'){ setBijstuur({op}); return }
     setBijstuur({bezig:true, op})
     setTimeout(()=>{
       const huidigR=computeRaster(cfg,newRows,ctrlRows,m2,rules,capacity)
@@ -2843,6 +3066,7 @@ export default function RasterTool(){
   // akkoord en dat de belofte uitkomt.
   useEffect(()=>{ if(typeof window==='undefined') return
     window.__parse=parseOpdracht
+    window.__boom=VRAAGBOOM
     window.__m2=()=>m2
     window.__rules=()=>rules
     window.__dag=di=>dagMeting(raster,di)
@@ -4858,6 +5082,17 @@ export default function RasterTool(){
             <p style={{fontSize:12.5,color:C.muted,margin:0}}>Klik een dag · sleep afspraken tussen kamers, dagdelen en het palet · pak elk blok vast om te verplaatsen of te verlengen.</p>
           </div>
           <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+            {/* De assistent staat hier, bij het raster zelf — niet weggestopt in een menu. */}
+            <button onClick={()=>{setBijstuur(null); setWiz({modus:'bijsturen'})}}
+              title="Zeg in gewone taal wat er anders moet — de tool rekent het door en laat het je eerst zien"
+              style={{display:'flex',alignItems:'center',gap:7,padding:'8px 15px',borderRadius:11,border:'none',
+                cursor:'pointer',fontSize:12.5,fontWeight:700,color:'#fff',
+                background:'linear-gradient(135deg,#1C6EA4,#39C6AC)',boxShadow:'0 4px 14px rgba(28,110,164,0.3)',
+                transition:'transform 0.12s,box-shadow 0.12s'}}
+              onMouseEnter={e=>{e.currentTarget.style.transform='translateY(-1px)';e.currentTarget.style.boxShadow='0 6px 18px rgba(28,110,164,0.38)'}}
+              onMouseLeave={e=>{e.currentTarget.style.transform='none';e.currentTarget.style.boxShadow='0 4px 14px rgba(28,110,164,0.3)'}}>
+              ✨ Vraag de assistent
+            </button>
             <div style={{display:'flex',padding:2,background:C.surface2,border:`1px solid ${C.border}`,borderRadius:9}}>
               {[{v:'dag',l:'Dag'},{v:'week',l:'Week'}].map(o=>(
                 <button key={o.v} onClick={()=>setViewMode(o.v)}
@@ -4945,6 +5180,35 @@ export default function RasterTool(){
           )
         })()}
 
+        {/* ── ENGINE 2.0: KPI dashboard (inklapbaar) ── */}
+        {raster.kpi&&(
+          <div style={{marginBottom:12}}>
+          <PanelKop id="kpi" titel="Kerncijfers" samenvatting={`${raster.kpi.week.appts} afspr · ${raster.kpi.week.benutting}% benut · ${raster.kpi.week.spreiding}% spreiding`}/>
+          {openPanels.kpi&&(
+          <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:10}}>
+            {[
+              {l:'Afspraken / week',v:raster.kpi.week.appts,sub:`${raster.kpi.week.planned} min gepland`},
+              {l:'Benutting',v:raster.kpi.week.benutting+'%',sub:`van ${raster.kpi.week.capacity} min capaciteit`,
+                warn:raster.kpi.week.benutting>m2.benutting},
+              {l:'Flex / buffer',v:raster.kpi.week.flex+' min',sub:'gereserveerde ruimte'},
+              {l:'Spreiding',v:raster.kpi.week.spreiding+'%',sub:'gelijkmatigheid over dagen',
+                warn:raster.kpi.week.spreiding<70},
+              {l:'Validatie',v:raster.kpi.issues.length===0?'✓ OK':raster.kpi.issues.length,
+                sub:raster.kpi.issues.length===0?'geen conflicten':'conflicten gevonden',
+                warn:raster.kpi.issues.length>0},
+            ].map((k,i)=>(
+              <div key={i} title={i===4&&raster.kpi.issues.length?raster.kpi.issues.map(x=>`${DAYS[x.day]} K${x.room+1}: ${x.msg}`).join('\n'):''}
+                style={{background:C.white,border:`1px solid ${k.warn?'#F0C0B4':C.border}`,borderRadius:12,padding:'12px 14px'}}>
+                <div style={{fontSize:9.5,fontWeight:700,color:C.muted,letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:5}}>{k.l}</div>
+                <div style={{fontSize:21,fontWeight:700,color:k.warn?C.danger:C.text,lineHeight:1,fontVariantNumeric:'tabular-nums'}}>{k.v}</div>
+                <div style={{fontSize:10,color:C.muted,marginTop:4}}>{k.sub}</div>
+              </div>
+            ))}
+          </div>
+          )}
+          </div>
+        )}
+
         {/* ── BEZETTINGSKAART — de hele week in één beeld ────────────────────────
              Elke cel is één kamer op één dag in één dagdeel, gekleurd naar jouw
              doelbenutting en jouw drempel. Zo zie je in één oogopslag wat je
@@ -4956,8 +5220,23 @@ export default function RasterTool(){
           const doel=m2.benutting||85
           const drempel=rules.restOpruimen?(rules.minBezetting??75):0
           const dds=[0,1].concat(raster.avondOn?[2]:[])
+          // Waaróm is een dag leeg? Een lege dag is bijna nooit een fout maar een
+          // gevolg van een instelling — en dan hoort de tool dat te zeggen in
+          // plaats van je te laten zoeken.
+          const dagReden=di=>{
+            const k=WEEKDAY_KEYS[di], K=DAY_ABBR[di]
+            if((m2.days[k]||0)===0)
+              return {kort:'staat op 0% van de weekvraag', lang:`${DAGS_NL[di]} heeft 0% van de weekvraag toegewezen gekregen, dus er valt niets te plannen.`}
+            const codes=[...newRows,...ctrlRows].filter(x=>x.afspraakcode||x.omschrijving)
+            if(codes.length&&!codes.some(x=>(x.weekdagen||{})[K]))
+              return {kort:`geen afspraakcode mag op ${K}`, lang:`Geen enkele afspraakcode heeft ${DAGS_NL[di]} als toegestane weekdag, dus er kan niets op deze dag terechtkomen.`}
+            if(rules.restOpruimen)
+              return {kort:`haalde de drempel van ${rules.minBezetting}% niet`,
+                lang:`De vraag voor ${DAGS_NL[di]} haalde de minimumbezetting van ${rules.minBezetting}% niet. Die afspraken zijn samengevoegd met een andere dag in plaats van een half leeg spreekuur te openen — dat is de regel "minimumbezetting" die aan staat.`}
+            return {kort:'er bleef geen vraag over', lang:`Na het verdelen bleef er voor ${DAGS_NL[di]} geen vraag over om te plannen.`}
+          }
           const dagen=[0,1,2,3,4].map(di=>({di, m:dagMeting(raster,di)}))
-          const legeDagen=dagen.filter(d=>!d.m.open)
+          const legeDagen=dagen.filter(d=>!d.m.open).map(d=>({...d, reden:dagReden(d.di)}))
           const onderDrempel=[]
           for(let di=0;di<5;di++) for(let room=0;room<nRooms;room++) for(const dd of dds){
             const c=celMeting(raster,di,room,dd)
@@ -4976,12 +5255,15 @@ export default function RasterTool(){
                   setWiz({modus:'bijsturen', voorstelTekst:t}); zoekVoorstel(parseOpdracht(t)) }}
                 title={leeg?`Kamer ${room+1} · ${DAGS_NL[di]} · ${DD_INFO[dd].l.toLowerCase()}: geen spreekuur — klik om bij te sturen`
                   :`Kamer ${room+1} · ${DAGS_NL[di]} · ${DD_INFO[dd].l.toLowerCase()}: ${c.appts} afspraken, ${c.min} van ${c.cap} min (${c.pct}%, ${kl.l}) — klik om bij te sturen`}
+                onMouseEnter={e=>{e.currentTarget.style.transform='translateY(-1px)';e.currentTarget.style.boxShadow='0 3px 9px rgba(27,39,51,0.13)'}}
+                onMouseLeave={e=>{e.currentTarget.style.transform='none';e.currentTarget.style.boxShadow='none'}}
                 style={{display:'block',width:'100%',textAlign:'left',cursor:'pointer',marginBottom:3,
                   padding:'3px 5px',borderRadius:6,position:'relative',overflow:'hidden',
+                  transition:'transform 0.12s, box-shadow 0.12s',
                   border:`1px solid ${leeg?C.border:kl.brd}`,
                   background:leeg?`repeating-linear-gradient(45deg,${C.surface2},${C.surface2} 4px,${C.white} 4px,${C.white} 8px)`:kl.bg}}>
                 {!leeg&&<span style={{position:'absolute',left:0,top:0,bottom:0,width:`${Math.min(100,c.pct)}%`,
-                  background:kl.brd,opacity:0.32}}/>}
+                  background:kl.brd,opacity:0.32,transition:'width 0.55s cubic-bezier(.4,0,.2,1)'}}/>}
                 <span style={{position:'relative',display:'flex',alignItems:'center',gap:4,
                   fontSize:9.5,fontWeight:700,color:leeg?C.muted:kl.fg}}>
                   <span style={{opacity:0.75,fontSize:8.5,letterSpacing:'0.04em'}}>{DD_INFO[dd].kort}</span>
@@ -4991,8 +5273,9 @@ export default function RasterTool(){
             )
           }
           return(
-            <div style={{marginBottom:12,border:`1px solid ${C.border}`,borderRadius:12,overflow:'hidden',background:C.white}}>
-              <div style={{display:'flex',alignItems:'center',gap:9,padding:'10px 15px',flexWrap:'wrap',
+            <div style={{marginBottom:12,border:`1px solid ${C.border}`,borderRadius:16,overflow:'hidden',background:C.white,
+              boxShadow:'0 2px 14px rgba(27,39,51,0.05)',animation:'pmUp 0.3s ease both'}}>
+              <div style={{display:'flex',alignItems:'center',gap:9,padding:'11px 16px',flexWrap:'wrap',
                 background:'linear-gradient(90deg,#0E3450,#1C6EA4 60%,#39C6AC)',color:'#fff'}}>
                 <span style={{fontSize:15}}>🗺</span>
                 <span style={{fontSize:12.5,fontWeight:800,letterSpacing:'0.03em'}}>BEZETTINGSKAART — WAAR ZIT RUIMTE, WAAR ZIT HET VOL?</span>
@@ -5005,7 +5288,12 @@ export default function RasterTool(){
                   {dagen.map(({di,m})=>(
                     <div key={di} style={{textAlign:'center',paddingBottom:4}}>
                       <div style={{fontSize:10.5,fontWeight:800,color:m.open?C.text:'#B3402C',letterSpacing:'0.04em'}}>{DAY_ABBR[di]}</div>
-                      <div style={{fontSize:9.5,color:C.muted}}>{m.open?`${m.appts} afspr · ${m.pct}%`:'geen spreekuur'}</div>
+                      <div style={{fontSize:9.5,color:m.open?C.muted:'#B3402C'}}>
+                        {m.open?`${m.appts} afspr · ${m.pct}%`:'geen spreekuur'}</div>
+                      {!m.open&&(
+                        <div title={dagReden(di).lang}
+                          style={{fontSize:9,color:C.muted,lineHeight:1.3,marginTop:1,cursor:'help'}}>{dagReden(di).kort}</div>
+                      )}
                     </div>
                   ))}
                   {Array.from({length:nRooms},(_,room)=>(
@@ -5038,13 +5326,13 @@ export default function RasterTool(){
                 {/* wat springt eruit — met een directe opdracht aan de assistent */}
                 {(legeDagen.length>0||onderDrempel.length>0)&&(
                   <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:10}}>
-                    {legeDagen.map(({di})=>(
-                      <button key={'d'+di} onClick={()=>{
+                    {legeDagen.map(({di,reden})=>(
+                      <button key={'d'+di} title={reden.lang} onClick={()=>{
                           const t=`op ${DAGS_NL[di]} staan geen afspraken, graag ${DAGS_NL[di]} ook inplannen`
                           setWiz({modus:'bijsturen', voorstelTekst:t}); zoekVoorstel(parseOpdracht(t)) }}
                         style={{padding:'7px 12px',borderRadius:10,cursor:'pointer',fontSize:11.5,fontWeight:700,
                           background:'#FBEDEA',color:'#B3402C',border:'1px solid #E8B3A8'}}>
-                        ⚑ {DAY_ABBR[di]} is leeg — laten meedraaien
+                        ⚑ {DAY_ABBR[di]} is leeg ({reden.kort}) — laten meedraaien
                       </button>
                     ))}
                     {onderDrempel.slice(0,3).map((x,i)=>(
@@ -5063,6 +5351,74 @@ export default function RasterTool(){
           )
         })()}
 
+        {/* ── VERBETEREN — één knop, één advies in gewone taal ───────────────────
+             De optimiser rekent hetzelfde door als altijd, maar wat je hier ziet
+             is één zin en één knop. Alle tabellen, doelfuncties en afwegingen
+             staan onder "geavanceerd" voor wie ze wil zien. */}
+        {(()=>{
+          const bezig=!!(optim&&optim.bezig)
+          const klaar=optim&&!optim.bezig&&optim.resultaten
+          const beste=klaar&&optim.resultaten[0]
+          const h=klaar&&optim.huidig
+          const isNu=beste&&beste.k.restDag===(rules.restDag||'uit')&&beste.k.minBezetting===(rules.minBezetting??75)&&beste.k.kamerVerdeling===rules.kamerVerdeling
+          const winstNtp=beste?h.ntp-beste.m.ntp:0
+          const winstKd=beste?h.kamerDagen-beste.m.kamerDagen:0
+          const zin = !beste ? null
+            : isNu ? 'Je zit al op de beste instelling die ik kan vinden — er valt met deze gegevens niets te winnen.'
+            : (winstNtp<=0&&winstKd<=0) ? 'Ik vind geen instelling die dit raster beter maakt zonder ergens iets in te leveren.'
+            : `Ik kan ${[winstNtp>0?`${winstNtp} afspra${winstNtp===1?'ak':'ken'} méér inplannen`:'',winstKd>0?`${winstKd} kamer-dag${winstKd===1?'':'en'} besparen`:''].filter(Boolean).join(' en ')}.`
+          return(
+            <div style={{marginBottom:12,borderRadius:16,overflow:'hidden',background:C.white,
+              border:`1px solid ${C.border}`,boxShadow:'0 2px 14px rgba(27,39,51,0.05)',animation:'pmUp 0.3s ease both'}}>
+              <div style={{padding:'15px 18px',display:'flex',alignItems:'center',gap:14,flexWrap:'wrap'}}>
+                <div style={{minWidth:230,flex:1}}>
+                  <div style={{fontSize:14.5,fontWeight:800,color:C.text,letterSpacing:'-0.01em'}}>
+                    {bezig?'Ik zoek de beste instelling…':klaar?'Advies':'Kan dit beter?'}
+                  </div>
+                  <div style={{fontSize:12,color:C.muted,lineHeight:1.55,marginTop:2}}>
+                    {bezig ? 'Ik reken je gegevens door alle zinvolle combinaties.'
+                      : klaar ? zin
+                      : 'Ik reken je gegevens door en vertel in één zin of het beter kan.'}
+                  </div>
+                </div>
+                {!bezig&&(
+                  <button onClick={()=>startOptimiser('balans')}
+                    style={{padding:'11px 20px',borderRadius:12,border:'none',cursor:'pointer',fontSize:12.5,fontWeight:700,
+                      background:C.primary,color:'#fff',boxShadow:'0 4px 14px rgba(28,110,164,0.28)',transition:'transform 0.12s'}}
+                    onMouseEnter={e=>e.currentTarget.style.transform='translateY(-1px)'}
+                    onMouseLeave={e=>e.currentTarget.style.transform='none'}>
+                    {klaar?'↻ Opnieuw kijken':'✨ Kan dit beter?'}</button>
+                )}
+                {klaar&&beste&&!isNu&&(winstNtp>0||winstKd>0)&&(
+                  <button onClick={()=>{ setRules(p=>({...p,...beste.k})); onthoudScenario(beste.k,'toegepast',beste.m,optim.doel,poli.specialisme) }}
+                    style={{padding:'11px 20px',borderRadius:12,border:'none',cursor:'pointer',fontSize:12.5,fontWeight:700,
+                      background:C.green,color:'#fff',boxShadow:'0 4px 14px rgba(46,139,87,0.26)'}}>
+                    ✓ Doe maar</button>
+                )}
+              </div>
+              {bezig&&(
+                <div style={{height:4,background:C.surface2}}>
+                  <div style={{height:'100%',width:`${Math.round(optim.voortgang/Math.max(1,optim.totaal)*100)}%`,
+                    background:'linear-gradient(90deg,#1C6EA4,#39C6AC)',transition:'width 0.15s'}}/>
+                </div>
+              )}
+            </div>
+          )
+        })()}
+
+        {/* ── GEAVANCEERD — alles wat je niet hoeft te zien om te beginnen ── */}
+        <div style={{marginBottom:12}}>
+          <button onClick={()=>setToonGeav(v=>!v)}
+            style={{display:'flex',alignItems:'center',gap:9,width:'100%',padding:'10px 15px',borderRadius:12,
+              border:`1px solid ${C.border}`,background:toonGeav?C.white:'transparent',cursor:'pointer',
+              color:C.muted,fontSize:11.5,fontWeight:700,letterSpacing:'0.04em',transition:'all 0.15s'}}
+            onMouseEnter={e=>{e.currentTarget.style.background=C.white;e.currentTarget.style.color=C.primary}}
+            onMouseLeave={e=>{e.currentTarget.style.background=toonGeav?C.white:'transparent';e.currentTarget.style.color=C.muted}}>
+            <span style={{transition:'transform 0.2s',transform:toonGeav?'rotate(90deg)':'none',display:'inline-block'}}>▸</span>
+            {toonGeav?'VERBERG DE DETAILS':'MEER DETAILS — ALLE VARIANTEN, WAT DE ENGINE DEED, ANALYSE EN GEHEUGEN'}
+          </button>
+        </div>
+        {toonGeav&&(<div style={{animation:'pmUp 0.25s ease both'}}>
         {/* ── SCENARIO-OPTIMISER — laat de tool zélf de beste instellingen zoeken ── */}
         <div style={{marginBottom:12,border:`1px solid ${C.border}`,borderRadius:12,overflow:'hidden',background:C.white}}>
           <div style={{display:'flex',alignItems:'center',gap:9,padding:'10px 15px',flexWrap:'wrap',
@@ -5481,35 +5837,6 @@ export default function RasterTool(){
           )
         })()}
 
-        {/* ── ENGINE 2.0: KPI dashboard (inklapbaar) ── */}
-        {raster.kpi&&(
-          <div style={{marginBottom:12}}>
-          <PanelKop id="kpi" titel="Kerncijfers" samenvatting={`${raster.kpi.week.appts} afspr · ${raster.kpi.week.benutting}% benut · ${raster.kpi.week.spreiding}% spreiding`}/>
-          {openPanels.kpi&&(
-          <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:10}}>
-            {[
-              {l:'Afspraken / week',v:raster.kpi.week.appts,sub:`${raster.kpi.week.planned} min gepland`},
-              {l:'Benutting',v:raster.kpi.week.benutting+'%',sub:`van ${raster.kpi.week.capacity} min capaciteit`,
-                warn:raster.kpi.week.benutting>m2.benutting},
-              {l:'Flex / buffer',v:raster.kpi.week.flex+' min',sub:'gereserveerde ruimte'},
-              {l:'Spreiding',v:raster.kpi.week.spreiding+'%',sub:'gelijkmatigheid over dagen',
-                warn:raster.kpi.week.spreiding<70},
-              {l:'Validatie',v:raster.kpi.issues.length===0?'✓ OK':raster.kpi.issues.length,
-                sub:raster.kpi.issues.length===0?'geen conflicten':'conflicten gevonden',
-                warn:raster.kpi.issues.length>0},
-            ].map((k,i)=>(
-              <div key={i} title={i===4&&raster.kpi.issues.length?raster.kpi.issues.map(x=>`${DAYS[x.day]} K${x.room+1}: ${x.msg}`).join('\n'):''}
-                style={{background:C.white,border:`1px solid ${k.warn?'#F0C0B4':C.border}`,borderRadius:12,padding:'12px 14px'}}>
-                <div style={{fontSize:9.5,fontWeight:700,color:C.muted,letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:5}}>{k.l}</div>
-                <div style={{fontSize:21,fontWeight:700,color:k.warn?C.danger:C.text,lineHeight:1,fontVariantNumeric:'tabular-nums'}}>{k.v}</div>
-                <div style={{fontSize:10,color:C.muted,marginTop:4}}>{k.sub}</div>
-              </div>
-            ))}
-          </div>
-          )}
-          </div>
-        )}
-
         {/* ── ANALYSE 2.1: vraag/capaciteit-balans · modaliteitsmix · advies (inklapbaar) ── */}
         <div style={{marginBottom:12}}>
         <PanelKop id="analyse" titel="Analyse" samenvatting={`dekking ${dekking>999?'∞':dekking+'%'} · ${adviezen.length} advies${adviezen.length===1?'':'punten'}`}/>
@@ -5602,6 +5929,8 @@ export default function RasterTool(){
             </div>
           )
         })()}
+
+        </div>)}
 
         {/* ── VOLLEDIG WEEKOVERZICHT — per dag, per dagdeel de verdeling nieuw/controle ── */}
         {viewMode==='week'&&(()=>{
@@ -5943,6 +6272,8 @@ export default function RasterTool(){
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Newsreader:ital,opsz,wght@0,16..72,400;0,16..72,500;1,16..72,400;1,16..72,500&display=swap');
         @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
         @keyframes pmPulse{0%,100%{opacity:1}50%{opacity:0.3}}
+        @keyframes pmUp{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+        @keyframes pmPop{from{opacity:0;transform:scale(0.96)}to{opacity:1;transform:scale(1)}}
         *{box-sizing:border-box}
         input:focus{outline:none!important;border-color:${C.primary}!important;
           box-shadow:0 0 0 3px rgba(28,110,164,0.13)!important}
@@ -6283,20 +6614,55 @@ export default function RasterTool(){
                       <div style={{marginTop:16,fontSize:12.5,color:C.muted}}>Ik reken de mogelijkheden door…</div>
                     )}
 
-                    {b&&!b.bezig&&(b.op.type==='onbekend'||b.op.type==='leeg')&&(
-                      <div style={{marginTop:16,border:'1px solid #EBD08A',background:'#FDF6E3',borderRadius:12,padding:'13px 15px'}}>
-                        <div style={{fontSize:12.5,fontWeight:700,color:'#8A6A12',marginBottom:4}}>
-                          Hier haal ik geen opdracht uit — ik ga niet gokken
+                    {/* GESPREK — geen doodlopend "kan niet", maar doorvragen tot er
+                        een uitvoerbare opdracht ligt. */}
+                    {b&&!b.bezig&&(b.op.type==='onbekend'||b.op.type==='onderwerp')&&(()=>{
+                      const knoop=VRAAGBOOM[b.op.knoop]||VRAAGBOOM.start
+                      const isStart=(b.op.knoop||'start')==='start'
+                      const context=[b.op.dag!=null&&DAGS_NL[b.op.dag], b.op.kamer!=null&&`kamer ${b.op.kamer+1}`,
+                        b.op.pct!=null&&`${b.op.pct}%`].filter(Boolean)
+                      return(
+                        <div style={{marginTop:16,animation:'pmUp 0.22s ease both'}}>
+                          <div style={{border:`1.5px solid ${C.primary}`,background:C.white,borderRadius:13,overflow:'hidden'}}>
+                            <div style={{padding:'11px 15px',background:C.blueAccent,borderBottom:`1px solid ${C.border}`}}>
+                              <div style={{fontSize:9.5,fontWeight:800,color:C.primary,letterSpacing:'0.1em',textTransform:'uppercase'}}>
+                                {b.op.type==='onbekend'&&isStart?'Ik wil je goed begrijpen':'Even doorvragen'}
+                              </div>
+                              <div style={{fontSize:13.5,fontWeight:700,color:C.text,marginTop:3}}>{knoop.v}</div>
+                              {knoop.u&&<div style={{fontSize:11.5,color:C.muted,marginTop:2,lineHeight:1.5}}>{knoop.u}</div>}
+                              {context.length>0&&(
+                                <div style={{fontSize:11.5,color:C.muted,marginTop:4}}>
+                                  Ik onthoud alvast: <b style={{color:C.text}}>{context.join(' · ')}</b>
+                                </div>
+                              )}
+                            </div>
+                            <div style={{padding:'13px 15px',display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(215px,1fr))',gap:8}}>
+                              {knoop.o.map((o,i)=>(
+                                <button key={i} onClick={()=>{
+                                    if(o.volg) setBijstuur({op:{...b.op, type:'onderwerp', knoop:o.volg}})
+                                    else { const opdr={...o.opdr}
+                                      if(opdr.dag==null&&b.op.dag!=null) opdr.dag=b.op.dag
+                                      if(opdr.kamer==null&&b.op.kamer!=null) opdr.kamer=b.op.kamer
+                                      zoekVoorstel(opdr) } }}
+                                  style={{textAlign:'left',padding:'11px 13px',borderRadius:11,cursor:'pointer',
+                                    border:`1.5px solid ${C.border}`,background:C.white,transition:'all 0.12s'}}
+                                  onMouseEnter={e=>{e.currentTarget.style.borderColor=C.primary;e.currentTarget.style.background=C.blueAccent;e.currentTarget.style.transform='translateY(-1px)'}}
+                                  onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.background=C.white;e.currentTarget.style.transform='none'}}>
+                                  <div style={{fontSize:12.5,fontWeight:700,color:C.text}}>{o.l}{o.volg?' →':''}</div>
+                                  {o.s&&<div style={{fontSize:11,color:C.muted,marginTop:2,lineHeight:1.35}}>{o.s}</div>}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          {!isStart&&(
+                            <button onClick={()=>setBijstuur({op:{...b.op, type:'onderwerp', knoop:'start'}})}
+                              style={{marginTop:8,padding:'7px 12px',borderRadius:10,border:`1px solid ${C.border}`,
+                                background:C.white,cursor:'pointer',fontSize:11.5,fontWeight:600,color:C.muted}}>
+                              ← Toch een ander onderwerp</button>
+                          )}
                         </div>
-                        <div style={{fontSize:12,color:C.text,lineHeight:1.6}}>
-                          {b.op.dag!=null&&<>Ik zie wel dat het over <b>{DAGS_NL[b.op.dag]}</b> gaat. </>}
-                          {b.op.kamer!=null&&<>Ik zie <b>kamer {b.op.kamer+1}</b>. </>}
-                          {b.op.pct!=null&&<>Ik zie <b>{b.op.pct}%</b>. </>}
-                          Zeg er alsjeblieft bij wát er moet gebeuren — bijvoorbeeld "inplannen", "vrijhouden",
-                          "naar 85% bezetting", "een kamer erbij" of "alles inplannen".
-                        </div>
-                      </div>
-                    )}
+                      )
+                    })()}
 
                     {b&&!b.bezig&&b.kandidaten&&b.kandidaten.length>0&&keuze&&(<>
                       <div style={{marginTop:16,border:`1.5px solid ${C.primary}`,background:C.white,borderRadius:13,overflow:'hidden'}}>
