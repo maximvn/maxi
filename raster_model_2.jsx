@@ -3336,6 +3336,37 @@ export default function RasterTool(){
         `${ruilTotaal} keer is een korte geplande afspraak geruild voor een langere van de restlijst, zodat het spreekuur dichter bij de ${m2.benutting}% komt.`, null)
     }
     res.regelrapport=rap
+    // ── EEN EIGEN DIGITAAL SPREEKUUR MAG HET ROOSTER NOOIT SLECHTER MAKEN ──────
+    // Bij 'clusteren' worden de telefonische consulten (10 min) uit de gewone
+    // spreekuren getrokken en tot hele digitale spreekuren gebundeld. Maar juist die
+    // 10-minuten-consulten zijn de fijne opvulling waarmee elk fysiek spreekuur exact
+    // de band haalt. Zonder die opvulling passen de grove blokken (15/20/30 min) niet
+    // meer netjes in de spreekuren van de dag → afspraken vallen op de restlijst en de
+    // kamers raken ongelijk verdeeld (bv. 4 kamers op maandag, 2,5 op dinsdag). Daarom
+    // rekenen we óók de verspreide variant door: laat clusteren méér op de restlijst
+    // staan of de week schever, dan verspreiden we de consulten alsnog. De hoofdregel
+    // (efficiëntie, hele kamers, niets ongepland) gaat vóór de clustervoorkeur.
+    const maaktDigSpreekuur=(rules.digitalMode==='cluster'||rules.digitalMode==='end')
+    if(maaktDigSpreekuur && !rules.__zonderCluster && (res.digPlan&&res.digPlan.gepland&&res.digPlan.gepland.length>0)){
+      const score=r=>{ const sl=[]; let halve=0
+        for(let di=0;di<5;di++){ let s=0
+          for(let k=0;k<(r.numRooms||1);k++){ const o=((r.days[di]||{})['o'+k]||[]).some(a=>!a.isFlex)
+            const m=((r.days[di]||{})['m'+k]||[]).some(a=>!a.isFlex)
+            if(o)s++; if(m)s++; if((o||m)&&!(o&&m))halve++ }
+          if(s>0) sl.push(s) }
+        return [r.ntp.length, sl.length?Math.max(...sl)-Math.min(...sl):0, halve] }
+      const spread=computeRaster(cfg,newRows,ctrlRows,m2,{...rules,digitalMode:'spread',__zonderCluster:true},capacity)
+      if(spread){
+        const a=score(res), c=score(spread)
+        const beter = c[0]<a[0] || (c[0]===a[0] && (c[1]<a[1] || (c[1]===a[1] && c[2]<a[2])))
+        if(beter){
+          spread.notices=[...(spread.notices||[]),{level:'info',rule:'Digitale consulten',
+            msg:`Een eigen digitaal spreekuur zou hier ${a[0]} afspra${a[0]===1?'ak':'ken'} op de restlijst laten staan (tegen ${c[0]} bij verspreiden)${a[1]>c[1]?' en de kamers ongelijker verdelen':''}. De telefonische consulten zijn daarom over de gewone spreekuren verspreid.`,
+            fix:'Een apart digitaal spreekuur kan wél uitkomen met meer kamers, een andere dagverdeling, of een hogere/lagere benutting.'}]
+          return spread
+        }
+      }
+    }
     // ── BUNDELEN MAG HET NOOIT SLECHTER MAKEN ─────────────────────────────────
     // Het bundelen beslist op een voorspelling; de definitieve opbouw kan daarna
     // anders uitpakken. Daarom rekenen we de week ook zónder bundelen door en

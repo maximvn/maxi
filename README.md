@@ -118,6 +118,25 @@ Bij *verdeling over kamers en dagdelen = dagdeel* wordt een kamer nu eerst **hel
 Gecontroleerd over alle instellingen (benutting 70–95%, automatische capaciteit, ongelijke week,
 avondspreekuur, digitaal spreiden): nergens nog twee halve kamers op één dag, en de restlijst blijft leeg.
 
+## Een digitaal spreekuur mag het rooster nooit slechter maken
+
+Bij *digitale consulten = clusteren* worden de telefonische consulten (10 min) uit de gewone
+spreekuren getrokken en tot hele digitale spreekuren gebundeld. Maar juist die consulten van
+10 minuten zijn de **fijne opvulling** waarmee elk fysiek spreekuur exact de band haalt. Trek je
+ze eruit, dan passen de grove blokken (15/20/30 min) niet meer netjes in de spreekuren van de
+dag — afspraken vallen op de restlijst en de kamers raken ongelijk verdeeld.
+
+Concreet, op de gemeten praktijkcase (100 nieuw / 200 controle, NP 50% / NP-C 50%, CO 34% /
+VER 33% / TC 33%, 4 kamers): clusteren gaf **8/5/5/6/6 spreekuren met 10 op de restlijst**
+(maandag 4 kamers, dinsdag en woensdag 2,5 kamer). Verspreiden gaf **7/6/6/6/6 met restlijst 0**
+(vier dagen 3 hele kamers, maandag een 4e ochtendkamer).
+
+De tool rekent daarom bij clusteren óók de verspreide variant door en kiest de beste: laat een
+eigen digitaal spreekuur méér op de restlijst staan of de week schever, dan worden de consulten
+alsnog verspreid, met een melding die uitlegt waarom. Alleen als clusteren even goed of beter is,
+blijft het digitale spreekuur staan. Dezelfde harde belofte als bij "bundelen": de efficiëntie
+(hele kamers, niets ongepland, binnen de band) gaat vóór de clustervoorkeur.
+
 ## Digitale consulten: een eigen digitaal spreekuur
 
 Kies je **"Eigen digitaal spreekuur"**, dan wordt een **heel dagdeel** uitsluitend met digitale
