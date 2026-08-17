@@ -1,11 +1,13 @@
-// EEN DIGITAAL SPREEKUUR MAG HET ROOSTER NOOIT SLECHTER MAKEN
+// EEN EIGEN DIGITAAL SPREEKUUR WORDT ECHT GEMAAKT — EN LAAT NIEMAND LIGGEN
 // Reproductie van de geëxporteerde praktijkcase mét de ECHTE codeverdeling:
 //   nieuw:  NP 50% (20m) · NP-C 50% (30m)
 //   controle: CO 34% (15m) · VER 33% (20m) · TC 33% (10m, telefonisch)
-// Bij 'clusteren' werden de telefonische consulten uit de gewone spreekuren
-// getrokken; de grove blokken die overbleven pasten niet meer in de band en
-// er belandden 10 afspraken op de restlijst met een scheve week (8/5/5/6/6).
-// De tool hoort dan de consulten alsnog te verspreiden: restlijst 0, 7/6/6/6/6.
+// Kies je "Eigen digitaal spreekuur", dan hoort de tool de 66 telefonische
+// consulten ECHT bij elkaar in eigen digitale spreekuren te zetten (dat is de
+// expliciete keuze) — en tegelijk niemand op de restlijst te laten. Bij het
+// clusteren mist het overige werk de fijne 10-min-opvulling, waardoor 10 grove
+// afspraken anders zouden blijven liggen; die horen in een extra spreekuur te
+// worden gezet (desnoods onder de band), zodat de restlijst 0 blijft.
 import { chromium } from 'playwright'
 import { pathToFileURL } from 'url'
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' })
@@ -31,22 +33,27 @@ const R = await page.evaluate(()=>{
     flexMode:'spread',kamerVerdeling:'dagdeel',restDag:'uit',restOpruimen:true,minBezetting:75,
     spoedDagdeel:'both',digitalSlots:[],startNieuwWaar:'both',startControleWaar:'both',mixWaar:'both',
     digitalWaar:'both',flexWaar:'both',flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30}
-  const meet=r=>{ const sl=[]; let halve=0
+  const meet=r=>{ const sl=[]; let halve=0, puurDig=0
     for(let di=0;di<5;di++){ let s=0
-      for(let k=0;k<(r.numRooms||1);k++){ const o=((r.days[di]||{})['o'+k]||[]).some(a=>!a.isFlex)
+      for(let k=0;k<(r.numRooms||1);k++){ for(const pre of ['o','m']){
+        const arr=((r.days[di]||{})[pre+k]||[]).filter(a=>!a.isFlex)
+        if(arr.length && arr.every(a=>a.digitaal)) puurDig++ }
+        const o=((r.days[di]||{})['o'+k]||[]).some(a=>!a.isFlex)
         const m=((r.days[di]||{})['m'+k]||[]).some(a=>!a.isFlex)
         if(o)s++; if(m)s++; if((o||m)&&!(o&&m))halve++ }
       if(s>0) sl.push(s) }
     return {sloten:sl, spreiding:sl.length?Math.max(...sl)-Math.min(...sl):0, halve, ntp:r.ntp.length,
-      notice:(r.notices||[]).some(n=>n.rule==='Digitale consulten'&&/verspreid/.test(n.msg))} }
+      gepland:(r.digPlan&&r.digPlan.gepland.length)||0, mogelijk:(r.digPlan&&r.digPlan.mogelijk)||0, puurDig,
+      redmiddel:(r.notices||[]).some(n=>n.rule==='Eigen digitaal spreekuur')} }
   return { cluster:meet(window.__cr(cfg,nr,cr,M2,EX,{mode:'vast',kamers:4})) }
 })
 
 ok('geen afspraken op de restlijst (was 10 bij clusteren)', R.cluster.ntp===0, `restlijst ${R.cluster.ntp}`)
-ok('de week is gelijkmatig verdeeld (was 8/5/5/6/6)', R.cluster.spreiding<=1,
-  `sloten ${R.cluster.sloten.join('/')} · spreiding ${R.cluster.spreiding}`)
-ok('hooguit één halve kamer in de hele week', R.cluster.halve<=1, `${R.cluster.halve} halve kamers`)
-ok('er is een melding dat de consulten zijn verspreid', R.cluster.notice)
+ok('er zijn echt eigen digitale spreekuren gemaakt (geen "0 opties")',
+  R.cluster.gepland>=1 && R.cluster.mogelijk>=1, `${R.cluster.gepland} gepland van ${R.cluster.mogelijk} mogelijk`)
+ok('de telefonische consulten staan als volledig digitale spreekuren in het raster',
+  R.cluster.puurDig>=R.cluster.gepland, `${R.cluster.puurDig} volledig digitale kamers`)
+ok('een melding legt het extra (onder-de-band) spreekuur uit', R.cluster.redmiddel)
 
 console.log(log.join('\n'))
 console.log(`\n${log.filter(l=>l.startsWith('✓')).length}/${log.length} geslaagd`)

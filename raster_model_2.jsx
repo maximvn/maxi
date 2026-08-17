@@ -2682,6 +2682,54 @@ export default function RasterTool(){
       if(!gelukt) break
     }
 
+    // ══ LAATSTE REDMIDDEL BIJ EEN EIGEN DIGITAAL SPREEKUUR ═════════════════════
+    // Kies je "Eigen digitaal spreekuur", dan worden de telefonische consulten (10
+    // min) uit de gewone spreekuren getrokken. Juist die 10-min-consulten zijn de
+    // fijne opvulling waarmee elke kamer exact de band haalt; zonder die opvulling
+    // haalt het overgebleven, grovere werk (15/20/30 min) soms géén enkele kamer
+    // meer tot de band en zou het op de restlijst blijven staan — precies de "0
+    // opties"-uitkomst die niet klopt: er is nog vrije kamerruimte in de week.
+    // Omdat JIJ dit digitale spreekuur expliciet hebt gekozen, weegt "iedereen
+    // ingepland" hier zwaarder dan "elke kamer op de band". We openen daarom alsnog
+    // een kamer in een vrij dagdeel en vullen die tot de bovenband — ook als die
+    // kamer daarmee ónder de band blijft. Er verschijnt een melding die dit uitlegt.
+    // Deze stap draait ALLEEN bij 'cluster' en alleen als er anders werk zou blijven
+    // liggen; in alle andere gevallen blijft de minimumbezetting hard.
+    // Een laatste-redmiddel-spreekuur mag ónder de band vallen, maar het moet nog wel
+    // een zinnig spreekuur zijn: minstens de helft van een dagdeel gevuld. Blijft er
+    // maar een handvol minuten over dat niet eens een half spreekuur vult, dan is een
+    // eigen digitaal spreekuur hier gewoon geen goede keuze — die enkele afspraken
+    // gaan dan beter verspreid (de verspreide variant hieronder plant ze alsnog in).
+    const telVloer=dd=>Math.round(durFor2(dd)*0.5)
+    let telRedmiddel=0
+    if(rules.digitalMode==='cluster' && overflowInst.length){
+      let g=0
+      while(overflowInst.length && g++<40){
+        let beste=null
+        for(let di=0; di<5; di++){ if(!built[di]) continue
+          for(const dd of DD){ if(!ddOpenOp(dd,di)) continue
+            const nu=(built[di][dd]||[]).filter(rm=>rm&&rm.length).length
+            if(maxParallel!==Infinity && nu>=maxParallel) continue
+            const kand=overflowInst.filter(a=>!a._digSpreekuur
+              && (!a.dagOpties||a.dagOpties.includes(di)) && (!a.ddOpties||a.ddOpties.includes(dd)))
+            if(!kand.length) continue
+            // Ondergrens 0 = accepteer élk volume; vul zo dicht mogelijk tot de bovenband.
+            const mee=kiesTotBand(kand, 0, bovengrensCap(dd))
+            if(!mee||!mee.length) continue
+            const min=mee.reduce((t,a)=>t+a.duur,0)
+            if(min < telVloer(dd)) continue   // te dun voor een zinnig spreekuur
+            if(!beste || min>beste.min) beste={di,dd,mee,min}
+          } }
+        if(!beste) break
+        built[beste.di][beste.dd]=[...(built[beste.di][beste.dd]||[]),
+          beste.mee.map(a=>({...a, day:beste.di, dd:beste.dd, ddOpties:[beste.dd], _telRedmiddel:true}))]
+        maxRooms=Math.max(maxRooms, built[beste.di][beste.dd].length)
+        const ids=new Set(beste.mee.map(a=>a.id))
+        for(let i=overflowInst.length-1;i>=0;i--) if(ids.has(overflowInst[i].id)) overflowInst.splice(i,1)
+        telRedmiddel+=beste.mee.length
+      }
+    }
+
     // FASE 2b — VOLGORDE binnen elke kamer (ná structuur + selectie), zodat een omgeruilde
     // afspraak alsnog volgens de regels wordt geordend (bv. de 3 kortste vooraan).
     ;[0,1,2,3,4].forEach(di=>{
@@ -2986,6 +3034,12 @@ export default function RasterTool(){
       Object.entries(slots).forEach(([key,arr])=>{ const reg=(arr||[]).filter(a=>!a.isFlex&&!a.overbook)
         if(reg.length) spreekuren.push({di,key,dig:reg.filter(a=>a.digitaal).length,n:reg.length}) }) })
     const digTotaal=spreekuren.reduce((s,x)=>s+x.dig,0)
+    // 0) Laatste-redmiddel-spreekuur bij een eigen digitaal spreekuur
+    if(telRedmiddel>0){
+      notices.push({level:'info',rule:'Eigen digitaal spreekuur',
+        msg:`De telefonische consulten staan bij elkaar in een eigen digitaal spreekuur. Daardoor mist het overige werk de fijne 10-minuten-opvulling en ${telRedmiddel===1?'zou 1 afspraak':`zouden ${telRedmiddel} afspraken`} anders op de restlijst blijven staan. Die ${telRedmiddel===1?'is':'zijn'} nu alsnog in een extra spreekuur gezet, ook al blijft die kamer onder de streefbenutting — er blijft zo niemand ongepland.`,
+        fix:`Wil je álle kamers netjes op de band, kies dan "Verdelen over dag", of geef er een kamer bij of verruim de spreekuurtijden.`})
+    }
     // 1) Nog te plannen
     if(res.ntp.length){
       const perDag={}; res.ntp.forEach(a=>{ perDag[a.day]=(perDag[a.day]||0)+1 })
@@ -3005,13 +3059,16 @@ export default function RasterTool(){
           : `Zet "Restvraag bundelen tot volle kamers" aan om het restant op één dag te bundelen.`
       notices.push({level:'warn',rule:'Nog te plannen',msg:probleem,fix:oplossing})
     }
-    // 2) Digitale consulten — alleen melden als een spreekuur er géén heeft
-    if(digTotaal>0 && (rules.digitalMode==='end'||rules.digitalMode==='cluster')){
+    // 2) Digitale consulten — alleen bij 'aan het einde': daar hoort ELK spreekuur een
+    // digitaal blok te krijgen, dus is het relevant als een spreekuur er géén heeft.
+    // Bij 'clusteren' is het juist de bedoeling dat de meeste spreekuren géén digitaal
+    // consult hebben (ze zitten in de eigen digitale spreekuren) — dat melden zou
+    // onterecht als een tekort lezen.
+    if(digTotaal>0 && rules.digitalMode==='end'){
       const zonder=spreekuren.filter(s=>s.dig===0).length
       if(zonder>0){
-        const waar=rules.digitalMode==='end'?'achteraan te plannen':'als blok te clusteren'
         notices.push({level:'info',rule:'Digitale consulten',
-          msg:`${zonder} van de ${spreekuren.length} spreekuren heeft geen digitale consulten (te weinig digitaal volume), dus daar valt niets ${waar}.`,
+          msg:`${zonder} van de ${spreekuren.length} spreekuren heeft geen digitale consulten (te weinig digitaal volume), dus daar valt niets achteraan te plannen.`,
           fix:`De ${digTotaal} digitale consulten zijn zo gelijk mogelijk over de overige spreekuren verdeeld. Meer digitaal volume (hoger percentage TC) vult meer spreekuren.`})
       }
     }
@@ -3336,35 +3393,23 @@ export default function RasterTool(){
         `${ruilTotaal} keer is een korte geplande afspraak geruild voor een langere van de restlijst, zodat het spreekuur dichter bij de ${m2.benutting}% komt.`, null)
     }
     res.regelrapport=rap
-    // ── EEN EIGEN DIGITAAL SPREEKUUR MAG HET ROOSTER NOOIT SLECHTER MAKEN ──────
-    // Bij 'clusteren' worden de telefonische consulten (10 min) uit de gewone
-    // spreekuren getrokken en tot hele digitale spreekuren gebundeld. Maar juist die
-    // 10-minuten-consulten zijn de fijne opvulling waarmee elk fysiek spreekuur exact
-    // de band haalt. Zonder die opvulling passen de grove blokken (15/20/30 min) niet
-    // meer netjes in de spreekuren van de dag → afspraken vallen op de restlijst en de
-    // kamers raken ongelijk verdeeld (bv. 4 kamers op maandag, 2,5 op dinsdag). Daarom
-    // rekenen we óók de verspreide variant door: laat clusteren méér op de restlijst
-    // staan of de week schever, dan verspreiden we de consulten alsnog. De hoofdregel
-    // (efficiëntie, hele kamers, niets ongepland) gaat vóór de clustervoorkeur.
+    // ── EEN EIGEN DIGITAAL SPREEKUUR HONOREREN, MAAR NOOIT PATIËNTEN LATEN LIGGEN ─
+    // Kies je "Eigen digitaal spreekuur", dan is dat een bewuste organisatiekeuze:
+    // de telefonische consulten hok je liever bij elkaar in een telefonisch spreekuur
+    // dan verspreid tussen de fysieke patiënten. Die keuze respecteren we — óók als
+    // een dag daardoor iets voller wordt dan bij verspreiden. Het enige dat zwaarder
+    // weegt is dat er niemand ongepland blijft. Daarom rekenen we óók de verspreide
+    // variant door en stappen we ALLEEN over op verspreiden als die STRIKT méér
+    // afspraken ingepland krijgt. Kan clusteren iedereen kwijt (desnoods via het
+    // laatste-redmiddel-spreekuur hierboven), dan blijft het digitale spreekuur staan.
     const maaktDigSpreekuur=(rules.digitalMode==='cluster'||rules.digitalMode==='end')
     if(maaktDigSpreekuur && !rules.__zonderCluster && (res.digPlan&&res.digPlan.gepland&&res.digPlan.gepland.length>0)){
-      const score=r=>{ const sl=[]; let halve=0
-        for(let di=0;di<5;di++){ let s=0
-          for(let k=0;k<(r.numRooms||1);k++){ const o=((r.days[di]||{})['o'+k]||[]).some(a=>!a.isFlex)
-            const m=((r.days[di]||{})['m'+k]||[]).some(a=>!a.isFlex)
-            if(o)s++; if(m)s++; if((o||m)&&!(o&&m))halve++ }
-          if(s>0) sl.push(s) }
-        return [r.ntp.length, sl.length?Math.max(...sl)-Math.min(...sl):0, halve] }
       const spread=computeRaster(cfg,newRows,ctrlRows,m2,{...rules,digitalMode:'spread',__zonderCluster:true},capacity)
-      if(spread){
-        const a=score(res), c=score(spread)
-        const beter = c[0]<a[0] || (c[0]===a[0] && (c[1]<a[1] || (c[1]===a[1] && c[2]<a[2])))
-        if(beter){
-          spread.notices=[...(spread.notices||[]),{level:'info',rule:'Digitale consulten',
-            msg:`Een eigen digitaal spreekuur zou hier ${a[0]} afspra${a[0]===1?'ak':'ken'} op de restlijst laten staan (tegen ${c[0]} bij verspreiden)${a[1]>c[1]?' en de kamers ongelijker verdelen':''}. De telefonische consulten zijn daarom over de gewone spreekuren verspreid.`,
-            fix:'Een apart digitaal spreekuur kan wél uitkomen met meer kamers, een andere dagverdeling, of een hogere/lagere benutting.'}]
-          return spread
-        }
+      if(spread && spread.ntp.length < res.ntp.length){
+        spread.notices=[...(spread.notices||[]),{level:'info',rule:'Digitale consulten',
+          msg:`Een eigen digitaal spreekuur zou hier ${res.ntp.length} afspra${res.ntp.length===1?'ak':'ken'} op de restlijst laten staan (tegen ${spread.ntp.length} bij verspreiden). De telefonische consulten zijn daarom over de gewone spreekuren verspreid, zodat er niemand ongepland blijft.`,
+          fix:'Wil je tóch een apart telefonisch spreekuur, dan lukt dat met meer kamers, een andere dagverdeling, of een hogere/lagere benutting.'}]
+        return spread
       }
     }
     // ── BUNDELEN MAG HET NOOIT SLECHTER MAKEN ─────────────────────────────────
