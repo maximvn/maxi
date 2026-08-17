@@ -34,11 +34,16 @@ const results = await page.evaluate(()=>{
       return tot===exp?[]:[`pool ${tot}≠${exp}`] },
     overlaps:(r)=>{ const v=[]
       ;(r.kpi&&r.kpi.issues||[]).forEach(i=>v.push('issue: '+i.msg)); return v },
-    band:(r,rules)=>{ // elk gebruikt dagdeel binnen [onder, boven] band; streng op boven
+    // BAND (hard, tweezijdig): de benutting is de hoofdregel. ELK geopend spreekuur
+    // ligt binnen [benutting−2,5 ; benutting+2,5]. Kan een spreekuur niet tot die band
+    // gevuld worden, dan hoort het niet open te gaan.
+    band:(r,rules,exp,m2)=>{
       const v=[]; const gross={o:210,m:210,a:180}
+      const doel=(m2?m2.benutting:85)
       perRoomPhys(r).forEach(({di,key,dd,phys})=>{
         const min=phys.reduce((t,a)=>t+a.duur,0), pct=min/gross[dd]*100
-        if(pct>87.6) v.push(`${key}@d${di} ${Math.round(pct)}%>boven`) })
+        if(pct>doel+2.6) v.push(`${key}@d${di} ${Math.round(pct)}% > band ${doel}+2,5`)
+        if(pct<doel-2.6) v.push(`${key}@d${di} ${Math.round(pct)}% < band ${doel}−2,5`) })
       return v },
     // SPOED: spoedblok vooraan (dagdeel-gated); spoed nooit op de restlijst.
     spoedFirst:(r,rules)=>{ if(!rules.spoedFirst) return []
@@ -90,7 +95,7 @@ const results = await page.evaluate(()=>{
         else { if(sw>1) v.push(`${key}@d${di} mixNC uit maar niet ongemengd (sw=${sw})`) }
       })
       return v },
-    digCluster:(r,rules)=>{ if(rules.digitalMode!=='cluster'&&rules.digitalMode!=='end') return []
+    digCluster:(r,rules)=>{ if(rules.digitalMode!=='end') return []
       const v=[]
       perRoomPhys(r).forEach(({di,key,dd,phys})=>{
         if(!berGeldt(rules.digitalWaar,dd)) return
@@ -98,15 +103,21 @@ const results = await page.evaluate(()=>{
         if(idx.length>1 && idx[idx.length-1]-idx[0]!==idx.length-1) v.push(`${key}@d${di} digitaal niet aaneengesloten`)
       })
       return v },
-    // CLUSTER ≠ EINDE: in cluster-modus staat het digitale blok VOORAAN, dus het
-    // spreekuur eindigt niet met digitale consulten zolang er fysieke afspraken zijn.
+    // CLUSTER = EIGEN DIGITAAL SPREEKUUR: waar een heel dagdeel als digitaal
+    // spreekuur is gevuld, bestaat dat spreekuur voor 100% uit digitale consulten.
+    // De overloop die geen heel dagdeel meer vulde staat gewoon tussen de gewone
+    // afspraken — die hoeft niet aaneengesloten of vooraan te staan.
     digPositie:(r,rules)=>{ if(rules.digitalMode!=='cluster') return []
       const v=[]
-      perRoomPhys(r).forEach(({di,key,dd,phys})=>{
-        if(!berGeldt(rules.digitalWaar,dd)) return
-        const dig=phys.filter(a=>a.digitaal), fys=phys.filter(a=>!a.digitaal)
-        if(!dig.length||!fys.length) return
-        if(phys[phys.length-1].digitaal) v.push(`${key}@d${di} cluster staat achteraan (gelijk aan "einde")`)
+      const plan=(r.digPlan&&r.digPlan.gepland)||[]
+      plan.forEach(g=>{
+        const pre=g.dd==='O'?'o':g.dd==='M'?'m':'a'
+        const dag=r.days[g.di]||{}
+        const puur=Object.keys(dag).filter(k=>k[0]===pre).some(k=>{
+          const arr=(dag[k]||[]).filter(a=>!a.isFlex)
+          return arr.length>0 && arr.every(a=>a.digitaal)
+        })
+        if(!puur) v.push(`d${g.di}${g.dd}: gepland digitaal spreekuur staat niet als volledig digitaal dagdeel in het raster`)
       })
       return v },
     flexSpread:(r,rules)=>{ if(rules.flexMode!=='spread') return []
@@ -120,7 +131,10 @@ const results = await page.evaluate(()=>{
         flex.forEach(f=>{ const afw=f.duur-blok
           if(Math.abs(afw)>0.01 && f.start-sessStart[dd]>=noFirst && !f._venster && !f._onderbezet){
             if(!(f._rek && afw>0 && afw<blok)) v.push(`${key}@d${di} flexblok ${f.duur}m≠${blok}m (geen _rek)`) } })
-        flex.forEach(f=>{ if(f.start-sessStart[dd]<noFirst-0.01 && !f._onderbezet) v.push(`${key}@d${di} flex binnen eerste ${noFirst}m`) })
+        // _venster = de buffer die het digitale eindvenster naar achteren duwt; die
+        // staat waar het venster hem dwingt, niet waar de spreid-regel hem wil.
+        flex.forEach(f=>{ if(f.start-sessStart[dd]<noFirst-0.01 && !f._onderbezet && !f._venster)
+          v.push(`${key}@d${di} flex binnen eerste ${noFirst}m`) })
         const fSort=[...flex].sort((a,b)=>a.start-b.start)
         for(let i=1;i<fSort.length;i++) if(Math.abs(fSort[i].start-fSort[i-1].end)<0.01)
           v.push(`${key}@d${di} twee flexblokken aaneengesloten om ${Math.round(fSort[i].start)}`)
@@ -129,7 +143,7 @@ const results = await page.evaluate(()=>{
           if(Math.abs(laatste.end-sEnd[dd])>0.01) v.push(`${key}@d${di} rest-gat: eindigt ${Math.round(sEnd[dd]-laatste.end)}m vóór eindtijd`) }
       })
       return v },
-    bandOnder:(r,rules)=>{ // kamer onder de band terwijl een passende afspraak op de restlijst staat
+    bandOnder:(r,rules)=>{ // (opgegaan in de harde bandregel; blijft als extra vangnet)
       if(!r.ntp.length) return []
       const v=[]; const gross={o:210,m:210,a:180}
       const onder=0.825, boven=0.876
@@ -167,7 +181,7 @@ const results = await page.evaluate(()=>{
     // EFFICIËNTIE (hard): er staat NOOIT een afspraak op de restlijst terwijl er die
     // dag nog een heel dagdeel vrij is in een kamer die er al is. Een halve dag
     // vrijlaten terwijl patiënten ongepland blijven, is verspilling.
-    geenLeegDagdeel:(r)=>{ const v=[]
+    geenLeegDagdeel:(r)=>{ const v=[]; const gross={o:210,m:210,a:180}
       const nR=r.numRooms||1
       ;[0,1,2,3,4].forEach(di=>{
         if(!r.days[di]) return
@@ -180,8 +194,12 @@ const results = await page.evaluate(()=>{
           // dat een ándere kamer datzelfde dagdeel wél gebruikt
           const ddBestaat=[...Array(nR).keys()].some(x=>(r.days[di][pre+x]||[]).some(a=>!a.isFlex))
           if(!ddBestaat) continue
-          const kan=ntpD.some(a=>!a.ddOpties||a.ddOpties.includes(ddU))
-          if(kan) v.push(`d${di} ${pre}${k} leeg terwijl ${ntpD.length} op de restlijst staan`)
+          // Een leeg dagdeel is alleen fout als de restlijst het tot de BAND kan vullen.
+          // Een spreekuur onder de band openen is geen optie — dat is de hoofdregel.
+          const past=ntpD.filter(a=>!a.ddOpties||a.ddOpties.includes(ddU))
+          const min=past.reduce((t,a)=>t+a.duur,0)
+          if(min>=gross[pre]*0.825-0.01)
+            v.push(`d${di} ${pre}${k} leeg terwijl de restlijst (${min}m) het tot de band vult`)
         }
       })
       return v },
@@ -276,7 +294,7 @@ const results = await page.evaluate(()=>{
     const v=[]
     v.push(...CHECKS.pool(r,rules,exp))
     v.push(...CHECKS.overlaps(r,rules))
-    v.push(...CHECKS.band(r,rules))
+    v.push(...CHECKS.band(r,rules,exp,M2))
     v.push(...CHECKS.spoedFirst(r,rules))
     v.push(...CHECKS.startKop(r,rules))
     v.push(...CHECKS.volgorde(r,rules))

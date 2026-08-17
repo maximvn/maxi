@@ -1413,7 +1413,54 @@ export default function RasterTool(){
     const durFor2=dd=> dd==='O'?ochDur : dd==='M'?midDur : avDur
     // Onder- en bovengrens van de benuttingsband per dagdeel (in minuten). Een dagdeel
     // telt pas als volwaardig (half dag-)spreekuur als het de ONDERGRENS haalt.
-    const ondergrensCap=dd=>Math.round(durFor2(dd)*Math.max(0,(m2.benutting-2.5))/100)
+    // De band is hard: naar BENEDEN afronden mag de bovengrens nooit overschrijden en
+    // naar boven afronden mag nooit onder de ondergrens duiken. Met gewoon afronden
+    // werd 95% + 2,5 stiekem 205 min = 97,6% — buiten de band die je hebt ingesteld.
+    const ondergrensCap=dd=>Math.ceil(durFor2(dd)*Math.max(0,(m2.benutting-2.5))/100-1e-9)
+    // ── HAALBARE BAND ──────────────────────────────────────────────────────────
+    // Een spreekuur wordt gevuld met hele consulten, dus de bezetting is altijd een
+    // veelvoud van de grootste gemene deler van de consultduren (bij 10/15/20/30 min
+    // is dat 5). De rekenkundige band 173,25–183,75 min is daarmee in de praktijk
+    // 175–180 min. Rekenen met de rekenkundige grenzen ging structureel mis: het
+    // weekplan mikte op 173,4 min per spreekuur — onbereikbaar — waardoor elke dag
+    // één spreekuur te veel opende, dat niet vulde, en de afspraken op "nog te
+    // plannen" belandden. Alle AANTALLEN en DOELEN rekenen daarom met de haalbare
+    // band; de harde toets blijft de echte band.
+    const durStap=(()=>{
+      const ggd=(a,b)=>b?ggd(b,a%b):a
+      let g=0
+      allInst.forEach(a=>{ const d=Math.round(a.duur); if(d>0) g=ggd(g,d) })
+      return (g>0&&g<=60)?g:1
+    })()
+    const bovengrensCap=dd=>Math.floor(durFor2(dd)*Math.min(100,m2.benutting+2.5)/100+1e-9)
+    const haalbaarOnder=dd=>{ const L=ondergrensCap(dd), U=bovengrensCap(dd)
+      const q=Math.ceil(L/durStap)*durStap; return q<=U?q:L }
+    const haalbaarBoven=dd=>{ const L=ondergrensCap(dd), U=bovengrensCap(dd)
+      const q=Math.floor(U/durStap)*durStap; return q>=L?q:U }
+    // Zoekt uit een restlijst de combinatie afspraken die een leeg dagdeel het verst
+    // binnen de band vult (bounded knapsack over de consultduren). Geeft null als de
+    // ondergrens niet gehaald wordt — dan hoort dat dagdeel dicht te blijven.
+    const kiesTotBand=(kand,L,U)=>{
+      const aantal={}; kand.forEach(a=>{ aantal[a.duur]=(aantal[a.duur]||0)+1 })
+      const duren=Object.keys(aantal).map(Number).sort((a,b)=>b-a)
+      let herkomst=new Map([[0,{}]])
+      duren.forEach(d=>{ const nieuw=new Map(herkomst)
+        herkomst.forEach((combi,som)=>{
+          for(let k=1;k<=aantal[d];k++){ const ns=som+k*d
+            if(ns>U) break
+            if(!nieuw.has(ns)) nieuw.set(ns,{...combi,[d]:k}) }
+        })
+        herkomst=nieuw })
+      let beste=null
+      herkomst.forEach((combi,som)=>{ if(som>=L-0.01 && (!beste||som>beste.som)) beste={som,combi} })
+      if(!beste) return null
+      const mee=[], op=new Set()
+      Object.entries(beste.combi).forEach(([d,k])=>{
+        const pool=kand.filter(a=>a.duur===+d&&!op.has(a.id))
+        for(let i=0;i<k&&i<pool.length;i++){ mee.push(pool[i]); op.add(pool[i].id) }
+      })
+      return mee
+    }
 
     const durFor=dd=> dd==='O'?ochDur : dd==='M'?midDur : avDur
     const ddIndex={O:0,M:1,A:2}
@@ -1507,7 +1554,7 @@ export default function RasterTool(){
     // rules.kamerVerdeling bepaalt hoe binnen een dag wordt verdeeld:
     //   'vullen'  — kamer/dagdeel achtereenvolgens vol tot de benutting (efficiënt)
     //   'gelijk'  — de vraag gelijkmatig over alle benodigde kamers en dagdelen
-    const vulDag=(di, poolIn)=>{
+    const vulDag=(di, poolIn, nWens)=>{
       const openDd=DD.filter(x=>ddOpenOp(x,di))
       const uit={}; openDd.forEach(x=>{uit[x]=[]})
       if(!openDd.length) return {perDd:uit, over:poolIn}
@@ -1541,8 +1588,11 @@ export default function RasterTool(){
       // spreekuur: haalt dat de ondergrens niet, dan is het geen volwaardig
       // spreekuur en gaan die afspraken naar "nog te plannen".
       const BAND=2.5
-      const maxCapFor=dd=>Math.round(durFor2(dd)*Math.min(100,m2.benutting+BAND)/100)
-      const minCapFor=dd=>Math.round(durFor2(dd)*Math.max(0,m2.benutting-BAND)/100)
+      const maxCapFor=dd=>bovengrensCap(dd)
+      const minCapFor=dd=>ondergrensCap(dd)
+      // haalbare grenzen (veelvouden van de consultduur-stap) — hiermee worden het
+      // AANTAL spreekuren en de doelvulling berekend
+      const qMin=dd=>haalbaarOnder(dd), qMax=dd=>haalbaarBoven(dd)
       const mk=(dd,r)=>({dd,r,items:[],used:0,cap:maxCapFor(dd)})
       const slots=[]
       for(let r=0;r<kap;r++) ddVolg.forEach(dd=>slots.push(mk(dd,r)))
@@ -1627,102 +1677,279 @@ export default function RasterTool(){
           if(!k.length) k=actFys.filter(s=>a.ddOpties.includes(s.dd)&&s.used+a.duur<=hardCapOf(s))
           if(!k.length) return null; k.sort(ordSort); return k[0] }
         const alleFys=[...physVast,...physRest]
-        // ── SLOT-MAJOR BEST-FIT ('dagdeel') ────────────────────────────────────
-        // Vult één spreekuur zo DICHT MOGELIJK tot de bovenband voordat het volgende
-        // opengaat. Een pure first-fit (afspraak voor afspraak het vroegste passende
-        // slot) liet structureel ruimte liggen: zodra de eerstvolgende afspraak in de
-        // mix-volgorde net niet meer paste, sprong hij door naar het volgende slot en
-        // bleef het spreekuur op 170 van 184 min steken (81% — ónder de ondergrens).
-        // Die 10-15 verloren minuten per spreekuur stapelden zich over de week op tot
-        // een halve restkamer en afspraken op "nog te plannen", terwijl er ruimte was.
-        // Nu kiezen we per slot telkens de best passende afspraak, met behoud van een
-        // representatieve nieuw/controle-mix (de VOLGORDE binnen de kamer wordt later
-        // door applyPlanRules bepaald, dus dit raakt alleen de selectie).
-        const vulSlotsBestFit=(rest)=>{
-          const totN=rest.filter(a=>a.category==='nieuw').length
-          const ratioN=rest.length? totN/rest.length : 0
-          // twee rondes: eerst binnen de fysieke deelcap (ruimte voor digitaal blijft
-          // gereserveerd), daarna een top-up tot de volle bovenband.
-          ;[physCapOf, hardCapOf].forEach(capOf=>{
-            actFys.slice().sort(ordSort).forEach(s=>{
-              let nIn=s.items.filter(a=>a.category==='nieuw').length, tot=s.items.length
-              for(;;){
-                const ruimte=capOf(s)-s.used
-                if(ruimte<=0) break
-                const kand=rest.filter(a=>a.ddOpties.includes(s.dd)&&a.duur<=ruimte+0.01)
-                if(!kand.length) break
-                // 1. afspraken die maar in één dagdeel kúnnen eerst (anders vallen ze uit)
-                const vast=kand.filter(a=>a.ddOpties.length===1)
-                let pool2=vast.length?vast:kand
-                // 2. de categorie die achterloopt op de dagverhouding krijgt voorrang,
-                //    zodat elk spreekuur een representatieve mix nieuw/controle houdt
-                const wilNieuw = tot===0 ? ratioN>=0.5 : (nIn/tot)<ratioN
-                const voork=pool2.filter(a=>(a.category==='nieuw')===wilNieuw)
-                if(voork.length) pool2=voork
-                // 3. binnen die groep de LANGSTE die nog past → het spreekuur loopt vol
-                const a=pool2.reduce((x,y)=>y.duur>x.duur?y:x)
-                plaats(s,a); rest.splice(rest.indexOf(a),1)
-                tot++; if(a.category==='nieuw') nIn++
+
+        // ══ VULLEN OP DE BENUTTINGSBAND ════════════════════════════════════════
+        // De benutting is de HOOFDREGEL. Elk geopend spreekuur komt binnen de band
+        // [benutting−2,5 ; benutting+2,5]; lukt dat niet, dan gaat dat spreekuur niet
+        // open. Daarom wordt eerst berekend HOEVEEL spreekuren er nodig zijn om de
+        // dagvraag precies in die band te bergen, en pas daarna gevuld — gericht op
+        // dat doel. De oude aanpak vulde greedy "tot er niets meer bij past" en
+        // strandde daardoor structureel op 170 van 210 min (81%), net ónder de
+        // ondergrens, met een dunne restkamer als sluitstuk.
+        const alleWerk=[...alleFys, ...digLos]
+        const D=alleWerk.reduce((t,a)=>t+a.duur,0)
+        // Gemiddelde HAALBARE onder- en bovengrens over de beschikbare spreekuren.
+        const gemL=actFys.length? actFys.reduce((t,s)=>t+qMin(s.dd),0)/actFys.length : 0
+        const gemU=actFys.length? actFys.reduce((t,s)=>t+qMax(s.dd),0)/actFys.length : 0
+        // Hoeveel spreekuren? Zo min mogelijk, mits elk de ondergrens haalt.
+        const nMin=gemU>0? Math.ceil(D/gemU-1e-9) : 0
+        const nMax=gemL>0? Math.floor(D/gemL+1e-9) : 0
+        // Past de vraag niet precies? Dan liever het GROOTSTE aantal spreekuren dat
+        // de ondergrens nog haalt (nMax): daarmee wordt de meeste vraag gepland.
+        const nEigen = nMin<=nMax ? nMin : nMax
+        // Het weekplan mag een dag hooguit stúren; het kan een dag nooit meer
+        // spreekuren opdringen dan de vraag van die dag binnen de band kan vullen.
+        // Precies dáár ging het mis: een dag kreeg 7 spreekuren toebedeeld terwijl er
+        // maar vraag voor 6 lag, het 7e vulde niet, en de rest bleef liggen.
+        let nDoel=Math.max(0, Math.min(actFys.length,
+          nWens!=null ? Math.max(Math.min(nWens-digSlots.size, nMax), Math.min(nEigen,nMax)) : nEigen))
+        // Verdeel die spreekuren over de dagdelen naar rato van de vraag die er ligt,
+        // zodat afspraken die maar in één dagdeel kunnen ook een plek houden.
+        const ddVraag={}
+        ddVolg.forEach(dd=>{ ddVraag[dd]=0 })
+        alleWerk.forEach(a=>{
+          const opts=(a.ddOpties||[]).filter(x=>ddVraag[x]!==undefined)
+          if(!opts.length) return
+          opts.forEach(x=>{ ddVraag[x]+=a.duur/opts.length })
+        })
+        const beschikbaar=dd=>actFys.filter(s=>s.dd===dd).sort((x,y)=>x.r-y.r)
+        // n spreekuren over de dagdelen verdelen naar rato van de vraag die er ligt,
+        // zodat afspraken die maar in één dagdeel kunnen ook een plek houden.
+        let gekozen=[]
+        const zetSlots=(n)=>{
+          const perDd={}; let restN=n
+          ddVolg.forEach(dd=>{ perDd[dd]=0 })
+          if(n>0 && D>0){
+            ddVolg.forEach(dd=>{ const k=Math.floor(n*ddVraag[dd]/D); perDd[dd]=k; restN-=k })
+            while(restN>0){
+              const dd=ddVolg.slice().filter(x=>perDd[x]<beschikbaar(x).length)
+                .sort((a,b)=>(ddVraag[b]-perDd[b]*gemU)-(ddVraag[a]-perDd[a]*gemU))[0]
+              if(dd==null) break
+              perDd[dd]++; restN--
+            }
+          }
+          gekozen=[]
+          ddVolg.forEach(dd=>{ beschikbaar(dd).slice(0,perDd[dd]).forEach(s=>gekozen.push(s)) })
+          gekozen.sort(gelijk?((x,y)=>(DD.indexOf(x.dd)-DD.indexOf(y.dd))||(x.r-y.r)):((x,y)=>x.ord-y.ord))
+          return perDd
+        }
+
+        // Eén afspraak kiezen voor dit spreekuur: eerst wie nergens anders kan, dan de
+        // categorie die achterloopt op de dagverhouding (nieuw/controle-mix), en binnen
+        // die groep de duur die het spreekuur het dichtst bij zijn doel brengt.
+        const totN=alleWerk.filter(a=>a.category==='nieuw').length
+        const ratioN=alleWerk.length? totN/alleWerk.length : 0
+        // De BAND gaat voor: eerst kiezen wélke duur het spreekuur het dichtst bij zijn
+        // doel brengt, pas daarna wélke afspraak van die duur (spoed eerst, dan wie
+        // nergens anders kan, dan de categorie die de nieuw/controle-mix in balans
+        // houdt). Andersom — eerst de mix, dan de duur — schoot het spreekuur telkens
+        // over zijn doel heen omdat de "juiste" categorie alleen nog lange afspraken
+        // had, en dan verhongert het laatste spreekuur van de dag.
+        const kiesVoor=(s,rest,doelS,capIn)=>{
+          const U=capIn!=null?capIn:maxCapFor(s.dd)
+          const kand=rest.filter(a=>a.ddOpties.includes(s.dd)&&s.used+a.duur<=U+0.01)
+          if(!kand.length) return null
+          const beste=kand.reduce((x,y)=>
+            Math.abs(s.used+y.duur-doelS)<Math.abs(s.used+x.duur-doelS)?y:x)
+          let zelfdeDuur=kand.filter(a=>a.duur===beste.duur)
+          const spoed=rules.spoedFirst?zelfdeDuur.filter(a=>a.spoed):[]
+          if(spoed.length && s.items.filter(a=>a.spoed).length===0) zelfdeDuur=spoed
+          const vast=zelfdeDuur.filter(a=>a.ddOpties.length===1); if(vast.length) zelfdeDuur=vast
+          const tot=s.items.length, nIn=s.items.filter(a=>a.category==='nieuw').length
+          const wilNieuw = tot===0 ? ratioN>=0.5 : (nIn/tot)<ratioN
+          const voork=zelfdeDuur.filter(a=>(a.category==='nieuw')===wilNieuw)
+          return voork.length?voork[0]:zelfdeDuur[0]
+        }
+        // ── EXACTE SAMENSTELLING OP DE BAND ───────────────────────────────────
+        // Blijft een spreekuur steken op bv. 170 van 210 min (81%) terwijl er alleen
+        // nog blokken van 15 min over zijn, dan kom je met bijplaatsen of één-op-één
+        // ruilen nooit binnen 173–184. Er bestaat wél een combinatie die het haalt
+        // (5×15 + 5×20 = 175). Deze samensteller zoekt die combinatie exact: een
+        // bounded knapsack over de beschikbare duren, met alle sommen tot de
+        // bovengrens. Hij draait alleen als de gewone vulling de band niet haalt, dus
+        // hij kost niets in het normale geval.
+        const componeer=(s,rest,doelS,capIn)=>{
+          const L=minCapFor(s.dd), U=capIn!=null?Math.max(minCapFor(s.dd),capIn):maxCapFor(s.dd)
+          // alles terug in de pool en opnieuw samenstellen
+          s.items.forEach(a=>rest.push(a)); s.items=[]; s.used=0
+          const kand=rest.filter(a=>a.ddOpties.includes(s.dd))
+          if(!kand.length) return false
+          const aantal={}
+          kand.forEach(a=>{ aantal[a.duur]=(aantal[a.duur]||0)+1 })
+          const duren=Object.keys(aantal).map(Number).sort((a,b)=>b-a)
+          const maxSom=Math.floor(U)
+          let herkomst=new Map([[0,{}]])
+          duren.forEach(d=>{
+            const nieuw=new Map(herkomst)
+            herkomst.forEach((combi,som)=>{
+              for(let k=1;k<=aantal[d];k++){
+                const ns=som+k*d; if(ns>maxSom) break
+                if(!nieuw.has(ns)) nieuw.set(ns,{...combi,[d]:k})
               }
             })
+            herkomst=nieuw
           })
-          return rest
+          let beste=null
+          herkomst.forEach((combi,som)=>{
+            if(som<L-0.01) return
+            const sc=Math.abs(som-doelS)
+            if(!beste||sc<beste.sc) beste={som,sc,combi}
+          })
+          if(!beste) return false
+          // Welke áfspraken van die duur? Eerst wie nergens anders kan, daarna de
+          // categorie die de mix in balans houdt.
+          const totN=kand.filter(a=>a.category==='nieuw').length
+          const ratio=kand.length?totN/kand.length:0
+          Object.entries(beste.combi).forEach(([d,k])=>{
+            for(let i=0;i<k;i++){
+              const pool=rest.filter(a=>a.ddOpties.includes(s.dd)&&a.duur===+d)
+              if(!pool.length) break
+              const vast=pool.filter(a=>a.ddOpties.length===1)
+              let p=vast.length?vast:pool
+              const tot=s.items.length, nIn=s.items.filter(x=>x.category==='nieuw').length
+              const wil = tot===0 ? ratio>=0.5 : (nIn/tot)<ratio
+              const voork=p.filter(a=>(a.category==='nieuw')===wil); if(voork.length) p=voork
+              const a=p[0]
+              plaats(s,a); rest.splice(rest.indexOf(a),1)
+            }
+          })
+          return s.used>=L-0.01
         }
-        if(gelijk){
-          // Spoed GELIJKMATIG over de spreekuren (elk spreekuur eerst één spoedgeval),
-          // zodat élk spreekuur met een spoedgeval kan openen i.p.v. samen te klonteren.
-          const spoedFys= rules.spoedFirst ? alleFys.filter(a=>a.spoed) : []
-          const restFys= rules.spoedFirst ? alleFys.filter(a=>!a.spoed) : alleFys
-          const spoedU=new Map(actFys.map(s=>[s,0]))
-          spoedFys.forEach(a=>{ let k=actFys.filter(s=>a.ddOpties.includes(s.dd)&&s.used+a.duur<=physCapOf(s))
-            if(!k.length) k=actFys.filter(s=>a.ddOpties.includes(s.dd)&&s.used+a.duur<=hardCapOf(s))
-            if(!k.length){ ov.push(a); return }
-            k.sort((x,y)=>(spoedU.get(x)-spoedU.get(y))||ordSort(x,y)); plaats(k[0],a); spoedU.set(k[0],spoedU.get(k[0])+1) })
-          restFys.forEach(a=>{ const s=kiesPhys(a); if(s) plaats(s,a); else ov.push(a) })
-        } else {
-          // 'dagdeel': slot voor slot vol tot de bovenband (best-fit, zie boven).
-          // Spoed komt via applyPlanRules vooraan te staan binnen elk spreekuur.
-          vulSlotsBestFit([...alleFys]).forEach(a=>ov.push(a))
+        // Onder de ondergrens blijven steken mag niet: eerst kijken of er nog iets bij
+        // kan, anders een korte afspraak ruilen voor een langere uit de pool.
+        const repareer=(s,rest,capIn)=>{
+          const L=minCapFor(s.dd), U=capIn!=null?Math.max(minCapFor(s.dd),capIn):maxCapFor(s.dd)
+          for(let g=0; g<25 && s.used<L-0.01; g++){
+            const bij=rest.filter(a=>a.ddOpties.includes(s.dd)&&s.used+a.duur<=U+0.01)
+              .sort((x,y)=>y.duur-x.duur)[0]
+            if(bij){ plaats(s,bij); rest.splice(rest.indexOf(bij),1); continue }
+            let best=null
+            s.items.forEach(x=>rest.forEach(y=>{
+              if(!y.ddOpties.includes(s.dd)) return
+              if(x.ddOpties.length===1 && y.ddOpties.length>1 && false) return
+              const nw=s.used-x.duur+y.duur
+              if(nw<=U+0.01 && nw>s.used+0.01){
+                const sc=Math.abs(nw-(L+U)/2)
+                if(!best||sc<best.sc) best={x,y,sc,nw} }
+            }))
+            if(!best) break
+            s.items.splice(s.items.indexOf(best.x),1); s.used-=best.x.duur
+            rest.splice(rest.indexOf(best.y),1); rest.push(best.x)
+            plaats(s,best.y)
+          }
+          return s.used>=L-0.01
         }
-        // 1. de vastgepinde consulten in hun eigen digitale spreekuur
+
+        // TWEE MIKPUNTEN. Mikken op het gemiddelde (vraag ÷ spreekuren) geeft de
+        // hoogste benutting, maar met vaste consultduren schiet een spreekuur soms net
+        // over zijn deel heen en verhongert het laatste spreekuur van de dag. Daarom
+        // proberen we ook een ronde die op de ONDERkant van de band mikt: dan passen er
+        // meer spreekuren, allemaal nog binnen de band. We houden de ronde die de
+        // minste afspraken laat liggen, en bij gelijke stand de hoogste benutting.
+        const vulRonde=(mik)=>{
+          gekozen.forEach(s=>{ s.items=[]; s.used=0 })
+          const rest=[...alleWerk]
+          const geopend=[]
+          gekozen.forEach((s,idx)=>{
+            const L=qMin(s.dd), U=qMax(s.dd)
+            const restMin=rest.reduce((t,a)=>t+a.duur,0)
+            const nogSlots=Math.max(1, gekozen.length-idx)
+            // RESERVERING: wat dit spreekuur pakt, moet de spreekuren die nog komen
+            // wél tot hun ondergrens laten vullen. Zonder die reservering nam het
+            // eerste spreekuur de bovengrens (150 van 210), waarna het laatste
+            // spreekuur van de dag verhongerde en alsnog omviel — precies het
+            // patroon van de halfvolle laatste kamer.
+            const ruimte=restMin-(nogSlots-1)*L
+            const cap = mik==='gemiddeld' ? Math.max(L, Math.min(maxCapFor(s.dd), ruimte)) : maxCapFor(s.dd)
+            const doelS = mik==='onder' ? L
+              : mik==='vol' ? U
+              : Math.max(L, Math.min(U, cap, restMin/nogSlots))   // 'gemiddeld' en 'ruim'
+            for(;;){
+              const a=kiesVoor(s,rest,doelS,cap)
+              if(!a) break
+              if(s.used>=L-0.01 && Math.abs(s.used+a.duur-doelS)>=Math.abs(s.used-doelS)) break
+              plaats(s,a); rest.splice(rest.indexOf(a),1)
+            }
+            if(!repareer(s,rest,cap) && !componeer(s,rest,doelS,cap)){
+              s.items.forEach(a=>rest.push(a)); s.items=[]; s.used=0
+            } else geopend.push(s)
+          })
+          // Wat nu nog over is, mag alleen bij een geopend spreekuur als het binnen de
+          // bovengrens blijft. Lukt dat niet, dan gaat het naar "nog te plannen" — een
+          // spreekuur onder de band openen is geen optie.
+          ;[...rest].forEach(a=>{
+            const k=geopend.filter(s=>a.ddOpties.includes(s.dd)&&s.used+a.duur<=maxCapFor(s.dd)+0.01)
+            if(!k.length) return
+            k.sort((x,y)=>x.used-y.used)
+            plaats(k[0],a); rest.splice(rest.indexOf(a),1)
+          })
+          return {rest:[...rest], plan:gekozen.map(s=>({s, items:[...s.items], used:s.used})),
+            over:rest.reduce((t,a)=>t+a.duur,0), open:geopend.length}
+        }
+        // DRIE MIKPUNTEN, de beste wint. 'gemiddeld' verdeelt de dagvraag gelijk over
+        // de spreekuren en reserveert voor wat nog komt; 'vol' vult elk spreekuur tot
+        // de haalbare bovengrens; 'onder' mikt op de ondergrens zodat er meer
+        // spreekuren passen. Welke het beste uitpakt hangt af van de consultduren die
+        // toevallig op die dag liggen, dus rekenen we ze alle drie door en houden we
+        // de ronde die de minste afspraken laat liggen.
+        const rondeVoor=(n)=>{
+          zetSlots(n)
+          let r=vulRonde('gemiddeld')
+          if(r.rest.length) for(const mik of ['ruim','vol','onder']){
+            const alt=vulRonde(mik)
+            if(alt.over<r.over || (alt.over===r.over && alt.open<r.open)) r=alt
+            if(!r.rest.length) break
+          }
+          return {r,n}
+        }
+        // Het weekplan rekent met gemiddelden; de consultduren van déze dag kunnen net
+        // één spreekuur meer of minder aankunnen. Daarom rekenen we ook n−1 en n+1 door
+        // en houden we de uitkomst die de minste afspraken laat liggen (bij gelijke
+        // stand: de minste spreekuren). Zo valt een dag nooit om op een afronding.
+        let win=rondeVoor(nDoel)
+        for(const n of [nDoel+1, nDoel-1]){
+          if(n<1 || n>actFys.length || n===nDoel) continue
+          const alt=rondeVoor(n)
+          if(alt.r.over<win.r.over || (alt.r.over===win.r.over && alt.r.open<win.r.open)) win=alt
+        }
+        const beste=win.r
+        // de winnende ronde terugzetten
+        zetSlots(win.n)
+        slots.forEach(s=>{ if(!digSlots.has(s)){ s.items=[]; s.used=0 } })
+        beste.plan.forEach(p=>{ p.items.forEach(a=>plaats(p.s,a)) })
+        const rest=beste.rest
+        // ── IS ER NOG WERK VOOR EEN VOLWAARDIG EXTRA SPREEKUUR? ────────────────
+        // De band blijft de regel, maar ruimte laten liggen mag niet: blijft er zoveel
+        // over dat er nóg een spreekuur mee tot de band gevuld kan worden, dan gaat dat
+        // alsnog open. Zo blijft er nooit een dagdeel leeg terwijl de restlijst het had
+        // kunnen vullen.
+        // ook spreekuren die in de eerste ronde leeg bleven krijgen een nieuwe kans
+        const vrij=actFys.filter(s=>!s.items.length).sort((x,y)=>x.ord-y.ord)
+        vrij.forEach(s=>{
+          if(!rest.length) return
+          const L=minCapFor(s.dd)
+          const passend=rest.filter(a=>a.ddOpties.includes(s.dd))
+          if(passend.reduce((t,a)=>t+a.duur,0) < L-0.01) return
+          const doelS=Math.min(qMax(s.dd), Math.max(qMin(s.dd), passend.reduce((t,a)=>t+a.duur,0)))
+          for(;;){
+            const a=kiesVoor(s,rest,doelS)
+            if(!a) break
+            if(s.used>=L-0.01 && Math.abs(s.used+a.duur-doelS)>=Math.abs(s.used-doelS)) break
+            plaats(s,a); rest.splice(rest.indexOf(a),1)
+          }
+          if(!repareer(s,rest) && !componeer(s,rest,doelS)){
+            s.items.forEach(a=>rest.push(a)); s.items=[]; s.used=0
+          }
+        })
+        rest.forEach(a=>ov.push(a))
+        // de vastgepinde digitale consulten in hun eigen spreekuur
         digSlots.forEach((items,slot)=>{ items.forEach(a=>plaats(slot,a)) })
-        // 2. de rest gewoon verdelen over de overige spreekuren
-        const digU=new Map(actFys.map(s=>[s,0]))
-        const kiesDig=a=>{ const k=actFys.filter(s=>past(s,a)); if(!k.length) return null
-          k.sort(gelijk?((x,y)=>(digU.get(x)-digU.get(y))||ordSort(x,y)):ordSort); return k[0] }
-        sorteerPool(digLos).forEach(a=>{ const s=kiesDig(a)
-          if(s){ plaats(s,a); digU.set(s,digU.get(s)+a.duur) } else ov.push(a) })
         return {act,ov}
       }
 
-      const capPerRoom=ddVolg.reduce((s,x)=>s+maxCapFor(x),0)
-      let uitkomst
-      if(gelijk){
-        // 'gelijk': hele kamers openen (ochtend + middag samen), vraag gebalanceerd
-        // over het MINIMALE aantal kamers verdelen; groeit alleen als bin-packing dat
-        // afdwingt (tot het maximale aantal kamers).
-        //
-        // Ook bij een VAST aantal kamers nemen we het minimum dat past, niet klakkeloos
-        // alle kamers. "Vast" is een BOVENGRENS, geen opdracht om alles te gebruiken:
-        // de vraag over méér kamers uitsmeren dan nodig maakt elke kamer dunner, waarna
-        // de minimumbezetting die kamers weer sluit en het werk op de restlijst belandt
-        // terwijl er kamers leegstaan. Precies dát ging hier mis.
-        const roomsAct=n=>slots.filter(s=>s.r<n)
-        const start=Math.max(1,Math.min(kap,Math.ceil(totMin/Math.max(1,capPerRoom))))
-        let nRooms=start
-        uitkomst=probeer(roomsAct(nRooms))
-        while(uitkomst.ov.length && nRooms<kap){ nRooms++; uitkomst=probeer(roomsAct(nRooms)) }
-      } else {
-        // 'dagdeel': slot voor slot in kamer-major volgorde. Start met een schatting
-        // van het aantal benodigde slots en groei één slot tegelijk tot alles past
-        // (of het maximale aantal kamers is bereikt → overschot naar "nog te plannen").
-        const maxSlots= kap*nSlotsPerRoom
-        const seqAct=n=>slots.slice(0,Math.min(n,maxSlots))
-        const avgBand= capPerRoom/Math.max(1,nSlotsPerRoom)
-        let nSlots=Math.max(1,Math.min(maxSlots,Math.ceil(totMin/Math.max(1,avgBand))))
-        uitkomst=probeer(seqAct(nSlots))
-        while(uitkomst.ov.length && nSlots<maxSlots){ nSlots++; uitkomst=probeer(seqAct(nSlots)) }
-      }
+      // Het aantal spreekuren wordt binnen probeer() bepaald door de benuttingsband;
+      // groeien of krimpen van buitenaf is daarmee overbodig geworden.
+      const uitkomst=probeer(slots.filter(s=>s.r<kap))
       const actief=uitkomst.act
       uitkomst.ov.forEach(a=>over.push(a))
 
@@ -1740,10 +1967,15 @@ export default function RasterTool(){
     // er op de restlijst belandt. Zowel de week-optimalisatie (die vooruit moet kunnen
     // kijken naar het gevolg van verschuiven) als de definitieve opbouw gebruiken 'm,
     // zodat beide exact dezelfde regel hanteren.
-    const minBezPct=Math.max(0,Math.min(100,rules.minBezetting??75))
+    // De drempel is bedoeld om DÚNNE spreekuren te sluiten. Een spreekuur dat de
+    // benuttingsband haalt is per definitie niet dun, dus de drempel kan nooit hoger
+    // liggen dan de ondergrens van de band. Zonder die begrenzing sloopte een drempel
+    // van 75% bij een benutting van 70% precies de spreekuren die keurig op 71% zaten.
+    const minBezPct=Math.min(Math.max(0,Math.min(100,rules.minBezetting??75)),
+      Math.max(0,m2.benutting-2.5))
     const minBezAan=rules.restOpruimen!==false && minBezPct>0
     const minBezCap=x=>durFor2(x)*minBezPct/100
-    const bovenCap2=x=>Math.round(durFor2(x)*Math.min(100,(m2.benutting+2.5))/100)
+    const bovenCap2=x=>bovengrensCap(x)
     const pasMinBezettingToe=(perDd, odd)=>{
       const R={}; odd.forEach(dd=>{ R[dd]=(perDd[dd]||[]).map(x=>[...(x||[])]) })
       const rest=[]
@@ -1855,12 +2087,14 @@ export default function RasterTool(){
         odd.forEach(dd=>(R[dd]||[]).forEach((rm,r)=>{ if(rm&&rm.length) gebruikteKamers.add(r) }))
         const n=gebruikteKamers.size
         const verlies=(res.over||[]).length+rest.length
-        if(n===0) return {n:0, lastAppts:[], frac:1, over:(res.over||[]).length, verlies}
+        const perDdN={}; odd.forEach(dd=>{ perDdN[dd]=(R[dd]||[]).filter(rm=>rm&&rm.length).length })
+        const restItems=[...(res.over||[]), ...rest]
+        if(n===0) return {n:0, lastAppts:[], frac:1, over:(res.over||[]).length, verlies, perDdN, restItems}
         const L=Math.max(...gebruikteKamers)
         let appts=[], min=0, cap=0
         odd.forEach(dd=>{ const arr=(R[dd]||[])[L]||[]; appts=appts.concat(arr)
           min+=arr.reduce((t,a)=>t+a.duur,0); cap+=bandCap(dd) })
-        return {n, lastAppts:appts, frac: cap>0?min/cap:1, over:(res.over||[]).length, verlies}
+        return {n, lastAppts:appts, frac: cap>0?min/cap:1, over:(res.over||[]).length, verlies, perDdN, restItems}
       }
       const snap=()=>{ const s={}; weekDagen.forEach(di=>s[di]=[...(grouped[di]||[])]); return s }
       const zet=s=>{ weekDagen.forEach(di=>grouped[di]=s[di]) }
@@ -1869,7 +2103,36 @@ export default function RasterTool(){
       const totVerlies=meas=>weekDagen.reduce((t,di)=>t+(meas[di].verlies||0),0)
       // Doelfunctie: eerst zo min mogelijk afspraken op de restlijst, dán zo min
       // mogelijk kamer-dagen. Inplannen weegt zwaarder dan een kamer besparen.
-      const meetAlles=()=>{ const m={}; weekDagen.forEach(di=>m[di]=meet(di)); return m }
+      // De weekbrede nabrander telt mee in de voorspelling: wat op de ene dag overblijft
+      // kan elders in de week alsnog een volwaardig spreekuur vullen. Zonder die stap
+      // beoordeelde het bundelen zichzelf op een tussenstand en koos het soms een
+      // verdeling die na de nabrander juist méér afspraken liet liggen.
+      const meetAlles=()=>{
+        const m={}; weekDagen.forEach(di=>m[di]=meet(di))
+        let pool=[]; weekDagen.forEach(di=>{ pool=pool.concat(m[di].restItems||[]) })
+        for(let g=0; g<12 && pool.length; g++){
+          let gelukt=false
+          for(const di of weekDagen){
+            for(const dd of openDdOf(di)){
+              if((m[di].perDdN[dd]||0)>=maxRoom) continue
+              const L=ondergrensCap(dd), U=bandCap(dd)
+              const kand=pool.filter(a=>!a._digSpreekuur
+                && (!a.dagOpties||a.dagOpties.includes(di)) && (!a.ddOpties||a.ddOpties.includes(dd)))
+              if(kand.reduce((t,a)=>t+a.duur,0)<L-0.01) continue
+              const mee=kiesTotBand(kand,L,U); if(!mee||!mee.length) continue
+              const ids=new Set(mee.map(a=>a.id)); pool=pool.filter(a=>!ids.has(a.id))
+              m[di].perDdN[dd]=(m[di].perDdN[dd]||0)+1
+              m[di].n=Math.max(m[di].n, m[di].perDdN[dd])
+              gelukt=true; break
+            }
+            if(gelukt) break
+          }
+          if(!gelukt) break
+        }
+        const perDagRest={}; pool.forEach(a=>{ perDagRest[a.day]=(perDagRest[a.day]||0)+1 })
+        weekDagen.forEach(di=>{ m[di].verlies=perDagRest[di]||0 })
+        return m
+      }
       // Bundelen mag de week niet scheeftrekken zonder dat het iets oplevert. De
       // spreiding (verschil tussen de drukste en de rustigste dag in kamer-dagen) is
       // daarom de derde maat: kost een verschuiving even veel kamer-dagen en belandt
@@ -1988,6 +2251,94 @@ export default function RasterTool(){
       // gelijkmatige verdeling — die is dan zelf al de beste optie.
       if(!beter(scoreVan(meetAlles()), startScore)) zet(beginSnap)
     }
+    // ══ BANDPLAN VOOR DE HELE WEEK ═════════════════════════════════════════════
+    // De benutting is de hoofdregel, en die geldt per SPREEKUUR. Daarom bepalen we
+    // eerst hoeveel spreekuren de weekvraag nodig heeft om allemaal binnen de band
+    // te vallen, verdelen we die over de dagen naar het weekdag-%, en schuiven we de
+    // vraag naar die verdeling toe. Zonder deze stap rekende elke dag apart en bleef
+    // er per dag een restje over dat nergens meer een volwaardig spreekuur vulde —
+    // opgeteld een halve week aan afspraken op "nog te plannen".
+    const magNaar=(a,toDi)=> !a._digSpreekuur && (!a.dagOpties || a.dagOpties.includes(toDi))
+    const bandPlan=(()=>{
+      if(!weekDagen.length) return null
+      const ddOf=di=>DD.filter(x=>ddOpenOp(x,di))
+      const gemVan=(f)=>{ let t=0,n=0
+        weekDagen.forEach(di=>ddOf(di).forEach(dd=>{ t+=f(dd); n++ })); return n?t/n:0 }
+      const gU=gemVan(haalbaarBoven), gL=gemVan(haalbaarOnder)
+      // Een eigen digitaal spreekuur ligt al vast: dag, dagdeel én vulling. Dat
+      // spreekuur en die minuten tellen dus NIET mee in de verdeling — anders rekent
+      // het weekplan met een gemiddelde vulling die het overgebleven werk niet meer
+      // waar kan maken en valt er per dag één spreekuur om.
+      const digN={}, digM={}
+      ;(digPlan.gepland||[]).forEach(g=>{ digN[g.di]=(digN[g.di]||0)+1; digM[g.di]=(digM[g.di]||0)+g.min })
+      const W=weekDagen.reduce((t,di)=>t+vraagVan(di)-(digM[di]||0),0)
+      if(W<=0||gU<=0) return null
+      const maxPerDag=di=>Math.max(0,(maxParallel===Infinity?99:maxParallel)*ddOf(di).length-(digN[di]||0))
+      const plafond=weekDagen.reduce((t,di)=>t+maxPerDag(di),0)
+      // Rekenen met de HAALBARE band (veelvouden van de consultduur-stap). Het
+      // kleinste aantal spreekuren waarin de weekvraag past is W ÷ haalbare
+      // bovengrens; haalt niet elk spreekuur daarmee de ondergrens, dan zakken we
+      // terug naar het grootste aantal dat dat wél haalt. Eerder werd hier op het
+      // midden van de REKENKUNDIGE band gemikt (173,4 min per spreekuur) — een
+      // bezetting die met consulten van 10/15/20/30 min niet bestaat. Elke dag
+      // kreeg zo één spreekuur te veel, dat leeg bleef, met een halve dag aan
+      // afspraken op "nog te plannen".
+      // Van alle aantallen waarin de weekvraag past, het aantal kiezen waarbij de
+      // gemiddelde vulling het dichtst bij het MIDDEN van de haalbare band ligt. Mik je
+      // op de bovengrens, dan moet élk spreekuur maximaal vol — één spreekuur dat net
+      // iets minder haalt, laat de rest omvallen. Mik je op de ondergrens, dan open je
+      // spreekuren die niet vol te krijgen zijn. Het midden geeft naar beide kanten lucht.
+      const N0=Math.ceil(W/gU-1e-9)
+      const N1=Math.min(plafond, Math.max(0,Math.floor(W/gL+1e-9)))
+      let N=Math.min(N0, plafond)
+      if(N0<=N1){
+        const mid=(gL+gU)/2
+        let best=Math.abs(W/N0-mid)
+        for(let k=N0+1;k<=N1;k++){ const s=Math.abs(W/k-mid); if(s<best-1e-9){ best=s; N=k } }
+      } else N=N1   // vraag past niet precies: liever het grootste aantal dat de ondergrens haalt
+      const aandeel=weekDagen.map(di=>m2.days[WEEKDAY_KEYS[di]]||0)
+      const som=aandeel.reduce((a,b)=>a+b,0)||1
+      const perDag={}; let rest=N
+      weekDagen.forEach((di,i)=>{ const n=Math.min(maxPerDag(di), Math.floor(N*aandeel[i]/som))
+        perDag[di]=n; rest-=n })
+      const vraagFys=di=>vraagVan(di)-(digM[di]||0)
+      while(rest>0){
+        const di=weekDagen.filter(d=>perDag[d]<maxPerDag(d))
+          .sort((a,b)=>(vraagFys(b)-perDag[b]*gU)-(vraagFys(a)-perDag[a]*gU))[0]
+        if(di==null) break
+        perDag[di]++; rest--
+      }
+      const perSlot=N>0?W/N:0
+      // Dagdoel = de vaste digitale minuten + het aandeel van deze dag in de rest.
+      const doel={}; weekDagen.forEach(di=>{ doel[di]=(digM[di]||0)+perDag[di]*perSlot })
+      const totaal={}; weekDagen.forEach(di=>{ totaal[di]=perDag[di]+(digN[di]||0) })
+      return {N:N+Object.values(digN).reduce((a,b)=>a+b,0), perDag:totaal, doel, perSlot, gL, gU}
+    })()
+    if(bandPlan && weekDagen.length>1){
+      const doel=bandPlan.doel
+      // Elke verschuiving die de scheefheid kleiner maakt is er één — ook als de
+      // afspraak groter is dan het gat zelf (15 min verhuizen bij een tekort van 10
+      // brengt je dichter bij het doel dan niets doen). En loopt één dagenpaar vast,
+      // dan zijn de andere paren nog niet uitgeprobeerd: doorzoeken, niet stoppen.
+      // Voorheen stopte de balans hier meteen, en bleef een dag achter met precies
+      // te weinig vraag voor zijn spreekuren — waarna er één omviel.
+      const scheef=(x,y)=>Math.abs(x)+Math.abs(y)
+      for(let g=0; g<400; g++){
+        const bal=weekDagen.map(di=>({di,d:vraagVan(di)-doel[di]})).sort((a,b)=>b.d-a.d)
+        let zet=null
+        for(let i=0;i<bal.length&&!zet;i++) for(let j=bal.length-1;j>i&&!zet;j--){
+          const geef=bal[i], neem=bal[j]
+          if(geef.d<=1||neem.d>=-1) continue
+          const a=(grouped[geef.di]||[]).filter(x=>magNaar(x,neem.di)
+              && scheef(geef.d-x.duur, neem.d+x.duur) < scheef(geef.d, neem.d)-1e-9)
+            .sort((x,y)=>y.duur-x.duur)[0]
+          if(a) zet={a, van:geef.di, naar:neem.di}
+        }
+        if(!zet) break
+        grouped[zet.van]=(grouped[zet.van]||[]).filter(q=>q.id!==zet.a.id)
+        grouped[zet.naar]=[...(grouped[zet.naar]||[]),{...zet.a,day:zet.naar,_verhuisd:zet.van}]
+      }
+    }
     herverdeelNaarVolleKamers()
 
     ;[0,1,2,3,4].forEach(di=>{
@@ -1997,7 +2348,7 @@ export default function RasterTool(){
       const dagPool=grouped[di]||[]
       // Onbeperkt pakken = werkelijk benodigde kamers (voor het capaciteitsadvies).
       const vrij=(()=>{ const bak=maxParallel; return null })()
-      const res1=vulDag(di, dagPool)
+      const res1=vulDag(di, dagPool, bandPlan?bandPlan.perDag[di]:null)
       DD.forEach(dd=>{
         const rooms=res1.perDd[dd]||[]
         // FASE 2a — RUWE structuur (welke afspraak in welke kamer). De VOLGORDE binnen
@@ -2054,7 +2405,6 @@ export default function RasterTool(){
     // binnen de bovenband van het dagdeel past. Welke code op welke dag/dagdeel mag, ligt al
     // in FASE 1 op basis van de invoer vast (ddOpties) — er wordt nooit buiten die grenzen
     // geruild.
-    const bovengrensCap=dd=>Math.round(durFor2(dd)*Math.min(100,(m2.benutting+2.5))/100)
     // Selectie-prioriteit: LAGER = liever inplannen. Alleen spoed is gewenster dan de rest.
     const selPrio=a=> (rules.spoedFirst&&a.spoed?-1e6:0)
     if(rules.spoedFirst){
@@ -2243,6 +2593,38 @@ export default function RasterTool(){
           }
         }
       }
+    }
+
+    // ══ WEEKBREDE NABRANDER — geen ruimte laten liggen ═════════════════════════
+    // De dagen zijn los van elkaar gevuld. Blijft er daarna nog werk over terwijl er
+    // ergens in de week nog een kamer-dagdeel vrij is, dan gaat dat spreekuur alsnog
+    // open — mits het de benuttingsband haalt. Zo kan het niet gebeuren dat er
+    // afspraken op "nog te plannen" staan terwijl een dagdeel leeg blijft. Haalt de
+    // rest de band niet, dan blijft dat dagdeel juist dicht: dát is de regel.
+    for(let ronde=0; ronde<12 && overflowInst.length; ronde++){
+      let gelukt=false
+      for(let di=0; di<5 && !gelukt; di++){
+        if(!built[di]) continue
+        for(const dd of DD){
+          if(!ddOpenOp(dd,di)) continue
+          const nu=(built[di][dd]||[]).length
+          if(maxParallel!==Infinity && nu>=maxParallel) continue
+          const L=ondergrensCap(dd), U=bovengrensCap(dd)
+          const kand=overflowInst.filter(a=>!a._digSpreekuur
+            && (!a.dagOpties||a.dagOpties.includes(di)) && (!a.ddOpties||a.ddOpties.includes(dd)))
+          if(kand.reduce((t,a)=>t+a.duur,0) < L-0.01) continue
+          const mee=kiesTotBand(kand,L,U)
+          if(!mee||!mee.length) continue
+          built[di][dd]=[...(built[di][dd]||[]), mee.map(a=>({...a, day:di, dd, ddOpties:[dd]}))]
+          maxRooms=Math.max(maxRooms, built[di][dd].length)
+          const ids=new Set(mee.map(a=>a.id))
+          for(let i=overflowInst.length-1;i>=0;i--) if(ids.has(overflowInst[i].id)) overflowInst.splice(i,1)
+          const pd=perDagdeelNeed.find(x=>x.day===di&&x.dd===dd)
+          if(pd){ pd.need=built[di][dd].length; pd.placed=built[di][dd].length }
+          gelukt=true; break
+        }
+      }
+      if(!gelukt) break
     }
 
     // FASE 2b — VOLGORDE binnen elke kamer (ná structuur + selectie), zodat een omgeruilde
@@ -2899,6 +3281,21 @@ export default function RasterTool(){
         `${ruilTotaal} keer is een korte geplande afspraak geruild voor een langere van de restlijst, zodat het spreekuur dichter bij de ${m2.benutting}% komt.`, null)
     }
     res.regelrapport=rap
+    // ── BUNDELEN MAG HET NOOIT SLECHTER MAKEN ─────────────────────────────────
+    // Het bundelen beslist op een voorspelling; de definitieve opbouw kan daarna
+    // anders uitpakken. Daarom rekenen we de week ook zónder bundelen door en
+    // houden we die als er méér afspraken ingepland raken. Zo is de belofte hard,
+    // niet bij benadering.
+    if(restDagGebundeld>0 && !rules.__zonderBundel){
+      const zonder=computeRaster(cfg,newRows,ctrlRows,m2,
+        {...rules, restDag:'uit', __zonderBundel:true}, capacity)
+      if(zonder && zonder.ntp.length<res.ntp.length){
+        zonder.notices=[...(zonder.notices||[]),{level:'info',rule:'Restvraag bundelen',
+          msg:`Bundelen liet ${res.ntp.length} afspraken op de restlijst staan tegen ${zonder.ntp.length} zonder bundelen. Het raster is daarom zonder bundelen opgebouwd.`,
+          fix:'Bundelen loont hier niet; met een andere restdag of meer kamers kan dat anders liggen.'}]
+        return zonder
+      }
+    }
     return res
   },[])
 

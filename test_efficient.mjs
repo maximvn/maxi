@@ -1,6 +1,7 @@
-// EFFICIËNTIE-CONTRACT: er blijft nooit een dagdeel leeg terwijl er afspraken op de
-// restlijst staan. De minimumbezetting bepaalt of het zinvol is een extra spreekuur
-// te openen — hij mag geen patiënten ongepland laten terwijl er ruimte is.
+// EFFICIËNTIE-CONTRACT (band-versie): de benutting is de hoofdregel. Er blijft nooit
+// een dagdeel leeg terwijl de restlijst het TOT DE BAND had kunnen vullen. Kan dat
+// niet, dan hoort dat dagdeel juist dicht te blijven — een half gevuld spreekuur
+// openen is geen optie.
 // Gebouwd op de geëxporteerde praktijkcase: 100 nieuw / 200 controle, 4 kamers,
 // dagdeel voor dagdeel vol, digitaal clusteren, flex verspreid.
 import { chromium } from 'playwright'
@@ -30,8 +31,9 @@ const R = await page.evaluate(()=>{
     spoedDagdeel:'both',digitalSlots:[],startNieuwWaar:'both',startControleWaar:'both',mixWaar:'both',
     digitalWaar:'both',flexWaar:'both',flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30}
   // Een dagdeel in een bestaande kamer dat leeg is terwijl er restlijst is = fout.
-  const leegTerwijlRest=r=>{
+  const leegTerwijlRest=(r,ben)=>{
     const fouten=[]; const nR=r.numRooms||1
+    const onder=dd=>(dd==='o'?r.ochDur:r.midDur)*((ben||85)-2.5)/100
     for(let di=0;di<5;di++){
       if(!r.days[di]) continue
       const ntpD=r.ntp.filter(a=>a.day===di); if(!ntpD.length) continue
@@ -39,13 +41,15 @@ const R = await page.evaluate(()=>{
         if(((r.days[di][pre+k])||[]).some(a=>!a.isFlex)) continue
         const bestaat=[...Array(nR).keys()].some(x=>((r.days[di][pre+x])||[]).some(a=>!a.isFlex))
         if(!bestaat) continue
-        if(ntpD.some(a=>!a.ddOpties||a.ddOpties.includes(ddU)))
-          fouten.push(`d${di} ${pre}${k+1} leeg · ${ntpD.length} op restlijst`)
+        const past=ntpD.filter(a=>!a.ddOpties||a.ddOpties.includes(ddU))
+        const min=past.reduce((t,a)=>t+a.duur,0)
+        if(min>=onder(pre)-0.01)
+          fouten.push(`d${di} ${pre}${k+1} leeg terwijl de restlijst (${min}m) het tot de band vult`)
       }
     }
     return fouten
   }
-  const meet=r=>({ntp:r.ntp.length, numRooms:r.numRooms, leeg:leegTerwijlRest(r),
+  const meet=r=>({ntp:r.ntp.length, numRooms:r.numRooms, leeg:leegTerwijlRest(r,85),
     cellen:(()=>{ const c=[]
       for(let di=0;di<5;di++) for(let k=0;k<(r.numRooms||1);k++) for(const [pre,l] of [['o','och'],['m','mid']]){
         const arr=((r.days[di]||{})[pre+k]||[]).filter(a=>!a.isFlex); if(!arr.length) continue
@@ -70,13 +74,16 @@ varianten.forEach(([naam,k])=>{
   ok(`${naam}: geen leeg dagdeel terwijl er restlijst is`, m.leeg.length===0,
     m.leeg.length?m.leeg.join(' · '):`restlijst ${m.ntp}`)
 })
-ok('de gemelde case plant nu alles in', R.export4.ntp===0, `restlijst ${R.export4.ntp} (was 30 in de export)`)
-ok('maandag gebruikt beide dagdelen van elke geopende kamer',
-  (()=>{ const ma=R.export4.cellen.filter(c=>c.di===0)
-    const kamers=[...new Set(ma.map(c=>c.k))]
-    const halve=kamers.filter(k=>ma.filter(c=>c.k===k).length===1)
-    // een halve kamer mag, zolang er niets op de restlijst staat
-    return R.export4.ntp===0 || halve.length===0 })(),
+// De band is de hoofdregel: wat geen volwaardig spreekuur meer vult, blijft staan.
+ok('elk geopend spreekuur ligt binnen de band 82,5–87,5%',
+  R.export4.cellen.every(c=>c.pct>=82&&c.pct<=88),
+  `${R.export4.cellen.length} spreekuren · ${Math.min(...R.export4.cellen.map(c=>c.pct))}–${Math.max(...R.export4.cellen.map(c=>c.pct))}%`)
+// Alles binnen de band én niets meer op de restlijst: dat is de optimale uitkomst
+// voor deze case (5550 min vraag, 31 spreekuren van 175–180 min).
+ok('geen enkele afspraak blijft liggen bij voldoende kamers',
+  R.export4.ntp===0, `restlijst ${R.export4.ntp} · ${R.export4.cellen.length} spreekuren`)
+ok('geen enkel spreekuur onder de band (was 9%, 50%, 57%, 64%)',
+  Math.min(...R.export4.cellen.map(c=>c.pct))>=82,
   R.export4.cellen.filter(c=>c.di===0).map(c=>`K${c.k+1}${c.dd[0]}:${c.n}@${c.pct}%`).join(' '))
 ok('bij écht te krappe capaciteit mag er wel iets op de restlijst', R.krap.ntp>0,
   `${R.krap.ntp} bij 2 kamers`)

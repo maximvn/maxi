@@ -117,6 +117,46 @@ gevuld raken met alléén telefonische en videoconsulten.
 Vastgepinde digitale spreekuren blijven staan waar jij ze zette: het herverdelen tussen dagen
 raakt ze niet aan.
 
+## De benutting is de hoofdregel
+
+Het benuttingspercentage staat boven alle andere regels. Vul je 85% in, dan ligt **elk geopend
+spreekuur** tussen 82,5% en 87,5% — en bij 95% tussen 92,5% en 97,5%. Er is geen route waarlangs
+een spreekuur daar buiten valt. Kan een dagdeel niet tot binnen die band gevuld worden, dan gaat
+het **niet open**; een half gevuld spreekuur is geen optie.
+
+Drie dingen maken dat waar:
+
+1. **De haalbare band.** Een spreekuur wordt gevuld met hele consulten, dus de bezetting is altijd
+   een veelvoud van de grootste gemene deler van je consultduren (bij 10/15/20/30 min is dat 5).
+   De rekenkundige band 173,25–183,75 min is in de praktijk dus 175–180 min. Alle aantallen en
+   doelen rekenen met die haalbare band. Daar zat de fout: het weekplan mikte op 173,4 min per
+   spreekuur — een bezetting die met die consultduren niet bestaat. Elke dag opende daardoor één
+   spreekuur te veel, dat niet vulde, en zijn afspraken belandden op "nog te plannen".
+2. **Reserveren voor wat nog komt.** Wat een spreekuur pakt, moet de spreekuren die daarna komen
+   nog tot hún ondergrens kunnen vullen. Zonder die reservering nam het eerste spreekuur de
+   bovengrens en verhongerde het laatste van de dag — de halfvolle laatste kamer.
+3. **Per dag doorrekenen op n−1, n en n+1 spreekuren**, met vier vulstrategieën (gemiddeld,
+   ruim, vol, op de ondergrens). De uitkomst die de minste afspraken laat liggen wint. Zo valt
+   een dag nooit om op een afronding.
+
+Daarna volgt nog een **weekbrede nabrander**: blijft er werk over terwijl er ergens in de week
+een kamer-dagdeel vrij is, dan gaat dat spreekuur alsnog open — mits het de band haalt. Haalt de
+rest de band niet, dan blijft dat dagdeel juist dicht.
+
+Op de aangeleverde praktijkcase (100 nieuw / 200 controle, 4 kamers, 5550 min vraag):
+
+| benutting | vóór | ná |
+|---|---|---|
+| 85% | 27 spreekuren, 9–86%, 46 op de restlijst | **31 spreekuren, 83–86%, restlijst 0** |
+| 95% | — | 28 spreekuren, 93–95%, restlijst 0 |
+| 80% | — | 33 spreekuren, 79–81%, restlijst 0 |
+| 70% | — | 37 spreekuren, 71%, restlijst 0 |
+
+Twee bijvangsten uit dezelfde regel: de bandgrenzen worden niet meer afgerond maar **naar binnen**
+afgekapt (95% + 2,5 werd stiekem 97,6%), en de **minimumbezetting kan nooit hoger liggen dan de
+ondergrens van de band** — bij een benutting van 70% sloopte een drempel van 75% precies de
+spreekuren die keurig op 71% zaten.
+
 ## De drempel laat nooit patiënten ongepland
 
 De minimumbezetting sloot een te dun spreekuur en zette de afspraken die nergens meer
@@ -147,6 +187,11 @@ nu mee: kost een verschuiving even veel kamer-dagen, dan wint de gelijkmatigste 
 
 In de gemeten testcase ging de verdeling van 6/2/2/2/2 kamers naar 4/2/3/3/3, terwijl het
 bundelen nog steeds ruim zijn werk doet (40 → 15 op de restlijst).
+
+En de belofte *bundelen maakt het nooit slechter* is nu hard in plaats van bij benadering: het
+bundelen besliste op een voorspelling, en die kon er na de definitieve opbouw naast zitten. De
+week wordt daarom óók zonder bundelen doorgerekend; blijven er dan minder afspraken liggen, dan
+wint die versie, met een melding die dat uitlegt.
 
 ## Eenvoud voorop
 
