@@ -1713,23 +1713,52 @@ export default function RasterTool(){
           opts.forEach(x=>{ ddVraag[x]+=a.duur/opts.length })
         })
         const beschikbaar=dd=>actFys.filter(s=>s.dd===dd).sort((x,y)=>x.r-y.r)
-        // n spreekuren over de dagdelen verdelen naar rato van de vraag die er ligt,
-        // zodat afspraken die maar in één dagdeel kunnen ook een plek houden.
+        // Hoeveel digitale spreekuren staan er al vast per dagdeel? Die bezetten een
+        // dagdeel in een kamer; om HELE kamers te krijgen moet de fysieke verdeling
+        // dat compenseren (staat het digitale spreekuur 's ochtends, dan mag de fysieke
+        // verdeling juist iets meer naar de middag).
+        const digPerDd={}; ddVolg.forEach(dd=>digPerDd[dd]=0)
+        digSlots.forEach((items,slot)=>{ digPerDd[slot.dd]=(digPerDd[slot.dd]||0)+1 })
+        // n spreekuren over de dagdelen verdelen; in 'dagdeel'-modus KAMER VOOR KAMER
+        // zodat elke kamer eerst helemaal vol is (ochtend + middag) voordat de volgende
+        // opengaat, en de laatste (mogelijk halve) kamer achteraan staat.
         let gekozen=[]
         const zetSlots=(n)=>{
-          const perDd={}; let restN=n
-          ddVolg.forEach(dd=>{ perDd[dd]=0 })
-          if(n>0 && D>0){
-            ddVolg.forEach(dd=>{ const k=Math.floor(n*ddVraag[dd]/D); perDd[dd]=k; restN-=k })
-            while(restN>0){
-              const dd=ddVolg.slice().filter(x=>perDd[x]<beschikbaar(x).length)
-                .sort((a,b)=>(ddVraag[b]-perDd[b]*gemU)-(ddVraag[a]-perDd[a]*gemU))[0]
-              if(dd==null) break
-              perDd[dd]++; restN--
-            }
+          const cap=dd=>beschikbaar(dd).length
+          const perDd={}; ddVolg.forEach(dd=>perDd[dd]=0)
+          let restN=n
+          // 1) ondergrens: genoeg sloten voor dagdeel-GEBONDEN vraag (bv. avond-only)
+          ddVolg.forEach(dd=>{
+            const locked=alleWerk.filter(a=>a.ddOpties.length===1&&a.ddOpties[0]===dd)
+              .reduce((t,a)=>t+a.duur,0)
+            const k=Math.min(cap(dd), restN, Math.ceil(locked/Math.max(1,gemU)))
+            perDd[dd]=k; restN-=k
+          })
+          // 2) de rest zó verdelen dat het TOTALE aantal spreekuren per dagdeel
+          //    (digitaal + fysiek) zo gelijk mogelijk wordt → hele kamers.
+          while(restN>0){
+            const dd=ddVolg.slice().filter(x=>perDd[x]<cap(x))
+              .sort((a,b)=>((digPerDd[a]+perDd[a])-(digPerDd[b]+perDd[b]))||(ddVraag[b]-ddVraag[a]))[0]
+            if(dd==null) break
+            perDd[dd]++; restN--
           }
           gekozen=[]
-          ddVolg.forEach(dd=>{ beschikbaar(dd).slice(0,perDd[dd]).forEach(s=>gekozen.push(s)) })
+          if(gelijk){
+            // gelijk verdelen: per dagdeel de eerste perDd[dd] kamers
+            ddVolg.forEach(dd=>{ beschikbaar(dd).slice(0,perDd[dd]).forEach(s=>gekozen.push(s)) })
+          } else {
+            // 'dagdeel': room-major. Loop kamer voor kamer (oplopend) en neem per kamer
+            // de gevraagde dagdelen, zodat ochtend en middag in DEZELFDE kamers vallen.
+            const need={...perDd}
+            const byRoom={}; actFys.forEach(s=>{ (byRoom[s.r]=byRoom[s.r]||[]).push(s) })
+            Object.keys(byRoom).map(Number).sort((a,b)=>a-b).forEach(r=>{
+              ddVolg.forEach(dd=>{
+                if(need[dd]<=0) return
+                const s=byRoom[r].find(x=>x.dd===dd)
+                if(s){ gekozen.push(s); need[dd]-- }
+              })
+            })
+          }
           gekozen.sort(gelijk?((x,y)=>(DD.indexOf(x.dd)-DD.indexOf(y.dd))||(x.r-y.r)):((x,y)=>x.ord-y.ord))
           return perDd
         }
@@ -2298,16 +2327,42 @@ export default function RasterTool(){
       } else N=N1   // vraag past niet precies: liever het grootste aantal dat de ondergrens haalt
       const aandeel=weekDagen.map(di=>m2.days[WEEKDAY_KEYS[di]]||0)
       const som=aandeel.reduce((a,b)=>a+b,0)||1
-      const perDag={}; let rest=N
-      weekDagen.forEach((di,i)=>{ const n=Math.min(maxPerDag(di), Math.floor(N*aandeel[i]/som))
-        perDag[di]=n; rest-=n })
       const vraagFys=di=>vraagVan(di)-(digM[di]||0)
-      while(rest>0){
-        const di=weekDagen.filter(d=>perDag[d]<maxPerDag(d))
-          .sort((a,b)=>(vraagFys(b)-perDag[b]*gU)-(vraagFys(a)-perDag[a]*gU))[0]
-        if(di==null) break
-        perDag[di]++; rest--
+      // ── GELIJKMATIGE DAGVERDELING — hele kamers, halve kamers geconcentreerd ──
+      // We verdelen het TOTALE aantal spreekuren (fysiek + digitaal) zó gelijk
+      // mogelijk over de werkdagen dat geen dag op 2,5 kamer blijft steken terwijl
+      // een andere dag twee halve kamers heeft. In 'dagdeel'-modus (kamer voor kamer
+      // vullen) betekent gelijk = elke dag ⌊tot/dagen⌋ of ⌈tot/dagen⌉ spreekuren; de
+      // overgebleven halve kamers landen zo op zo min mogelijk dagen. Zonder deze stap
+      // rekende elke dag los af en kon woensdag op 5 sloten (2,5 kamer) eindigen naast
+      // maandag én dinsdag met elk een halve kamer.
+      const sumDig=Object.values(digN).reduce((a,b)=>a+b,0)
+      const Ntot=N+sumDig
+      const maxTot=di=>(maxParallel===Infinity?99:maxParallel)*ddOf(di).length
+      const tot={}; let restT=Ntot
+      weekDagen.forEach((di,i)=>{ const n=Math.min(maxTot(di),
+        Math.max(digN[di]||0, Math.floor(Ntot*aandeel[i]/som)))
+        tot[di]=n; restT-=n })
+      while(restT>0){   // extra spreekuren naar de dag die het verst onder het gemiddelde zit
+        const di=weekDagen.filter(d=>tot[d]<maxTot(d))
+          .sort((a,b)=>(tot[a]-tot[b])||(vraagVan(b)-vraagVan(a)))[0]
+        if(di==null) break; tot[di]++; restT--
       }
+      while(restT<0){   // te veel toegewezen (door de digitale ondergrens): bij de drukste weg
+        const di=weekDagen.filter(d=>tot[d]>(digN[d]||0))
+          .sort((a,b)=>tot[b]-tot[a])[0]
+        if(di==null) break; tot[di]--; restT++
+      }
+      // Gelijktrekken: zolang de drukste dag méér dan één spreekuur boven de rustigste
+      // zit, schuif er één op. Zo komen alle dagen op ⌊gem⌋/⌈gem⌉ en concentreren de
+      // halve kamers zich op zo min mogelijk dagen.
+      for(let g=0; g<200; g++){
+        const hoog=weekDagen.filter(d=>tot[d]>(digN[d]||0)).sort((a,b)=>tot[b]-tot[a])[0]
+        const laag=weekDagen.filter(d=>tot[d]<maxTot(d)).sort((a,b)=>tot[a]-tot[b])[0]
+        if(hoog==null||laag==null||tot[hoog]-tot[laag]<=1) break
+        tot[hoog]--; tot[laag]++
+      }
+      const perDag={}; weekDagen.forEach(di=>{ perDag[di]=Math.max(0, tot[di]-(digN[di]||0)) })
       const perSlot=N>0?W/N:0
       // Dagdoel = de vaste digitale minuten + het aandeel van deze dag in de rest.
       const doel={}; weekDagen.forEach(di=>{ doel[di]=(digM[di]||0)+perDag[di]*perSlot })

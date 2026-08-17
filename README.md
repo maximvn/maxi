@@ -96,6 +96,28 @@ Twee fouten die tot losse halve dagdelen leidden, zijn verholpen:
 In de bezettingskaart staat per dag of de kamers hele dagen draaien of niet (`3 kamers · hele dag`
 tegenover `4 och / 2 mid`), met de reden als tooltip.
 
+## Hele kamers, gelijkmatig over de week
+
+Bij *verdeling over kamers en dagdelen = dagdeel* wordt een kamer nu eerst **helemaal** gevuld
+— ochtend én middag — voordat de volgende opengaat. Twee valkuilen zijn dichtgezet:
+
+- **Geen twee ochtend-halve-kamers naast elkaar.** Eerder kon een dag kamer 3 's ochtends en
+  kamer 4 's ochtends openen terwijl beide middagen leeg bleven. Dat kwam doordat de ochtend/
+  middag-verdeling geen rekening hield met de digitale kamer die 's ochtends al een plek bezet.
+  De slotselectie is nu *kamer-major*: per kamer worden eerst alle dagdelen genomen, en de
+  dagdeel-verdeling compenseert het digitale spreekuur (staat dat 's ochtends, dan schuift de
+  fysieke vraag juist iets naar de middag). De laatste, mogelijk halve, kamer staat altijd
+  achteraan — en die halve kamer is de ochtend.
+- **Gelijkmatig over de week.** Het weekplan verdeelt het totale aantal spreekuren (fysiek +
+  digitaal) zó gelijk mogelijk over de werkdagen dat geen dag op 2,5 kamer blijft steken terwijl
+  een andere dag twee halve kamers heeft. In de praktijkcase (100 nieuw / 200 controle, 4 kamers,
+  startControle actief): vier dagen met precies **3 hele kamers** en maandag een **4e kamer
+  alleen 's ochtends** — de overloop geconcentreerd op één dag, in plaats van drie losse halve
+  kamers verspreid over de week.
+
+Gecontroleerd over alle instellingen (benutting 70–95%, automatische capaciteit, ongelijke week,
+avondspreekuur, digitaal spreiden): nergens nog twee halve kamers op één dag, en de restlijst blijft leeg.
+
 ## Digitale consulten: een eigen digitaal spreekuur
 
 Kies je **"Eigen digitaal spreekuur"**, dan wordt een **heel dagdeel** uitsluitend met digitale
