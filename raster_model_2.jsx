@@ -21,6 +21,27 @@ const wbNaarCsv=(wb,blad)=>{
   const ws=wb.Sheets[blad]
   return ws?XLSX.utils.sheet_to_csv(ws,{FS:';'}):''
 }
+// ÉÉN bestand met ALLE tabbladen onder elkaar, met een duidelijke scheiding. Dit is
+// de terugval voor de gedeelde pagina: die mag geen .xlsx wegschrijven, maar het
+// moet wél één bestand blijven — geen stapel losse downloads.
+const wbNaarEenCsv=wb=>wb.SheetNames.filter(n=>n!=='_rasterdata').map(n=>
+  `=== TABBLAD: ${n} ===\n`+wbNaarCsv(wb,n)).join('\n\n')
+// Probeer eerst een ECHTE .xlsx weg te schrijven. Lukt dat niet omdat deze weergave
+// dat bestandstype niet toestaat, dan zeggen we dat eerlijk en bieden we hetzelfde
+// in één CSV aan. Zo proberen we het altijd, in plaats van het bij voorbaat op te geven.
+const viewerOpslaanXlsx=async(basisnaam,wb)=>{
+  try{
+    const data=XLSX.write(wb,{bookType:'xlsx',type:'array'})
+    await window.claude.downloads.save({filename:`${basisnaam}.xlsx`, data})
+    return {ok:true, xlsx:true, msg:`Opgeslagen als ${basisnaam}.xlsx — één Excel met alle tabbladen.`}
+  }catch(e){
+    const c=e&&e.code
+    if(c==='declined')     return {ok:false, msg:'Je hebt de download geweigerd — niets opgeslagen.'}
+    if(c==='rate_limited') return {ok:false, msg:'Er staat al een download open. Probeer het zo nog eens.'}
+    if(c==='too_large')    return {ok:false, msg:'Het bestand is te groot om via de gedeelde pagina op te slaan (max 16 MB).'}
+    return {ok:false, geenXlsx:true, msg:'Deze gedeelde weergave mag geen .xlsx-bestand wegschrijven.'}
+  }
+}
 // Opslaan via de viewer, met een eerlijke melding per uitkomst. Staat .csv niet
 // aan in deze weergave, dan bieden we exact dezelfde inhoud als .txt aan.
 const viewerOpslaan=async(basisnaam,tekst,ext='csv')=>{
@@ -1062,9 +1083,6 @@ export default function RasterTool(){
   // De afspraken worden op de nieuwe plek opnieuw achter elkaar gezet vanaf de
   // begintijd van dat dagdeel, zodat de agenda meteen klopt. Past er door een korter
   // dagdeel iets niet meer, dan komt dat op "nog te plannen" — nooit stilzwijgend weg.
-  // De ref houdt de bron SYNCHROON vast (state is er pas na een re-render, en een
-  // drop kan al in dezelfde tick volgen); de state stuurt alleen de visuele feedback.
-  const kaartDragRef=useRef(null)
   const [kaartDrag,setKaartDrag]=useState(null)   // {di,room,dd} dat je vasthoudt
   const [kaartOver,setKaartOver]=useState(null)   // {di,room,dd} waar je boven zweeft
   const slotKeyVan=(room,dd)=>(dd===0?'o':dd===1?'m':'a')+room
@@ -1104,6 +1122,59 @@ export default function RasterTool(){
       return nxt
     })
   },[])
+
+  // ── SLEPEN MET DE MUIS/VINGER (niet via HTML5 drag-and-drop) ────────────────
+  // Een <button> met draggable="true" start in de praktijk lang niet altijd een
+  // HTML5-sleep: browsers geven de eigen knop-afhandeling voorrang, en op touch
+  // gebeurt er helemaal niets. Daarom volgen we hier dezelfde aanpak als het
+  // slepen van losse afspraken in het raster: pointer-events, zelf bijhouden, en
+  // het doelvak opzoeken met elementFromPoint. Dat werkt met muis én touch, en in
+  // elke browser.
+  const kaartBron=useRef(null)      // {di,room,dd,x0,y0,actief}
+  const kaartOverRef=useRef(null)
+  const kaartNetGesleept=useRef(false)
+  const [kaartGhost,setKaartGhost]=useState(null)   // {x,y,label}
+  const kaartPak=(e,di,room,dd,leeg,label)=>{
+    if(leeg||e.button===2) return
+    kaartBron.current={di,room,dd,x0:e.clientX,y0:e.clientY,actief:false,label}
+  }
+  useEffect(()=>{
+    const celVan=el=>{ let n=el
+      while(n&&n!==document.body){ if(n.dataset&&n.dataset.kaartcel) return n.dataset.kaartcel; n=n.parentElement }
+      return null }
+    const move=e=>{
+      const b=kaartBron.current; if(!b) return
+      if(!b.actief){
+        // Pas slepen na een paar pixels — anders wordt elke klik een sleep.
+        if(Math.abs(e.clientX-b.x0)+Math.abs(e.clientY-b.y0)<6) return
+        b.actief=true; setKaartDrag({di:b.di,room:b.room,dd:b.dd})
+      }
+      e.preventDefault()
+      setKaartGhost({x:e.clientX,y:e.clientY,label:b.label})
+      const k=celVan(document.elementFromPoint(e.clientX,e.clientY))
+      if(k){
+        const [di,room,dd]=k.split('-').map(Number)
+        const zelf=(di===b.di&&room===b.room&&dd===b.dd)
+        const t=zelf?null:{di,room,dd}
+        kaartOverRef.current=t; setKaartOver(t)
+      } else { kaartOverRef.current=null; setKaartOver(null) }
+    }
+    const los=()=>{
+      const b=kaartBron.current
+      if(b&&b.actief){
+        kaartNetGesleept.current=true
+        setTimeout(()=>{ kaartNetGesleept.current=false },0)
+        if(kaartOverRef.current) verplaatsDagdeel({di:b.di,room:b.room,dd:b.dd}, kaartOverRef.current)
+      }
+      kaartBron.current=null; kaartOverRef.current=null
+      setKaartDrag(null); setKaartOver(null); setKaartGhost(null)
+    }
+    window.addEventListener('pointermove',move,{passive:false})
+    window.addEventListener('pointerup',los)
+    window.addEventListener('pointercancel',los)
+    return ()=>{ window.removeEventListener('pointermove',move)
+      window.removeEventListener('pointerup',los); window.removeEventListener('pointercancel',los) }
+  },[verplaatsDagdeel])
 
   const deleteAppt=(day,slot,id)=>{
     setRaster(prev=>{
@@ -6544,23 +6615,11 @@ export default function RasterTool(){
             const naam=`Kamer ${room+1} · ${DAGS_NL[di]} · ${DD_INFO[dd].l.toLowerCase()}`
             return(
               <button
-                draggable={!leeg}
-                onDragStart={e=>{ if(leeg){e.preventDefault();return}
-                  kaartDragRef.current={di,room,dd}
-                  setKaartDrag({di,room,dd}); e.dataTransfer.effectAllowed='move'
-                  try{ e.dataTransfer.setData('text/plain',`${di}-${room}-${dd}`) }catch(_){} }}
-                onDragEnd={()=>{ kaartDragRef.current=null; setKaartDrag(null); setKaartOver(null) }}
-                onDragOver={e=>{ const bron=kaartDragRef.current
-                  if(!bron||(bron.di===di&&bron.room===room&&bron.dd===dd)) return
-                  e.preventDefault(); e.dataTransfer.dropEffect='move'
-                  if(!hover) setKaartOver({di,room,dd}) }}
-                onDragLeave={()=>{ if(hover) setKaartOver(null) }}
-                onDrop={e=>{ e.preventDefault()
-                  const bron=kaartDragRef.current
-                  if(bron) verplaatsDagdeel(bron,{di,room,dd})
-                  kaartDragRef.current=null; setKaartDrag(null); setKaartOver(null) }}
+                data-kaartcel={`${di}-${room}-${dd}`}
+                onPointerDown={e=>kaartPak(e,di,room,dd,leeg,
+                  `K${room+1} · ${DAY_ABBR[di]} ${DD_INFO[dd].kort}${leeg?'':` · ${c.appts} afspr`}`)}
                 onClick={()=>{
-                  if(kaartDragRef.current) return
+                  if(kaartNetGesleept.current) return
                   const t= leeg
                     ? `op ${DAGS_NL[di]} staan geen afspraken, graag ${DAGS_NL[di]} ook inplannen`
                     : `kamer ${room+1} op ${DAGS_NL[di]} staat op ${c.pct}% bezetting, ik wil richting ${doel}%`
@@ -6572,12 +6631,16 @@ export default function RasterTool(){
                 onMouseLeave={e=>{e.currentTarget.style.transform='none';e.currentTarget.style.boxShadow='none'}}
                 style={{display:'block',width:'100%',textAlign:'left',marginBottom:3,
                   cursor:leeg?(kaartDrag?'copy':'pointer'):(kaartDrag?'grabbing':'grab'),
+                  touchAction:'none',   // zodat slepen op touch niet de pagina scrollt
                   padding:'3px 5px',borderRadius:6,position:'relative',overflow:'hidden',
-                  transition:'transform 0.12s, box-shadow 0.12s, outline 0.1s',
-                  opacity:pakt?0.45:1,
+                  transition:'box-shadow 0.12s, outline 0.1s',
+                  opacity:pakt?0.4:1,
                   outline:hover&&doelvak?`2px solid ${C.primary}`:'none', outlineOffset:1,
+                  boxShadow:hover&&doelvak?`0 0 0 4px rgba(28,110,164,0.16)`:'none',
                   border:`1px solid ${hover&&doelvak?C.primary:leeg?C.border:kl.brd}`,
-                  background:leeg?`repeating-linear-gradient(45deg,${C.surface2},${C.surface2} 4px,${C.white} 4px,${C.white} 8px)`:kl.bg}}>
+                  background:leeg
+                    ?(hover&&doelvak?'#E8F2F9':`repeating-linear-gradient(45deg,${C.surface2},${C.surface2} 4px,${C.white} 4px,${C.white} 8px)`)
+                    :kl.bg}}>
                 {!leeg&&<span style={{position:'absolute',left:0,top:0,bottom:0,width:`${Math.min(100,c.pct)}%`,
                   background:kl.brd,opacity:0.32,transition:'width 0.55s cubic-bezier(.4,0,.2,1)'}}/>}
                 <span style={{position:'relative',display:'flex',alignItems:'center',gap:4,
@@ -7533,6 +7596,19 @@ export default function RasterTool(){
           )
         })()}
 
+        {/* Sleep-indicator van de bezettingskaart: laat zien wát je verplaatst */}
+        {kaartGhost&&(
+          <div style={{position:'fixed',left:kaartGhost.x+14,top:kaartGhost.y+12,zIndex:4000,
+            pointerEvents:'none',padding:'7px 12px',borderRadius:9,
+            background:C.primary,color:'#fff',fontSize:11.5,fontWeight:700,
+            boxShadow:'0 10px 26px rgba(9,30,45,0.32)',transform:'rotate(-1.5deg)',whiteSpace:'nowrap'}}>
+            ⇄ {kaartGhost.label}
+            <div style={{fontSize:10,fontWeight:500,opacity:0.85,marginTop:1}}>
+              {kaartOver?'laat los om hier neer te zetten':'sleep naar een ander vak'}
+            </div>
+          </div>
+        )}
+
         {/* EXPORT dialog */}
         {showExport&&(
           <div style={{position:'fixed',inset:0,background:'rgba(15,30,45,0.55)',backdropFilter:'blur(6px)',
@@ -7568,42 +7644,47 @@ export default function RasterTool(){
                     <div style={{fontSize:12.5,color:C.muted}}>Klik hieronder om te downloaden.</div>
                   </div>
                   {kanViewerOpslaan()?(
-                    // Gedeelde pagina: .xlsx mag hier niet worden weggeschreven, dus
-                    // bieden we dezelfde gegevens als CSV aan — eerlijk benoemd.
+                    // Gedeelde pagina: we proberen ALTIJD eerst één echte .xlsx weg te
+                    // schrijven. Weigert deze weergave dat bestandstype, dan krijg je
+                    // hetzelfde in ÉÉN bestand — niet als stapel losse downloads.
                     <>
-                      <div style={{fontSize:12,color:C.muted,lineHeight:1.6,marginBottom:12}}>
-                        Je bekijkt de tool als <b style={{color:C.text}}>gedeelde pagina</b>. Een gedeelde pagina mag van
-                        de viewer alleen bepaalde bestandstypen wegschrijven en <b style={{color:C.text}}>.xlsx hoort daar
-                        niet bij</b> — daarom krijg je hier per tabblad dezelfde gegevens als <b style={{color:C.text}}>CSV</b>
-                        {' '}(puntkomma-gescheiden, opent direct in Excel).
-                        <br/><b style={{color:C.text}}>Wil je de volledige Excel</b> met een tabblad per dag, de totaal-agenda
-                        én de herlaad-gegevens? Open dan het losse <b style={{color:C.text}}>polimodel.html</b>-bestand
-                        (dubbelklik het lokaal) — daar krijg je één echte .xlsx.
+                      <button onClick={async()=>{
+                          setDlMelding({bezig:true,msg:'Bezig met opslaan…'})
+                          setDlMelding(await viewerOpslaanXlsx(exportLink.basis, exportLink.wb))
+                        }}
+                        style={{display:'block',width:'100%',textAlign:'center',padding:'14px 20px',marginBottom:10,
+                          background:C.green,color:'#fff',border:'none',borderRadius:10,cursor:'pointer',
+                          fontWeight:700,fontSize:15}}>
+                        ⬇ Download {exportLink.basis}.xlsx
+                      </button>
+                      <div style={{fontSize:11.5,color:C.muted,lineHeight:1.55,marginBottom:12}}>
+                        Eén bestand met alle tabbladen. Slaagt dit niet, dan staat hieronder waarom en
+                        krijg je dezelfde inhoud als één CSV.
                       </div>
-                      {[{blad:'Totaal agenda',l:'Totaal agenda (hele week)',s:'de week als rooster: tijd in kolom 1, kamers per dag'},
-                        {blad:'Maa',l:'Maandag',s:'dagagenda: tijd in kolom 1, één kolom per kamer'},
-                        {blad:'Din',l:'Dinsdag',s:'dagagenda: tijd in kolom 1, één kolom per kamer'},
-                        {blad:'Woe',l:'Woensdag',s:'dagagenda: tijd in kolom 1, één kolom per kamer'},
-                        {blad:'Don',l:'Donderdag',s:'dagagenda: tijd in kolom 1, één kolom per kamer'},
-                        {blad:'Vri',l:'Vrijdag',s:'dagagenda: tijd in kolom 1, één kolom per kamer'},
-                        {blad:'Alle afspraken',l:'Alle afspraken',s:'elke afspraak met dag, kamer, begin- en eindtijd, code en duur'},
-                        {blad:'Configuratie',l:'Configuratie',s:'aantallen, tijden, benutting en actieve planregels'}].map(x=>(
-                        <button key={x.blad} onClick={async()=>{
-                            setDlMelding(null)
-                            const r=await viewerOpslaan(`${exportLink.basis}-${x.blad.toLowerCase().replace(/\s+/g,'-')}`, wbNaarCsv(exportLink.wb,x.blad))
-                            setDlMelding(r)
-                          }}
-                          style={{display:'block',width:'100%',textAlign:'left',padding:'12px 16px',marginBottom:9,
-                            background:C.white,color:C.text,border:`1.5px solid ${C.border}`,borderRadius:10,cursor:'pointer'}}
-                          onMouseEnter={e=>{e.currentTarget.style.borderColor=C.green}}
-                          onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border}}>
-                          <div style={{fontWeight:700,fontSize:13.5}}>⬇ {x.l} (CSV)</div>
-                          <div style={{fontSize:11,color:C.muted,marginTop:2}}>{x.s}</div>
-                        </button>
-                      ))}
-                      {dlMelding&&(
-                        <div style={{fontSize:12,fontWeight:600,marginBottom:12,
+                      {dlMelding&&!dlMelding.bezig&&(
+                        <div style={{fontSize:12,fontWeight:600,marginBottom:12,lineHeight:1.5,
                           color:dlMelding.ok?C.green:C.danger}}>{dlMelding.ok?'✓ ':'△ '}{dlMelding.msg}</div>
+                      )}
+                      {dlMelding&&dlMelding.geenXlsx&&(
+                        <div style={{padding:'12px 14px',background:C.rowAlt,border:`1px solid ${C.border}`,
+                          borderRadius:10,marginBottom:12}}>
+                          <div style={{fontSize:12,color:C.muted,lineHeight:1.6,marginBottom:10}}>
+                            Deze <b style={{color:C.text}}>gedeelde weergave</b> mag alleen bepaalde bestandstypen
+                            opslaan, en .xlsx staat daar niet tussen. Twee opties:
+                            <br/>· <b style={{color:C.text}}>Voor een échte Excel:</b> open het losse
+                            {' '}<b style={{color:C.text}}>polimodel.html</b>-bestand lokaal (dubbelklikken) en exporteer
+                            daar — dan krijg je één .xlsx met alle tabbladen.
+                            <br/>· <b style={{color:C.text}}>Of nu meteen:</b> alle tabbladen in één CSV hieronder.
+                          </div>
+                          <button onClick={async()=>{
+                              setDlMelding(await viewerOpslaan(exportLink.basis, wbNaarEenCsv(exportLink.wb)))
+                            }}
+                            style={{display:'block',width:'100%',textAlign:'center',padding:'11px 16px',
+                              background:C.white,color:C.text,border:`1.5px solid ${C.border}`,borderRadius:9,
+                              cursor:'pointer',fontWeight:700,fontSize:13}}>
+                            ⬇ Alles in één CSV ({exportLink.basis}.csv)
+                          </button>
+                        </div>
                       )}
                     </>
                   ):(

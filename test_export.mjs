@@ -1,5 +1,8 @@
-// Export-route in twee omgevingen: los bestand (echte .xlsx-download) en
-// gedeelde pagina (window.claude.downloads met CSV, want .xlsx mag daar niet).
+// Export-route in twee omgevingen:
+//  · los bestand → één echte .xlsx-download (blob-link);
+//  · gedeelde pagina → we PROBEREN eerst één echte .xlsx via window.claude.downloads;
+//    weigert de viewer dat bestandstype, dan volgt ÉÉN csv met alle tabbladen —
+//    nooit een stapel losse downloads per tabblad.
 import { chromium } from 'playwright'
 import { pathToFileURL } from 'url'
 const url = pathToFileURL('/home/user/maxi/dist/polimodel.html').href
@@ -38,12 +41,21 @@ const log=[], errs=[]
   await page.waitForTimeout(1200)
   await page.click('nav button:has-text("Export")'); await page.waitForTimeout(300)
   await page.click('button:has-text("Genereer bestand")'); await page.waitForTimeout(1500)
-  log.push('viewer — xlsx-link verborgen: '+(await page.locator('a:has-text("Download")').count()===0))
-  log.push('viewer — CSV-knoppen: '+await page.locator('button:has-text("(CSV)")').count())
-  await page.click('button:has-text("Alle afspraken (CSV)")'); await page.waitForTimeout(600)
-  await page.click('button:has-text("Configuratie (CSV)")'); await page.waitForTimeout(600)
+  // Er is precies ÉÉN downloadknop, en die vraagt om een .xlsx
+  const xlsxKnop=page.locator('button:has-text(".xlsx")')
+  log.push('viewer — één .xlsx-knop: '+await xlsxKnop.count())
+  log.push('viewer — geen losse CSV-knoppen per tabblad: '+(await page.locator('button:has-text("(CSV)")').count()===0))
+  await xlsxKnop.first().click(); await page.waitForTimeout(700)
+  const pogingen=await page.evaluate(()=>window.__saves)
+  log.push('viewer — .xlsx daadwerkelijk geprobeerd: '+pogingen.some(s=>/\.xlsx$/.test(s.filename)))
+  log.push('viewer — uitleg na weigering: '+await page.locator('text=mag alleen bepaalde bestandstypen').count())
+  // Terugval: alles in ÉÉN csv
+  const eenCsv=page.locator('button:has-text("Alles in één CSV")')
+  log.push('viewer — terugvalknop "alles in één CSV": '+await eenCsv.count())
+  await eenCsv.first().click(); await page.waitForTimeout(700)
   const saves=await page.evaluate(()=>window.__saves)
   saves.forEach(s=>log.push(`viewer — opgeslagen: ${s.filename} · ${s.lengte} tekens · kop: ${s.kop.slice(0,60)}`))
+  const csv=saves.find(s=>/\.csv$/.test(s.filename))
   log.push('viewer — bevestiging in beeld: '+await page.locator('text=Opgeslagen als').count())
 
   // voorbeeld-Excel in de gedeelde pagina
@@ -79,7 +91,7 @@ const log=[], errs=[]
   await page.waitForTimeout(1200)
   await page.click('nav button:has-text("Export")'); await page.waitForTimeout(300)
   await page.click('button:has-text("Genereer bestand")'); await page.waitForTimeout(1500)
-  await page.click('button:has-text("Alle afspraken (CSV)")'); await page.waitForTimeout(600)
+  await page.locator('button:has-text(".xlsx")').first().click(); await page.waitForTimeout(700)
   log.push('geweigerd — melding: '+await page.locator('text=geweigerd').count())
   await page.close()
 }
