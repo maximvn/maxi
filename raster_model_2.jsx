@@ -3872,9 +3872,11 @@ export default function RasterTool(){
   // zodat de uitkomst nooit op een oude stand blijft hangen.
   const hasRasterRef=useRef(false)
   useEffect(()=>{ hasRasterRef.current=!!raster },[raster])
+  const [liveBezig,setLiveBezig]=useState(false)   // toont "bijwerken…/bijgewerkt"
   useEffect(()=>{
     if(!hasRasterRef.current) return
-    const id=setTimeout(()=>doGenerate(),80)
+    setLiveBezig(true)
+    const id=setTimeout(()=>{ try{ doGenerate() }catch(e){ console.error(e) } setLiveBezig(false) },80)
     return ()=>clearTimeout(id)
   },[doGenerate])
   // auto-start: genereer bij openen zodat de studio direct leeft
@@ -5157,10 +5159,20 @@ export default function RasterTool(){
             const plan=raster&&raster.digPlan
             const gekozen=rules.digitalSlots||[]
             const isAan=(di,dd)=>gekozen.some(s=>s.di===di&&s.dd===dd)
+            // Hoeveel digitale spreekuren passen er bij deze aantallen? Dat is de bovengrens
+            // voor het aantal dagdelen dat je zinvol kunt kiezen.
+            const maxSlots = plan && plan.mogelijk>0 ? plan.mogelijk : Infinity
             const wissel=(di,dd)=>setRules(p=>{
               const l=p.digitalSlots||[]
-              return {...p, digitalSlots: l.some(s=>s.di===di&&s.dd===dd)
-                ? l.filter(s=>!(s.di===di&&s.dd===dd)) : [...l,{di,dd}]}
+              if(l.some(s=>s.di===di&&s.dd===dd)) // al gekozen → uitvinken
+                return {...p, digitalSlots: l.filter(s=>!(s.di===di&&s.dd===dd))}
+              // Nieuw dagdeel erbij. Kies je er méér dan er passen, dan schuift de OUDste
+              // keuze er vanzelf uit — zo verplaats je de spreekuren gewoon door de nieuwe
+              // dagdelen aan te klikken (bv. maandag/dinsdag/woensdag → klik do + vr en
+              // maandag/dinsdag verdwijnen automatisch). Geen vastgelopen halve keuze meer.
+              let next=[...l,{di,dd}]
+              while(next.length>maxSlots) next=next.slice(1)
+              return {...p, digitalSlots: next}
             })
             const mislukt=(di,dd)=>plan&&plan.nietGelukt&&plan.nietGelukt.some(s=>s.di===di&&s.dd===dd)
             const gelukt=(di,dd)=>plan&&plan.gepland&&plan.gepland.some(s=>s.di===di&&s.dd===dd)
@@ -5213,7 +5225,7 @@ export default function RasterTool(){
                       color:gekozen.length?C.muted:C.primary}}>Automatisch kiezen</button>
                   <span style={{fontSize:11,color:C.muted}}>
                     {gekozen.length
-                      ? `${gekozen.length} dagdeel${gekozen.length===1?'':'en'} gekozen — de tool houdt zich hieraan.`
+                      ? `${gekozen.length} dagdeel${gekozen.length===1?'':'en'} gekozen — de tool houdt zich hieraan${isFinite(maxSlots)?` (max ${maxSlots}; kies je een nieuw dagdeel, dan schuift het oudste eruit)`:''}. Het raster past zich direct aan.`
                       : 'Niets gekozen: de tool spreidt de digitale spreekuren zelf over de week.'}
                   </span>
                 </div>
@@ -5970,7 +5982,15 @@ export default function RasterTool(){
               <span style={{fontWeight:700,fontSize:12,color:C.primary,minWidth:30,textAlign:'center'}}>{Math.round(calZoom/3*100)}%</span>
               <button onClick={()=>setCalZoom(z=>Math.min(7,+(z+0.5).toFixed(1)))} style={{width:22,height:22,borderRadius:5,border:`1px solid ${C.border}`,background:C.white,cursor:'pointer',fontWeight:700,color:C.primary}}>+</button>
             </div>
-            <Btn variant="secondary" small onClick={doGenerate}>↺ Genereren</Btn>
+            <div title="Het raster past zich automatisch aan zodra je een instelling of planregel wijzigt."
+              style={{display:'flex',alignItems:'center',gap:6,padding:'5px 10px',borderRadius:8,
+                background:liveBezig?'#FEF6E0':'#EAF4E0',border:`1px solid ${liveBezig?'#F0C840':'#98CC70'}`,
+                fontSize:11,fontWeight:700,color:liveBezig?'#7A5000':'#2A5018',transition:'all 0.2s'}}>
+              <span style={{width:8,height:8,borderRadius:'50%',background:liveBezig?'#E0A020':'#3AAE4E',
+                display:'inline-block'}}/>
+              {liveBezig?'bijwerken…':'live — bijgewerkt'}
+            </div>
+            <Btn variant="secondary" small onClick={doGenerate} title="Bouw het raster nu opnieuw op basis van de huidige gegevens en instellingen">↻ Opnieuw genereren</Btn>
             <Btn small onClick={()=>setShowExport(true)} style={{background:C.green,border:'none'}}>⬇ Export</Btn>
           </div>
         </div>
