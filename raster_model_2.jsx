@@ -1055,6 +1055,56 @@ export default function RasterTool(){
     })
   }
 
+  // ══ EEN HEEL DAGDEEL VERPLAATSEN (bezettingskaart) ═════════════════════════
+  // Je pakt in de bezettingskaart één vak vast — dat is één kamer, op één dag, in
+  // één dagdeel — en zet het op een andere plek neer. Staat daar al een spreekuur,
+  // dan RUILEN de twee van plek; is het leeg, dan verhuist het spreekuur gewoon.
+  // De afspraken worden op de nieuwe plek opnieuw achter elkaar gezet vanaf de
+  // begintijd van dat dagdeel, zodat de agenda meteen klopt. Past er door een korter
+  // dagdeel iets niet meer, dan komt dat op "nog te plannen" — nooit stilzwijgend weg.
+  // De ref houdt de bron SYNCHROON vast (state is er pas na een re-render, en een
+  // drop kan al in dezelfde tick volgen); de state stuurt alleen de visuele feedback.
+  const kaartDragRef=useRef(null)
+  const [kaartDrag,setKaartDrag]=useState(null)   // {di,room,dd} dat je vasthoudt
+  const [kaartOver,setKaartOver]=useState(null)   // {di,room,dd} waar je boven zweeft
+  const slotKeyVan=(room,dd)=>(dd===0?'o':dd===1?'m':'a')+room
+  const verplaatsDagdeel=useCallback((van,naar)=>{
+    if(!van||!naar) return
+    if(van.di===naar.di&&van.room===naar.room&&van.dd===naar.dd) return
+    setRaster(prev=>{
+      if(!prev) return prev
+      const nxt=JSON.parse(JSON.stringify(prev))
+      const kv=slotKeyVan(van.room,van.dd), kn=slotKeyVan(naar.room,naar.dd)
+      if(!nxt.days[van.di]) return prev
+      const bron=[...(nxt.days[van.di][kv]||[])]
+      if(!bron.some(a=>!a.isFlex)) return prev        // een leeg vak valt niets te verplaatsen
+      if(!nxt.days[naar.di]) nxt.days[naar.di]={}
+      const doelArr=[...(nxt.days[naar.di][kn]||[])]
+      const grens=dd=>dd===0?[nxt.ochStart,nxt.ochEnd]
+        :dd===1?[nxt.midStart,nxt.midEnd]:[nxt.avondStart,nxt.avondEnd]
+      const kwijt=[]
+      // Zet de afspraken op de nieuwe plek weer netjes achter elkaar vanaf de
+      // begintijd van dat dagdeel; flexblokken schuiven gewoon mee in het ritme.
+      const herleg=(arr,dd,room)=>{
+        const [s0,s1]=grens(dd)
+        const uit=[]; let t=s0
+        arr.slice().sort((a,b)=>(a.start||0)-(b.start||0)).forEach(a=>{
+          const d=a.duur||15
+          if(t+d>s1+0.01){ if(!a.isFlex) kwijt.push(a); return }
+          uit.push({...a,start:t,end:t+d,dagdeel:dd,room,edited:true})
+          t+=d
+        })
+        return uit
+      }
+      nxt.days[naar.di][kn]=herleg(bron,naar.dd,naar.room)
+      nxt.days[van.di][kv]=herleg(doelArr,van.dd,van.room)
+      if(kwijt.length){ nxt.ntp=[...(nxt.ntp||[]),
+        ...kwijt.map(a=>{ const b={...a,edited:true}; delete b.start; delete b.end; return b })] }
+      nxt._handmatig=true
+      return nxt
+    })
+  },[])
+
   const deleteAppt=(day,slot,id)=>{
     setRaster(prev=>{
       if(!prev) return prev
@@ -1324,9 +1374,25 @@ export default function RasterTool(){
       const digModus=inBereik(rules.digitalWaar)?rules.digitalMode:'spread'
       if(dig.length){
         if(digModus==='spread'){
-          const out=[...pool]
-          dig.forEach((d,i)=>out.splice(Math.min(Math.round((i+1)*(out.length+1)/(dig.length+1)),out.length),0,d))
-          pool=out
+          // De opening van het spreekuur is een expliciete keuze (spoedblok + de
+          // "starten met"-afspraak). Digitale consulten worden dáárna verspreid,
+          // nooit ervóór — anders opende een spreekuur met 73% telefonische
+          // consulten alsnog met een TC terwijl "starten met nieuw" aan stond.
+          const kop=Math.min(spoed.length+(leadCat?1:0), pool.length)
+          const vast=pool.slice(0,kop)
+          const romp=pool.slice(kop)
+          // Gelijkmatig invoegen: verdeel de consulten over de romp op posities die
+          // uitgaan van de EINDlengte, zodat ze echt gespreid staan en niet vooraan
+          // opeenhopen wanneer er meer digitale dan fysieke afspraken zijn.
+          const totaal=romp.length+dig.length
+          const out=[]; let di=0, ri=0
+          for(let k=0;k<totaal;k++){
+            const digWens=Math.round((k+1)*dig.length/totaal)
+            if(di<digWens && di<dig.length) out.push(dig[di++])
+            else if(ri<romp.length) out.push(romp[ri++])
+            else if(di<dig.length) out.push(dig[di++])
+          }
+          pool=[...vast,...out]
         } else if(digModus==='cluster'){
           // Positie = ná het spoedblok en ná de kop-afspraak van de start-regel, zodat
           // die expliciete keuzes voorgaan en het cluster daarna aaneengesloten begint.
@@ -1768,6 +1834,42 @@ export default function RasterTool(){
         // die groep de duur die het spreekuur het dichtst bij zijn doel brengt.
         const totN=alleWerk.filter(a=>a.category==='nieuw').length
         const ratioN=alleWerk.length? totN/alleWerk.length : 0
+        // ── AFWISSELEN GELDT OOK VOOR DE SELECTIE ────────────────────────────
+        // "Nieuw en controle afwisselen" is pas echt afwisselen als élk spreekuur
+        // beide categorieën KRIJGT. Voorheen was de categorie alleen een tiebreak
+        // tussen afspraken van dezelfde duur; omdat nieuw (20 min) en controle
+        // (15/10 min) zelden dezelfde duur hebben, viel die voorkeur altijd weg en
+        // vulde de engine puur op duur. Gevolg: kamer 1 ochtend 9× nieuw, kamer 2
+        // volledig controle — blokken dus, precies wat "afwisselen" niet is.
+        // Nu weegt de scheefheid van de mix volwaardig mee in de keuze. De band
+        // blijft leidend: kandidaten passen altijd binnen de bovengrens, en
+        // repareer()/componeer() bewaken daarna de ondergrens.
+        const mixBereik=dd=>(rules.mixWaar||'both')==='both'
+          ||(rules.mixWaar==='och'&&dd==='O')||(rules.mixWaar==='mid'&&dd==='M')
+        // De mix is een VOORKEUR, geen harde eis: hij mag nooit een patiënt op de
+        // restlijst kosten. Blijkt een ronde mét mix meer te laten liggen, dan draait
+        // rondeVoor() dezelfde ronde zonder mix en wint die (zie hieronder).
+        // __mixKracht regelt hoe hard de mix stuurt (1 = vol, 0 = uit). Zie de
+        // trapsgewijze terugval onderaan computeRaster: liever iets minder strikt
+        // afwisselen dan iemand niet inplannen.
+        const mixKracht=rules.__mixKracht==null?1:rules.__mixKracht
+        const mixSel=dd=>mixKracht>0 && !!rules.mixNC && mixBereik(dd)
+          && totN>0 && totN<alleWerk.length
+        const MIX_SCHAAL=60*mixKracht   // weegt de mix-scheefheid om naar 'minuten' bandafstand
+        // Hoe scheef staat het spreekuur ná het toevoegen van deze afspraak?
+        const mixStraf=(s,a)=>{
+          const tot=s.items.length+1
+          const nNa=s.items.filter(x=>x.category==='nieuw').length+(a.category==='nieuw'?1:0)
+          let p=Math.abs(nNa/tot - ratioN)
+          // EERLIJK DELEN OVER DE SPREEKUREN. Nieuw is meestal de schaarse categorie
+          // (bv. 46 nieuw tegen 222 controle). Zonder rem snoepten de eerst gevulde
+          // spreekuren álle nieuwe patiënten op en bleven de laatste spreekuren puur
+          // controle — dan is de week als geheel nog steeds niet afwisselend. s.capN
+          // is het eerlijke aandeel van dit spreekuur; daarboven wordt 'nieuw' zwaar
+          // bestraft zodat er genoeg overblijft voor de spreekuren die nog komen.
+          if(a.category==='nieuw' && s.capN!=null && nNa>s.capN) p+=0.5*(nNa-s.capN)
+          return p
+        }
         // De BAND gaat voor: eerst kiezen wélke duur het spreekuur het dichtst bij zijn
         // doel brengt, pas daarna wélke afspraak van die duur (spoed eerst, dan wie
         // nergens anders kan, dan de categorie die de nieuw/controle-mix in balans
@@ -1778,8 +1880,10 @@ export default function RasterTool(){
           const U=capIn!=null?capIn:maxCapFor(s.dd)
           const kand=rest.filter(a=>a.ddOpties.includes(s.dd)&&s.used+a.duur<=U+0.01)
           if(!kand.length) return null
-          const beste=kand.reduce((x,y)=>
-            Math.abs(s.used+y.duur-doelS)<Math.abs(s.used+x.duur-doelS)?y:x)
+          // Score: afstand tot het slotdoel + (bij afwisselen) de scheefheid van de mix.
+          const score=a=>Math.abs(s.used+a.duur-doelS)
+            +(mixSel(s.dd)?MIX_SCHAAL*mixStraf(s,a):0)
+          const beste=kand.reduce((x,y)=>score(y)<score(x)?y:x)
           let zelfdeDuur=kand.filter(a=>a.duur===beste.duur)
           const spoed=rules.spoedFirst?zelfdeDuur.filter(a=>a.spoed):[]
           if(spoed.length && s.items.filter(a=>a.spoed).length===0) zelfdeDuur=spoed
@@ -1807,13 +1911,41 @@ export default function RasterTool(){
           kand.forEach(a=>{ aantal[a.duur]=(aantal[a.duur]||0)+1 })
           const duren=Object.keys(aantal).map(Number).sort((a,b)=>b-a)
           const maxSom=Math.floor(U)
+          // Beschikbaarheid per duur én categorie — zo weten we wélke mix een
+          // duur-combinatie überhaupt kán opleveren.
+          const availN={}, availC={}
+          kand.forEach(a=>{ const d=a.duur
+            if(a.category==='nieuw') availN[d]=(availN[d]||0)+1; else availC[d]=(availC[d]||0)+1 })
+          const doeRatio=mixSel(s.dd)
+          // Hoe goed is de nieuw/controle-mix die deze duur-combinatie kán halen?
+          const mixVanCombi=combi=>{
+            let minN=0, maxN=0, tot=0
+            Object.entries(combi).forEach(([d,k])=>{ tot+=k
+              minN+=Math.max(0, k-(availC[d]||0)); maxN+=Math.min(k, availN[d]||0) })
+            if(!tot) return {tot:0, haalbaarN:0, straf:0}
+            const wens=Math.min(Math.round(ratioN*tot), s.capN!=null?s.capN:Infinity)
+            const haalbaarN=Math.max(minN, Math.min(maxN, wens))
+            let straf=Math.abs(haalbaarN/tot - ratioN)
+            if(s.capN!=null && haalbaarN>s.capN) straf+=0.5*(haalbaarN-s.capN)
+            return {tot, haalbaarN, straf}
+          }
+          // BELANGRIJK: per som bewaren we niet zomaar de EERSTE combinatie. De duren
+          // worden van lang naar kort verwerkt, dus "eerste" betekende altijd de
+          // combinatie met de langste afspraken — bij 180 min steevast 9×20 (puur
+          // nieuw), waardoor de even geldige mix 3×20 + 8×15 werd weggegooid en het
+          // afwisselen alsnog blokken opleverde. Bij afwisselen houden we daarom per
+          // som de combinatie met de BESTE haalbare mix.
           let herkomst=new Map([[0,{}]])
           duren.forEach(d=>{
             const nieuw=new Map(herkomst)
             herkomst.forEach((combi,som)=>{
               for(let k=1;k<=aantal[d];k++){
                 const ns=som+k*d; if(ns>maxSom) break
-                if(!nieuw.has(ns)) nieuw.set(ns,{...combi,[d]:k})
+                const kandidaat={...combi,[d]:k}
+                if(!nieuw.has(ns)){ nieuw.set(ns,kandidaat); continue }
+                if(!doeRatio) continue
+                if(mixVanCombi(kandidaat).straf < mixVanCombi(nieuw.get(ns)).straf)
+                  nieuw.set(ns,kandidaat)
               }
             })
             herkomst=nieuw
@@ -1821,14 +1953,23 @@ export default function RasterTool(){
           let beste=null
           herkomst.forEach((combi,som)=>{
             if(som<L-0.01) return
-            const sc=Math.abs(som-doelS)
-            if(!beste||sc<beste.sc) beste={som,sc,combi}
+            let sc=Math.abs(som-doelS), haalbaarN=null
+            if(doeRatio){
+              const m=mixVanCombi(combi)
+              if(m.tot>0){ haalbaarN=m.haalbaarN; sc+=MIX_SCHAAL*m.straf }
+            }
+            if(!beste||sc<beste.sc) beste={som,sc,combi,haalbaarN}
           })
           if(!beste) return false
           // Welke áfspraken van die duur? Eerst wie nergens anders kan, daarna de
           // categorie die de mix in balans houdt.
-          const totN=kand.filter(a=>a.category==='nieuw').length
-          const ratio=kand.length?totN/kand.length:0
+          const totKandN=kand.filter(a=>a.category==='nieuw').length
+          const ratio=kand.length?totKandN/kand.length:0
+          // Bij afwisselen sturen we op het aantal 'nieuw' dat bij deze combinatie
+          // hoort (beste.haalbaarN); anders op de globale verhouding.
+          const totItems=Object.values(beste.combi).reduce((t,k)=>t+k,0)
+          let nogNieuw = (doeRatio&&beste.haalbaarN!=null) ? beste.haalbaarN : null
+          let nogTot = totItems
           Object.entries(beste.combi).forEach(([d,k])=>{
             for(let i=0;i<k;i++){
               const pool=rest.filter(a=>a.ddOpties.includes(s.dd)&&a.duur===+d)
@@ -1836,10 +1977,20 @@ export default function RasterTool(){
               const vast=pool.filter(a=>a.ddOpties.length===1)
               let p=vast.length?vast:pool
               const tot=s.items.length, nIn=s.items.filter(x=>x.category==='nieuw').length
-              const wil = tot===0 ? ratio>=0.5 : (nIn/tot)<ratio
+              let wil
+              if(nogNieuw!=null){
+                // Alleen het AANTAL telt hier; de onderlinge volgorde zet applyPlanRules
+                // later. Neem 'nieuw' zolang we achterlopen op het doelaantal, of wanneer
+                // het moet omdat er precies genoeg plekken over zijn.
+                const doelRatio=totItems>0?beste.haalbaarN/totItems:0
+                wil = nogNieuw>0 && (nogNieuw>=nogTot || (nIn/Math.max(1,tot))<doelRatio)
+              } else {
+                wil = tot===0 ? ratio>=0.5 : (nIn/tot)<ratio
+              }
               const voork=p.filter(a=>(a.category==='nieuw')===wil); if(voork.length) p=voork
               const a=p[0]
               plaats(s,a); rest.splice(rest.indexOf(a),1)
+              if(nogNieuw!=null){ if(a.category==='nieuw') nogNieuw--; nogTot-- }
             }
           })
           return s.used>=L-0.01
@@ -1890,6 +2041,12 @@ export default function RasterTool(){
             // patroon van de halfvolle laatste kamer.
             const ruimte=restMin-(nogSlots-1)*L
             const cap = mik==='gemiddeld' ? Math.max(L, Math.min(maxCapFor(s.dd), ruimte)) : maxCapFor(s.dd)
+            // Eerlijk aandeel 'nieuw' voor dit spreekuur: wat er nog is, gedeeld door
+            // de spreekuren die nog moeten worden gevuld (met een marge van 1, zodat
+            // afronding een spreekuur nooit volledig zonder nieuw laat zitten).
+            s.capN = mixSel(s.dd)
+              ? Math.ceil(rest.filter(a=>a.category==='nieuw').length/nogSlots)+1
+              : null
             const doelS = mik==='onder' ? L
               : mik==='vol' ? U
               : Math.max(L, Math.min(U, cap, restMin/nogSlots))   // 'gemiddeld' en 'ruim'
@@ -1912,25 +2069,48 @@ export default function RasterTool(){
             k.sort((x,y)=>x.used-y.used)
             plaats(k[0],a); rest.splice(rest.indexOf(a),1)
           })
+          // Mix-kwaliteit van deze ronde: hoe ver wijkt de nieuw/controle-verhouding
+          // per spreekuur af van die van de week? Dit is de LAATSTE tiebreak — pas
+          // als twee rondes evenveel inplannen én evenveel spreekuren openen, wint
+          // de ronde die het beste afwisselt. Zonder deze maat won bij gelijke stand
+          // willekeurig een ronde met blokken (9× nieuw naast 12× controle).
+          const mixFout=geopend.reduce((t,s)=>{
+            if(!s.items.length||!mixSel(s.dd)) return t
+            const nn=s.items.filter(a=>a.category==='nieuw').length
+            return t+Math.abs(nn/s.items.length-ratioN)
+          },0)
           return {rest:[...rest], plan:gekozen.map(s=>({s, items:[...s.items], used:s.used})),
-            over:rest.reduce((t,a)=>t+a.duur,0), open:geopend.length}
+            over:rest.reduce((t,a)=>t+a.duur,0), open:geopend.length, mix:mixFout}
         }
+        // Vergelijking tussen rondes: inplannen eerst, dan zo min mogelijk spreekuren,
+        // dan de beste afwisseling.
+        const beterDan=(a,b)=> a.over<b.over
+          || (a.over===b.over && (a.open<b.open
+          || (a.open===b.open && (a.mix||0)<(b.mix||0)-1e-9)))
         // DRIE MIKPUNTEN, de beste wint. 'gemiddeld' verdeelt de dagvraag gelijk over
         // de spreekuren en reserveert voor wat nog komt; 'vol' vult elk spreekuur tot
         // de haalbare bovengrens; 'onder' mikt op de ondergrens zodat er meer
         // spreekuren passen. Welke het beste uitpakt hangt af van de consultduren die
         // toevallig op die dag liggen, dus rekenen we ze alle drie door en houden we
         // de ronde die de minste afspraken laat liggen.
-        const rondeVoor=(n)=>{
-          zetSlots(n)
+        const alleMikpunten=()=>{
           let r=vulRonde('gemiddeld')
-          if(r.rest.length) for(const mik of ['ruim','vol','onder']){
+          // Ook zonder restlijst de andere mikpunten proberen zolang de mix nog beter
+          // kan: dezelfde vulling, maar netjes afgewisseld in plaats van in blokken.
+          const wilMixBeter=()=>rules.mixNC && (rules.__mixKracht==null||rules.__mixKracht>0) && (r.mix||0)>0.05
+          for(const mik of ['ruim','vol','onder']){
+            if(!r.rest.length && !wilMixBeter()) break
             const alt=vulRonde(mik)
-            if(alt.over<r.over || (alt.over===r.over && alt.open<r.open)) r=alt
-            if(!r.rest.length) break
+            if(beterDan(alt,r)) r=alt
           }
-          return {r,n}
+          return r
         }
+        // De garantie "de mix kost nooit een patiënt" wordt NIET per dag afgedwongen:
+        // wat op één dag overblijft, wordt later in de week alsnog geplaatst (navullen,
+        // de weekbrede nabrander). Per dag terugvallen zette het afwisselen uit zodra
+        // één dag even wat overhield, en dan kreeg je alsnog blokken. De vergelijking
+        // gebeurt daarom aan het eind, over het HELE rooster (zie __zonderMix onderaan).
+        const rondeVoor=(n)=>{ zetSlots(n); return {r:alleMikpunten(),n} }
         // Het weekplan rekent met gemiddelden; de consultduren van déze dag kunnen net
         // één spreekuur meer of minder aankunnen. Daarom rekenen we ook n−1 en n+1 door
         // en houden we de uitkomst die de minste afspraken laat liggen (bij gelijke
@@ -1939,7 +2119,7 @@ export default function RasterTool(){
         for(const n of [nDoel+1, nDoel-1]){
           if(n<1 || n>actFys.length || n===nDoel) continue
           const alt=rondeVoor(n)
-          if(alt.r.over<win.r.over || (alt.r.over===win.r.over && alt.r.open<win.r.open)) win=alt
+          if(beterDan(alt.r,win.r)) win=alt
         }
         const beste=win.r
         // de winnende ronde terugzetten
@@ -2378,15 +2558,42 @@ export default function RasterTool(){
       // Voorheen stopte de balans hier meteen, en bleef een dag achter met precies
       // te weinig vraag voor zijn spreekuren — waarna er één omviel.
       const scheef=(x,y)=>Math.abs(x)+Math.abs(y)
+      // ── CATEGORIEBALANS OVER DE DAGEN ───────────────────────────────────────
+      // Deze balans verhuist afspraken tussen dagen om de minuten kloppend te
+      // krijgen, en koos daarvoor steevast de LANGSTE afspraak. Bij nieuw = 20 min
+      // en controle = 15 min betekende dat: alle nieuwe patiënten migreren naar
+      // dezelfde dagen. Die dagen werden dan puur nieuw en de rest puur controle —
+      // en dan valt er binnen een spreekuur niets meer af te wisselen, hoe goed de
+      // dagvulling ook mixt. Bij "afwisselen" kiezen we daarom bij gelijke winst de
+      // afspraak die de categorieverhouding van BEIDE dagen dichter bij die van de
+      // week brengt.
+      const wkN=weekDagen.reduce((t,di)=>t+(grouped[di]||[]).filter(a=>a.category==='nieuw').length,0)
+      const wkTot=weekDagen.reduce((t,di)=>t+(grouped[di]||[]).length,0)
+      const wkRatio=wkTot?wkN/wkTot:0
+      const mixWeek=rules.mixNC && (rules.__mixKracht==null||rules.__mixKracht>0) && wkN>0 && wkN<wkTot
+      const catFout=(di,dN,dTot)=>{
+        const arr=grouped[di]||[]
+        const n=arr.filter(a=>a.category==='nieuw').length+dN, t=arr.length+dTot
+        return t>0?Math.abs(n/t-wkRatio):0
+      }
       for(let g=0; g<400; g++){
         const bal=weekDagen.map(di=>({di,d:vraagVan(di)-doel[di]})).sort((a,b)=>b.d-a.d)
         let zet=null
         for(let i=0;i<bal.length&&!zet;i++) for(let j=bal.length-1;j>i&&!zet;j--){
           const geef=bal[i], neem=bal[j]
           if(geef.d<=1||neem.d>=-1) continue
-          const a=(grouped[geef.di]||[]).filter(x=>magNaar(x,neem.di)
+          const kand=(grouped[geef.di]||[]).filter(x=>magNaar(x,neem.di)
               && scheef(geef.d-x.duur, neem.d+x.duur) < scheef(geef.d, neem.d)-1e-9)
-            .sort((x,y)=>y.duur-x.duur)[0]
+          if(!kand.length) continue
+          const a=mixWeek
+            ? kand.slice().sort((x,y)=>{
+                const cx=(x.category==='nieuw')?1:0, cy=(y.category==='nieuw')?1:0
+                // winst in categoriebalans van beide dagen samen
+                const wx=catFout(geef.di,-cx,-1)+catFout(neem.di,cx,1)
+                const wy=catFout(geef.di,-cy,-1)+catFout(neem.di,cy,1)
+                return (wx-wy)||(y.duur-x.duur)
+              })[0]
+            : kand.slice().sort((x,y)=>y.duur-x.duur)[0]
           if(a) zet={a, van:geef.di, naar:neem.di}
         }
         if(!zet) break
@@ -3393,6 +3600,32 @@ export default function RasterTool(){
         `${ruilTotaal} keer is een korte geplande afspraak geruild voor een langere van de restlijst, zodat het spreekuur dichter bij de ${m2.benutting}% komt.`, null)
     }
     res.regelrapport=rap
+    // Trapsgewijs: eerst vol afwisselen; kost dat patiënten, dan iets minder strikt,
+    // en pas als laatste helemaal niet. Zo krijg je altijd de best haalbare
+    // afwisseling waarbij iedereen nog ingepland raakt — geen alles-of-niets.
+    if(rules.mixNC && rules.__mixKracht==null){
+      const digN=r=>(r&&r.digPlan&&r.digPlan.gepland)?r.digPlan.gepland.length:0
+      // Strikt afwisselen kan óók een eigen digitaal spreekuur onmogelijk maken: het
+      // rooster wijkt dan uit naar "verspreiden" en je verliest de keuze die je
+      // expliciet hebt gemaakt. Ook dát is een reden om de mix te verslappen.
+      const wilCluster=rules.digitalMode==='cluster'
+      const nodig = res.ntp.length>0 || (wilCluster && digN(res)===0)
+      let beste=res, besteKracht=1
+      if(nodig) for(const kracht of [0.4, 0]){
+        const alt=computeRaster(cfg,newRows,ctrlRows,m2,{...rules,__mixKracht:kracht},capacity)
+        if(!alt) continue
+        const minderRest=alt.ntp.length<beste.ntp.length
+        const gelijkRest=alt.ntp.length===beste.ntp.length
+        if(minderRest || (gelijkRest && digN(alt)>digN(beste))){ beste=alt; besteKracht=kracht }
+        if(beste.ntp.length===0 && (!wilCluster || digN(beste)>0)) break
+      }
+      if(beste!==res){
+        beste.notices=[...(beste.notices||[]),{level:'info',rule:'Nieuw en controle afwisselen',
+          msg:`Strikt afwisselen zou hier ${res.ntp.length} afspra${res.ntp.length===1?'ak':'ken'} op de restlijst laten staan (tegen ${beste.ntp.length} nu). De spreekuren zijn daarom ${besteKracht>0?'iets minder strikt':'niet'} gemengd, zodat er zo min mogelijk mensen ongepland blijven.`,
+          fix:'Wil je tóch strikt afwisselen, dan lukt dat met een kamer erbij, ruimere spreekuurtijden of een andere benutting.'}]
+        return beste
+      }
+    }
     // ── EEN EIGEN DIGITAAL SPREEKUUR HONOREREN, MAAR NOOIT PATIËNTEN LATEN LIGGEN ─
     // Kies je "Eigen digitaal spreekuur", dan is dat een bewuste organisatiekeuze:
     // de telefonische consulten hok je liever bij elkaar in een telefonisch spreekuur
@@ -3412,6 +3645,14 @@ export default function RasterTool(){
         return spread
       }
     }
+    // ── AFWISSELEN MAG NOOIT EEN PATIËNT KOSTEN ───────────────────────────────
+    // "Nieuw en controle afwisselen" stuurt sinds kort ook de SELECTIE: elk spreekuur
+    // krijgt beide categorieën in de weekverhouding. Dat is wat de regel belooft, maar
+    // het mag nooit ten koste gaan van iemand die daardoor niet meer ingepland raakt.
+    // Daarom rekenen we het hele rooster óók zonder die sturing door en houden we die
+    // uitkomst als er méér afspraken mee ingepland raken. Per dag vergelijken zou te
+    // streng zijn: wat op maandag overblijft, plaatst de weekbrede nabrander vaak
+    // alsnog — en dan zou het afwisselen onnodig zijn uitgezet.
     // ── BUNDELEN MAG HET NOOIT SLECHTER MAKEN ─────────────────────────────────
     // Het bundelen beslist op een voorspelling; de definitieve opbouw kan daarna
     // anders uitpakken. Daarom rekenen we de week ook zónder bundelen door en
@@ -4096,49 +4337,163 @@ export default function RasterTool(){
         const s=v=>(v===null||v===undefined)?'':String(v)
         const numRooms=raster.numRooms||1
 
-        // Sheet per day: rooms × dagdeel
+        // ══ ECHTE AGENDA-TABBLADEN ═══════════════════════════════════════════
+        // Eén tabblad per dag, opgebouwd als een echt rooster: de tijd in de
+        // eerste kolom (raster van 5 minuten) en één kolom per kamer. Elke
+        // afspraak beslaat precies de cellen van zijn eigen duur (samengevoegd),
+        // zodat je in Excel direct ziet wie wanneer in welke kamer zit — geen
+        // opsomming in één cel meer, maar de agenda zoals je hem leest.
+        const STAP=5
+        const hhmm=t=>{ const u=Math.floor(t/60), m=Math.round(t%60)
+          return String(u).padStart(2,'0')+':'+String(m).padStart(2,'0') }
+        const laatste = raster.avondOn ? raster.avondEnd : raster.midEnd
+        const tijdRijen=(()=>{ const uit=[]
+          for(let t=raster.ochStart;t<laatste;t+=STAP){
+            const open=(t>=raster.ochStart&&t<raster.ochEnd)||(t>=raster.midStart&&t<raster.midEnd)
+              ||(raster.avondOn&&t>=raster.avondStart&&t<raster.avondEnd)
+            uit.push({min:t,open})
+          }
+          return uit })()
+        const rijVoor=t=>Math.round((t-raster.ochStart)/STAP)
+        const ddPrefixen=[['o',0],['m',1]].concat(raster.avondOn?[['a',2]]:[])
+        // Welke kamers draaien er op deze dag écht?
+        const kamersVan=di=>{ const slots=raster.days[di]; if(!slots) return []
+          const uit=[]
+          for(let r=0;r<numRooms;r++)
+            if(ddPrefixen.some(([p])=>(slots[p+r]||[]).some(a=>!a.isFlex))) uit.push(r)
+          return uit }
+        const labelVan=a=> a.isFlex
+          ? `· ${a.description||'flex'} (${a.duur}m) ·`
+          : `${a.code}  ${a.description||''}`.trim()+`  (${a.duur}m)`+(a.digitaal?'  ☎':'')
+
         for(let di=0;di<5;di++){
           const slots=raster.days[di]
-          const rows=[]
-          rows.push([((poli.naam||poli.specialisme||'Poliraster').toUpperCase())+' — '+DAYS[di].toUpperCase(),'Geëxporteerd: '+today])
-          rows.push([])
-          if(!slots){ rows.push(['Geen spreekuur op deze dag']) }
-          else {
-            ;[['☀ OCHTEND','o',raster.mUsable],['🌤 MIDDAG','m',raster.aUsable]].forEach(([lab,pfx,usable])=>{
-              rows.push([lab])
-              rows.push(['Kamer','Afspraken','Gebruikt','Beschikbaar','Flex'])
-              for(let r=0;r<numRooms;r++){
-                const arr=slots[pfx+r]||[]
-                const used=arr.reduce((t,a)=>t+a.duur,0)
-                const list=arr.map(a=>`${a.description||a.code} (${a.duur}m)${a.digitaal?' [tel]':''}`).join(', ')
-                rows.push([s('Kamer '+(r+1)),s(list||'—'),s(used+' min'),s(usable+' min'),s(Math.max(0,usable-used)+' min')])
-              }
-              rows.push([])
-            })
+          const kamers=kamersVan(di)
+          const kop=((poli.naam||poli.specialisme||'Poliraster').toUpperCase())+' — '+DAYS[di].toUpperCase()
+          const rows=[[kop],['Geëxporteerd: '+today],[]]
+          const merges=[]
+          if(!slots||!kamers.length){
+            rows.push(['Geen spreekuur op deze dag'])
+            const wsL=XLSX.utils.aoa_to_sheet(rows)
+            wsL['!cols']=[{wch:34}]
+            XLSX.utils.book_append_sheet(wb,wsL,DAYS[di].substring(0,3))
+            continue
           }
+          const headRij=rows.length                       // 0-based index van de kolomkoppen
+          rows.push(['Tijd',...kamers.map(r=>'Kamer '+(r+1))])
+          const eersteRij=rows.length
+          tijdRijen.forEach(tr=>{
+            rows.push([tr.open?hhmm(tr.min):hhmm(tr.min)+'  (pauze)',...kamers.map(()=>'')])
+          })
+          // afspraken in het raster zetten en verticaal samenvoegen
+          kamers.forEach((r,ki)=>{
+            ddPrefixen.forEach(([p])=>{
+              ;(slots[p+r]||[]).forEach(a=>{
+                if(a.start==null) return
+                const r0=eersteRij+rijVoor(a.start)
+                const n=Math.max(1,Math.round((a.duur||STAP)/STAP))
+                if(r0<eersteRij||r0>=eersteRij+tijdRijen.length) return
+                const r1=Math.min(r0+n-1, eersteRij+tijdRijen.length-1)
+                if(rows[r0]) rows[r0][1+ki]=labelVan(a)
+                if(r1>r0) merges.push({s:{r:r0,c:1+ki},e:{r:r1,c:1+ki}})
+              })
+            })
+          })
           const ws=XLSX.utils.aoa_to_sheet(rows)
-          ws['!cols']=[{wch:12},{wch:60},{wch:12},{wch:12},{wch:10}]
+          ws['!cols']=[{wch:14},...kamers.map(()=>({wch:32}))]
+          ws['!merges']=[{s:{r:0,c:0},e:{r:0,c:kamers.length}},...merges]
+          ws['!freeze']={xSplit:1,ySplit:headRij+1}
           XLSX.utils.book_append_sheet(wb,ws,DAYS[di].substring(0,3))
         }
 
-        // All appointments flat
+        // ══ TOTAAL AGENDA — de hele week in één blad ══════════════════════════
+        // Zelfde tijd-as, maar met álle dagen naast elkaar: per dag een groep
+        // kolommen met de kamers die er draaien. Zo lees je de week als één
+        // rooster en zie je meteen waar het druk is en waar ruimte zit.
+        {
+          const groepen=[0,1,2,3,4].map(di=>({di,kamers:kamersVan(di)})).filter(g=>g.kamers.length)
+          const rows=[[((poli.naam||poli.specialisme||'Poliraster').toUpperCase())+' — TOTAAL AGENDA (hele week)'],
+            ['Geëxporteerd: '+today],[]]
+          const merges=[]
+          if(!groepen.length){
+            rows.push(['Er zijn nog geen spreekuren ingepland.'])
+          } else {
+            const dagRij=rows.length, kamerRij=dagRij+1
+            const kopDag=['Tijd'], kopKamer=['']
+            let c=1
+            groepen.forEach(g=>{
+              kopDag.push(DAYS[g.di]); for(let i=1;i<g.kamers.length;i++) kopDag.push('')
+              g.kamers.forEach(r=>kopKamer.push('K'+(r+1)))
+              if(g.kamers.length>1) merges.push({s:{r:dagRij,c},e:{r:dagRij,c:c+g.kamers.length-1}})
+              c+=g.kamers.length
+            })
+            rows.push(kopDag); rows.push(kopKamer)
+            const eersteRij=rows.length
+            tijdRijen.forEach(tr=>rows.push([tr.open?hhmm(tr.min):hhmm(tr.min)+'  (pauze)',...Array(c-1).fill('')]))
+            let col=1
+            groepen.forEach(g=>{
+              const slots=raster.days[g.di]
+              g.kamers.forEach((r,ki)=>{
+                ddPrefixen.forEach(([p])=>{
+                  ;(slots[p+r]||[]).forEach(a=>{
+                    if(a.start==null) return
+                    const r0=eersteRij+rijVoor(a.start)
+                    if(r0<eersteRij||r0>=eersteRij+tijdRijen.length) return
+                    const n=Math.max(1,Math.round((a.duur||STAP)/STAP))
+                    const r1=Math.min(r0+n-1, eersteRij+tijdRijen.length-1)
+                    // in de weekweergave kort labelen, anders wordt het onleesbaar
+                    if(rows[r0]) rows[r0][col+ki]=a.isFlex?'·':(a.code+(a.digitaal?' ☎':''))
+                    if(r1>r0) merges.push({s:{r:r0,c:col+ki},e:{r:r1,c:col+ki}})
+                  })
+                })
+              })
+              col+=g.kamers.length
+            })
+            const wsW=XLSX.utils.aoa_to_sheet(rows)
+            wsW['!cols']=[{wch:14},...Array(c-1).fill({wch:11})]
+            wsW['!merges']=[{s:{r:0,c:0},e:{r:0,c:Math.max(1,c-1)}},...merges]
+            wsW['!freeze']={xSplit:1,ySplit:kamerRij+1}
+            XLSX.utils.book_append_sheet(wb,wsW,'Totaal agenda')
+          }
+          if(!groepen.length){
+            const wsW=XLSX.utils.aoa_to_sheet(rows)
+            wsW['!cols']=[{wch:40}]
+            XLSX.utils.book_append_sheet(wb,wsW,'Totaal agenda')
+          }
+        }
+
+        // ── ALLE AFSPRAKEN — één regel per afspraak, mét begin- en eindtijd ────
+        // Dit blad is de werklijst én de bron voor herimport: sorteerbaar,
+        // filterbaar, en op tijd geordend zodat het naast de agenda te leggen is.
         const ar=[['ALLE AFSPRAKEN'],['Geëxporteerd: '+today],[],
-          ['Dag','Dagdeel','Kamer','Code','Omschrijving','Duur','Categorie','Digitaal']]
+          ['Dag','Dagdeel','Kamer','Begin','Einde','Code','Omschrijving','Duur','Categorie','Digitaal']]
+        const ddNaamVan=p=>p==='o'?'Ochtend':p==='m'?'Middag':'Avond'
+        const regels=[]
         for(let di=0;di<5;di++){
           const slots=raster.days[di]; if(!slots) continue
           for(let r=0;r<numRooms;r++){
-            ;[['Ochtend','o'],['Middag','m']].forEach(([ddl,pfx])=>{
-              (slots[pfx+r]||[]).forEach(a=>{
-                ar.push([s(DAYS[di]),ddl,s('Kamer '+(r+1)),s(a.code),s(a.description),s(a.duur),
-                  s(a.category==='nieuw'?'Nieuw':'Controle'),s(a.digitaal?'Ja':'Nee')])
+            ddPrefixen.forEach(([pfx])=>{
+              ;(slots[pfx+r]||[]).forEach(a=>{
+                if(a.isFlex) return                       // buffers horen niet in de werklijst
+                regels.push({di,r,pfx,a})
               })
             })
           }
         }
-        ;(raster.ntp||[]).forEach(a=>ar.push([s(DAYS[a.day]||'?'),'Nog te plannen','—',s(a.code),s(a.description),s(a.duur),
+        // op dag → tijd → kamer, zodat de lijst leest als het dagprogramma
+        regels.sort((x,y)=>(x.di-y.di)||((x.a.start||0)-(y.a.start||0))||(x.r-y.r))
+        regels.forEach(({di,r,pfx,a})=>{
+          ar.push([s(DAYS[di]),ddNaamVan(pfx),s('Kamer '+(r+1)),
+            a.start!=null?hhmm(a.start):'', a.end!=null?hhmm(a.end):'',
+            s(a.code),s(a.description),s(a.duur),
+            s(a.category==='nieuw'?'Nieuw':'Controle'),s(a.digitaal?'Ja':'Nee')])
+        })
+        ;(raster.ntp||[]).forEach(a=>ar.push([s(DAYS[a.day]||'?'),'Nog te plannen','—','','',s(a.code),s(a.description),s(a.duur),
           s(a.category==='nieuw'?'Nieuw':'Controle'),s(a.digitaal?'Ja':'Nee')]))
         const wsA=XLSX.utils.aoa_to_sheet(ar)
-        wsA['!cols']=[{wch:12},{wch:14},{wch:10},{wch:12},{wch:30},{wch:7},{wch:10},{wch:9}]
+        wsA['!cols']=[{wch:12},{wch:15},{wch:10},{wch:8},{wch:8},{wch:12},{wch:30},{wch:7},{wch:10},{wch:9}]
+        wsA['!autofilter']={ref:XLSX.utils.encode_range({s:{r:3,c:0},e:{r:Math.max(3,ar.length-1),c:9}})}
+        wsA['!freeze']={xSplit:0,ySplit:4}
         XLSX.utils.book_append_sheet(wb,wsA,'Alle afspraken')
 
         // Configuratie
@@ -6156,6 +6511,23 @@ export default function RasterTool(){
           }
           const dagen=[0,1,2,3,4].map(di=>({di, m:dagMeting(raster,di)}))
           const legeDagen=dagen.filter(d=>!d.m.open).map(d=>({...d, reden:dagReden(d.di)}))
+          // ── TELLING: hoeveel dagdelen (kamer × dag × dagdeel) draaien er? ────────
+          // Dit is de kerncijfer van een raster — het aantal spreekuren dat je écht
+          // openzet. Handmatig tellen in de kaart is foutgevoelig, dus we tellen mee:
+          // totaal, per dagdeel, en hoeveel hele kamer-dagen dat zijn.
+          const telling=(()=>{
+            let totaal=0, halve=0, heleKamerDagen=0
+            const perDd={}; dds.forEach(dd=>perDd[dd]=0)
+            let minuten=0, capaciteit=0
+            for(let di=0;di<5;di++) for(let room=0;room<nRooms;room++){
+              let open=0
+              for(const dd of dds){ const c=celMeting(raster,di,room,dd)
+                if(c&&c.open){ totaal++; perDd[dd]++; open++; minuten+=c.min; capaciteit+=c.cap } }
+              if(open>0){ if(open===dds.length) heleKamerDagen++; else halve++ }
+            }
+            return {totaal, perDd, heleKamerDagen, halve,
+              pct: capaciteit>0?Math.round(minuten/capaciteit*100):0}
+          })()
           const onderDrempel=[]
           for(let di=0;di<5;di++) for(let room=0;room<nRooms;room++) for(const dd of dds){
             const c=celMeting(raster,di,room,dd)
@@ -6166,27 +6538,53 @@ export default function RasterTool(){
             const c=celMeting(raster,di,room,dd)
             const leeg=!c||!c.open
             const kl=leeg?null:bandKleur(c.pct,doel,drempel)
+            const pakt=kaartDrag&&kaartDrag.di===di&&kaartDrag.room===room&&kaartDrag.dd===dd
+            const hover=kaartOver&&kaartOver.di===di&&kaartOver.room===room&&kaartOver.dd===dd
+            const doelvak=kaartDrag&&!pakt
+            const naam=`Kamer ${room+1} · ${DAGS_NL[di]} · ${DD_INFO[dd].l.toLowerCase()}`
             return(
-              <button onClick={()=>{
+              <button
+                draggable={!leeg}
+                onDragStart={e=>{ if(leeg){e.preventDefault();return}
+                  kaartDragRef.current={di,room,dd}
+                  setKaartDrag({di,room,dd}); e.dataTransfer.effectAllowed='move'
+                  try{ e.dataTransfer.setData('text/plain',`${di}-${room}-${dd}`) }catch(_){} }}
+                onDragEnd={()=>{ kaartDragRef.current=null; setKaartDrag(null); setKaartOver(null) }}
+                onDragOver={e=>{ const bron=kaartDragRef.current
+                  if(!bron||(bron.di===di&&bron.room===room&&bron.dd===dd)) return
+                  e.preventDefault(); e.dataTransfer.dropEffect='move'
+                  if(!hover) setKaartOver({di,room,dd}) }}
+                onDragLeave={()=>{ if(hover) setKaartOver(null) }}
+                onDrop={e=>{ e.preventDefault()
+                  const bron=kaartDragRef.current
+                  if(bron) verplaatsDagdeel(bron,{di,room,dd})
+                  kaartDragRef.current=null; setKaartDrag(null); setKaartOver(null) }}
+                onClick={()=>{
+                  if(kaartDragRef.current) return
                   const t= leeg
                     ? `op ${DAGS_NL[di]} staan geen afspraken, graag ${DAGS_NL[di]} ook inplannen`
                     : `kamer ${room+1} op ${DAGS_NL[di]} staat op ${c.pct}% bezetting, ik wil richting ${doel}%`
                   setWiz({modus:'bijsturen', voorstelTekst:t}); zoekVoorstel(parseOpdracht(t)) }}
-                title={leeg?`Kamer ${room+1} · ${DAGS_NL[di]} · ${DD_INFO[dd].l.toLowerCase()}: geen spreekuur — klik om bij te sturen`
-                  :`Kamer ${room+1} · ${DAGS_NL[di]} · ${DD_INFO[dd].l.toLowerCase()}: ${c.appts} afspraken, ${c.min} van ${c.cap} min (${c.pct}%, ${kl.l}) — klik om bij te sturen`}
-                onMouseEnter={e=>{e.currentTarget.style.transform='translateY(-1px)';e.currentTarget.style.boxShadow='0 3px 9px rgba(27,39,51,0.13)'}}
+                title={leeg
+                  ? `${naam}: geen spreekuur — sleep hier een spreekuur naartoe, of klik om bij te sturen`
+                  : `${naam}: ${c.appts} afspraken, ${c.min} van ${c.cap} min (${c.pct}%, ${kl.l})\nSleep dit vak naar een andere dag of kamer om het spreekuur te verplaatsen (staat daar al een spreekuur, dan ruilen ze van plek). Klik om bij te sturen.`}
+                onMouseEnter={e=>{if(kaartDrag)return;e.currentTarget.style.transform='translateY(-1px)';e.currentTarget.style.boxShadow='0 3px 9px rgba(27,39,51,0.13)'}}
                 onMouseLeave={e=>{e.currentTarget.style.transform='none';e.currentTarget.style.boxShadow='none'}}
-                style={{display:'block',width:'100%',textAlign:'left',cursor:'pointer',marginBottom:3,
+                style={{display:'block',width:'100%',textAlign:'left',marginBottom:3,
+                  cursor:leeg?(kaartDrag?'copy':'pointer'):(kaartDrag?'grabbing':'grab'),
                   padding:'3px 5px',borderRadius:6,position:'relative',overflow:'hidden',
-                  transition:'transform 0.12s, box-shadow 0.12s',
-                  border:`1px solid ${leeg?C.border:kl.brd}`,
+                  transition:'transform 0.12s, box-shadow 0.12s, outline 0.1s',
+                  opacity:pakt?0.45:1,
+                  outline:hover&&doelvak?`2px solid ${C.primary}`:'none', outlineOffset:1,
+                  border:`1px solid ${hover&&doelvak?C.primary:leeg?C.border:kl.brd}`,
                   background:leeg?`repeating-linear-gradient(45deg,${C.surface2},${C.surface2} 4px,${C.white} 4px,${C.white} 8px)`:kl.bg}}>
                 {!leeg&&<span style={{position:'absolute',left:0,top:0,bottom:0,width:`${Math.min(100,c.pct)}%`,
                   background:kl.brd,opacity:0.32,transition:'width 0.55s cubic-bezier(.4,0,.2,1)'}}/>}
                 <span style={{position:'relative',display:'flex',alignItems:'center',gap:4,
                   fontSize:9.5,fontWeight:700,color:leeg?C.muted:kl.fg}}>
                   <span style={{opacity:0.75,fontSize:8.5,letterSpacing:'0.04em'}}>{DD_INFO[dd].kort}</span>
-                  <span style={{marginLeft:'auto',fontVariantNumeric:'tabular-nums'}}>{leeg?'—':`${c.pct}%`}</span>
+                  <span style={{marginLeft:'auto',fontVariantNumeric:'tabular-nums'}}>
+                    {hover&&doelvak?(leeg?'hierheen':'ruilen'):leeg?'—':`${c.pct}%`}</span>
                 </span>
               </button>
             )
@@ -6200,6 +6598,30 @@ export default function RasterTool(){
                 <span style={{fontSize:12.5,fontWeight:800,letterSpacing:'0.03em'}}>BEZETTINGSKAART — WAAR ZIT RUIMTE, WAAR ZIT HET VOL?</span>
                 <span style={{marginLeft:'auto',fontSize:10,fontWeight:700,background:'rgba(255,255,255,0.2)',
                   padding:'2px 9px',borderRadius:10,whiteSpace:'nowrap'}}>doel {doel}%{drempel?` · drempel ${drempel}%`:''}</span>
+              </div>
+              {/* ── TELLING — het aantal ingeplande dagdelen in één oogopslag ──────── */}
+              <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',
+                padding:'9px 14px',background:C.rowAlt,borderBottom:`1px solid ${C.border}`}}>
+                <span title="Elk vak in de kaart dat een spreekuur draait (kamer × dag × dagdeel)"
+                  style={{display:'inline-flex',alignItems:'baseline',gap:6,padding:'4px 12px',borderRadius:9,
+                    background:C.primary,color:'#fff',cursor:'help'}}>
+                  <b style={{fontSize:18,fontVariantNumeric:'tabular-nums',lineHeight:1}}>{telling.totaal}</b>
+                  <span style={{fontSize:11,fontWeight:700}}>dagdelen ingepland</span>
+                </span>
+                {dds.map(dd=>(
+                  <span key={dd} style={{fontSize:11,color:C.muted}}>
+                    <b style={{color:C.text,fontVariantNumeric:'tabular-nums'}}>{telling.perDd[dd]}</b> {DD_INFO[dd].l.toLowerCase()}
+                  </span>
+                ))}
+                <span style={{width:1,height:16,background:C.border}}/>
+                <span title="Een kamer die op één dag zowel ochtend als middag draait, telt als hele kamer-dag."
+                  style={{fontSize:11,color:C.muted,cursor:'help'}}>
+                  <b style={{color:C.text,fontVariantNumeric:'tabular-nums'}}>{telling.heleKamerDagen}</b> hele kamer-dagen
+                  {telling.halve>0&&<> · <b style={{color:'#8A6A12',fontVariantNumeric:'tabular-nums'}}>{telling.halve}</b> halve</>}
+                </span>
+                <span style={{marginLeft:'auto',fontSize:11,color:C.muted}}>
+                  gemiddelde bezetting <b style={{color:C.text,fontVariantNumeric:'tabular-nums'}}>{telling.pct}%</b>
+                </span>
               </div>
               <div style={{padding:'12px 14px'}}>
                 <div style={{display:'grid',gridTemplateColumns:`52px repeat(5,minmax(0,1fr))`,gap:6}}>
@@ -6259,7 +6681,8 @@ export default function RasterTool(){
                     <span style={{width:13,height:11,borderRadius:3,border:`1px solid ${C.border}`,
                       background:`repeating-linear-gradient(45deg,${C.surface2},${C.surface2} 3px,${C.white} 3px,${C.white} 6px)`}}/>geen spreekuur
                   </span>
-                  <span style={{fontSize:10.5,color:C.muted,marginLeft:'auto'}}>klik een vak aan om het bij te sturen</span>
+                  <span style={{fontSize:10.5,color:C.muted,marginLeft:'auto'}}>
+                    <b style={{color:C.primary}}>sleep</b> een vak naar een andere dag of kamer om het spreekuur te verplaatsen · <b>klik</b> om bij te sturen</span>
                 </div>
                 {/* wat springt eruit — met een directe opdracht aan de assistent */}
                 {(legeDagen.length>0||onderDrempel.length>0)&&(
@@ -7114,10 +7537,14 @@ export default function RasterTool(){
         {showExport&&(
           <div style={{position:'fixed',inset:0,background:'rgba(15,30,45,0.55)',backdropFilter:'blur(6px)',
             display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000}}>
-            <Card style={{width:520,maxWidth:'94vw',padding:28}}>
+            <Card style={{width:520,maxWidth:'94vw',padding:28,maxHeight:'90vh',overflowY:'auto'}}>
               <div style={{fontWeight:700,fontSize:16,color:C.primary,marginBottom:4}}>📤 Excel export</div>
               <div style={{fontSize:12.5,color:C.muted,marginBottom:18,lineHeight:1.65}}>
-                Genereert een Excel-bestand met de volledige weekplanning, alle afspraken en de configuratie.
+                Eén Excel met <b style={{color:C.text}}>een tabblad per dag</b> — de tijd in de eerste kolom en één kolom
+                per kamer, waarbij elke afspraak precies zijn eigen tijdvak beslaat. Plus een tabblad
+                {' '}<b style={{color:C.text}}>Totaal agenda</b> (de hele week naast elkaar), <b style={{color:C.text}}>Alle
+                afspraken</b> (met begin- en eindtijd, filterbaar) en de <b style={{color:C.text}}>Configuratie</b>.
+                Het bestand is ook weer in te lezen in deze tool.
               </div>
               {!exportLink?(
                 <>
@@ -7145,12 +7572,21 @@ export default function RasterTool(){
                     // bieden we dezelfde gegevens als CSV aan — eerlijk benoemd.
                     <>
                       <div style={{fontSize:12,color:C.muted,lineHeight:1.6,marginBottom:12}}>
-                        Je bekijkt de tool als gedeelde pagina. Een <b style={{color:C.text}}>.xlsx</b> mag een gedeelde
-                        pagina niet wegschrijven, daarom krijg je hier dezelfde gegevens als <b style={{color:C.text}}>CSV</b>
-                        {' '}(puntkomma-gescheiden, opent direct in Excel). Wil je één Excel mét dagbladen en de
-                        herlaad-gegevens, open de tool dan als los bestand.
+                        Je bekijkt de tool als <b style={{color:C.text}}>gedeelde pagina</b>. Een gedeelde pagina mag van
+                        de viewer alleen bepaalde bestandstypen wegschrijven en <b style={{color:C.text}}>.xlsx hoort daar
+                        niet bij</b> — daarom krijg je hier per tabblad dezelfde gegevens als <b style={{color:C.text}}>CSV</b>
+                        {' '}(puntkomma-gescheiden, opent direct in Excel).
+                        <br/><b style={{color:C.text}}>Wil je de volledige Excel</b> met een tabblad per dag, de totaal-agenda
+                        én de herlaad-gegevens? Open dan het losse <b style={{color:C.text}}>polimodel.html</b>-bestand
+                        (dubbelklik het lokaal) — daar krijg je één echte .xlsx.
                       </div>
-                      {[{blad:'Alle afspraken',l:'Alle afspraken',s:'elke afspraak met dag, dagdeel, kamer, code en duur'},
+                      {[{blad:'Totaal agenda',l:'Totaal agenda (hele week)',s:'de week als rooster: tijd in kolom 1, kamers per dag'},
+                        {blad:'Maa',l:'Maandag',s:'dagagenda: tijd in kolom 1, één kolom per kamer'},
+                        {blad:'Din',l:'Dinsdag',s:'dagagenda: tijd in kolom 1, één kolom per kamer'},
+                        {blad:'Woe',l:'Woensdag',s:'dagagenda: tijd in kolom 1, één kolom per kamer'},
+                        {blad:'Don',l:'Donderdag',s:'dagagenda: tijd in kolom 1, één kolom per kamer'},
+                        {blad:'Vri',l:'Vrijdag',s:'dagagenda: tijd in kolom 1, één kolom per kamer'},
+                        {blad:'Alle afspraken',l:'Alle afspraken',s:'elke afspraak met dag, kamer, begin- en eindtijd, code en duur'},
                         {blad:'Configuratie',l:'Configuratie',s:'aantallen, tijden, benutting en actieve planregels'}].map(x=>(
                         <button key={x.blad} onClick={async()=>{
                             setDlMelding(null)

@@ -44,7 +44,14 @@ const R = await page.evaluate(()=>{
       if(s>0) sl.push(s) }
     return {sloten:sl, spreiding:sl.length?Math.max(...sl)-Math.min(...sl):0, halve, ntp:r.ntp.length,
       gepland:(r.digPlan&&r.digPlan.gepland.length)||0, mogelijk:(r.digPlan&&r.digPlan.mogelijk)||0, puurDig,
-      redmiddel:(r.notices||[]).some(n=>n.rule==='Eigen digitaal spreekuur')} }
+      redmiddel:(r.notices||[]).some(n=>n.rule==='Eigen digitaal spreekuur'),
+      onderBand:(()=>{ const uit=[]
+        for(let di=0;di<5;di++){ const sl=r.days[di]; if(!sl) continue
+          for(const k of Object.keys(sl)){ const a=(sl[k]||[]).filter(x=>!x.isFlex&&!x.overbook)
+            if(!a.length) continue
+            const pct=Math.round(a.reduce((t,x)=>t+x.duur,0)/(k[0]==='o'?r.ochDur:r.midDur)*100)
+            if(pct<82) uit.push(`d${di}${k}:${pct}%`) } }
+        return uit })()} }
   return { cluster:meet(window.__cr(cfg,nr,cr,M2,EX,{mode:'vast',kamers:4})) }
 })
 
@@ -53,7 +60,14 @@ ok('er zijn echt eigen digitale spreekuren gemaakt (geen "0 opties")',
   R.cluster.gepland>=1 && R.cluster.mogelijk>=1, `${R.cluster.gepland} gepland van ${R.cluster.mogelijk} mogelijk`)
 ok('de telefonische consulten staan als volledig digitale spreekuren in het raster',
   R.cluster.puurDig>=R.cluster.gepland, `${R.cluster.puurDig} volledig digitale kamers`)
-ok('een melding legt het extra (onder-de-band) spreekuur uit', R.cluster.redmiddel)
+// Het extra "laatste redmiddel"-spreekuur mag ónder de band vallen, maar alleen als
+// het echt nodig is. Haalt het rooster iedereen kwijt met álle spreekuren binnen de
+// band, dan is dat beter en hoort er ook geen melding te staan.
+ok('geen enkel spreekuur valt onnodig onder de band; valt er wél één onder, dan legt een melding dat uit',
+  R.cluster.onderBand.length===0 ? !R.cluster.redmiddel : R.cluster.redmiddel,
+  R.cluster.onderBand.length===0
+    ? 'alle spreekuren binnen de band — geen noodspreekuur nodig'
+    : `onder de band: ${R.cluster.onderBand.join(' ')} · melding aanwezig: ${R.cluster.redmiddel}`)
 
 console.log(log.join('\n'))
 console.log(`\n${log.filter(l=>l.startsWith('✓')).length}/${log.length} geslaagd`)
