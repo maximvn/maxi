@@ -3434,6 +3434,33 @@ export default function RasterTool(){
     setRaster(computeRaster(cfg,newRows,ctrlRows,m2,rules,capacity))
   },[cfg,newRows,ctrlRows,m2,rules,capacity,computeRaster])
 
+  // ── DELIBERATE HERBOUW MET ZICHTBARE UITKOMST ──────────────────────────────
+  // De live-sync rekent elke wijziging al direct door, maar een subtiele
+  // verschuiving (bv. het digitale spreekuur van ma/di/wo naar wo/do/vr) is in
+  // het raster makkelijk te missen. Deze actie bouwt het raster expliciet opnieuw
+  // op ÉN toont in gewone taal wat eruit kwam, zodat je zwart-op-wit ziet dat je
+  // aanpassing is verwerkt. Precies zoals de assistent: analyseren → resultaat tonen.
+  const [herbouwToast,setHerbouwToast]=useState(null)
+  const herbouwNu=useCallback((gaNaarRaster)=>{
+    const r=computeRaster(cfg,newRows,ctrlRows,m2,rules,capacity)
+    setRaster(r)
+    const DAY_KORT=['ma','di','wo','do','vr']
+    const ddK=dd=>dd==='O'?'ochtend':dd==='M'?'middag':'avond'
+    let digTekst=''
+    if(rules.digitalMode==='cluster' && r.digPlan){
+      const g=r.digPlan.gepland||[]
+      digTekst = g.length
+        ? `Digitale spreekuren: ${g.map(x=>`${DAY_KORT[x.di]} ${ddK(x.dd)}`).join(', ')}.`
+        : 'Er zijn geen volledige digitale spreekuren gemaakt (te weinig volume); de consulten zijn verspreid.'
+    }
+    setHerbouwToast({
+      ntp:r.ntp.length,
+      msg:`Raster opnieuw opgebouwd op basis van je huidige instellingen.${digTekst?' '+digTekst:''} ${r.ntp.length?`${r.ntp.length} afspraak/afspraken op de restlijst.`:'Alles ingepland.'}`
+    })
+    if(gaNaarRaster){ setActive(3); setVisited(p=>new Set([...p,3])) }
+  },[cfg,newRows,ctrlRows,m2,rules,capacity,computeRaster])
+  useEffect(()=>{ if(!herbouwToast) return; const t=setTimeout(()=>setHerbouwToast(null),6000); return ()=>clearTimeout(t) },[herbouwToast])
+
   // ══ SCENARIO-OPTIMISER ══════════════════════════════════════════════════════
   // Draait JOUW gegevens door alle zinvolle combinaties van de EFFICIËNTIE-knoppen
   // (rest-dag × minimumbezetting × kamerverdeling) en rangschikt de uitkomsten. De
@@ -5990,7 +6017,16 @@ export default function RasterTool(){
                 display:'inline-block'}}/>
               {liveBezig?'bijwerken…':'live — bijgewerkt'}
             </div>
-            <Btn variant="secondary" small onClick={doGenerate} title="Bouw het raster nu opnieuw op basis van de huidige gegevens en instellingen">↻ Opnieuw genereren</Btn>
+            <button onClick={()=>herbouwNu(false)}
+              title="Analyseer de huidige gegevens en instellingen opnieuw en bouw het raster ermee op"
+              style={{display:'flex',alignItems:'center',gap:7,padding:'8px 15px',borderRadius:11,border:'none',
+                cursor:'pointer',fontSize:12.5,fontWeight:700,color:'#fff',
+                background:'linear-gradient(135deg,#1C6EA4,#2E9BC8)',boxShadow:'0 4px 14px rgba(28,110,164,0.3)',
+                transition:'transform 0.12s,box-shadow 0.12s'}}
+              onMouseEnter={e=>{e.currentTarget.style.transform='translateY(-1px)';e.currentTarget.style.boxShadow='0 6px 18px rgba(28,110,164,0.38)'}}
+              onMouseLeave={e=>{e.currentTarget.style.transform='none';e.currentTarget.style.boxShadow='0 4px 14px rgba(28,110,164,0.3)'}}>
+              🔄 Analyseer &amp; herbouw
+            </button>
             <Btn small onClick={()=>setShowExport(true)} style={{background:C.green,border:'none'}}>⬇ Export</Btn>
           </div>
         </div>
@@ -7273,6 +7309,22 @@ export default function RasterTool(){
           <div style={{flex:1,overflowY:'auto',padding:'16px 22px 30px',zoom:0.92}}>
             {active<3&&mods[active]?.()}
           </div>
+          {/* Vaste actiebalk: bouw het raster expliciet opnieuw op met de huidige keuzes.
+              De wijzigingen worden al live doorgerekend, maar deze knop maakt het
+              expliciet én toont zwart-op-wit wat eruit kwam. */}
+          <div style={{flexShrink:0,borderTop:`1px solid ${C.border}`,padding:'12px 22px',
+            display:'flex',alignItems:'center',gap:10,background:C.surface2}}>
+            <button onClick={()=>herbouwNu(false)}
+              title="Analyseer de huidige gegevens en instellingen opnieuw en bouw het raster ermee op"
+              style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:8,
+                padding:'11px 16px',borderRadius:11,border:'none',cursor:'pointer',fontSize:13.5,fontWeight:800,
+                color:'#fff',background:'linear-gradient(135deg,#1C6EA4,#2E9BC8)',
+                boxShadow:'0 4px 14px rgba(28,110,164,0.3)',transition:'transform 0.12s'}}
+              onMouseEnter={e=>e.currentTarget.style.transform='translateY(-1px)'}
+              onMouseLeave={e=>e.currentTarget.style.transform='none'}>
+              🔄 Analyseer &amp; herbouw raster
+            </button>
+          </div>
         </div>
       </aside>
 
@@ -7326,6 +7378,20 @@ export default function RasterTool(){
           </div>
           <span style={{fontSize:14,fontWeight:700,color:C.text,fontVariantNumeric:'tabular-nums'}}>{clockStr}</span>
         </div>
+        {herbouwToast&&(
+          <div onClick={()=>setHerbouwToast(null)}
+            style={{position:'sticky',top:44,zIndex:65,margin:'10px 22px 0',cursor:'pointer',
+              display:'flex',alignItems:'flex-start',gap:10,padding:'11px 15px',borderRadius:11,
+              background:herbouwToast.ntp>0?'#FEF6E0':'#EAF7EE',
+              border:`1px solid ${herbouwToast.ntp>0?'#F0C840':'#9AD4AC'}`,
+              boxShadow:'0 6px 20px rgba(20,40,60,0.14)',animation:'fadeIn 0.2s ease'}}>
+            <span style={{fontSize:16,lineHeight:1.2}}>{herbouwToast.ntp>0?'⚠️':'✅'}</span>
+            <span style={{fontSize:12.5,fontWeight:600,color:herbouwToast.ntp>0?'#7A5000':'#1E5A32',lineHeight:1.5}}>
+              {herbouwToast.msg}
+            </span>
+            <span style={{marginLeft:'auto',fontSize:11,color:C.muted,whiteSpace:'nowrap'}}>sluiten ✕</span>
+          </div>
+        )}
         <div style={{padding:'18px 22px 50px'}}>
           {raster
             ? renderMod3()
