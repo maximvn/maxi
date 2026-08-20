@@ -1,0 +1,314 @@
+{
+  "job_name": "Ziekenhuisverplaatste zorg - transformatie naar 2033 - TEKST RETOUCH",
+  "engine": "Higgsfield / Nano Banana 2 (nano_banana_2)",
+  "mode": "IMAGE-TO-IMAGE PIXEL-ACCURATE TEXT RETOUCH",
+  "reference_image": "@image 1",
+
+  "PRIME_DIRECTIVE": "Reproduceer @image 1 exact 1-op-1 als een schone, hoge-resolutie heruitgave. Dit is GEEN nieuw ontwerp en GEEN herinterpretatie. Elk grafisch element, elk icoon, elke kolom, elke scheidingslijn, elke kleur, elke grootte en elke positie uit @image 1 blijft identiek. Het ENIGE wat verandert is: (A) alle tekst wordt vervangen door de exacte, correct gespelde Nederlandse strings die hieronder letterlijk zijn opgegeven, (B) bij stap 3 van de programmatische aanpak wordt een ontbrekende bodytekst toegevoegd en de kolom opnieuw uitgevuld, (C) het Gemini Notebook watermerk rechtsonder wordt volledig verwijderd. Verzin NIETS bij, laat NIETS weg, verplaats NIETS.",
+
+  "output_spec": {
+    "aspect_ratio": "16:9",
+    "resolution": "2k",
+    "target_pixels": "2048 x 1152",
+    "intended_use": "Liggende PowerPoint slide (16:9 widescreen, 33.87 x 19.05 cm). De volledige infographic moet binnen het 16:9 kader passen, zonder afsnijden van tekst of randen aan welke zijde dan ook.",
+    "bleed": "geen bleed, geen afgesneden tekst, minimaal 24px marge rondom de buitenste content",
+    "background_extension": "Als de bronafbeelding iets anders is dan 16:9, vul de zijkanten aan met dezelfde egale lichtblauwe achtergrondkleur. Rek de layout NIET uit en vervorm NIETS."
+  },
+
+  "brand_and_style": {
+    "overall_look": "Strakke, zakelijke, moderne healthcare-infographic. Vlakke vectorstijl met dunne lijnen, veel witruimte, rustige typografie. Geen fotorealisme, geen 3D-glans, geen schaduwen behalve de bestaande subtiele isometrische vlakken.",
+    "background": "Zeer lichte koelblauw-witte achtergrond (#F1F5FA tot #F4F7FB), egaal, geen textuur, geen verloop, geen ruis.",
+    "color_palette_locked": [
+      "#16365A donker marineblauw - alle koppen en donkere vlakken",
+      "#25507E / #3E6E9E middenblauw - staven, iconen, kubussen",
+      "#7FA88C / #8FB09A saliegroen - accentvlakken, iconen, kubussen",
+      "#B9C0C7 warmgrijs - neutrale staven en secundaire vlakken",
+      "#2B3B4A donkergrijsblauw - bodytekst",
+      "#D8E0E8 lichtgrijsblauw - haarlijnen en scheidingslijnen"
+    ],
+    "rule": "Gebruik UITSLUITEND deze kleuren. Introduceer geen nieuwe kleuren, geen felle accenten, geen oranje, geen rood, geen paars."
+  },
+
+  "typography": {
+    "heading_font": "Vette, licht gecondenseerde schreefloze letter (zoals Archivo Bold / Roboto Condensed Bold), ALL CAPS, kleur #16365A, strakke regelafstand.",
+    "body_font": "Zelfde schreefloze familie in Regular, kleur #2B3B4A, regelafstand 1.35, links uitgelijnd, geen uitvullen.",
+    "label_font": "Kleine schreefloze Regular of Medium voor grafieklabels en icoonbijschriften.",
+    "critical_rule": "ALLE tekst moet 100% scherp, volledig leesbaar en foutloos gespeld Nederlands zijn. Geen nep-tekst, geen lorem ipsum, geen letterbrij, geen half afgekapte woorden, geen verzonnen woorden, geen Engelse woorden waar Nederlands staat. Elk woord uit de tekstlijst hieronder moet exact zo gerenderd worden, teken voor teken, inclusief de diakritische tekens ë en ï.",
+    "diacritics": "Let extra op: patiënt, patiënten, patiëntgroepen, patiëntervaring, patiëntperspectief, patiëntbelang - altijd met trema op de e. En: één (met accenten) in de zin over het regionale netwerk.",
+    "text_fit": "Als een tekst niet in zijn blok past, verklein de tekengrootte in stappen van 1pt totdat hij past. Kap NOOIT een zin af en laat NOOIT een woord half staan. Alle bodytekst binnen dezelfde kolom houdt dezelfde tekengrootte."
+  },
+
+  "watermark_removal": {
+    "target": "Rechtsonder in de afbeelding staat een klein cirkelvormig icoontje gevolgd door de woordbeeld-tekst 'Gemini Notebook'.",
+    "action": "VERWIJDER dit volledig. Zowel het icoon als de tekst. Vul de plek naadloos op met dezelfde egale lichtblauwe achtergrondkleur als de rest van de rechteronderhoek.",
+    "verification": "Na de bewerking mag er in de rechteronderhoek GEEN logo, GEEN icoon, GEEN merknaam, GEEN watermerk, GEEN handtekening en GEEN copyrightregel meer staan. Volledig leeg.",
+    "do_not_replace": "Zet er ook geen ander logo, geen tekst en geen placeholder voor terug."
+  },
+
+  "layout_structure": "Vijf verticale contentkolommen van links naar rechts, gescheiden door dunne lichtgrijze verticale haarlijnen, precies zoals in @image 1. De titel staat linksboven in kolom 1.",
+
+  "content_blocks": {
+
+    "K1_titel": {
+      "position": "linksboven, kolom 1",
+      "heading_line_1": "ZIEKENHUISVERPLAATSTE ZORG:",
+      "heading_line_2": "DE TRANSFORMATIE NAAR 2033",
+      "heading_style": "Zeer groot, vet, ALL CAPS, donker marineblauw, twee regels, links uitgelijnd.",
+      "subheading": "Het fundamenteel herontwerpen van zorgpaden: thuis als het kan, dichtbij als het moet, ziekenhuis als het nodig is.",
+      "subheading_style": "Twee regels, medium grootte, grijsblauw, geen hoofdletters behalve aan het begin."
+    },
+
+    "K1_graphic": {
+      "position": "kolom 1, onder de titel",
+      "keep_identical": "Het abstracte gekruiste balkenpatroon in blauw, groen en grijs blijft exact hetzelfde qua vorm, hoek, aantal balken, kleur en positie."
+    },
+
+    "K1_blok_druk": {
+      "heading": "ONHOUDBARE DRUK OP DE HUIDIGE ZORG",
+      "chart": "Oplopend staafdiagram van links naar rechts met 4 staven, met een dunne opwaartse pijl erboven. Behoud exact dezelfde staafhoogtes, kleuren en de isometrische bovenvlakjes.",
+      "chart_labels_bottom_to_top": [
+        "Vergrijzing",
+        "Explosieve groei zorgvraag",
+        "Schaarste aan professionals",
+        "Capaciteit onmogelijk uit te breiden"
+      ],
+      "label_placement": "Vier labels trapsgewijs oplopend links van de staven, elk op de hoogte van de bijbehorende staaf, exact zoals in @image 1.",
+      "body": "De combinatie van vergrijzing, een explosieve groei van de zorgvraag en schaarste aan professionals maakt simpelweg uitbreiden van capaciteit onmogelijk.",
+      "body_placement": "Onderaan kolom 1, drie regels."
+    },
+
+    "K2_blok_verschuiving": {
+      "heading_line_1": "DE NOODZAKELIJKE",
+      "heading_line_2": "VERSCHUIVING",
+      "graphic": "Behoud de bestaande illustratie: links een blauw ziekenhuisgebouw met kruis, daaruit een trapvormige blauwe en groene pijlroute naar rechts met drie eindpunten.",
+      "graphic_labels_top_to_bottom": [
+        "Patiënt thuis",
+        "Huisarts",
+        "VVT-partners"
+      ],
+      "label_notes": "Label 1 staat naast het huisje bovenaan, label 2 naast de dokterfiguur in het midden, label 3 naast de groep zorgverleners onderaan. Exact op dezelfde plek als in @image 1.",
+      "body": "Zorg moet bewegen van het ziekenhuis naar de patiënt thuis, de huisarts of VVT-partners om toegankelijk te blijven."
+    },
+
+    "K2_blok_technologie": {
+      "heading_line_1": "TECHNOLOGIE ALS MIDDEL,",
+      "heading_line_2": "NIET ALS DOEL",
+      "graphic": "Behoud het groene smartwatch-icoon met hartslag en golfjes links, en het grijze cloud-icoon met datastipjes rechts.",
+      "body": "Thuismonitoring en wearables zijn hulpmiddelen; de echte verandering zit in het verplaatsen en anders inrichten van het zorgproces zelf."
+    },
+
+    "K3_blok_herontwerp": {
+      "heading_line_1": "FUNDAMENTEEL",
+      "heading_line_2": "HERONTWERP VAN",
+      "heading_line_3": "ZORGPADEN",
+      "subheading": "DE 3 CRUCIALE VRAGEN VOOR ELK ZORGPAD:",
+      "numbered_list": [
+        "1. MOET DE PATIËNT KOMEN?",
+        "2. WELK DEEL MOET FYSIEK?",
+        "3. WAT KAN VEILIG THUIS OF DICHTBIJ?"
+      ],
+      "list_style": "ALL CAPS, vet, donker marineblauw, drie regels onder elkaar, klein ingesprongen.",
+      "subheading_2": "FOCUSGEBIEDEN VOOR VERPLAATSING:",
+      "icon_row": "Behoud exact de vier bestaande lijniconen op één rij: (1) groene longen, (2) groen oncologie-lintje, (3) blauw infuus/kruis met druppel, (4) blauw hart met hartslaglijn.",
+      "icon_labels_exact_four": [
+        "Chronische aandoeningen",
+        "Oncologie",
+        "Infuuszorg",
+        "Wondzorg"
+      ],
+      "CRITICAL_FIX": "In @image 1 staan er vijf labelfragmenten onder vier iconen, waardoor de labels door elkaar lopen. In de nieuwe versie staan er EXACT VIER labels, één per icoon, netjes gecentreerd onder het bijbehorende icoon, elk op maximaal twee regels, met gelijke onderlinge tussenruimte. Het fragment 'Monitoring kwetsbare patiënten' vervalt hier volledig."
+    },
+
+    "K3_blok_spanning": {
+      "heading": "SPANNINGSPUNTEN & RISICO'S",
+      "heading_note": "In @image 1 staat 'SPANNENDE PUNTEN & RISICO'S'. Dat is geen correct Nederlands in deze context en wordt vervangen door 'SPANNINGSPUNTEN & RISICO'S'.",
+      "sub_1_heading_line_1": "VERSCHUIVENDE",
+      "sub_1_heading_line_2": "VERANTWOORDELIJKHEDEN",
+      "sub_1_graphic": "Behoud het bestaande netwerkicoon: twee gestileerde personen links en rechts, verbonden via een centrale database/cilinder met een cirkelvormige pijl eromheen.",
+      "sub_1_body": "Bij monitoring op afstand moet glashelder zijn wie de data bekijkt, wie actie onderneemt en wie de eindverantwoordelijkheid draagt.",
+      "sub_2_heading_line_1": "VOORKOM",
+      "sub_2_heading_line_2": "WERKDRUKVERPLAATSING",
+      "sub_2_graphic": "Behoud het bestaande weegschaal-icoon rechts van de tekst.",
+      "sub_2_body": "Voorkom dat verplaatsing leidt tot extra meldingen, administratie en werkdruk bij professionals of patiënten.",
+      "sub_3_heading": "PATIËNTBELANG STAAT CENTRAAL",
+      "sub_3_graphic": "Behoud de groene menselijke figuur met de atoomachtige elliptische banen eromheen.",
+      "sub_3_labels": [
+        "Minder reistijd (linksboven van de figuur)",
+        "Meer regie (rechtsboven van de figuur)",
+        "Meer comfort (rechtsonder van de figuur)"
+      ]
+    },
+
+    "K4_icon_row_top": {
+      "position": "bovenaan kolom 4",
+      "keep_identical": "Behoud de rij van drie iconen: (1) blauw lopend persoontje naast een blauw-groen ziekenhuisgebouw met kruis, (2) blauwe arts die een zittende patiënt onderzoekt, (3) groen huisje. Geen labels, geen tekst toevoegen bij deze iconen."
+    },
+
+    "K4_blok_aanpak": {
+      "heading_line_1": "DE PROGRAMMATISCHE",
+      "heading_line_2": "AANPAK (IN 6 STAPPEN)",
+      "graphic": "Behoud de isometrische diagonale trap van kubussen die van rechtsboven naar linksonder loopt, met dunne grijze hulplijnen. De kubussen zijn afwisselend blauw, groen en grijs en dragen elk een klein wit pictogram.",
+      "steps": [
+        {
+          "number_and_title": "1. SELECTEREN",
+          "body": "Identificeer patiëntgroepen met veel ziekenhuiscontacten die het meest kansrijk zijn voor zorgverplaatsing."
+        },
+        {
+          "number_and_title": "2. ONTWERPEN",
+          "body": "Ontwerp het ideale zorgpad vanuit patiëntperspectief: bepaal de rol van thuis, de huisarts/VVT en het ziekenhuis."
+        },
+        {
+          "number_and_title": "3. RANDVOORWAARDEN ORGANISEREN",
+          "body": "Regel digitale infrastructuur, monitoring, gegevensuitwisseling, competenties, financiering en verantwoordelijkheden.",
+          "STATUS": "NIEUW TOEGEVOEGD - in @image 1 ontbreekt deze bodytekst volledig en staat er alleen een kop."
+        },
+        {
+          "number_and_title": "4. PILOTEN OF TESTEN",
+          "body": "Start kleinschalig met specifieke patiëntgroepen en monitor de uitkomsten nauwgezet."
+        },
+        {
+          "number_and_title": "5. EVALUEREN",
+          "body": "Meet niet alleen kosten, maar ook kwaliteit, patiëntervaring, medische uitkomsten en de ervaren werkdruk."
+        },
+        {
+          "number_and_title": "6. OPSCHALEN",
+          "body": "Integreer wat werkt in de reguliere zorg en pas de geleerde lessen toe op vergelijkbare zorgpaden."
+        }
+      ],
+      "CRITICAL_LAYOUT_FIX": "In @image 1 heeft stap 3 'RANDVOORWAARDEN ORGANISEREN' wel een kop maar GEEN bodytekst, waardoor er een gat valt. Voeg de bodytekst toe en herverdeel daarna de zes stapblokken zodanig dat: (a) elk stapblok dezelfde structuur heeft, namelijk nummer + titel in vet ALL CAPS marineblauw, met daaronder 3 tot 4 regels bodytekst in grijsblauw; (b) de zes blokken van boven naar beneden verlopen met GELIJKE verticale tussenruimte; (c) elk blok voldoende breedte houdt en de bodytekst NIET over de isometrische kubussen of de hulplijnen heen loopt; (d) verklein zo nodig de bodytekstgrootte van ALLE zes stappen gelijkmatig, zodat het geheel typografisch consistent blijft; (e) stap 3 staat net als in @image 1 rechts naast de kubussentrap uitgelijnd - houd de bestaande links/rechts zigzag van de stapblokken intact, maar zorg dat geen enkel blok buiten de kolomrand valt."
+    },
+
+    "K5_blok_ambitie": {
+      "heading_line_1": "DE AMBITIE VOOR 2033:",
+      "heading_line_2": "'THUIS ALS HET KAN,",
+      "heading_line_3": "DICHTBIJ ALS HET MOET,",
+      "heading_line_4": "ZIEKENHUIS ALS HET NODIG IS.'",
+      "heading_style": "Vier regels, vet ALL CAPS marineblauw, de laatste drie regels tussen enkele aanhalingstekens.",
+      "body": "In 2033 is het ziekenhuis niet meer het standaard startpunt, maar een gespecialiseerde schakel in een breder netwerk.",
+      "sub_heading": "EEN REALISTISCHE BLIK OP KOSTEN:",
+      "sub_body": "Zorgverplaatsing leidt niet direct tot minder kosten of werk; het vraagt eerst investeringen om de zorg toegankelijk en de capaciteit beschikbaar te houden.",
+      "note": "In @image 1 staat hier de afkorting 'ZXZ'. Die wordt vervangen door het voluit geschreven woord 'Zorgverplaatsing'."
+    },
+
+    "K5_blok_effecten": {
+      "heading_line_1": "CONCRETE EFFECTEN",
+      "heading_line_2": "& RESULTATEN",
+      "item_1": {
+        "graphic": "Behoud het kleine staafdiagram met drie oplopende staven (grijs, lichtgrijs, blauw) links van de tekst.",
+        "heading_line_1": "BETERE",
+        "heading_line_2": "PATIËNTERVARING",
+        "heading_line_3": "& EIGEN REGIE",
+        "body": "Minder reistijd en wachttijd; de patiënt wordt een actieve partner in het eigen zorgproces."
+      },
+      "item_2": {
+        "graphic": "Behoud het blauwe ziekenhuisgebouw-icoon met kruis en de gestippelde uitbreidingslijnen aan weerszijden.",
+        "heading_line_1": "RUIMTE VOOR",
+        "heading_line_2": "COMPLEXE ZORG",
+        "body": "Door minder complexe zorg te verplaatsen, ontstaat in het ziekenhuis weer capaciteit voor patiënten die acute of specialistische zorg nodig hebben."
+      },
+      "item_3": {
+        "graphic": "Behoud het icoon van twee in elkaar grijpende ruitvormen in blauw en groen.",
+        "heading_line_1": "REGIONAAL",
+        "heading_line_2": "ZORGNETWERK",
+        "body": "Ziekenhuis, huisarts en thuiszorg functioneren als één naadloos samenwerkend netwerk."
+      }
+    }
+  },
+
+  "complete_spelling_whitelist": [
+    "ZIEKENHUISVERPLAATSTE ZORG: DE TRANSFORMATIE NAAR 2033",
+    "ONHOUDBARE DRUK OP DE HUIDIGE ZORG",
+    "Vergrijzing", "Explosieve groei zorgvraag", "Schaarste aan professionals", "Capaciteit onmogelijk uit te breiden",
+    "DE NOODZAKELIJKE VERSCHUIVING", "Patiënt thuis", "Huisarts", "VVT-partners",
+    "TECHNOLOGIE ALS MIDDEL, NIET ALS DOEL",
+    "FUNDAMENTEEL HERONTWERP VAN ZORGPADEN",
+    "DE 3 CRUCIALE VRAGEN VOOR ELK ZORGPAD:",
+    "FOCUSGEBIEDEN VOOR VERPLAATSING:",
+    "Chronische aandoeningen", "Oncologie", "Infuuszorg", "Wondzorg",
+    "SPANNINGSPUNTEN & RISICO'S",
+    "VERSCHUIVENDE VERANTWOORDELIJKHEDEN",
+    "VOORKOM WERKDRUKVERPLAATSING",
+    "PATIËNTBELANG STAAT CENTRAAL", "Minder reistijd", "Meer regie", "Meer comfort",
+    "DE PROGRAMMATISCHE AANPAK (IN 6 STAPPEN)",
+    "1. SELECTEREN", "2. ONTWERPEN", "3. RANDVOORWAARDEN ORGANISEREN", "4. PILOTEN OF TESTEN", "5. EVALUEREN", "6. OPSCHALEN",
+    "DE AMBITIE VOOR 2033", "EEN REALISTISCHE BLIK OP KOSTEN:",
+    "CONCRETE EFFECTEN & RESULTATEN",
+    "BETERE PATIËNTERVARING & EIGEN REGIE", "RUIMTE VOOR COMPLEXE ZORG", "REGIONAAL ZORGNETWERK"
+  ],
+
+  "explicit_error_corrections": {
+    "instruction": "Deze verkeerd gespelde reeksen uit @image 1 mogen in de output NIET meer voorkomen. Links het foute origineel, rechts wat het moet worden.",
+    "map": {
+      "zorgereag / esplesieve groel": "explosieve groei van de zorgvraag",
+      "Sehaarste": "Schaarste",
+      "infrnenten": "uit te breiden",
+      "msekt snopelwag": "maakt simpelweg",
+      "Huiserts / hoisarts": "Huisarts / huisarts",
+      "thals": "thuis",
+      "taegankelijk": "toegankelijk",
+      "Tlrulsmenitoring": "Thuismonitoring",
+      "waerables": "wearables",
+      "eetrie": "echte",
+      "intlehten": "inrichten",
+      "zorgproees": "zorgproces",
+      "aandeeringen": "aandoeningen",
+      "Oucologie": "Oncologie",
+      "Infuererurg": "Infuuszorg",
+      "Wondzurg": "Wondzorg",
+      "SPANNENDE PUNTEN": "SPANNINGSPUNTEN",
+      "menlteriog op efetand": "monitoring op afstand",
+      "glasheider": "glashelder",
+      "dotz belijkt": "data bekijkt",
+      "estie ondemeemt": "actie onderneemt",
+      "eindverentsoordelijkheid": "eindverantwoordelijkheid",
+      "WERKORUKVERPLAATSING": "WERKDRUKVERPLAATSING",
+      "MentiRcoer": "Identificeer",
+      "siekenhuispantaeten": "ziekenhuiscontacten",
+      "ideals zorgpad vamdt het patiënlperspeetief": "ideale zorgpad vanuit patiëntperspectief",
+      "bepael": "bepaal",
+      "monifer": "monitor",
+      "nouwgezet": "nauwgezet",
+      "regullere": "reguliere",
+      "tee op vergelijkbare mouwe zorgpaden": "toe op vergelijkbare zorgpaden",
+      "standaord stergunt": "standaard startpunt",
+      "oen gespecialiseerde schokel in oen breder network": "een gespecialiseerde schakel in een breder netwerk",
+      "ZXZ loldt niat direct tet minder kesten": "Zorgverplaatsing leidt niet direct tot minder kosten",
+      "vreegt seret om invasteringen": "vraagt eerst investeringen",
+      "tooganhelijk": "toegankelijk",
+      "beschikhoer te huuden": "beschikbaar te houden",
+      "BETEDE PATIENTERVARING": "BETERE PATIËNTERVARING",
+      "ocdeve partner": "actieve partner",
+      "reinder complexe zorg": "minder complexe zorg",
+      "ontataat": "ontstaat",
+      "peldinten die aoute of speslidistische": "patiënten die acute of specialistische",
+      "ZORONETWERK": "ZORGNETWERK",
+      "ziekenhois": "ziekenhuis",
+      "functionuten": "functioneren",
+      "samenvarkend": "samenwerkend"
+    }
+  },
+
+  "negative_prompt": [
+    "geen watermerk", "geen Gemini logo", "geen Gemini Notebook tekst", "geen merknaam rechtsonder",
+    "geen onleesbare of verzonnen woorden", "geen letterbrij", "geen lorem ipsum", "geen dubbele letters",
+    "geen Engelse tekst", "geen spelfouten", "geen ontbrekende trema op patiënt",
+    "geen lege tekstblokken", "geen afgekapte zinnen", "geen tekst die buiten zijn kader valt",
+    "geen overlappende tekst", "geen tekst over iconen heen", "geen nieuwe iconen", "geen weggelaten iconen",
+    "geen verplaatste kolommen", "geen nieuwe kleuren", "geen verloop", "geen slagschaduw", "geen 3D-render",
+    "geen fotorealisme", "geen mensfoto's", "geen stockfoto's", "geen ruis", "geen JPEG-artefacten",
+    "geen wazige tekst", "geen bijgesneden randen", "geen extra secties", "geen extra stappen naast 1 tot en met 6"
+  ],
+
+  "acceptance_checklist": [
+    "1. Output is exact 16:9 liggend en geschikt als PowerPoint slide op 2K.",
+    "2. Alle 5 kolommen en alle verticale scheidingslijnen staan op dezelfde plek als in @image 1.",
+    "3. Elk woord in de infographic is correct gespeld Nederlands en volledig leesbaar bij 100% zoom.",
+    "4. Onder de vier focusgebied-iconen staan exact vier labels: Chronische aandoeningen, Oncologie, Infuuszorg, Wondzorg.",
+    "5. Stap 3 RANDVOORWAARDEN ORGANISEREN heeft nu wel bodytekst en die overlapt niets.",
+    "6. De zes stappen hebben gelijke onderlinge tussenruimte en dezelfde typografische opmaak.",
+    "7. Rechtsonder staat GEEN Gemini Notebook logo of tekst meer; die hoek is schoon.",
+    "8. Alle iconen, grafieken en het isometrische kubuspad zijn identiek aan @image 1.",
+    "9. Het kleurenpalet is ongewijzigd.",
+    "10. Er is niets afgesneden aan de randen."
+  ]
+}

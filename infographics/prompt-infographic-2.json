@@ -1,0 +1,284 @@
+{
+  "job_name": "Ziekenhuisverplaatste zorg - transformatie 2033 - TEKST RETOUCH + LAYOUTFIX STAP 6",
+  "engine": "Higgsfield / Nano Banana 2 (nano_banana_2)",
+  "mode": "IMAGE-TO-IMAGE PIXEL-ACCURATE TEXT RETOUCH",
+  "reference_image": "@image 1",
+
+  "PRIME_DIRECTIVE": "Reproduceer @image 1 exact 1-op-1 als een schone, hoge-resolutie heruitgave. Dit is GEEN nieuw ontwerp. Alle grote abstracte geometrische vormen, alle paneelkaders, alle kleurvlakken, de volledige kolomindeling en alle proporties blijven exact zoals in @image 1. Er verandert precies drie dingen: (A) alle tekst wordt vervangen door de exacte, correct gespelde Nederlandse strings hieronder, (B) STAP 6 in paneel 4 wordt horizontaal uitgelijnd met stap 1 tot en met 5, (C) het Gemini Notebook watermerk rechtsonder wordt volledig verwijderd. Verder blijft alles identiek.",
+
+  "output_spec": {
+    "aspect_ratio": "16:9",
+    "resolution": "2k",
+    "target_pixels": "2048 x 1152",
+    "intended_use": "Liggende PowerPoint slide (16:9 widescreen, 33.87 x 19.05 cm). De hele infographic past binnen het kader, niets valt buiten beeld.",
+    "background_extension": "Vul indien nodig aan met dezelfde egale lichtgrijs-witte achtergrond. Nooit uitrekken of vervormen."
+  },
+
+  "brand_and_style": {
+    "overall_look": "Zakelijke corporate infographic met grote, vlakke, semi-transparante geometrische vormen als achtergrondkunst per paneel. Vlakke vectorstijl, veel witruimte, strakke typografie, dunne lichtgrijze paneelranden.",
+    "background": "Zeer licht koelgrijs-wit (#F2F4F7 tot #F7F9FB), egaal.",
+    "color_palette_locked": [
+      "#14395C diep marineblauw - paneel 1 vlakvulling en alle koppen",
+      "#2F5E8C / #4A78A8 middenblauw - geometrische vlakken",
+      "#7FA0C4 / #A9C0D8 lichtblauw - geometrische vlakken",
+      "#7FA189 / #9DBBA4 saliegroen - geometrische vlakken",
+      "#B9CDBD lichtgroen - geometrische vlakken",
+      "#FFFFFF wit - tekst binnen het donkere paneel 1",
+      "#33465A donkergrijsblauw - bodytekst op lichte panelen"
+    ],
+    "transparency_rule": "De grote vormen overlappen elkaar met multiply/transparantie zoals in @image 1. Behoud die overlapkleuren exact.",
+    "rule": "Geen nieuwe kleuren introduceren."
+  },
+
+  "typography": {
+    "main_title": "Zeer grote vette schreefloze ALL CAPS in #14395C, gecentreerd of links bovenaan zoals in @image 1, over de volle breedte.",
+    "panel_heading": "Vet ALL CAPS, genummerd (1. t/m 6.), donker marineblauw op lichte panelen en wit op paneel 1.",
+    "sub_heading": "Kleiner vet ALL CAPS, donker marineblauw op lichte panelen en wit op paneel 1.",
+    "body": "Schreefloze Regular, regelafstand 1.35, links uitgelijnd, kleur #33465A op lichte panelen en zacht wit (#E8EEF4) op paneel 1.",
+    "critical_rule": "ALLE tekst is 100% scherp, volledig leesbaar en foutloos gespeld Nederlands. Geen letterbrij, geen verzonnen woorden, geen half woord, geen afgekapte zin, geen Engelse invulling.",
+    "diacritics": "Correct renderen: patiënt, patiënten, patiëntgroepen, patiëntperspectief, patiëntbeleving, patiëntoordelen, één.",
+    "contrast_rule": "Waar tekst over een geometrisch vlak valt, moet het contrast voldoende zijn om vlot leesbaar te blijven. Verzwak indien nodig de dekking van het vlak achter de tekst licht, maar verander de vorm en de kleur van het vlak niet."
+  },
+
+  "watermark_removal": {
+    "target": "Rechtsonder staat een klein cirkelvormig icoontje met daarnaast de tekst 'Gemini Notebook'.",
+    "action": "VERWIJDER icoon en tekst volledig en vul de plek naadloos op met de egale achtergrondkleur.",
+    "verification": "De rechteronderhoek is daarna volledig leeg: geen logo, geen merknaam, geen watermerk, geen handtekening, geen credit line.",
+    "do_not_replace": "Zet er niets anders voor terug."
+  },
+
+  "layout_structure": "Titelbalk bovenaan over de volle breedte. Daaronder drie verticale kolommen gescheiden door dunne lichtgrijze lijnen. Linkerkolom bevat paneel 1, 2 en 3 onder elkaar. Middenkolom bevat paneel 4 over de volle hoogte. Rechterkolom bevat paneel 5 boven en paneel 6 onder.",
+
+  "content_blocks": {
+
+    "TITEL": {
+      "text": "ZIEKENHUISVERPLAATSTE ZORG: DE TRANSFORMATIE NAAR 2033",
+      "style": "Eén regel, zeer groot, vet, ALL CAPS, #14395C, bovenaan over de volle breedte."
+    },
+
+    "PANEEL_1": {
+      "position": "linkerkolom, bovenaan",
+      "fill": "Volledig gevuld donker marineblauw blok met witte tekst en een abstract donkerblauw hoekig vormenspel linksboven. Behoud exact.",
+      "heading": "1. DE URGENTIE: WAAROM VERANDEREN?",
+      "sub_1_heading": "EXTERNE DRUKFACTOREN",
+      "sub_1_body": "De combinatie van vergrijzing, een groeiende zorgvraag en schaarste aan zorgpersoneel maakt de huidige werkwijze onhoudbaar.",
+      "sub_2_heading_line_1": "DE NOODZAKELIJKE",
+      "sub_2_heading_line_2": "VERSCHUIVING",
+      "sub_2_body": "Groei is niet op te lossen met méér capaciteit; zorg moet verschuiven van het ziekenhuis naar thuis, de huisarts en de VVT.",
+      "sub_3_heading_line_1": "TECHNOLOGIE",
+      "sub_3_heading_line_2": "ALS ENABLER",
+      "sub_3_body": "Thuismonitoring, digitale consulten, digitale diagnostiek en wearables maken verplaatsing mogelijk; de echte verandering zit in het zorgproces zelf.",
+      "grid": "Twee tekstkolommen binnen het paneel, exact zoals in @image 1: EXTERNE DRUKFACTOREN rechtsboven, DE NOODZAKELIJKE VERSCHUIVING linksonder, TECHNOLOGIE ALS ENABLER rechtsonder."
+    },
+
+    "PANEEL_2": {
+      "position": "linkerkolom, midden",
+      "graphic": "Behoud de grote blauwe geometrische kwartcirkel/boogvorm links.",
+      "heading_line_1": "2. DE STRATEGISCHE KANS:",
+      "heading_line_2": "FUNDAMENTEEL HERONTWERP",
+      "sub_1_heading_line_1": "ONTWERPPRINCIPE",
+      "sub_1_heading_line_2": "VOOR DE TOEKOMST",
+      "sub_1_body": "Ziekenhuisverplaatste zorg is geen verzameling losse projecten, maar een fundamenteel uitgangspunt voor elk zorgpad.",
+      "sub_2_heading_line_1": "VAN DIGITALISERING",
+      "sub_2_heading_line_2": "NAAR HERONTWERP",
+      "sub_2_body": "Niet alleen een fysiek consult vervangen door een digitaal consult, maar het volledige zorgpad herzien om ziekenhuisbezoek te minimaliseren.",
+      "sub_3_heading_line_1": "DE DRIE STRATEGISCHE",
+      "sub_3_heading_line_2": "VRAGEN",
+      "sub_3_body_numbered": [
+        "1. Moet de patiënt naar het ziekenhuis?",
+        "2. Welk deel moet fysiek in het ziekenhuis?",
+        "3. Wat kan veilig en kwalitatief gelijkwaardig thuis?"
+      ],
+      "sub_4_heading_line_1": "KANSRIJKE",
+      "sub_4_heading_line_2": "GEBIEDEN",
+      "sub_4_body": "Focus op chronische aandoeningen, oncologie, infuuszorg, nacontroles, monitoring van kwetsbare patiënten, wondzorg en diagnostiek.",
+      "grid": "Twee kolommen van twee blokken, exact zoals in @image 1."
+    },
+
+    "PANEEL_3": {
+      "position": "linkerkolom, onderaan",
+      "graphic": "Behoud de blauwe hoekige weegschaal/driehoekvorm linksonder.",
+      "heading_line_1": "3. DE SPANNINGSPUNTEN:",
+      "heading_line_2": "RISICO'S EN VERANTWOORDELIJKHEID",
+      "heading_note": "In @image 1 staat 'DE SPANNENDE PUNTEN'. Dat is geen correct Nederlands in deze context en wordt 'DE SPANNINGSPUNTEN'.",
+      "sub_1_heading_line_1": "VERSCHUIVING VAN",
+      "sub_1_heading_line_2": "VERANTWOORDELIJKHEID",
+      "sub_1_body": "Cruciale vragen: wie beoordeelt de data, wanneer wordt actie ondernomen, wie draagt de eindverantwoordelijkheid en hoe snel wordt opgeschaald?",
+      "sub_2_heading_line_1": "KWALITEIT EN",
+      "sub_2_heading_line_2": "WERKDRUK",
+      "sub_2_body": "Voorkom dat professionals extra meldingen en administratie krijgen; veiligheid en kwaliteit moeten geborgd blijven.",
+      "sub_3_heading_line_1": "GEEN LASTENVERSCHUIVING",
+      "sub_3_heading_line_2": "NAAR DE PATIËNT",
+      "sub_3_body": "Voorkom dat \"ziekenhuiszorg thuis\" ongemerkt bij de patiënt wordt neergelegd; de patiënt moet juist profiteren door minder reizen en meer comfort."
+    },
+
+    "PANEEL_4": {
+      "position": "middenkolom, volle hoogte",
+      "heading": "4. DE PROGRAMMATISCHE AANPAK (DE 6 STAPPEN)",
+      "graphic": "Behoud de grote overlappende semi-transparante driehoeken, pijlvormen en rechthoeken in blauw en groen die als achtergrondkunst achter de stappen liggen.",
+      "steps": [
+        {
+          "label_line_1": "STAP 1:",
+          "label_line_2": "SELECTEREN",
+          "body": "Welke patiëntgroepen hebben veel ziekenhuiscontacten en zijn kansrijk voor verplaatsing?"
+        },
+        {
+          "label_line_1": "STAP 2:",
+          "label_line_2": "ONTWERPEN",
+          "body": "Ontwerp het ideale zorgpad vanuit patiëntperspectief: wat kan thuis, wat bij de huisarts/VVT en wat moet in het ziekenhuis?"
+        },
+        {
+          "label_line_1": "STAP 3:",
+          "label_line_2": "RANDVOORWAARDEN ORGANISEREN",
+          "body": "Regel digitale infrastructuur, monitoring, gegevensuitwisseling, competenties, financiering en verantwoordelijkheden.",
+          "note": "Dit blok staat op het donkerste vlak; tekst hier in wit."
+        },
+        {
+          "label_line_1": "STAP 4:",
+          "label_line_2": "PILOTEN OF TESTEN",
+          "body": "Begin kleinschalig met duidelijke patiëntgroepen en meetbare uitkomsten."
+        },
+        {
+          "label_line_1": "STAP 5:",
+          "label_line_2": "EVALUEREN",
+          "body": "Niet alleen kijken naar productie of kosten, maar vooral naar kwaliteit, patiëntoordelen, ervaringen en werkdruk."
+        },
+        {
+          "label_line_1": "STAP 6:",
+          "label_line_2": "OPSCHALEN",
+          "body": "Wat werkt, wordt onderdeel van de reguliere zorg en wordt vervolgens toegepast op vergelijkbare zorgpaden."
+        }
+      ],
+      "CRITICAL_LAYOUT_FIX_STEP_6": "PROBLEEM in @image 1: stap 1 tot en met 5 staan netjes onder elkaar in het midden van paneel 4, allemaal met dezelfde linkermarge. STAP 6 OPSCHALEN is echter naar rechts uitgeweken en steekt richting de rechterrand van het paneel, waardoor het blok uit de lijn valt en visueel losraakt van de reeks. OPLOSSING: verplaats het volledige blok van STAP 6 (zowel het label 'STAP 6: OPSCHALEN' als de bodytekst) naar links, zodat het exact dezelfde linkeruitlijning, dezelfde blokbreedte en dezelfde tekstkaderbreedte krijgt als stap 1 tot en met 5. Plaats het direct onder stap 5, met dezelfde verticale tussenruimte als die tussen stap 4 en stap 5. Het resultaat is één strakke, verticaal doorlopende kolom van zes gelijk uitgelijnde stapblokken van boven naar beneden. Verplaats de achterliggende geometrische vormen NIET; alleen het tekstblok van stap 6 schuift mee naar de gemeenschappelijke uitlijning. Zorg dat er onder stap 6 geen groot leeg gat of overlap ontstaat: verdeel de zes blokken gelijkmatig over de beschikbare hoogte van paneel 4."
+    },
+
+    "PANEEL_5": {
+      "position": "rechterkolom, bovenaan",
+      "graphic": "Behoud de groep lichtgroene en lichtblauwe isometrische kubussen rechtsboven.",
+      "heading_line_1": "5. DE AMBITIE VOOR 2033:",
+      "heading_line_2": "EEN NIEUWE REALITEIT",
+      "sub_1_heading": "VISIE SLINGELAND 2033",
+      "sub_1_body": "Het ziekenhuis is niet langer het startpunt; zorg vindt plaats waar het passend is: thuis als het kan, dichtbij als het moet, ziekenhuis als het nodig is.",
+      "sub_2_heading": "REALISTISCHE NUANCE",
+      "sub_2_body": "Verplaatsing betekent niet direct minder kosten of werk; het vraagt in de eerste fase juist extra investeringen en capaciteit.",
+      "sub_3_heading": "STRATEGISCHE WAARDE",
+      "sub_3_body": "Door zorg te verplaatsen ontstaat er ruimte en capaciteit voor de complexe zorg die alleen een ziekenhuis kan bieden."
+    },
+
+    "PANEEL_6": {
+      "position": "rechterkolom, onderaan",
+      "graphic": "Behoud de grote groene hoekige vormen (driehoek, pijl, trapezium) als achtergrondkunst.",
+      "heading": "6. DE CONCRETE EFFECTEN",
+      "columns_exactly_three": [
+        {
+          "heading_line_1": "PATIËNT",
+          "heading_line_2": "& KWALITEIT",
+          "body": "Betere patiëntbeleving door minder reistijd en meer eigen regie, met behoud of verbetering van kwaliteit en veiligheid."
+        },
+        {
+          "heading_line_1": "ORGANISATIE",
+          "heading_line_2": "& REGIO",
+          "body": "Effectievere inzet van professionals door slimmere taakverdeling en het functioneren als één regionaal zorgnetwerk (ziekenhuis, huisarts, VVT)."
+        },
+        {
+          "heading_line_1": "TECHNOLOGIE",
+          "heading_line_2": "& CAPACITEIT",
+          "body": "Optimaal gebruik van thuismonitoring en data, wat leidt tot meer ruimte in het ziekenhuis voor specialistische en acute zorg."
+        }
+      ],
+      "CRITICAL_FIX_DUPLICATE": "PROBLEEM in @image 1: de kop 'ORGANISATIE & REGIO' staat TWEE KEER naast elkaar, met bijna identieke tekst. OPLOSSING: er komen exact DRIE unieke blokken naast elkaar, in deze volgorde van links naar rechts: (1) PATIËNT & KWALITEIT, (2) ORGANISATIE & REGIO, (3) TECHNOLOGIE & CAPACITEIT. Elk blok heeft zijn eigen unieke bodytekst zoals hierboven opgegeven. Geen enkele kop of tekst mag herhaald worden."
+    }
+  },
+
+  "complete_spelling_whitelist": [
+    "ZIEKENHUISVERPLAATSTE ZORG: DE TRANSFORMATIE NAAR 2033",
+    "1. DE URGENTIE: WAAROM VERANDEREN?", "EXTERNE DRUKFACTOREN", "DE NOODZAKELIJKE VERSCHUIVING", "TECHNOLOGIE ALS ENABLER",
+    "2. DE STRATEGISCHE KANS: FUNDAMENTEEL HERONTWERP", "ONTWERPPRINCIPE VOOR DE TOEKOMST", "VAN DIGITALISERING NAAR HERONTWERP", "DE DRIE STRATEGISCHE VRAGEN", "KANSRIJKE GEBIEDEN",
+    "3. DE SPANNINGSPUNTEN: RISICO'S EN VERANTWOORDELIJKHEID", "VERSCHUIVING VAN VERANTWOORDELIJKHEID", "KWALITEIT EN WERKDRUK", "GEEN LASTENVERSCHUIVING NAAR DE PATIËNT",
+    "4. DE PROGRAMMATISCHE AANPAK (DE 6 STAPPEN)",
+    "STAP 1: SELECTEREN", "STAP 2: ONTWERPEN", "STAP 3: RANDVOORWAARDEN ORGANISEREN", "STAP 4: PILOTEN OF TESTEN", "STAP 5: EVALUEREN", "STAP 6: OPSCHALEN",
+    "5. DE AMBITIE VOOR 2033: EEN NIEUWE REALITEIT", "VISIE SLINGELAND 2033", "REALISTISCHE NUANCE", "STRATEGISCHE WAARDE",
+    "6. DE CONCRETE EFFECTEN", "PATIËNT & KWALITEIT", "ORGANISATIE & REGIO", "TECHNOLOGIE & CAPACITEIT"
+  ],
+
+  "explicit_error_corrections": {
+    "instruction": "Deze foute reeksen uit @image 1 mogen NIET terugkomen in de output.",
+    "map": {
+      "De candeerte van vergrijzing": "De combinatie van vergrijzing",
+      "grosiende zerpsrsog": "groeiende zorgvraag",
+      "schaarste van serggeoloezanals": "schaarste aan zorgpersoneel",
+      "mecht on heldige werkirjke enkndbear": "maakt de huidige werkwijze onhoudbaar",
+      "NOODZARELIJKE": "NOODZAKELIJKE",
+      "Groor ken niet onden opgelost met meer veperiteit": "Groei is niet op te lossen met méér capaciteit",
+      "veandromen van het ziekathale naar Klen, de herau io de VVT": "verschuiven van het ziekenhuis naar thuis, de huisarts en de VVT",
+      "Thekonc-Ilering, digilala consinlen": "Thuismonitoring, digitale consulten",
+      "wetraljies weken veretnerzing mosslikt": "wearables maken verplaatsing mogelijk",
+      "frz vizire verandering alt is het corgproses self": "de echte verandering zit in het zorgproces zelf",
+      "Ziekenhuisverphtvtele zorg is gaan vorverzling tezes projecten": "Ziekenhuisverplaatste zorg is geen verzameling losse projecten",
+      "fundamenteel uitgangspunte veur elle zergeraimen": "fundamenteel uitgangspunt voor elk zorgpad",
+      "Niet olieven een fpciek zovsult vorvongen deaz kan zidecaanull": "Niet alleen een fysiek consult vervangen door een digitaal consult",
+      "het unlledige zorgpad herzien ers ziektenviskdzach te minimaliseren": "het volledige zorgpad herzien om ziekenhuisbezoek te minimaliseren",
+      "VRADEN": "VRAGEN",
+      "Moat de pafiënt naar het ziekeaitse": "Moet de patiënt naar het ziekenhuis",
+      "Welk deet meet tyclek in het ziehuitals": "Welk deel moet fysiek in het ziekenhuis",
+      "Wel kan veilig en hoalitalief geijkwaardig thuis": "Wat kan veilig en kwalitatief gelijkwaardig thuis",
+      "KANSRLIKE GERIEDEN": "KANSRIJKE GEBIEDEN",
+      "afovnische aandeeringen, onealogie, infeesserg, aacontroles": "chronische aandoeningen, oncologie, infuuszorg, nacontroles",
+      "moidbring van bwslckore patlknian, wondserg en disgeosliek": "monitoring van kwetsbare patiënten, wondzorg en diagnostiek",
+      "DE SPANNENDE PUNTEN": "DE SPANNINGSPUNTEN",
+      "Croziale vragen over cte dule mdaltert": "Cruciale vragen: wie beoordeelt de data",
+      "cinbrerenlisbordelijkheid dresgt": "eindverantwoordelijkheid draagt",
+      "opscheling workt": "wordt opgeschaald",
+      "KWALITSIT": "KWALITEIT",
+      "pratoohopale extra meldingen brijgen en prosctief verplengen": "professionals extra meldingen en administratie krijgen",
+      "gewoerkwagd hibren": "geborgd blijven",
+      "NAAR OE PATIENT": "NAAR DE PATIËNT",
+      "Veorluam dat ziekaniadoneah vringelwag bij de patiënt wordt neergelegde": "Voorkom dat ziekenhuiszorg thuis ongemerkt bij de patiënt wordt neergelegd",
+      "mluder reisen": "minder reizen",
+      "Welks puffbelgrspce hekken vool peltenkomerdisbeten on zijn kensrijs voor verpleeising": "Welke patiëntgroepen hebben veel ziekenhuiscontacten en zijn kansrijk voor verplaatsing",
+      "Onkuerp het ideale zorgead waent peldedzigscholt": "Ontwerp het ideale zorgpad vanuit patiëntperspectief",
+      "wot kan lhors, Hat bij de hajzertsjXVT": "wat kan thuis, wat bij de huisarts/VVT",
+      "Daok een digitale infrastructour, onvctiering, gegevonentivisocting, eampanaties, filoewiering en verschnoordelijkheden": "Regel digitale infrastructuur, monitoring, gegevensuitwisseling, competenties, financiering en verantwoordelijkheden",
+      "Beigis läuh zchuig met ddniulate paiiroblgraepen en meelsdare oilkomsten": "Begin kleinschalig met duidelijke patiëntgroepen en meetbare uitkomsten",
+      "Niet olleen kijken vont productie of Vosten, moar voersl noor bwsiteh, pelitiederdoalerten, ervorlegen en wetinhait": "Niet alleen kijken naar productie of kosten, maar vooral naar kwaliteit, patiëntoordelen, ervaringen en werkdruk",
+      "Wet werkt, wardt anderdeal van de regeliere zorg en vervolgske teagspant op vergelijkhere zorgoaden": "Wat werkt, wordt onderdeel van de reguliere zorg en wordt vervolgens toegepast op vergelijkbare zorgpaden",
+      "We eiskoahois is vinf longer bet stripient": "Het ziekenhuis is niet langer het startpunt",
+      "vorg stedt plaats waar het peesene is": "zorg vindt plaats waar het passend is",
+      "Waaz als hat ken, dektid als hat meat, zieeenheis ais liat vodig is": "thuis als het kan, dichtbij als het moet, ziekenhuis als het nodig is",
+      "Vergivelvlag hetekant niet direct minder horten of wark": "Verplaatsing betekent niet direct minder kosten of werk",
+      "in de nerste tose poin ectre investeringen en cektkualis": "in de eerste fase juist extra investeringen en capaciteit",
+      "Danz zorg te veratsclven, voletnet er ruhnie feapselietij": "Door zorg te verplaatsen ontstaat er ruimte en capaciteit",
+      "die alleen een ziekenheiu kan bieden": "die alleen een ziekenhuis kan bieden",
+      "Bolers pelitiefseleving ladeder reisse iaozltteit": "Betere patiëntbeleving door minder reistijd",
+      "moer eigen regie en behoud of verbatering": "meer eigen regie, met behoud of verbetering",
+      "Effectivilere inzet": "Effectievere inzet",
+      "elvinnere Inboordeling en het functionores zis dén regionsineal zorgnetwerk": "slimmere taakverdeling en het functioneren als één regionaal zorgnetwerk",
+      "Opbinoal gebrelk van Huisvuettering en date": "Optimaal gebruik van thuismonitoring en data",
+      "wat lefill Int meer bufohs adems in ziekankuis": "wat leidt tot meer ruimte in het ziekenhuis"
+    }
+  },
+
+  "negative_prompt": [
+    "geen watermerk", "geen Gemini logo", "geen Gemini Notebook tekst", "geen credit line rechtsonder",
+    "geen onleesbare of verzonnen woorden", "geen letterbrij", "geen lorem ipsum", "geen spelfouten",
+    "geen Engelse tekst", "geen ontbrekende trema op patiënt", "geen dubbele kop ORGANISATIE & REGIO",
+    "geen stap 6 die naar rechts uitwijkt", "geen ongelijke uitlijning tussen de zes stappen",
+    "geen tekst buiten het paneel", "geen overlappende tekst", "geen afgekapte zinnen", "geen lege tekstblokken",
+    "geen verplaatste geometrische vormen", "geen nieuwe vormen", "geen weggelaten panelen", "geen nieuwe kleuren",
+    "geen verloop", "geen slagschaduw", "geen 3D-render", "geen fotorealisme", "geen stockfoto's",
+    "geen ruis", "geen JPEG-artefacten", "geen wazige tekst", "geen bijgesneden randen"
+  ],
+
+  "acceptance_checklist": [
+    "1. Output is exact 16:9 liggend, 2K, geschikt als PowerPoint slide.",
+    "2. Titelbalk, drie kolommen en alle zes genummerde panelen staan op dezelfde plek als in @image 1.",
+    "3. Elk woord is correct gespeld Nederlands en volledig leesbaar bij 100% zoom.",
+    "4. STAP 6: OPSCHALEN staat links uitgelijnd op één lijn met stap 1 t/m 5, direct onder stap 5, met gelijke tussenruimte. Niets wijkt meer naar rechts uit.",
+    "5. In paneel 6 staan exact drie unieke blokken: PATIËNT & KWALITEIT, ORGANISATIE & REGIO, TECHNOLOGIE & CAPACITEIT. Geen dubbele koppen.",
+    "6. Rechtsonder staat GEEN Gemini Notebook logo of tekst meer; die hoek is schoon.",
+    "7. Alle grote geometrische vormen zijn qua vorm, kleur, transparantie en positie identiek aan @image 1.",
+    "8. Tekst op het donkere paneel 1 is wit en goed leesbaar; tekst op lichte panelen is donkergrijsblauw.",
+    "9. Het kleurenpalet is ongewijzigd.",
+    "10. Er is niets afgesneden aan de randen."
+  ]
+}
