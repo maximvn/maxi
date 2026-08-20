@@ -23,3 +23,19 @@ De resultaat-URL's staan op `d8j0ntlcm91z4.cloudfront.net`. Die host wordt geblo
 door het egress-beleid van deze sessie (403 op CONNECT). De renders konden daardoor niet
 worden gedownload en visueel gecontroleerd op tekstjuistheid. Controle ligt bij de
 gebruiker via de Higgsfield-widget.
+
+---
+
+## Tweede ronde (nieuwe uploads, nieuwe seed)
+| # | Bron (media_id) | Prompt | Job ID | Model (geserveerd) |
+|---|---|---|---|---|
+| 3 | feb30066-cf9c-48e7-b50d-516dbaacaf8a (`_naar_2033.png`, 5-koloms) | prompt-infographic-1.json | 19be4ac7-d64a-4286-9ef1-495236bb407a | nano_banana_flash |
+| 4 | 3a83af6e-2834-4c01-beca-1847f6704549 (`_2033.png`, geometrisch) | prompt-infographic-2.json | 19c08a6d-54a6-42ba-9f31-70b017e0c449 | nano_banana_flash |
+
+Verschil met ronde 1: aan beide prompts is één blok toegevoegd, `HIGHEST_PRIORITY`, dat
+tekstnauwkeurigheid boven alle andere eisen stelt en het model opdraagt elke string
+letter voor letter uit de specificatie te zetten in plaats van uit de pixels van de
+bron te gokken. Verder identiek.
+
+Output opnieuw 2752 x 1536 px. Resultaten opnieuw niet te downloaden vanuit deze sessie
+(zelfde egress-blokkade op de CDN-host), dus opnieuw niet door mij geverifieerd.
