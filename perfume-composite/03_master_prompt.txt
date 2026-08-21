@@ -27,7 +27,7 @@ Liquid colours, read from the references: @image3 pale champagne #EADCB6 densify
 Discard the original lighting of all six references. Carry over geometry, proportion, colour and label artwork only, then re-light every bottle from scratch inside the bordeaux set.
 
 COMPOSITION — ALL SIX BOTTLES STANDING.
-Every bottle stands upright on the books, base flat and fully in contact. Nothing floats, nothing is suspended, nothing is tilted, no bottle leans on another. The two offset stacks give three standing heights, and the six are staggered across them so the group reads as a rising diagonal from lower-left to upper-right rather than a straight shop-shelf line — a playful, hand-arranged rhythm in which no two bottles sit at the same angle.
+Every bottle stands upright on the books, base flat and in full contact. Nothing floats, nothing is suspended, nothing is tilted, no bottle leans on another. The two offset stacks give three standing heights, and the six are staggered across them so the group reads as a rising diagonal from lower-left to upper-right, not a straight shop-shelf line — a playful, hand-arranged rhythm in which no two bottles sit at the same angle.
 Back tier, top book of the main stack: @image6 slightly left of centre, rotated about eight degrees so its label faces camera-left of dead-on, and @image5 behind and right, turned twelve degrees the other way, its cap the highest point of the group.
 Middle tier, second book down: @image3 forward and right of @image6, label square to camera, @image2 to its left, turned about fifteen degrees away.
 Front tier, lowest, secondary stack at right: @image4 nearest the lens, label square on, and @image1 at the right edge, turned about twenty degrees away, partly overlapped by the book in front.
