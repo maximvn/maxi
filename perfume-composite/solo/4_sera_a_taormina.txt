@@ -1,12 +1,9 @@
-SINGLE-BOTTLE HERO — SERA A TAORMINA ON THE BORDEAUX BOOK SET
+SINGLE-BOTTLE HERO — SERA A TAORMINA, DARK BURGUNDY STILL LIFE
 Model: Nano Banana Pro. Aspect ratio 4:5. Resolution 2K. One photographic still.
 
-REFERENCE MAP — read both before generating.
+REFERENCE MAP.
 @image1 = THE PRODUCT. SERA A TAORMINA, ZARA. Pale champagne-cream liquid in fully clear glass, warm tonal plaque with dark charcoal type. Copy the sub-descriptor line beneath the name verbatim from the reference. This is the only product in the picture and it is reproduced exactly as photographed.
-@image2 = THE SET PLATE. Bordeaux seamless backdrop with a stack of hardcover books. Use it for the environment, the surface, the lighting logic and the colour grade only. Every product and every letter of text in it is deleted.
-
-STEP 1 — STRIP THE PLATE.
-Take @image2 for its palette and lighting logic only, and discard everything else in it: every product, the EADEM wordmarks, the line reading SMOOTH GLOW CALM and the line reading THE NEW CLASSICS — EVERYDAY SKIN + LIP ICONS. None of them survives, and no ghost, smear or residual letterform is left behind. The finished image carries no typography of any kind; the only readable text is what is printed on the one perfume label.
+@image2 = palette and lighting reference only. Every product and every letter of text in it is discarded — the EADEM wordmarks, SMOOTH GLOW CALM, THE NEW CLASSICS — EVERYDAY SKIN + LIP ICONS. None survives and no ghost or residual letterform is left. The finished image carries no typography; the only readable text is what is printed on the one perfume label.
 
 STEP 2 — THE SET.
 A deep burgundy ground, rich and dark, lit as one soft pool rather than an even wash. The brightest zone sits behind and just above the bottle at roughly #6E2C30, falling smoothly through #57222A and #401820 into #2A0F14 at the edges and #1D0A0E in the lower corners — about two stops of falloff. The surface is a smooth painted wall or matte backdrop: no seam, no horizon line, no fabric or paper texture, clean and unbroken. But it is never one flat tone — the warm pool and that falloff are what give it depth and air.
@@ -17,15 +14,15 @@ Quiet, rich, editorial still life. Warm light on cream pages against a dark wine
 
 STEP 3 — THE PRODUCT.
 PRODUCT LOCK — THE HIGHEST-PRIORITY RULE HERE. The bottle is reproduced exactly as it appears in @image1. You are photographing one real object in a new place; you are not designing it. No redesign, no reproportioning, no recolouring, no relabelling. No new cap shape, no added collar, ring, band, engraving, foil, seal or tag, no changed plaque shape, size, position, border, typography or layout, no added or removed words. Only the light on it and the angle change. Wherever anything below disagrees with @image1, @image1 wins.
-ONE BOTTLE ONLY. Exactly one bottle in the frame — no second bottle, no partial bottle at the edge, no duplicate, no mirrored copy, no reflected double, no companion product, no carton, no box, no loose cap.
+ONE BOTTLE ONLY. Exactly one bottle in the frame — no second bottle, no partial bottle at the edge, no duplicate, no mirrored copy, no companion product, no carton, no loose cap.
 FILL LEVEL. The bottle is full. The liquid rises high in the shoulder just below the black collar, with only a small air gap above the meniscus. It is not half full, part used or low.
 Use the following only to check your render against @image1, never to invent from: a straight-sided cylinder of heavy clear glass, flat shoulder, flat base, no taper; a thick glass puck in the bottom fifth; a four-part piano-black closure — flat-topped cap, wide flat brim disc about 1.7 times the cap diameter, short neck collar, broader shoulder ring crossing the glass as a clean horizontal line; one square inset plaque with a thin raised border dead centre at about fifty-five percent of the bottle width. No spray trigger, no visible atomiser, no plastic seam.
 THE LIQUID. Pale champagne-cream, fractionally warmer and creamier than a straw tone: #E8DBC3 in the thin upper section deepening to #C6B69C through the longest light path.
 
 FRAMING — HERO ON THE STACK, TITLE SPACE ABOVE.
-The top of the frame is reserved for typography that will be added later. The upper twenty-two to twenty-five percent of the frame height is unbroken burgundy — deep, softly graded, holding no cap, no book, no object and no prop. Nothing intrudes into it.
+The top of the frame is reserved for typography added later. The upper twenty-two to twenty-five percent is unbroken burgundy — deep, softly graded, holding no cap, no book, no object, no prop. Nothing intrudes into it.
 The bottle stands upright on the top book, base flat and in full contact with the board. It does not float, tilt, lean or hover. The top of its black cap sits about twenty-two percent down from the top edge and the base of the glass about seventy percent down, so the bottle measures roughly forty-eight to fifty-two percent of the frame height. Place it dead centre or a hair right of centre. Below it the book stack occupies the lower third of the picture and runs off the bottom edge.
-Rotate the bottle about eight degrees anticlockwise so the label reads square to the lens — the plaque is the focal point and every word on it must be legible, level and uncropped. Nothing overlaps or clips the bottle. The full silhouette from base to cap sits inside the frame with clear margin on all four sides.
+Rotate the bottle about eight degrees anticlockwise so the label reads square to the lens — the plaque is the focal point and every word must be legible, level and uncropped. Nothing overlaps or clips the bottle; the full silhouette sits inside the frame with clear margin on all four sides.
 
 CAMERA.
 Medium format digital capture, Hasselblad H6D-100c with an HC Macro 120mm f/4 II, tethered. Aperture f/9, ISO 50, 1/125s, single frame. Subject distance about 0.8 metres, which keeps the cylinder honest and the verticals vertical. Focus plane on the label plaque. The label, the shoulder and the fore-edge directly under the bottle are critically sharp; the front of the lowest book and the back of the stack fall just perceptibly soft, and the wall behind goes properly soft. Do not render everything at equal sharpness — that flatness is a CG tell.
@@ -55,7 +52,7 @@ The glossy black cap mirrors the softbox as a distinct soft-edged rectangle of l
 You also see the far inside wall of the bottle through the near wall: the inner surface of the back of the cylinder reads as a second, dimmer edge inside the silhouette. The liquid surface at the fill line reads as a shallow ellipse rather than a straight line, because the lens looks very slightly down onto it, and the glass thickness at the shoulder catches a bright ring.
 
 PHYSICAL EVIDENCE — THE IMPERFECTIONS THAT PROVE IT IS REAL.
-A flawless object reads as computer-generated. Include, subtly: one or two specks of dust on the shoulder or on the book board catching the key; a faint, barely-there fingerprint smudge low on the glass where a hand set it down; a hair-fine mould seam or one tiny bubble deep in the thick base; slight unevenness in the meniscus; the smallest wear on a cap edge. Nothing dirty and nothing distracting — just enough evidence of a physical object that has been handled and placed on a table. The books are imperfect the same way: a slightly bent leaf, a dog-eared corner, uneven foxing, a board very slightly warped.
+A flawless object reads as computer-generated. Include, subtly: one or two specks of dust on the shoulder or the board catching the key; a faint, barely-there fingerprint low on the glass where a hand set it down; a hair-fine mould seam or one tiny bubble deep in the base; slight unevenness in the meniscus; the smallest wear on a cap edge. Nothing dirty, nothing distracting — just evidence of a physical object that has been handled and set on a table. The books are imperfect the same way: a bent leaf, a dog-eared corner, uneven foxing.
 
 GLASS EDGES AND THE BASE.
 The left and right vertical edges of the cylinder go dense and dark from total internal reflection while the centre stays brighter and more transparent. The thick base puck gathers the key and throws a bright caustic pool onto the board just in front of the bottle. The warm tonal plaque is smooth rather than hammered and returns one soft broad reflection; its thin border frame catches a fine bright line along the lit edge.
