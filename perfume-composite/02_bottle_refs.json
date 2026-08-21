@@ -71,28 +71,27 @@
     {
       "ref_id": "@image4",
       "media_id": "d7af823f-41f2-4354-86ac-03527ff79556",
-      "name": "[TO CONFIRM]",
-      "descriptor": "[TO CONFIRM]",
-      "brand_line": "ZARA (same Italian-line shoot as @image3 — white sweep, product code 20110374999)",
+      "name": "SERA A TAORMINA",
+      "descriptor": "read the sub-descriptor line verbatim from the reference",
+      "brand_line": "ZARA (Italian line, sibling of @image3)",
       "transparency": "FULLY TRANSPARENT — clear glass, see-through, background refracts through it",
       "juice_colour": "pale champagne-cream, measured #E8DBC3 in the body band, deepening to roughly #C6B69C through the longest light path",
       "glass_tint": "clear, untinted",
       "label_finish": "warm tonal plaque, dark charcoal lettering (measured label band #5E5E59)",
       "read": "near-twin of @image3 in tone — separate the two by depth and by grounding one and floating the other",
-      "instruction": "Copy the printed label text letter for letter from the reference."
+      "spelling_note": "Confirmed by client. Spelled TAORMINA after the Sicilian town; client wrote 'Toarmina'."
     },
     {
       "ref_id": "@image5",
       "media_id": "8c21230a-2b1d-42a1-a9f7-b7c11364ce0f",
-      "name": "[TO CONFIRM]",
-      "descriptor": "[TO CONFIRM]",
-      "brand_line": "ZARA (same warm-sweep shoot as @image1 / @image2 / @image6 — product code 20210271999)",
+      "name": "SAFFRON & ORANGE FLOWERS",
+      "descriptor": "read the sub-descriptor line verbatim from the reference",
+      "brand_line": "ZARA",
       "transparency": "TRANSLUCENT — glows when backlit, background diffused rather than crisply readable",
       "juice_colour": "warm amber / cognac, measured #A46A2A in the body band; render #C08A46 in the thin upper section deepening to #7A4A18 at the base puck",
       "glass_tint": "clear glass, colour from the juice",
       "label_finish": "brushed silver-grey plaque with dark type (measured label band #B7B3B0)",
-      "read": "the warmest object of the six — sits naturally into the bordeaux ground, use it to balance the cool @image1",
-      "instruction": "Copy the printed label text letter for letter from the reference."
+      "read": "the warmest object of the six — sits naturally into the bordeaux ground, use it to balance the cool @image1"
     },
     {
       "ref_id": "@image6",
