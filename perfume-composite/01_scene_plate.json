@@ -1,0 +1,102 @@
+{
+  "ref_id": "@image7",
+  "role": "SCENE PLATE / SET / LIGHTING & GRADE MASTER",
+  "asset_note": "media_id 80f16ecd-9086-4bbc-97c8-ab71caf83e62. Original is a beauty-brand still life (EADEM). Only the SET is retained. All original products and all typography are to be deleted.",
+  "format": {
+    "source_ratio": "~3:4 portrait",
+    "target_ratio": "4:5",
+    "target_resolution": "2K",
+    "orientation": "vertical"
+  },
+  "scene_type": "Studio tabletop still life — levitating-product editorial, seamless backdrop, no human model, no hands, no environment beyond the sweep",
+  "background": {
+    "type": "seamless paper sweep, no visible horizon line, no floor/wall seam",
+    "base_hue": "deep bordeaux / oxblood / burgundy wine",
+    "hex_map": {
+      "brightest_zone": "#5C2830 (upper-centre, behind the stack)",
+      "mid_field": "#4A1D24",
+      "corner_falloff": "#2C1015",
+      "extreme_corners": "#1E0A0E"
+    },
+    "gradient": "soft radial luminance pool centred slightly above and behind the object cluster, falling off ~1.6 stops into all four corners",
+    "texture": "matte, near-zero specularity, faint paper tooth visible only at 100%, no gloss, no reflection of the products",
+    "vignette": "optical + lighting-driven, smooth, no hard-edged post vignette"
+  },
+  "set_dressing": {
+    "primary_element": "stacked hardcover books, closed, forming an irregular stepped plinth",
+    "count": "6–8 volumes across two offset stacks (a taller 4–5 book main stack lower-left/centre, a shorter 2–3 book secondary stack behind-right)",
+    "orientation": "page-blocks (fore-edges) facing camera on most volumes, spines turned away or angled out of frame — so no legible titles",
+    "rotation": "each book rotated 4–12° off the one beneath it, creating a loose hand-stacked look, not machine-aligned",
+    "cover_palette": ["forest / bottle green", "warm cream", "kraft tan", "burnt orange", "faded ochre", "aged olive"],
+    "page_block": "ivory to warm bone (#EFE6D6 → #DCCDB4), visibly layered leaf edges, micro-shadow between leaves, slight cockling and age-toning at the corners",
+    "material_detail": "cloth-bound and matte board covers, softly worn corners, no dust jackets, no barcodes, no publisher marks, no legible lettering anywhere"
+  },
+  "objects_and_text_to_REMOVE": {
+    "products": [
+      "cream/ivory pump bottle resting on the lower book",
+      "mustard-yellow upright carton box",
+      "dark burgundy squeeze tube levitating upper-right",
+      "small silver metallic lip tube levitating centre-left",
+      "sage-green cylindrical mist bottle standing right"
+    ],
+    "typography": [
+      "top row micro-caps: 'SMOOTH   GLOW   CALM'",
+      "bottom line: 'THE NEW CLASSICS —— EVERYDAY SKIN + LIP ICONS'"
+    ],
+    "branding": "every occurrence of the EADEM wordmark on every product",
+    "cleanup_rule": "Rebuild the bordeaux sweep and the book surfaces underneath every removed object, including the contact shadows and reflected bounce those objects were casting. No ghosting, no smudged patches, no cloned-texture repetition, no residual letterforms."
+  },
+  "lighting_read": {
+    "source_count": 3,
+    "key": {
+      "type": "large soft source (interpret as 120x180cm softbox, double-diffused)",
+      "azimuth": "upper front-left, roughly 40–50° off the lens axis",
+      "elevation": "~40° above the subject plane",
+      "quality": "broad and soft-edged; shadow penumbra roughly one third the height of the object casting it",
+      "colour_temp": "≈5400K, neutral-warm"
+    },
+    "fill": {
+      "type": "white bounce card, camera-right",
+      "level": "-1.5 to -2 stops under key",
+      "effect": "opens the right-hand shadow sides without killing the modelling"
+    },
+    "ambient_bounce": {
+      "source": "the bordeaux paper itself",
+      "effect": "warm red-magenta spill wrapping the lower and rear faces of every object — critical for integration realism"
+    },
+    "key_to_fill_ratio": "≈4:1",
+    "overall_scheme": "single-key, low-key-warm, controlled contrast; no hard sun, no coloured gels on the products"
+  },
+  "shadows": {
+    "direction": "cast down-and-right, away from the key",
+    "contact_shadow": "tight, dark, high-density directly under every load-bearing edge (approx 92% opacity at the contact line)",
+    "cast_shadow": "soft-edged, warm-toned (never neutral grey, never blue), density falling to ~25% within 1.5x the object height",
+    "levitation_shadow": "floating objects cast a detached, larger, softer, lower-opacity shadow on the surface below them — this is the single strongest cue that sells the levitation",
+    "occlusion": "deep ambient occlusion in the gaps between stacked books and in the leaf-edge striations"
+  },
+  "camera_read": {
+    "format": "medium format digital",
+    "focal_length_equivalent": "100–135mm (compressed, near-orthographic; verticals stay vertical)",
+    "aperture": "f/9–f/11 — the full stack is sharp, the backdrop is soft but not bokeh-blobbed",
+    "height": "level with the middle of the main stack",
+    "tilt": "1–4° down; essentially a straight-on product elevation, NOT a top-down or hero-low angle",
+    "distance": "≈1.2–1.6m",
+    "perspective": "flat and product-honest, minimal converging verticals, no wide-angle stretch"
+  },
+  "colour_grade": {
+    "white_balance": "5200K, tint +4 magenta",
+    "palette": "deep bordeaux ground + olive / mustard / cream / kraft accents",
+    "saturation": "rich but restrained; reds are deep and dense rather than vivid",
+    "black_point": "lifted very slightly, filmic — blacks read as dark maroon, not pure 0,0,0",
+    "highlight_rolloff": "gentle, no clipped speculars except pinpoint glints",
+    "contrast_curve": "soft S, editorial print look"
+  },
+  "rendering_signature": {
+    "realism": "photographic, commercial catalogue grade — this must read as a shot, not a render",
+    "grain": "very fine luminance-only grain, ~2%, medium-format-film character",
+    "blur": "none on the subjects; only natural depth-of-field falloff on the backdrop",
+    "distortion": "none — no barrel, no pincushion, no fisheye",
+    "chromatic_aberration": "essentially none, a trace of warm fringing at extreme highlight edges only",
+    "sharpening": "moderate capture sharpening, no halos, no over-crisp edges"
+  }
+}

@@ -1,0 +1,115 @@
+{
+  "role": "PRODUCT FIDELITY MASTER — 6 perfume bottles, one shared industrial-design language",
+  "shared_architecture": {
+    "family": "Zara high-end fragrance, 100 ml",
+    "silhouette": "perfect right cylinder — flat top shoulder, straight unbroken sidewall, flat base. No taper, no waist, no facets, no shoulder curve.",
+    "proportions": {
+      "glass_body_height_to_diameter": "≈1.35 : 1",
+      "total_height_with_closure_to_body_height": "≈1.55 : 1",
+      "base_puck_thickness": "≈18–22% of body height — a thick solid glass slab at the bottom that bends and re-focuses light"
+    },
+    "glass": {
+      "wall": "heavy, thick-walled, optically clear, flame-polished",
+      "base_puck": "solid, acting as a lens: it collects the key light and throws a bright caustic pool on the surface just in front of the bottle",
+      "edges": "the left and right vertical edges of the cylinder read as dense, saturated, darker bands (total internal reflection); the centre of the bottle reads brighter and more transparent"
+    },
+    "closure_stack_top_to_bottom": [
+      "1. CAP: glossy piano-black cylinder, flat top, height ≈40% of its own diameter",
+      "2. BRIM: a wide flat glossy black disc / saucer flange under the cap — the 'top hat' collar, diameter ≈1.7x the cap, razor-thin edge",
+      "3. NECK: a short glossy black collar between brim and shoulder",
+      "4. SHOULDER RING: a broader glossy black shoulder cover sitting flush on the glass, its lower edge a crisp horizontal line across the bottle"
+    ],
+    "closure_finish": "high-gloss lacquered black — it must carry a long specular streak from the key light down its curve and a sharp mirrored highlight on the flat brim edge",
+    "label": {
+      "shape": "square, centred on the sidewall, occupying ≈55% of the bottle width",
+      "placement": "vertical centre of the glass body, dead-centre horizontally, sitting flat against the curved glass so its outer edges bend slightly with the cylinder",
+      "construction": "inset plaque with a thin raised border frame and a fine inner keyline",
+      "typography": "geometric grotesque sans, all caps, generous letter-spacing, product name on 1–2 lines large, sub-descriptor smaller beneath, brand line at the bottom"
+    },
+    "no_go": "no spray trigger visible, no atomiser collar showing, no plastic seam, no batch code, no cellophane, no box"
+  },
+  "bottles": [
+    {
+      "ref_id": "@image1",
+      "name": "CAVIAR BERGAMOT",
+      "descriptor": "ZARA OCEAN / Nº03",
+      "brand_line": "ZARA OCEAN",
+      "transparency": "TRANSLUCENT-TO-TRANSPARENT — clearer than @image3, reads as tinted water",
+      "juice_colour": "pale sky / glacier blue, #A9D3E8 in the upper thin zone, deepening to #6FA9C6 at the base puck",
+      "glass_tint": "clear, blue from the juice",
+      "fill_line": "high, crisp meniscus",
+      "label_finish": "hammered brushed SILVER plaque identical in construction to @image3, hard black lettering",
+      "read": "the coolest object in the frame — its cool cast is the only cool note allowed and must be kept small and controlled against the bordeaux ground",
+      "media_id": "bea035b3-6ee8-4c87-8011-97e4b395b40f"
+    },
+    {
+      "ref_id": "@image2",
+      "name": "SALTY OCEAN BOUQUET",
+      "descriptor": "ZARA OCEAN / Nº01",
+      "brand_line": "ZARA OCEAN",
+      "transparency": "TRANSLUCENT — light passes through and colours the shadow, but background detail behind it is diffused rather than crisply readable",
+      "juice_colour": "olive-chartreuse green, #B9C36A at the top of the fill, densifying to #7E8A3C through the deepest section",
+      "glass_tint": "clear glass, green comes from the juice",
+      "fill_line": "high fill, meniscus reads as a bright horizontal lens line",
+      "label_finish": "hammered / textured brushed SILVER plaque with visible dimpled orange-peel metal texture, hard black lettering, bright silver border frame",
+      "read": "throws a green-tinted transmitted-light pool onto whatever it stands on",
+      "media_id": "2f90d9a1-9f7b-4c58-a9a3-8510d6c79568"
+    },
+    {
+      "ref_id": "@image3",
+      "name": "LUCE DI TOSCANA",
+      "descriptor": "ITALIAN FIG & WOOD",
+      "brand_line": "ZARA",
+      "transparency": "FULLY TRANSPARENT — completely see-through; background detail must be visible through the glass, refracted and inverted",
+      "juice_colour": "pale champagne / straw yellow, #E8DFC2 in the thin sections deepening to #C9B98A where the light path is longest",
+      "glass_tint": "clear, untinted — the colour comes from the liquid only",
+      "fill_line": "visible meniscus high in the shoulder; the empty air gap above it is a separate optical zone and must be rendered",
+      "label_finish": "warm champagne-gold plaque, smooth satin metal, dark charcoal lettering, thin gold border frame",
+      "read": "the lightest and most luminous of the six — it glows when backlit",
+      "media_id": "c99f3646-6063-4281-8cbc-d96eeb4a7b42"
+    },
+    {
+      "ref_id": "@image4",
+      "media_id": "d7af823f-41f2-4354-86ac-03527ff79556",
+      "name": "[TO CONFIRM]",
+      "descriptor": "[TO CONFIRM]",
+      "brand_line": "ZARA (same Italian-line shoot as @image3 — white sweep, product code 20110374999)",
+      "transparency": "FULLY TRANSPARENT — clear glass, see-through, background refracts through it",
+      "juice_colour": "pale champagne-cream, measured #E8DBC3 in the body band, deepening to roughly #C6B69C through the longest light path",
+      "glass_tint": "clear, untinted",
+      "label_finish": "warm tonal plaque, dark charcoal lettering (measured label band #5E5E59)",
+      "read": "near-twin of @image3 in tone — separate the two by depth and by grounding one and floating the other",
+      "instruction": "Copy the printed label text letter for letter from the reference."
+    },
+    {
+      "ref_id": "@image5",
+      "media_id": "8c21230a-2b1d-42a1-a9f7-b7c11364ce0f",
+      "name": "[TO CONFIRM]",
+      "descriptor": "[TO CONFIRM]",
+      "brand_line": "ZARA (same warm-sweep shoot as @image1 / @image2 / @image6 — product code 20210271999)",
+      "transparency": "TRANSLUCENT — glows when backlit, background diffused rather than crisply readable",
+      "juice_colour": "warm amber / cognac, measured #A46A2A in the body band; render #C08A46 in the thin upper section deepening to #7A4A18 at the base puck",
+      "glass_tint": "clear glass, colour from the juice",
+      "label_finish": "brushed silver-grey plaque with dark type (measured label band #B7B3B0)",
+      "read": "the warmest object of the six — sits naturally into the bordeaux ground, use it to balance the cool @image1",
+      "instruction": "Copy the printed label text letter for letter from the reference."
+    },
+    {
+      "ref_id": "@image6",
+      "name": "TERRA PROFONDA",
+      "descriptor": "BLACK FIG & BASIL",
+      "brand_line": "ZARA",
+      "transparency": "SMOKED / SEMI-OPAQUE — you can sense depth and a lit core inside but you cannot see through it; only a rim of light penetrates the edges and the base puck",
+      "juice_colour": "dark olive-khaki over smoked gunmetal, #4A4A3A core reading toward #6E7052 where the key rakes across it",
+      "glass_tint": "smoke-tinted grey-olive glass — the tint is in the GLASS as well as the liquid",
+      "label_finish": "tone-on-tone dark olive plaque, lettering debossed in the same colour as the plaque — deliberately LOW CONTRAST, legible only by the way light catches the relief. Do not brighten it, do not turn it silver.",
+      "read": "the anchor / darkest mass of the six; place it where the frame needs weight",
+      "media_id": "0ea0e426-be03-413b-8c89-e0f2e96a6b83"
+    }
+  ],
+  "source_lighting_of_the_bottle_refs": {
+    "note": "The reference bottles were shot on a light warm-white sweep with a single soft key from upper-front-left and one soft cast shadow to the right. THIS LIGHTING MUST BE DISCARDED.",
+    "instruction": "Re-light every bottle from scratch to match the bordeaux set in @image1. Carry over ONLY geometry, proportion, colour of glass and liquid, closure design, label artwork and label text."
+  },
+  "reference_order_note": "Indices follow the Higgsfield upload order. Pass medias in this order so @imageN resolves correctly."
+}
