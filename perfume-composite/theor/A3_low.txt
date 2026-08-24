@@ -1,0 +1,36 @@
+STONE — LOW AND MONUMENTAL — THEOR
+Model: Nano Banana Pro. Aspect ratio 9:16. Resolution 2K. One photographic still.
+
+REFERENCE MAP.
+@image1 = THE PRODUCT. BRUME ORPIN / THEOR. A teardrop-conical bottle in transparent emerald glass: widest low on the body with a full rounded shoulder, tapering upward through soft vertical facet panels into a short narrow neck. A polished gold-brass collar ring at the neck, above it a white ribbed cylindrical cap with fine vertical fluting and a flat top. Low and centred on the body, a small geometric monogram above the wordmark BRUME ORPIN with THEOR beneath, printed in pale ink directly on the glass. The only product in the picture, reproduced exactly as photographed.
+
+PRODUCT LOCK. The bottle is reproduced exactly as it appears in @image1. You are photographing one real object in a new place; you are not designing it. Do not change the taper of the cone, the fullness of the shoulder, the facet panels, the neck, the fluting of the white cap, the gold ring, or the size, position and wording of the printed mark. Only the light on it and the angle it is seen from may change. Exactly one bottle — no duplicate, no mirrored copy, no loose cap, no carton. The bottle is full, liquid high in the neck.
+
+TRANSPARENT GLASS, OPAQUE MARK. The glass is real and see-through: whatever stands behind the bottle is visible through the body, tinted deep green, laterally compressed and vertically flipped by the curve, and broken along the facet edges into slightly offset panels. The green runs light and luminous where the glass is thin and dense, almost black-green through the deepest section and the thick base, which acts as a lens. The monogram and the words BRUME ORPIN and THEOR are pale opaque ink on the outer surface — you do not see the background through the letterforms, and they do not refract or invert with what passes behind.
+
+WHAT THE GLASS REFLECTS. Glass transmits what is behind it and mirrors what is in front of it at the same time; a render that only transmits looks fake. The front surface carries mirrored highlights of this scene's own light, stretched and bent by the taper, with the darker parts of the surroundings reading as deep vertical bands down the flanks. Facet edges catch thin bright specular lines. The white ribbed cap picks up light in the grooves so the fluting reads as alternating light and shade; the gold collar returns a warm metallic band, bright along its top edge, darker underneath.
+
+PHYSICAL EVIDENCE. A flawless object reads as computer-generated. Include, subtly: a speck or two of dust catching the light, a faint barely-there fingerprint low on the glass, a hair-fine mould seam or one tiny bubble deep in the base, the smallest wear on a cap edge. Nothing dirty — just evidence of a real object that has been handled.
+
+FABRIC PHYSICS — GET THIS RIGHT. Any cloth in this picture hangs BEHIND the bottle and to the sides. Nothing is draped in front of it. If any fabric were to pass between the lens and the bottle, then the bottle behind it would have to be genuinely obscured — softened, desaturated, its edges lost, its printed mark unreadable — because you would be looking through a woven screen. A sharp, saturated, fully legible bottle seen through a veil is physically impossible and is the fastest way to make the picture look fake. So: keep all cloth behind the bottle, never across it.
+
+NOT AI-LOOKING. This is a photograph made by a person with a camera. Avoid the tells: perfect symmetry, a subject dead centre, everything equally sharp, surfaces too clean, speculars too uniform, colour spread too evenly, lighting with no dominant direction. Commit to one light, let large areas go dark or empty, let the composition sit off balance, let something be cut by the frame.
+
+
+@image2 = MOOD AND MATERIALS, not a layout to copy. Take from it: a neutral warm-grey studio ground with no seam and no horizon; a large hand-formed organic boulder in chalky off-white paper-clay, its surface heavily worked with horizontal tool striations, pitting and fine grit; and a single dark burgundy-black calla lily on a long slender arcing stem, deep wine-red spathe with a green throat, the stem shading from oxblood to pale celadon. Reuse those three. Do not reproduce the reference composition.
+
+THE LEAN — THE CORE OF THE PICTURE.
+The bottle is NOT standing. It lies on its side and the stone carries it. Its flank rests along the boulder, the stone bearing the weight the way a rock cradles something set down on it. Contact is along a LENGTH of glass, not a point: the cone settles into the clay over several centimetres, with a tight dark line of occlusion running the whole seam and a soft green bounce thrown onto the chalky white beside it.
+The bottle touches NOTHING ELSE — no floor, no ground plane, no table, no base contact, no shadow of the bottle on any surface beneath it. The stone is its only support. If the base appears to rest on a floor, the shot has failed.
+
+ART DIRECTION — LOW, MONUMENTAL, WIDE.
+Put the camera down almost at the level of the surface and look very slightly up, so the boulder reads as a monolith rising in the frame and the bottle lying against its base has the scale of something small resting on something ancient. Pull back: more empty air above the stone than object below it, the top two-thirds of the frame given to soft grey nothing. The bottle lies low and horizontal at the foot of the stone, its flank pressed into the clay.
+A long shallow depth of field from a wide aperture: the seam of contact and the printed mark critically sharp, the top of the boulder already softening, the calla stem — arcing in high and reading small against the emptiness — soft and pale. The lily is a minor note here, not a co-star.
+LIGHT. Soft light from high above and slightly behind, so the top of the stone is bright and the flank facing the lens falls into gentle shade, with a cool ambient fill from the front. The bottle catches a long bright rim along its upper edge and glows dimly from within. A short soft shadow gathers in the crevice where glass meets clay.
+COLOUR. Pale cool grey rising almost to white at the top of the frame, chalk clay, emerald, one dark oxblood accent. Neutral to slightly cool, around 5800K. Very low contrast, high key, airy — the opposite of the raking version. Serene and monumental.
+
+FINISH.
+A real photograph, not a render. Fine luminance-only grain around two and a half percent, heavier in the shadows. Allow a real lens its small dishonesties: a whisper of bloom on the brightest speculars, a trace of fringing at extreme highlight edges, slight corner falloff. Never render everything at equal sharpness.
+
+DO NOT.
+No text, caption, headline, watermark or logo other than the mark printed on the bottle. No human, hands or figure. No second bottle, duplicate or mirrored copy. No support rig, wire or rod. No invented names and no misspellings: BRUME ORPIN and THEOR exactly as printed in @image1. No changed cap — white and ribbed with a gold collar beneath. No opaque or plastic-looking glass. No transparent or ghosted wordmark. No cloth in front of the bottle. No sharp bottle seen through fabric. No shadow that contradicts the light described above. No part of the bottle cropped by the frame edge.
