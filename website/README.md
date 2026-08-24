@@ -2,8 +2,8 @@
 
 Statische one-page site in lichte, editorial stijl (naar het voorbeeld van
 noartmusic.com): warm papier-wit, klassieke serif-typografie (Tinos, de vrije
-Times-evenknie), ticker, custom cursor en scroll-gedreven typo-effecten.
-Alle teksten zijn Engels.
+Times-evenknie), posterrood als accent, preloader, smooth scroll met inertie
+en scroll-gedreven typo-effecten. Alle teksten zijn Engels.
 
 Geen build-stap, geen dependencies — direct te hosten op Netlify, Vercel,
 GitHub Pages of elke gewone webserver.
@@ -54,12 +54,17 @@ filmische textuur.
 
 | Effect | Bestand |
 | --- | --- |
-| Letters die uit elkaar schuiven op scroll | `js/main.js` → "SPLIT TITLES" |
+| Preloader met teller + intro-choreografie | `js/main.js` → "PRELOADER" |
+| Smooth scroll met inertie (Lenis-gevoel) | `js/main.js` → "SMOOTH SCROLLING" |
+| Hero-titel schermvullend + uiteendrijvend op scroll | `js/main.js` → "FIT" / "SPLIT TITLES" |
 | Koppen waarvan de spatiëring ademt op scroll | `js/main.js` → "TRACK TITLES" |
+| Outline-letters die zich vullen met inkt | `js/main.js` → "FILL TITLE" |
 | Tekst die woord voor woord oplicht | `js/main.js` → "WORD REVEAL" |
 | Ticker die versnelt bij scrollen | `js/main.js` → "TICKER" |
-| Rol-effect op links (romein → cursief) | `js/main.js` → "ROLL-ON-HOVER" |
-| Hero-visual (video-placeholder) | `js/main.js` → "HERO CANVAS" |
-| Generatieve inktlijn-thumbnails | `js/main.js` → "MODULE ART" |
+| Rol-effect op links / magnetische knoppen | `js/main.js` → "ROLL" / "MAGNETIC" |
+| Custom cursor met contextlabels (Open / View) | `js/main.js` → "CUSTOM CURSOR" |
+| Levende inkt-hero (video-placeholder) | `js/main.js` → "HERO INK RIBBONS" |
+| Generatieve kunstwerken (galerij + zwevende preview) | `js/main.js` → "GENERATIVE ARTWORKS" |
+| Parallax (hero + galerij) en nav die meebeweegt | `js/main.js` → "PARALLAX + NAV" |
 
 Alle animaties respecteren `prefers-reduced-motion`.

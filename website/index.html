@@ -12,8 +12,20 @@
 </head>
 <body>
 
+  <!-- Preloader -->
+  <div class="loader" aria-hidden="true">
+    <div class="loader__inner">
+      <span class="loader__brand">We&nbsp;Are&nbsp;Made<sup>®</sup></span>
+      <span class="loader__count serif">0</span>
+      <span class="loader__hint label">Made&nbsp;to&nbsp;create</span>
+    </div>
+  </div>
+
   <!-- Custom cursor -->
-  <div class="cursor" aria-hidden="true"></div>
+  <div class="cursor" aria-hidden="true"><span class="cursor__label label"></span></div>
+
+  <!-- Floating module preview (follows the mouse over the module list) -->
+  <canvas class="floatpreview" width="360" height="240" aria-hidden="true"></canvas>
 
   <!-- ============ NAV ============ -->
   <header class="nav" id="top">
@@ -21,11 +33,11 @@
     <nav class="nav__links" aria-label="Main menu">
       <a href="#course" data-hover data-roll>Course</a>
       <a href="#modules" data-hover data-roll>Modules</a>
+      <a href="#gallery" data-hover data-roll>Gallery</a>
       <a href="#packages" data-hover data-roll>Packages</a>
       <a href="#tools" data-hover data-roll>Tools</a>
-      <a href="#faq" data-hover data-roll>FAQ</a>
     </nav>
-    <a class="nav__cta" href="#packages" data-hover data-roll>Enroll&nbsp;→</a>
+    <a class="nav__cta btn btn--solid" href="#packages" data-hover data-magnet>Enroll&nbsp;→</a>
     <button class="nav__burger" aria-label="Menu" data-hover>
       <span></span><span></span>
     </button>
@@ -35,16 +47,18 @@
   <div class="mobilemenu" aria-hidden="true">
     <a href="#course" data-hover>Course</a>
     <a href="#modules" data-hover>Modules</a>
+    <a href="#gallery" data-hover>Gallery</a>
     <a href="#packages" data-hover>Packages</a>
     <a href="#tools" data-hover>Tools</a>
     <a href="#faq" data-hover>FAQ</a>
   </div>
 
+  <div id="smooth">
   <main>
 
     <!-- ============ HERO ============ -->
     <section class="hero">
-      <div class="hero__media">
+      <div class="hero__media" data-heroparallax>
         <!--
           ADD YOUR VIDEO LATER:
           Put your file in website/media/ and replace the canvas below with:
@@ -52,52 +66,62 @@
           <video class="hero__video" autoplay muted loop playsinline
                  src="media/intro.mp4" poster="media/poster.jpg"></video>
 
-          The canvas is a temporary generative visual that reacts to the mouse.
+          The canvas is a temporary generative ink visual that reacts to the mouse.
         -->
         <canvas id="heroCanvas" aria-hidden="true"></canvas>
         <div class="hero__grain" aria-hidden="true"></div>
       </div>
 
+      <!-- Rotating stamp -->
+      <div class="stamp" aria-hidden="true">
+        <svg viewBox="0 0 200 200">
+          <defs>
+            <path id="stampcircle" d="M 100,100 m -76,0 a 76,76 0 1,1 152,0 a 76,76 0 1,1 -152,0"/>
+          </defs>
+          <text>
+            <textPath href="#stampcircle">Made to Create · We Are Made · Est. 2026 ·</textPath>
+          </text>
+          <circle cx="100" cy="100" r="4" fill="currentColor"/>
+        </svg>
+      </div>
+
       <div class="hero__inner">
-        <p class="hero__meta label">
-          <span>AI&nbsp;visual&nbsp;education</span>
-          <span>Est.&nbsp;2026&nbsp;—&nbsp;Amsterdam&nbsp;/&nbsp;online</span>
+        <p class="hero__meta label" data-intro>
+          <span>(&nbsp;AI&nbsp;visual&nbsp;education&nbsp;)</span>
+          <span>Amsterdam&nbsp;/&nbsp;online</span>
         </p>
 
         <h1 class="hero__title" aria-label="We Are Made">
-          <span class="line split-title" data-split>WE&nbsp;ARE&nbsp;MADE</span>
+          <span class="hline"><span class="hline__in split-title" data-split data-fit>WE&nbsp;ARE</span></span>
+          <span class="hline"><span class="hline__in hline__in--i split-title" data-split data-fit>MADE<em class="dot">.</em></span></span>
         </h1>
 
-        <p class="hero__motto serif-i" data-split>Made&nbsp;to&nbsp;create.</p>
-
-        <div class="hero__foot">
+        <div class="hero__foot" data-intro>
           <p class="hero__sub">
-            Courses, tools and files for making visuals with AI —<br>
-            from your first prompt to a signature style.
+            Courses, tools and files for making visuals with&nbsp;AI&nbsp;—
+            from your first prompt to a signature&nbsp;style.
           </p>
-          <a class="btn btn--solid" href="#course" data-hover data-roll>Discover the course</a>
+          <a class="btn btn--line btn--big" href="#course" data-hover data-magnet>Discover&nbsp;the&nbsp;course</a>
         </div>
       </div>
-
-      <div class="hero__scrollhint label" aria-hidden="true">Scroll</div>
     </section>
 
     <!-- ============ TICKER ============ -->
     <div class="ticker" aria-hidden="true">
       <div class="ticker__track">
-        <span>Courses&nbsp;·&nbsp;Modules&nbsp;·&nbsp;Packages&nbsp;·&nbsp;Chatbot&nbsp;·&nbsp;claude.md&nbsp;files&nbsp;·&nbsp;Prompt&nbsp;packs&nbsp;·&nbsp;</span>
-        <span>Courses&nbsp;·&nbsp;Modules&nbsp;·&nbsp;Packages&nbsp;·&nbsp;Chatbot&nbsp;·&nbsp;claude.md&nbsp;files&nbsp;·&nbsp;Prompt&nbsp;packs&nbsp;·&nbsp;</span>
+        <span>Courses&nbsp;<i>·</i>&nbsp;<em>Modules</em>&nbsp;<i>·</i>&nbsp;Packages&nbsp;<i>·</i>&nbsp;<em>Chatbot</em>&nbsp;<i>·</i>&nbsp;claude.md&nbsp;files&nbsp;<i>·</i>&nbsp;<em>Prompt&nbsp;packs</em>&nbsp;<i>·</i>&nbsp;</span>
+        <span>Courses&nbsp;<i>·</i>&nbsp;<em>Modules</em>&nbsp;<i>·</i>&nbsp;Packages&nbsp;<i>·</i>&nbsp;<em>Chatbot</em>&nbsp;<i>·</i>&nbsp;claude.md&nbsp;files&nbsp;<i>·</i>&nbsp;<em>Prompt&nbsp;packs</em>&nbsp;<i>·</i>&nbsp;</span>
       </div>
     </div>
 
     <!-- ============ MANIFESTO / COURSE ============ -->
     <section class="manifest section" id="course">
-      <p class="section__label label">01&nbsp;—&nbsp;The&nbsp;course</p>
+      <span class="section__ghost serif" aria-hidden="true">01</span>
+      <p class="section__label label">(&nbsp;01&nbsp;—&nbsp;The&nbsp;course&nbsp;)</p>
       <p class="manifest__text" data-words>
         Anyone can type a prompt. Almost no one makes something that stays with you.
-        This course teaches you to look like an art director and work like a machine —
-        building a style, defining a visual language, and directing AI until the
-        result is unmistakably yours.
+        We teach you to look like an art director and work like a machine —
+        until the result is unmistakably yours.
       </p>
       <div class="manifest__stats">
         <div class="stat" data-hover>
@@ -117,81 +141,112 @@
 
     <!-- ============ MODULES ============ -->
     <section class="modules section" id="modules">
-      <p class="section__label label">02&nbsp;—&nbsp;Modules</p>
-      <h2 class="section__title track-title" data-track>The&nbsp;Modules</h2>
+      <span class="section__ghost serif" aria-hidden="true">02</span>
+      <p class="section__label label">(&nbsp;02&nbsp;—&nbsp;Modules&nbsp;)</p>
+      <h2 class="section__title track-title" data-track>The&nbsp;<em>Modules</em></h2>
 
       <div class="modules__list">
-        <article class="module" data-hover data-seed="1">
+        <article class="module" data-hover data-seed="1" data-cursor="Open">
           <div class="module__index label">M–01</div>
           <div class="module__body">
             <h3 class="module__title">Foundations</h3>
             <p class="module__desc">How image models think. Prompt anatomy, light, lens and composition — the basics 90% skip.</p>
           </div>
-          <canvas class="module__art" width="420" height="280" aria-hidden="true"></canvas>
           <div class="module__arrow" aria-hidden="true">→</div>
         </article>
 
-        <article class="module" data-hover data-seed="2">
+        <article class="module" data-hover data-seed="2" data-cursor="Open">
           <div class="module__index label">M–02</div>
           <div class="module__body">
             <h3 class="module__title">A&nbsp;Style&nbsp;of&nbsp;Your&nbsp;Own</h3>
             <p class="module__desc">From moodboard to a recognisable visual language. Style references, series and staying consistent.</p>
           </div>
-          <canvas class="module__art" width="420" height="280" aria-hidden="true"></canvas>
           <div class="module__arrow" aria-hidden="true">→</div>
         </article>
 
-        <article class="module" data-hover data-seed="3">
+        <article class="module" data-hover data-seed="3" data-cursor="Open">
           <div class="module__index label">M–03</div>
           <div class="module__body">
             <h3 class="module__title">Images&nbsp;in&nbsp;Motion</h3>
             <p class="module__desc">From stills to video: motion prompts, loops and short clips for socials and screens.</p>
           </div>
-          <canvas class="module__art" width="420" height="280" aria-hidden="true"></canvas>
           <div class="module__arrow" aria-hidden="true">→</div>
         </article>
 
-        <article class="module" data-hover data-seed="4">
+        <article class="module" data-hover data-seed="4" data-cursor="Open">
           <div class="module__index label">M–04</div>
           <div class="module__body">
             <h3 class="module__title">Workflow&nbsp;&amp;&nbsp;Automation</h3>
             <p class="module__desc">Claude, agents and batch work. Build a pipeline that works for you while you set the direction.</p>
           </div>
-          <canvas class="module__art" width="420" height="280" aria-hidden="true"></canvas>
           <div class="module__arrow" aria-hidden="true">→</div>
         </article>
 
-        <article class="module" data-hover data-seed="5">
+        <article class="module" data-hover data-seed="5" data-cursor="Open">
           <div class="module__index label">M–05</div>
           <div class="module__body">
             <h3 class="module__title">Upscale&nbsp;&amp;&nbsp;Finish</h3>
             <p class="module__desc">From raw output to print and 4K. Upscaling, retouching and preparing files for campaigns.</p>
           </div>
-          <canvas class="module__art" width="420" height="280" aria-hidden="true"></canvas>
           <div class="module__arrow" aria-hidden="true">→</div>
         </article>
 
-        <article class="module" data-hover data-seed="6">
+        <article class="module" data-hover data-seed="6" data-cursor="Open">
           <div class="module__index label">M–06</div>
           <div class="module__body">
             <h3 class="module__title">Publish&nbsp;&amp;&nbsp;Sell</h3>
             <p class="module__desc">Portfolio, clients and rights. How to turn your visuals into an income.</p>
           </div>
-          <canvas class="module__art" width="420" height="280" aria-hidden="true"></canvas>
           <div class="module__arrow" aria-hidden="true">→</div>
         </article>
       </div>
     </section>
 
+    <!-- ============ GALLERY ============ -->
+    <section class="gallery section" id="gallery">
+      <span class="section__ghost serif" aria-hidden="true">03</span>
+      <p class="section__label label">(&nbsp;03&nbsp;—&nbsp;Gallery&nbsp;)</p>
+      <h2 class="section__title track-title" data-track>Made&nbsp;<em>in&nbsp;class</em></h2>
+      <p class="gallery__note">A glimpse of what students make during the course.<br>Every piece starts as a blank prompt.</p>
+
+      <div class="gallery__grid">
+        <figure class="piece" data-hover data-cursor="View" data-art="1" data-speed="0.05">
+          <canvas width="640" height="800" aria-hidden="true"></canvas>
+          <figcaption class="label">Untitled&nbsp;Study&nbsp;—&nbsp;M02</figcaption>
+        </figure>
+        <figure class="piece" data-hover data-cursor="View" data-art="2" data-speed="-0.07">
+          <canvas width="640" height="480" aria-hidden="true"></canvas>
+          <figcaption class="label">Field&nbsp;Notes&nbsp;—&nbsp;M01</figcaption>
+        </figure>
+        <figure class="piece" data-hover data-cursor="View" data-art="3" data-speed="0.09">
+          <canvas width="640" height="640" aria-hidden="true"></canvas>
+          <figcaption class="label">Signal&nbsp;—&nbsp;M03</figcaption>
+        </figure>
+        <figure class="piece" data-hover data-cursor="View" data-art="4" data-speed="-0.05">
+          <canvas width="640" height="800" aria-hidden="true"></canvas>
+          <figcaption class="label">Red&nbsp;Thread&nbsp;—&nbsp;M04</figcaption>
+        </figure>
+        <figure class="piece" data-hover data-cursor="View" data-art="5" data-speed="0.07">
+          <canvas width="640" height="520" aria-hidden="true"></canvas>
+          <figcaption class="label">Tide&nbsp;—&nbsp;M05</figcaption>
+        </figure>
+        <figure class="piece" data-hover data-cursor="View" data-art="6" data-speed="-0.08">
+          <canvas width="640" height="760" aria-hidden="true"></canvas>
+          <figcaption class="label">Aperture&nbsp;—&nbsp;M06</figcaption>
+        </figure>
+      </div>
+    </section>
+
     <!-- ============ BIG QUOTE ============ -->
-    <section class="bigquote section">
-      <h2 class="bigquote__text split-title" data-split>Style&nbsp;over&nbsp;prompts</h2>
+    <section class="bigquote">
+      <h2 class="bigquote__text fill-title" data-fill aria-label="Style over prompts">Style<br>over<br>prompts.</h2>
     </section>
 
     <!-- ============ PACKAGES ============ -->
     <section class="packs section" id="packages">
-      <p class="section__label label">03&nbsp;—&nbsp;Packages</p>
-      <h2 class="section__title track-title" data-track>Choose&nbsp;Your&nbsp;Package</h2>
+      <span class="section__ghost serif" aria-hidden="true">04</span>
+      <p class="section__label label">(&nbsp;04&nbsp;—&nbsp;Packages&nbsp;)</p>
+      <h2 class="section__title track-title" data-track>Choose&nbsp;<em>yours</em></h2>
 
       <div class="packs__grid">
         <article class="pack" data-hover>
@@ -205,13 +260,13 @@
             <li>Prompt pack (50 prompts)</li>
             <li>Lifetime access</li>
           </ul>
-          <a class="btn btn--line" href="#contact" data-hover data-roll>Choose Starter</a>
+          <a class="btn btn--line" href="#contact" data-hover data-magnet>Choose&nbsp;Starter</a>
         </article>
 
         <article class="pack pack--featured" data-hover>
           <div class="pack__badge label">Most&nbsp;popular</div>
           <header class="pack__head">
-            <h3 class="pack__name">Pro</h3>
+            <h3 class="pack__name"><em>Pro</em></h3>
             <p class="pack__price"><span class="pack__amount">€349</span><span class="label">&nbsp;one-time</span></p>
           </header>
           <ul class="pack__list">
@@ -221,7 +276,7 @@
             <li>Community &amp; feedback sessions</li>
             <li>Lifetime access + updates</li>
           </ul>
-          <a class="btn btn--solid" href="#contact" data-hover data-roll>Choose Pro</a>
+          <a class="btn btn--paper" href="#contact" data-hover data-magnet>Choose&nbsp;Pro</a>
         </article>
 
         <article class="pack" data-hover>
@@ -235,31 +290,32 @@
             <li>Custom claude.md, built for you</li>
             <li>Portfolio review</li>
           </ul>
-          <a class="btn btn--line" href="#contact" data-hover data-roll>Choose Studio</a>
+          <a class="btn btn--line" href="#contact" data-hover data-magnet>Choose&nbsp;Studio</a>
         </article>
       </div>
     </section>
 
     <!-- ============ TOOLS / DIGITAL PRODUCTS ============ -->
     <section class="tools section" id="tools">
-      <p class="section__label label">04&nbsp;—&nbsp;Tools</p>
-      <h2 class="section__title track-title" data-track>Start&nbsp;Making&nbsp;Today</h2>
+      <span class="section__ghost serif" aria-hidden="true">05</span>
+      <p class="section__label label">(&nbsp;05&nbsp;—&nbsp;Tools&nbsp;)</p>
+      <h2 class="section__title track-title" data-track>Start&nbsp;<em>today</em></h2>
 
       <div class="tools__grid">
         <article class="tool" data-hover>
           <div class="tool__tag label">Chatbot</div>
-          <h3 class="tool__title">The&nbsp;Visual&nbsp;Assistant</h3>
+          <h3 class="tool__title">The&nbsp;Visual<br><em>Assistant</em></h3>
           <p class="tool__desc">
             A trained chatbot that thinks along with you: from concept and moodboard to
             ready-to-use prompts in your style. Like having an art director at your desk.
           </p>
           <p class="tool__price label">€19&nbsp;/&nbsp;month</p>
-          <a class="btn btn--line" href="#contact" data-hover data-roll>Try the assistant</a>
+          <a class="btn btn--line" href="#contact" data-hover data-magnet>Try&nbsp;the&nbsp;assistant</a>
         </article>
 
         <article class="tool tool--file" data-hover>
           <div class="tool__tag label">Download</div>
-          <h3 class="tool__title">claude.md&nbsp;Files</h3>
+          <h3 class="tool__title">claude.md<br><em>Files</em></h3>
           <div class="tool__code mono" aria-hidden="true">
             <span><i>$</i> cat claude.md</span>
             <span># Your style, written as instructions</span>
@@ -272,14 +328,15 @@
             by heart. Install, open, create.
           </p>
           <p class="tool__price label">From&nbsp;€49</p>
-          <a class="btn btn--line" href="#contact" data-hover data-roll>Browse the files</a>
+          <a class="btn btn--line" href="#contact" data-hover data-magnet>Browse&nbsp;the&nbsp;files</a>
         </article>
       </div>
     </section>
 
     <!-- ============ FAQ ============ -->
     <section class="faq section" id="faq">
-      <p class="section__label label">05&nbsp;—&nbsp;FAQ</p>
+      <span class="section__ghost serif" aria-hidden="true">06</span>
+      <p class="section__label label">(&nbsp;06&nbsp;—&nbsp;FAQ&nbsp;)</p>
       <h2 class="section__title track-title" data-track>Questions</h2>
 
       <div class="faq__list">
@@ -302,11 +359,17 @@
       </div>
     </section>
 
-    <!-- ============ FOOTER ============ -->
-    <footer class="footer" id="contact">
-      <p class="footer__cta label">Ready&nbsp;to&nbsp;begin?</p>
-      <a class="footer__mail" href="mailto:hello@wearemade.studio" data-hover>hello@wearemade.studio</a>
+    <!-- ============ PRE-FOOTER CTA ============ -->
+    <section class="precta" id="contact">
+      <a class="precta__link" href="mailto:hello@wearemade.studio" data-hover data-magnet data-cursor="Say hi">
+        <span class="precta__small label">Ready&nbsp;to&nbsp;begin?</span>
+        <span class="precta__big">Start&nbsp;<em>creating</em>&nbsp;<span class="precta__arrow">→</span></span>
+        <span class="precta__mail">hello@wearemade.studio</span>
+      </a>
+    </section>
 
+    <!-- ============ FOOTER ============ -->
+    <footer class="footer">
       <div class="footer__wordmark" aria-hidden="true">
         <span class="footer__big" data-wave>WE&nbsp;ARE&nbsp;MADE</span>
       </div>
@@ -319,6 +382,7 @@
     </footer>
 
   </main>
+  </div><!-- /#smooth -->
 
   <script src="js/main.js"></script>
 </body>
