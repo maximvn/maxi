@@ -1,9 +1,28 @@
 # WE ARE MADE — website
 
-Statische one-page site in lichte, editorial stijl (naar het voorbeeld van
-noartmusic.com): warm papier-wit, klassieke serif-typografie (Tinos, de vrije
-Times-evenknie), posterrood als accent, preloader, smooth scroll met inertie
-en scroll-gedreven typo-effecten. Alle teksten zijn Engels.
+Volledig functionerende statische site in lichte, editorial stijl (naar het
+voorbeeld van noartmusic.com): ivoorwit met diep bordeauxrood, klassieke
+serif-typografie (Tinos, de vrije Times-evenknie), preloader, smooth scroll
+met inertie en scroll-gedreven typo-effecten. Alle teksten zijn Engels.
+
+Drie pagina's:
+
+- `index.html` — landingspagina (modules, galerij, pakketten, tools, FAQ)
+- `login.html` — inloggen / account aanmaken (pakketkeuze inbegrepen)
+- `app.html`  — de cursusomgeving: modules met lessen, voortgang die wordt
+  opgeslagen, claude.md-download en pakket-vergrendeling (Starter opent
+  M-01/M-02, Pro en Studio alles)
+
+Rechtsboven zit een schakelaar die het kleurenschema omdraait: ivoor met
+bordeaux tekst ⇄ bordeaux met ivoren tekst. De keuze wordt onthouden en
+alle generatieve visuals kleuren live mee.
+
+> **Let op — demo-login.** Accounts en voortgang leven in de browser
+> (localStorage, wachtwoorden gehasht met SHA-256 + salt). Prima om te
+> demonstreren en testen, maar niet geschikt voor echte klanten: koppel
+> voor de lancering een backend (bijv. Supabase Auth + Stripe) — de
+> functies in `js/auth.js` zijn zo geschreven dat je ze 1-op-1 kunt
+> vervangen door API-calls.
 
 Geen build-stap, geen dependencies — direct te hosten op Netlify, Vercel,
 GitHub Pages of elke gewone webserver.
@@ -23,9 +42,15 @@ fonts betrouwbaarder.)
 
 ```
 website/
-├── index.html        # alle content (secties, teksten, prijzen)
-├── css/style.css     # kleuren, typografie, layout, hover-effecten
-├── js/main.js        # cursor, scroll-effecten, hero-visual, scramble
+├── index.html        # landingspagina (secties, teksten, prijzen)
+├── login.html        # inloggen / registreren
+├── app.html          # cursusomgeving (dashboard)
+├── css/style.css     # kleuren (incl. thema's), typografie, layout
+├── js/theme.js       # kleurschakelaar (ivoor ⇄ bordeaux)
+├── js/auth.js        # demo-login: accounts, sessies, voortgang
+├── js/login.js       # login/registratie-logica
+├── js/app.js         # modules, lessen, voortgang, claude.md-download
+├── js/main.js        # cursor, scroll-effecten, hero-visual, kunstwerken
 └── media/            # hier komt straks je intro-video
 ```
 
@@ -33,8 +58,11 @@ website/
 
 - **Naam / branding** — zoek-en-vervang `We Are Made` / `WE ARE MADE` in
   `index.html` (nav-logo, footer-wordmark, `<title>`) en pas het mailadres aan.
-- **Kleuren** — bovenin `css/style.css` staan CSS-variabelen:
-  `--bg` (papier), `--ink` (inkt), `--ink-soft`, `--line`.
+- **Kleuren** — bovenin `css/style.css` staan de CSS-variabelen voor beide
+  thema's: `:root` (ivoor + bordeaux) en `:root[data-theme="dark"]`
+  (omgekeerd). De canvassen lezen dezelfde variabelen.
+- **Lesinhoud** — alle modules en lessen staan als data in `js/app.js`
+  (`MODULES`); pakketten en ontgrendeling in `PLANS`.
 - **Teksten & prijzen** — alles staat gewoon in `index.html`
   (modules, pakketten, FAQ).
 

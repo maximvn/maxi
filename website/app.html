@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>My course — We Are Made</title>
+  <meta name="description" content="Your We Are Made course dashboard: modules, lessons and tools.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23faf6eb'/%3E%3Ctext x='16' y='23' text-anchor='middle' font-family='Times New Roman,serif' font-weight='700' font-size='20' fill='%234a0e18'%3EW%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/style.css">
+  <script src="js/theme.js"></script>
+</head>
+<body>
+
+  <div class="cursor" aria-hidden="true"><span class="cursor__label label"></span></div>
+
+  <header class="nav nav--sub">
+    <a class="nav__logo" href="index.html" data-hover>We&nbsp;Are&nbsp;Made<sup>®</sup></a>
+    <div class="nav__right">
+    <button class="themetoggle" data-hover aria-label="Invert colours">
+      <span class="themetoggle__pill"><span class="themetoggle__knob"></span></span>
+    </button>
+    <button class="linklike" id="signOut" data-hover>Sign&nbsp;out</button>
+    </div>
+  </header>
+
+  <main class="app">
+    <div class="app__head">
+      <div>
+        <p class="section__label label">(&nbsp;My&nbsp;course&nbsp;)</p>
+        <h1 class="app__title">Hello,&nbsp;<em id="appName">maker</em>.</h1>
+      </div>
+      <div class="app__planbox">
+        <span class="plan-badge label" id="planBadge">Starter</span>
+        <div class="progressbar"><i id="progressBar"></i></div>
+        <span class="app__progresslabel label" id="progressLabel">0% complete</span>
+      </div>
+    </div>
+
+    <div class="app__grid">
+      <nav class="applist" id="moduleList" aria-label="Modules"></nav>
+      <section class="lesson" id="lessonPane" aria-live="polite"></section>
+    </div>
+
+    <section id="tools">
+      <p class="section__label label">(&nbsp;Tools&nbsp;)</p>
+      <div class="apptools">
+        <article class="tool" data-hover>
+          <div class="tool__tag label">Download</div>
+          <h3 class="tool__title">Your&nbsp;claude.md</h3>
+          <p class="tool__desc">
+            A starter configuration file generated from the course principles —
+            drop it into your own workflow and Claude knows how you like to work.
+          </p>
+          <button class="btn btn--line" id="downloadMd" data-hover data-magnet>Download&nbsp;claude.md</button>
+        </article>
+        <article class="tool" data-hover>
+          <div class="tool__tag label">Chatbot</div>
+          <h3 class="tool__title">The&nbsp;Visual&nbsp;Assistant</h3>
+          <p class="tool__desc" id="assistantNote">
+            Included with Pro and Studio. The assistant launches together with the
+            course — you'll get an email the moment it goes live.
+          </p>
+          <a class="btn btn--line" href="mailto:hello@wearemade.studio?subject=Visual%20Assistant" data-hover data-magnet>Ask&nbsp;a&nbsp;question</a>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <script src="js/auth.js"></script>
+  <script src="js/main.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

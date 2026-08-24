@@ -9,6 +9,7 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23f1ede4'/%3E%3Ctext x='16' y='23' text-anchor='middle' font-family='Times New Roman,serif' font-weight='700' font-size='20' fill='%23171512'%3EW%3C/text%3E%3C/svg%3E">
 
   <link rel="stylesheet" href="css/style.css">
+  <script src="js/theme.js"></script>
 </head>
 <body>
 
@@ -37,7 +38,11 @@
       <a href="#packages" data-hover data-roll>Packages</a>
       <a href="#tools" data-hover data-roll>Tools</a>
     </nav>
-    <a class="nav__cta btn btn--solid" href="#packages" data-hover data-magnet>Enroll&nbsp;→</a>
+    <button class="themetoggle" data-hover aria-label="Invert colours">
+      <span class="themetoggle__pill"><span class="themetoggle__knob"></span></span>
+    </button>
+    <a class="nav__account label" href="login.html" data-hover data-roll data-authlink>Sign&nbsp;in</a>
+    <a class="nav__cta btn btn--solid" href="login.html?mode=signup" data-hover data-magnet>Enroll&nbsp;→</a>
     <button class="nav__burger" aria-label="Menu" data-hover>
       <span></span><span></span>
     </button>
@@ -51,6 +56,11 @@
     <a href="#packages" data-hover>Packages</a>
     <a href="#tools" data-hover>Tools</a>
     <a href="#faq" data-hover>FAQ</a>
+    <a href="login.html" data-hover data-authlink>Sign&nbsp;in</a>
+    <button class="themetoggle" aria-label="Invert colours">
+      <span class="themetoggle__pill"><span class="themetoggle__knob"></span></span>
+      <span>Invert</span>
+    </button>
   </div>
 
   <div id="smooth">
@@ -146,59 +156,59 @@
       <h2 class="section__title track-title" data-track>The&nbsp;<em>Modules</em></h2>
 
       <div class="modules__list">
-        <article class="module" data-hover data-seed="1" data-cursor="Open">
+        <a class="module" href="app.html#m01" data-hover data-seed="1" data-cursor="Open">
           <div class="module__index label">M–01</div>
           <div class="module__body">
             <h3 class="module__title">Foundations</h3>
             <p class="module__desc">How image models think. Prompt anatomy, light, lens and composition — the basics 90% skip.</p>
           </div>
           <div class="module__arrow" aria-hidden="true">→</div>
-        </article>
+        </a>
 
-        <article class="module" data-hover data-seed="2" data-cursor="Open">
+        <a class="module" href="app.html#m02" data-hover data-seed="2" data-cursor="Open">
           <div class="module__index label">M–02</div>
           <div class="module__body">
             <h3 class="module__title">A&nbsp;Style&nbsp;of&nbsp;Your&nbsp;Own</h3>
             <p class="module__desc">From moodboard to a recognisable visual language. Style references, series and staying consistent.</p>
           </div>
           <div class="module__arrow" aria-hidden="true">→</div>
-        </article>
+        </a>
 
-        <article class="module" data-hover data-seed="3" data-cursor="Open">
+        <a class="module" href="app.html#m03" data-hover data-seed="3" data-cursor="Open">
           <div class="module__index label">M–03</div>
           <div class="module__body">
             <h3 class="module__title">Images&nbsp;in&nbsp;Motion</h3>
             <p class="module__desc">From stills to video: motion prompts, loops and short clips for socials and screens.</p>
           </div>
           <div class="module__arrow" aria-hidden="true">→</div>
-        </article>
+        </a>
 
-        <article class="module" data-hover data-seed="4" data-cursor="Open">
+        <a class="module" href="app.html#m04" data-hover data-seed="4" data-cursor="Open">
           <div class="module__index label">M–04</div>
           <div class="module__body">
             <h3 class="module__title">Workflow&nbsp;&amp;&nbsp;Automation</h3>
             <p class="module__desc">Claude, agents and batch work. Build a pipeline that works for you while you set the direction.</p>
           </div>
           <div class="module__arrow" aria-hidden="true">→</div>
-        </article>
+        </a>
 
-        <article class="module" data-hover data-seed="5" data-cursor="Open">
+        <a class="module" href="app.html#m05" data-hover data-seed="5" data-cursor="Open">
           <div class="module__index label">M–05</div>
           <div class="module__body">
             <h3 class="module__title">Upscale&nbsp;&amp;&nbsp;Finish</h3>
             <p class="module__desc">From raw output to print and 4K. Upscaling, retouching and preparing files for campaigns.</p>
           </div>
           <div class="module__arrow" aria-hidden="true">→</div>
-        </article>
+        </a>
 
-        <article class="module" data-hover data-seed="6" data-cursor="Open">
+        <a class="module" href="app.html#m06" data-hover data-seed="6" data-cursor="Open">
           <div class="module__index label">M–06</div>
           <div class="module__body">
             <h3 class="module__title">Publish&nbsp;&amp;&nbsp;Sell</h3>
             <p class="module__desc">Portfolio, clients and rights. How to turn your visuals into an income.</p>
           </div>
           <div class="module__arrow" aria-hidden="true">→</div>
-        </article>
+        </a>
       </div>
     </section>
 
@@ -260,7 +270,7 @@
             <li>Prompt pack (50 prompts)</li>
             <li>Lifetime access</li>
           </ul>
-          <a class="btn btn--line" href="#contact" data-hover data-magnet>Choose&nbsp;Starter</a>
+          <a class="btn btn--line" href="login.html?mode=signup&plan=starter" data-hover data-magnet>Choose&nbsp;Starter</a>
         </article>
 
         <article class="pack pack--featured" data-hover>
@@ -276,7 +286,7 @@
             <li>Community &amp; feedback sessions</li>
             <li>Lifetime access + updates</li>
           </ul>
-          <a class="btn btn--paper" href="#contact" data-hover data-magnet>Choose&nbsp;Pro</a>
+          <a class="btn btn--paper" href="login.html?mode=signup&plan=pro" data-hover data-magnet>Choose&nbsp;Pro</a>
         </article>
 
         <article class="pack" data-hover>
@@ -290,7 +300,7 @@
             <li>Custom claude.md, built for you</li>
             <li>Portfolio review</li>
           </ul>
-          <a class="btn btn--line" href="#contact" data-hover data-magnet>Choose&nbsp;Studio</a>
+          <a class="btn btn--line" href="login.html?mode=signup&plan=studio" data-hover data-magnet>Choose&nbsp;Studio</a>
         </article>
       </div>
     </section>
@@ -310,7 +320,7 @@
             ready-to-use prompts in your style. Like having an art director at your desk.
           </p>
           <p class="tool__price label">€19&nbsp;/&nbsp;month</p>
-          <a class="btn btn--line" href="#contact" data-hover data-magnet>Try&nbsp;the&nbsp;assistant</a>
+          <a class="btn btn--line" href="app.html#tools" data-hover data-magnet>Try&nbsp;the&nbsp;assistant</a>
         </article>
 
         <article class="tool tool--file" data-hover>
@@ -328,7 +338,7 @@
             by heart. Install, open, create.
           </p>
           <p class="tool__price label">From&nbsp;€49</p>
-          <a class="btn btn--line" href="#contact" data-hover data-magnet>Browse&nbsp;the&nbsp;files</a>
+          <a class="btn btn--line" href="app.html#tools" data-hover data-magnet>Browse&nbsp;the&nbsp;files</a>
         </article>
       </div>
     </section>
@@ -384,6 +394,7 @@
   </main>
   </div><!-- /#smooth -->
 
+  <script src="js/auth.js"></script>
   <script src="js/main.js"></script>
 </body>
 </html>

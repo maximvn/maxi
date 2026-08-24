@@ -22,9 +22,25 @@
   const finePointer = window.matchMedia("(pointer: fine)").matches;
   const lerp = (a, b, t) => a + (b - a) * t;
   const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-  const INK = "#171512";
-  const PAPER = "#ece7db";
-  const RED = "#c03018";
+  // Live palette: canvases read the theme's CSS variables, so the
+  // ivory/burgundy toggle recolours every generative visual too.
+  const hexToRgb = (h) => {
+    const n = parseInt(h.trim().slice(1), 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  };
+  const rgba = (rgb, a) => `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${a})`;
+  const pal = {};
+  function refreshPalette() {
+    const cs = getComputedStyle(document.documentElement);
+    pal.bg = cs.getPropertyValue("--bg").trim();
+    pal.soft = cs.getPropertyValue("--bg-soft").trim();
+    pal.ink = cs.getPropertyValue("--ink").trim();
+    pal.red = cs.getPropertyValue("--red").trim();
+    pal.bgR = hexToRgb(pal.bg);
+    pal.inkR = hexToRgb(pal.ink);
+    pal.redR = hexToRgb(pal.red);
+  }
+  refreshPalette();
 
   /* ---------- 1. PRELOADER ---------- */
   const loader = document.querySelector(".loader");
@@ -107,18 +123,20 @@
       cursor.style.transform = `translate(${cx}px, ${cy}px) translate(-50%, -50%)`;
       requestAnimationFrame(moveCursor);
     })();
-    document.querySelectorAll("[data-hover]").forEach((el) => {
-      el.addEventListener("pointerenter", () => {
-        cursor.classList.add("is-active");
-        const label = el.dataset.cursor;
-        if (label && cursorLabel) {
-          cursorLabel.textContent = label;
-          cursor.classList.add("has-label");
-        }
-      });
-      el.addEventListener("pointerleave", () => {
-        cursor.classList.remove("is-active", "has-label");
-      });
+    // Delegated, so elements rendered later (lessons, dashboard) work too.
+    let hoverEl = null;
+    document.addEventListener("pointerover", (e) => {
+      const el = e.target.closest("[data-hover]");
+      if (el === hoverEl) return;
+      hoverEl = el;
+      cursor.classList.toggle("is-active", !!el);
+      const label = el && el.dataset.cursor;
+      if (label && cursorLabel) {
+        cursorLabel.textContent = label;
+        cursor.classList.add("has-label");
+      } else {
+        cursor.classList.remove("has-label");
+      }
     });
   }
 
@@ -284,14 +302,16 @@
 
   /* ---------- 10b. MAGNETIC BUTTONS ---------- */
   if (finePointer && !prefersReduced) {
-    document.querySelectorAll("[data-magnet]").forEach((el) => {
-      el.addEventListener("pointermove", (e) => {
-        const r = el.getBoundingClientRect();
-        const dx = e.clientX - (r.left + r.width / 2);
-        const dy = e.clientY - (r.top + r.height / 2);
-        el.style.transform = `translate(${dx * 0.22}px, ${dy * 0.32}px)`;
-      });
-      el.addEventListener("pointerleave", () => { el.style.transform = ""; });
+    let magnetEl = null;
+    document.addEventListener("pointermove", (e) => {
+      const el = e.target.closest && e.target.closest("[data-magnet]");
+      if (magnetEl && magnetEl !== el) magnetEl.style.transform = "";
+      magnetEl = el;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const dx = e.clientX - (r.left + r.width / 2);
+      const dy = e.clientY - (r.top + r.height / 2);
+      el.style.transform = `translate(${dx * 0.22}px, ${dy * 0.32}px)`;
     });
   }
 
@@ -309,7 +329,7 @@
       h = heroCanvas.clientHeight;
       heroCanvas.width = w;
       heroCanvas.height = h;
-      ctx.fillStyle = "#f1ede4";
+      ctx.fillStyle = pal.bg;
       ctx.fillRect(0, 0, w, h);
     }
     resizeHero();
@@ -344,7 +364,7 @@
 
     function drawHero(t) {
       // paper veil: fades old strokes into the page
-      ctx.fillStyle = "rgba(241, 237, 228, 0.05)";
+      ctx.fillStyle = rgba(pal.bgR, 0.05);
       ctx.fillRect(0, 0, w, h);
 
       for (const b of brushes) {
@@ -356,8 +376,8 @@
         ctx.moveTo(b.x * w, b.y * h);
         ctx.lineTo(nx * w, ny * h);
         ctx.strokeStyle = b.red
-          ? "rgba(192, 48, 24, 0.38)"
-          : "rgba(23, 21, 18, 0.2)";
+          ? rgba(pal.redR, 0.38)
+          : rgba(pal.inkR, 0.2);
         ctx.lineWidth = b.red ? 1.6 : 0.5 + 1.6 * Math.abs(Math.sin(t * 0.0006 + b.life));
         ctx.lineCap = "round";
         ctx.stroke();
@@ -385,7 +405,7 @@
           ctx.beginPath();
           ctx.moveTo(b.x * w, b.y * h);
           ctx.lineTo(nx * w, ny * h);
-          ctx.strokeStyle = b.red ? "rgba(192,48,24,.5)" : "rgba(23,21,18,.16)";
+          ctx.strokeStyle = b.red ? rgba(pal.redR, 0.5) : rgba(pal.inkR, 0.16);
           ctx.lineWidth = 1;
           ctx.stroke();
           b.x = nx; b.y = ny;
@@ -400,7 +420,7 @@
   // and by the floating module preview.
   function artDraw(ctx, W, H, seed, t) {
     const rnd = (n) => Math.abs(Math.sin(seed * 91.7 + n * 47.9)) % 1;
-    ctx.fillStyle = PAPER;
+    ctx.fillStyle = pal.soft;
     ctx.fillRect(0, 0, W, H);
     const style = seed % 4;
 
@@ -415,7 +435,7 @@
           x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
         }
         const red = i === Math.floor(rnd(6) * lines);
-        ctx.strokeStyle = red ? RED : `rgba(23, 21, 18, ${i % 4 === 0 ? 0.7 : 0.25})`;
+        ctx.strokeStyle = red ? pal.red : rgba(pal.inkR, i % 4 === 0 ? 0.7 : 0.25);
         ctx.lineWidth = red ? 2 : i % 4 === 0 ? 1.3 : 0.7;
         ctx.stroke();
       }
@@ -432,7 +452,7 @@
           a === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
         }
         const red = i === Math.floor(rnd(7) * rings);
-        ctx.strokeStyle = red ? RED : `rgba(23, 21, 18, ${i % 3 === 0 ? 0.65 : 0.22})`;
+        ctx.strokeStyle = red ? pal.red : rgba(pal.inkR, i % 3 === 0 ? 0.65 : 0.22);
         ctx.lineWidth = red ? 2 : i % 3 === 0 ? 1.2 : 0.7;
         ctx.stroke();
       }
@@ -446,11 +466,11 @@
           const x = x0 + Math.sin(y * (0.008 + rnd(2) * 0.008) + t * 0.02 + i * 0.35) * (6 + rnd(3) * 18);
           y === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
         }
-        ctx.strokeStyle = `rgba(23, 21, 18, ${i % 5 === 0 ? 0.6 : 0.2})`;
+        ctx.strokeStyle = rgba(pal.inkR, i % 5 === 0 ? 0.6 : 0.2);
         ctx.lineWidth = i % 5 === 0 ? 1.2 : 0.7;
         ctx.stroke();
       }
-      ctx.fillStyle = RED;
+      ctx.fillStyle = pal.red;
       const bw = W * (0.1 + rnd(4) * 0.12);
       ctx.fillRect(W * (0.15 + rnd(5) * 0.55), H * (0.15 + rnd(6) * 0.5), bw, bw * (0.5 + rnd(7)));
     } else {
@@ -460,7 +480,7 @@
         for (let x = step; x < W; x += step) {
           const s = 1.2 + Math.abs(Math.sin(x * 0.02 + y * 0.015 + t * 0.03 + seed)) * (3.4 + rnd(2) * 2);
           const red = rnd(x * 0.01 + y * 0.013) > 0.985;
-          ctx.fillStyle = red ? RED : `rgba(23, 21, 18, ${0.25 + 0.5 * Math.abs(Math.sin(x * 0.01 - y * 0.02 + seed))})`;
+          ctx.fillStyle = red ? pal.red : rgba(pal.inkR, 0.25 + 0.5 * Math.abs(Math.sin(x * 0.01 - y * 0.02 + seed)));
           ctx.beginPath();
           ctx.arc(x, y, s, 0, Math.PI * 2);
           ctx.fill();
@@ -468,19 +488,21 @@
       }
     }
     // paper edge vignette
-    ctx.strokeStyle = "rgba(23, 21, 18, 0.25)";
+    ctx.strokeStyle = rgba(pal.inkR, 0.25);
     ctx.lineWidth = 1;
     ctx.strokeRect(0.5, 0.5, W - 1, H - 1);
   }
 
   // Gallery pieces: draw once, animate on hover
   const pieces = [...document.querySelectorAll(".piece")];
+  const pieceRedraws = [];
   pieces.forEach((piece) => {
     const canvas = piece.querySelector("canvas");
     const ctx = canvas.getContext("2d");
     const seed = parseInt(piece.dataset.art || "1", 10);
     let t = seed * 113, raf = null;
     artDraw(ctx, canvas.width, canvas.height, seed, t);
+    pieceRedraws.push(() => artDraw(ctx, canvas.width, canvas.height, seed, t));
     piece.addEventListener("pointerenter", () => {
       if (prefersReduced) return;
       cancelAnimationFrame(raf);
@@ -607,6 +629,18 @@
     { threshold: 0.1 }
   );
   revealTargets.forEach((el) => { el.classList.add("reveal"); io.observe(el); });
+
+  /* ---------- THEME SWITCH: recolour the canvases ---------- */
+  window.addEventListener("themechange", () => {
+    refreshPalette();
+    const hc = document.getElementById("heroCanvas");
+    if (hc) {
+      const hctx = hc.getContext("2d");
+      hctx.fillStyle = pal.bg;
+      hctx.fillRect(0, 0, hc.width, hc.height);
+    }
+    pieceRedraws.forEach((fn) => fn());
+  });
 
   /* ---------- FIT AFTER FONTS ---------- */
   if (document.fonts && document.fonts.ready) {
