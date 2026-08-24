@@ -1,16 +1,20 @@
-# THEOR composites — Higgsfield media
+# THEOR composites — Higgsfield media (v2 — user-uploaded reference photos)
 
 | media_id | file | rol |
 |---|---|---|
-| ad5a0d6d-b38f-4c0b-a6e8-7baad527b877 | 7c429efe…_1000x1000.png | groene THEOR fles (product) |
-| 2c224e1b-a7e7-4a06-a56b-be969c49fa14 | 6796f797….jpg | fulkhari / charpai scène |
-| a1bb1d2a-e219-4d28-bc70-73e514d4156a | 7e7fc577….jpg | vazen buiten / houten kruk scène |
-| ca1979fc-0b0d-4cd1-bb48-0564bbde2938 | 7c2ea39c….jpg | calla lelie / stenen vorm scène |
+| f89f75ff-c195-47aa-9d55-095622704e85 | f2c0015fe25ac62792a43273d2683a1f.jpg | groene THEOR fles (product) |
+| 09b65a54-f662-417d-9d69-35209ef1155d | 50720cc36aee853ea7afb492fe3e2b06.jpg | seewier / wit scène |
+| 603e3796-e19c-44fe-ba56-a0547b938e29 | 2c5ed81949eee1292fe50c539fce4d3a.jpg | scene 3 |
+| bc6d1e07-fde4-43a9-b3fc-442996f41774 | 8416136a861ff85c34c5d8dd92c97280.jpg | scene 4 |
+| aceb5b79-5d18-411c-8d22-162834cbcee7 | 43023d4aa3fc760a96662577dccc262f.jpg | scene 5 |
 
 Elke job krijgt twee referenties in deze volgorde: **@image1 = fles, @image2 = scène**.
 
-| prompt | scène | ratio |
+| prompt | scène media_id | ratio |
 |---|---|---|
-| A_calla.txt | ca1979fc | 9:16 |
-| B_charpai.txt | 2c224e1b | 4:5 |
-| C_outdoor.txt | a1bb1d2a | 4:5 |
+| F1_twisted_wet_leaves.txt | (TBD - user to map) | 9:16 |
+| F2_folded_leaves_void.txt | (TBD - user to map) | 9:16 |
+| F3_sand_ripples_seaweed.txt | 09b65a54-f662-417d-9d69-35209ef1155d | 9:16 |
+| F4_tidal_moss_erosion.txt | (TBD - user to map) | 9:16 |
+| F5_rust_chair_field.txt | (TBD - user to map) | 9:16 |
+| F6_layered_textures.txt | (TBD - user to map) | 9:16 |
