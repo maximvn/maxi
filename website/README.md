@@ -1,8 +1,9 @@
-# MAXIVISUALS — website
+# WE ARE MADE — website
 
-Statische one-page site in de stijl van brutalistische studio-/merchsites:
-zwart canvas, enorme variabele display-typografie (Archivo, breedte-as),
-marquee, custom cursor en scroll-gedreven typo-effecten.
+Statische one-page site in lichte, editorial stijl (naar het voorbeeld van
+noartmusic.com): warm papier-wit, klassieke serif-typografie (Tinos, de vrije
+Times-evenknie), ticker, custom cursor en scroll-gedreven typo-effecten.
+Alle teksten zijn Engels.
 
 Geen build-stap, geen dependencies — direct te hosten op Netlify, Vercel,
 GitHub Pages of elke gewone webserver.
@@ -30,10 +31,10 @@ website/
 
 ## Aanpassen
 
-- **Naam / branding** — zoek-en-vervang `MAXIVISUALS` in `index.html`
-  (nav-logo, footer-wordmark, `<title>`) en pas het mailadres aan.
+- **Naam / branding** — zoek-en-vervang `We Are Made` / `WE ARE MADE` in
+  `index.html` (nav-logo, footer-wordmark, `<title>`) en pas het mailadres aan.
 - **Kleuren** — bovenin `css/style.css` staan CSS-variabelen:
-  `--bg`, `--fg`, `--accent` (nu acid-lime `#c8ff2e`).
+  `--bg` (papier), `--ink` (inkt), `--ink-soft`, `--line`.
 - **Teksten & prijzen** — alles staat gewoon in `index.html`
   (modules, pakketten, FAQ).
 
@@ -53,12 +54,12 @@ filmische textuur.
 
 | Effect | Bestand |
 | --- | --- |
-| Letters die uit elkaar schuiven op scroll | `js/main.js` → "SPLIT-TITELS" |
-| Koppen die uitrekken (variabel font) | `js/main.js` → "STRETCH-TITELS" |
-| Tekst die woord voor woord oplicht | `js/main.js` → "WOORD-REVEAL" |
-| Marquee die versnelt bij scrollen | `js/main.js` → "MARQUEE" |
-| Letter-scramble op links | `js/main.js` → "SCRAMBLE OP HOVER" |
+| Letters die uit elkaar schuiven op scroll | `js/main.js` → "SPLIT TITLES" |
+| Koppen waarvan de spatiëring ademt op scroll | `js/main.js` → "TRACK TITLES" |
+| Tekst die woord voor woord oplicht | `js/main.js` → "WORD REVEAL" |
+| Ticker die versnelt bij scrollen | `js/main.js` → "TICKER" |
+| Rol-effect op links (romein → cursief) | `js/main.js` → "ROLL-ON-HOVER" |
 | Hero-visual (video-placeholder) | `js/main.js` → "HERO CANVAS" |
-| Generatieve module-thumbnails | `js/main.js` → "MODULE-ART" |
+| Generatieve inktlijn-thumbnails | `js/main.js` → "MODULE ART" |
 
 Alle animaties respecteren `prefers-reduced-motion`.

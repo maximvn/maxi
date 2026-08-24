@@ -1,12 +1,12 @@
 <!doctype html>
-<html lang="nl">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>MAXIVISUALS — Leer visuals maken met AI</title>
-  <meta name="description" content="Cursussen, modules en tools om zelf verbluffende visuals te maken met AI. Van eerste prompt tot eigen stijl.">
+  <title>We Are Made — Learn to make visuals with AI</title>
+  <meta name="description" content="Courses, tools and files for making visuals with AI. From your first prompt to a signature style.">
 
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230b0b0b'/%3E%3Crect x='4' y='22' width='24' height='6' fill='%23c8ff2e'/%3E%3Ctext x='16' y='19' text-anchor='middle' font-family='Arial' font-weight='900' font-size='17' fill='%23efece4'%3EMV%3C/text%3E%3C/svg%3E">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23f1ede4'/%3E%3Ctext x='16' y='23' text-anchor='middle' font-family='Times New Roman,serif' font-weight='700' font-size='20' fill='%23171512'%3EW%3C/text%3E%3C/svg%3E">
 
   <link rel="stylesheet" href="css/style.css">
 </head>
@@ -17,15 +17,15 @@
 
   <!-- ============ NAV ============ -->
   <header class="nav" id="top">
-    <a class="nav__logo" href="#top" data-hover>MAXIVISUALS<sup>®</sup></a>
-    <nav class="nav__links" aria-label="Hoofdmenu">
-      <a href="#cursus" data-hover data-scramble>CURSUS</a>
-      <a href="#modules" data-hover data-scramble>MODULES</a>
-      <a href="#pakketten" data-hover data-scramble>PAKKETTEN</a>
-      <a href="#tools" data-hover data-scramble>TOOLS</a>
-      <a href="#faq" data-hover data-scramble>FAQ</a>
+    <a class="nav__logo" href="#top" data-hover>We&nbsp;Are&nbsp;Made<sup>®</sup></a>
+    <nav class="nav__links" aria-label="Main menu">
+      <a href="#course" data-hover data-roll>Course</a>
+      <a href="#modules" data-hover data-roll>Modules</a>
+      <a href="#packages" data-hover data-roll>Packages</a>
+      <a href="#tools" data-hover data-roll>Tools</a>
+      <a href="#faq" data-hover data-roll>FAQ</a>
     </nav>
-    <a class="nav__cta" href="#pakketten" data-hover data-scramble>START&nbsp;→</a>
+    <a class="nav__cta" href="#packages" data-hover data-roll>Enroll&nbsp;→</a>
     <button class="nav__burger" aria-label="Menu" data-hover>
       <span></span><span></span>
     </button>
@@ -33,10 +33,10 @@
 
   <!-- Mobile menu -->
   <div class="mobilemenu" aria-hidden="true">
-    <a href="#cursus" data-hover>CURSUS</a>
-    <a href="#modules" data-hover>MODULES</a>
-    <a href="#pakketten" data-hover>PAKKETTEN</a>
-    <a href="#tools" data-hover>TOOLS</a>
+    <a href="#course" data-hover>Course</a>
+    <a href="#modules" data-hover>Modules</a>
+    <a href="#packages" data-hover>Packages</a>
+    <a href="#tools" data-hover>Tools</a>
     <a href="#faq" data-hover>FAQ</a>
   </div>
 
@@ -46,136 +46,136 @@
     <section class="hero">
       <div class="hero__media">
         <!--
-          VIDEO LATER TOEVOEGEN:
-          Zet je videobestand in website/media/ en vervang het canvas hieronder door:
+          ADD YOUR VIDEO LATER:
+          Put your file in website/media/ and replace the canvas below with:
 
           <video class="hero__video" autoplay muted loop playsinline
                  src="media/intro.mp4" poster="media/poster.jpg"></video>
 
-          Het canvas is een tijdelijke generatieve visual die op de muis reageert.
+          The canvas is a temporary generative visual that reacts to the mouse.
         -->
         <canvas id="heroCanvas" aria-hidden="true"></canvas>
         <div class="hero__grain" aria-hidden="true"></div>
       </div>
 
       <div class="hero__inner">
-        <p class="hero__meta mono">
-          <span>AMSTERDAM / ONLINE</span>
-          <span>CURSUSSEN&nbsp;·&nbsp;TOOLS&nbsp;·&nbsp;COMMUNITY</span>
+        <p class="hero__meta label">
+          <span>AI&nbsp;visual&nbsp;education</span>
+          <span>Est.&nbsp;2026&nbsp;—&nbsp;Amsterdam&nbsp;/&nbsp;online</span>
         </p>
 
-        <h1 class="hero__title" aria-label="Maak visuals met AI">
-          <span class="line split-title" data-split>MAAK</span>
-          <span class="line split-title line--accent" data-split>VISUALS</span>
-          <span class="line split-title" data-split>MET&nbsp;AI</span>
+        <h1 class="hero__title" aria-label="We Are Made">
+          <span class="line split-title" data-split>WE&nbsp;ARE&nbsp;MADE</span>
         </h1>
+
+        <p class="hero__motto serif-i" data-split>Made&nbsp;to&nbsp;create.</p>
 
         <div class="hero__foot">
           <p class="hero__sub">
-            Geen stockplaatjes. Geen standaard-prompts.<br>
-            Leer beelden maken die niemand kan namaken.
+            Courses, tools and files for making visuals with AI —<br>
+            from your first prompt to a signature style.
           </p>
-          <a class="btn btn--solid" href="#cursus" data-hover data-scramble>BEKIJK DE CURSUS</a>
+          <a class="btn btn--solid" href="#course" data-hover data-roll>Discover the course</a>
         </div>
       </div>
 
-      <div class="hero__scrollhint mono" aria-hidden="true">SCROLL&nbsp;↓</div>
+      <div class="hero__scrollhint label" aria-hidden="true">Scroll</div>
     </section>
 
-    <!-- ============ MARQUEE ============ -->
-    <div class="marquee" aria-hidden="true">
-      <div class="marquee__track">
-        <span>CURSUSSEN&nbsp;·&nbsp;MODULES&nbsp;·&nbsp;PAKKETTEN&nbsp;·&nbsp;CHATBOT&nbsp;·&nbsp;CLAUDE.MD&nbsp;FILES&nbsp;·&nbsp;PROMPT&nbsp;PACKS&nbsp;·&nbsp;</span>
-        <span>CURSUSSEN&nbsp;·&nbsp;MODULES&nbsp;·&nbsp;PAKKETTEN&nbsp;·&nbsp;CHATBOT&nbsp;·&nbsp;CLAUDE.MD&nbsp;FILES&nbsp;·&nbsp;PROMPT&nbsp;PACKS&nbsp;·&nbsp;</span>
+    <!-- ============ TICKER ============ -->
+    <div class="ticker" aria-hidden="true">
+      <div class="ticker__track">
+        <span>Courses&nbsp;·&nbsp;Modules&nbsp;·&nbsp;Packages&nbsp;·&nbsp;Chatbot&nbsp;·&nbsp;claude.md&nbsp;files&nbsp;·&nbsp;Prompt&nbsp;packs&nbsp;·&nbsp;</span>
+        <span>Courses&nbsp;·&nbsp;Modules&nbsp;·&nbsp;Packages&nbsp;·&nbsp;Chatbot&nbsp;·&nbsp;claude.md&nbsp;files&nbsp;·&nbsp;Prompt&nbsp;packs&nbsp;·&nbsp;</span>
       </div>
     </div>
 
-    <!-- ============ MANIFEST / CURSUS ============ -->
-    <section class="manifest section" id="cursus">
-      <p class="section__label mono">01&nbsp;—&nbsp;DE&nbsp;CURSUS</p>
+    <!-- ============ MANIFESTO / COURSE ============ -->
+    <section class="manifest section" id="course">
+      <p class="section__label label">01&nbsp;—&nbsp;The&nbsp;course</p>
       <p class="manifest__text" data-words>
-        Iedereen kan een prompt typen. Bijna niemand maakt er iets van dat blijft hangen.
-        In deze cursus leer je kijken als een art-director en werken als een machine:
-        stijl opbouwen, beeldtaal vastleggen en AI zo sturen dat het resultaat
-        onmiskenbaar van jou is.
+        Anyone can type a prompt. Almost no one makes something that stays with you.
+        This course teaches you to look like an art director and work like a machine —
+        building a style, defining a visual language, and directing AI until the
+        result is unmistakably yours.
       </p>
       <div class="manifest__stats">
         <div class="stat" data-hover>
-          <span class="stat__num stretch-title" data-stretch>6</span>
-          <span class="stat__label mono">MODULES</span>
+          <span class="stat__num">6</span>
+          <span class="stat__label label">Modules</span>
         </div>
         <div class="stat" data-hover>
-          <span class="stat__num stretch-title" data-stretch>40+</span>
-          <span class="stat__label mono">LESSEN &amp; DEMO'S</span>
+          <span class="stat__num">40+</span>
+          <span class="stat__label label">Lessons&nbsp;&amp;&nbsp;demos</span>
         </div>
         <div class="stat" data-hover>
-          <span class="stat__num stretch-title" data-stretch>∞</span>
-          <span class="stat__label mono">TOEGANG &amp; UPDATES</span>
+          <span class="stat__num">∞</span>
+          <span class="stat__label label">Access&nbsp;&amp;&nbsp;updates</span>
         </div>
       </div>
     </section>
 
     <!-- ============ MODULES ============ -->
     <section class="modules section" id="modules">
-      <p class="section__label mono">02&nbsp;—&nbsp;MODULES</p>
-      <h2 class="section__title stretch-title" data-stretch>DE&nbsp;MODULES</h2>
+      <p class="section__label label">02&nbsp;—&nbsp;Modules</p>
+      <h2 class="section__title track-title" data-track>The&nbsp;Modules</h2>
 
       <div class="modules__list">
         <article class="module" data-hover data-seed="1">
-          <div class="module__index mono">M–01</div>
+          <div class="module__index label">M–01</div>
           <div class="module__body">
-            <h3 class="module__title">FUNDAMENT</h3>
-            <p class="module__desc">Hoe beeldmodellen denken. Prompt-anatomie, licht, lens en compositie — de basis die 90% overslaat.</p>
+            <h3 class="module__title">Foundations</h3>
+            <p class="module__desc">How image models think. Prompt anatomy, light, lens and composition — the basics 90% skip.</p>
           </div>
           <canvas class="module__art" width="420" height="280" aria-hidden="true"></canvas>
           <div class="module__arrow" aria-hidden="true">→</div>
         </article>
 
         <article class="module" data-hover data-seed="2">
-          <div class="module__index mono">M–02</div>
+          <div class="module__index label">M–02</div>
           <div class="module__body">
-            <h3 class="module__title">EIGEN&nbsp;STIJL</h3>
-            <p class="module__desc">Van moodboard naar herkenbare beeldtaal. Stijlreferenties, series maken en consistent blijven.</p>
+            <h3 class="module__title">A&nbsp;Style&nbsp;of&nbsp;Your&nbsp;Own</h3>
+            <p class="module__desc">From moodboard to a recognisable visual language. Style references, series and staying consistent.</p>
           </div>
           <canvas class="module__art" width="420" height="280" aria-hidden="true"></canvas>
           <div class="module__arrow" aria-hidden="true">→</div>
         </article>
 
         <article class="module" data-hover data-seed="3">
-          <div class="module__index mono">M–03</div>
+          <div class="module__index label">M–03</div>
           <div class="module__body">
-            <h3 class="module__title">BEELD&nbsp;IN&nbsp;BEWEGING</h3>
-            <p class="module__desc">Van stilstaand naar video: motion-prompts, loops en korte clips voor socials en schermen.</p>
+            <h3 class="module__title">Images&nbsp;in&nbsp;Motion</h3>
+            <p class="module__desc">From stills to video: motion prompts, loops and short clips for socials and screens.</p>
           </div>
           <canvas class="module__art" width="420" height="280" aria-hidden="true"></canvas>
           <div class="module__arrow" aria-hidden="true">→</div>
         </article>
 
         <article class="module" data-hover data-seed="4">
-          <div class="module__index mono">M–04</div>
+          <div class="module__index label">M–04</div>
           <div class="module__body">
-            <h3 class="module__title">WORKFLOW&nbsp;&amp;&nbsp;AUTOMATISERING</h3>
-            <p class="module__desc">Claude, agents en batch-werk. Bouw een pipeline die voor je werkt terwijl jij richting geeft.</p>
+            <h3 class="module__title">Workflow&nbsp;&amp;&nbsp;Automation</h3>
+            <p class="module__desc">Claude, agents and batch work. Build a pipeline that works for you while you set the direction.</p>
           </div>
           <canvas class="module__art" width="420" height="280" aria-hidden="true"></canvas>
           <div class="module__arrow" aria-hidden="true">→</div>
         </article>
 
         <article class="module" data-hover data-seed="5">
-          <div class="module__index mono">M–05</div>
+          <div class="module__index label">M–05</div>
           <div class="module__body">
-            <h3 class="module__title">UPSCALE&nbsp;&amp;&nbsp;AFWERKING</h3>
-            <p class="module__desc">Van ruwe output naar drukwerk en 4K. Upscalen, retoucheren en klaarzetten voor print of campagne.</p>
+            <h3 class="module__title">Upscale&nbsp;&amp;&nbsp;Finish</h3>
+            <p class="module__desc">From raw output to print and 4K. Upscaling, retouching and preparing files for campaigns.</p>
           </div>
           <canvas class="module__art" width="420" height="280" aria-hidden="true"></canvas>
           <div class="module__arrow" aria-hidden="true">→</div>
         </article>
 
         <article class="module" data-hover data-seed="6">
-          <div class="module__index mono">M–06</div>
+          <div class="module__index label">M–06</div>
           <div class="module__body">
-            <h3 class="module__title">VERKOPEN&nbsp;&amp;&nbsp;PUBLICEREN</h3>
-            <p class="module__desc">Portfolio, klanten en rechten. Hoe je van visuals een inkomstenstroom maakt.</p>
+            <h3 class="module__title">Publish&nbsp;&amp;&nbsp;Sell</h3>
+            <p class="module__desc">Portfolio, clients and rights. How to turn your visuals into an income.</p>
           </div>
           <canvas class="module__art" width="420" height="280" aria-hidden="true"></canvas>
           <div class="module__arrow" aria-hidden="true">→</div>
@@ -185,136 +185,136 @@
 
     <!-- ============ BIG QUOTE ============ -->
     <section class="bigquote section">
-      <h2 class="bigquote__text split-title" data-split>STIJL&nbsp;&gt;&nbsp;PROMPTS</h2>
+      <h2 class="bigquote__text split-title" data-split>Style&nbsp;over&nbsp;prompts</h2>
     </section>
 
-    <!-- ============ PAKKETTEN ============ -->
-    <section class="packs section" id="pakketten">
-      <p class="section__label mono">03&nbsp;—&nbsp;PAKKETTEN</p>
-      <h2 class="section__title stretch-title" data-stretch>KIES&nbsp;JE&nbsp;PAKKET</h2>
+    <!-- ============ PACKAGES ============ -->
+    <section class="packs section" id="packages">
+      <p class="section__label label">03&nbsp;—&nbsp;Packages</p>
+      <h2 class="section__title track-title" data-track>Choose&nbsp;Your&nbsp;Package</h2>
 
       <div class="packs__grid">
         <article class="pack" data-hover>
           <header class="pack__head">
-            <h3 class="pack__name">STARTER</h3>
-            <p class="pack__price"><span class="pack__amount">€149</span><span class="mono">&nbsp;EENMALIG</span></p>
+            <h3 class="pack__name">Starter</h3>
+            <p class="pack__price"><span class="pack__amount">€149</span><span class="label">&nbsp;one-time</span></p>
           </header>
           <ul class="pack__list">
-            <li>Module 01 — Fundament</li>
-            <li>Module 02 — Eigen stijl</li>
-            <li>Prompt-pack (50 prompts)</li>
-            <li>Levenslange toegang</li>
+            <li>Module 01 — Foundations</li>
+            <li>Module 02 — A Style of Your Own</li>
+            <li>Prompt pack (50 prompts)</li>
+            <li>Lifetime access</li>
           </ul>
-          <a class="btn btn--line" href="#contact" data-hover data-scramble>KIES STARTER</a>
+          <a class="btn btn--line" href="#contact" data-hover data-roll>Choose Starter</a>
         </article>
 
         <article class="pack pack--featured" data-hover>
-          <div class="pack__badge mono">MEEST&nbsp;GEKOZEN</div>
+          <div class="pack__badge label">Most&nbsp;popular</div>
           <header class="pack__head">
-            <h3 class="pack__name">PRO</h3>
-            <p class="pack__price"><span class="pack__amount">€349</span><span class="mono">&nbsp;EENMALIG</span></p>
+            <h3 class="pack__name">Pro</h3>
+            <p class="pack__price"><span class="pack__amount">€349</span><span class="label">&nbsp;one-time</span></p>
           </header>
           <ul class="pack__list">
-            <li>Alle 6 modules</li>
-            <li>Chatbot-assistent (1 jaar)</li>
-            <li>claude.md starter-files</li>
-            <li>Community &amp; feedbacksessies</li>
-            <li>Levenslange toegang + updates</li>
+            <li>All 6 modules</li>
+            <li>Chatbot assistant (1 year)</li>
+            <li>claude.md starter files</li>
+            <li>Community &amp; feedback sessions</li>
+            <li>Lifetime access + updates</li>
           </ul>
-          <a class="btn btn--solid" href="#contact" data-hover data-scramble>KIES PRO</a>
+          <a class="btn btn--solid" href="#contact" data-hover data-roll>Choose Pro</a>
         </article>
 
         <article class="pack" data-hover>
           <header class="pack__head">
-            <h3 class="pack__name">STUDIO</h3>
-            <p class="pack__price"><span class="pack__amount">€749</span><span class="mono">&nbsp;EENMALIG</span></p>
+            <h3 class="pack__name">Studio</h3>
+            <p class="pack__price"><span class="pack__amount">€749</span><span class="label">&nbsp;one-time</span></p>
           </header>
           <ul class="pack__list">
-            <li>Alles uit PRO</li>
-            <li>1-op-1 coaching (3 sessies)</li>
-            <li>Custom claude.md op maat</li>
-            <li>Portfolio-review</li>
+            <li>Everything in Pro</li>
+            <li>1-on-1 coaching (3 sessions)</li>
+            <li>Custom claude.md, built for you</li>
+            <li>Portfolio review</li>
           </ul>
-          <a class="btn btn--line" href="#contact" data-hover data-scramble>KIES STUDIO</a>
+          <a class="btn btn--line" href="#contact" data-hover data-roll>Choose Studio</a>
         </article>
       </div>
     </section>
 
-    <!-- ============ TOOLS / DIGITALE PRODUCTEN ============ -->
+    <!-- ============ TOOLS / DIGITAL PRODUCTS ============ -->
     <section class="tools section" id="tools">
-      <p class="section__label mono">04&nbsp;—&nbsp;TOOLS</p>
-      <h2 class="section__title stretch-title" data-stretch>DIRECT&nbsp;AAN&nbsp;DE&nbsp;SLAG</h2>
+      <p class="section__label label">04&nbsp;—&nbsp;Tools</p>
+      <h2 class="section__title track-title" data-track>Start&nbsp;Making&nbsp;Today</h2>
 
       <div class="tools__grid">
         <article class="tool" data-hover>
-          <div class="tool__tag mono">CHATBOT</div>
-          <h3 class="tool__title">DE&nbsp;VISUAL–ASSISTENT</h3>
+          <div class="tool__tag label">Chatbot</div>
+          <h3 class="tool__title">The&nbsp;Visual&nbsp;Assistant</h3>
           <p class="tool__desc">
-            Een getrainde chatbot die met je meedenkt: van concept en moodboard tot
-            kant-en-klare prompts in jouw stijl. Alsof je een art-director naast je hebt.
+            A trained chatbot that thinks along with you: from concept and moodboard to
+            ready-to-use prompts in your style. Like having an art director at your desk.
           </p>
-          <p class="tool__price mono">€19&nbsp;/&nbsp;MAAND</p>
-          <a class="btn btn--line" href="#contact" data-hover data-scramble>PROBEER DE BOT</a>
+          <p class="tool__price label">€19&nbsp;/&nbsp;month</p>
+          <a class="btn btn--line" href="#contact" data-hover data-roll>Try the assistant</a>
         </article>
 
-        <article class="tool tool--terminal" data-hover>
-          <div class="tool__tag mono">DOWNLOAD</div>
-          <h3 class="tool__title">CLAUDE.MD&nbsp;FILES</h3>
+        <article class="tool tool--file" data-hover>
+          <div class="tool__tag label">Download</div>
+          <h3 class="tool__title">claude.md&nbsp;Files</h3>
           <div class="tool__code mono" aria-hidden="true">
             <span><i>$</i> cat claude.md</span>
-            <span># Jouw stijl, vastgelegd als instructies</span>
-            <span># — beeldtaal, kleur, licht, compositie</span>
-            <span># — direct bruikbaar in je eigen workflow</span>
+            <span># Your style, written as instructions</span>
+            <span># — visual language, colour, light, composition</span>
+            <span># — ready to use in your own workflow</span>
             <span class="tool__cursorline"><i>$</i> <b class="blink">▮</b></span>
           </div>
           <p class="tool__desc">
-            Kant-en-klare configuratiebestanden waarmee Claude jouw visuals-workflow
-            uit zijn hoofd kent. Installeren, openen, maken.
+            Ready-made configuration files that teach Claude your visual workflow
+            by heart. Install, open, create.
           </p>
-          <p class="tool__price mono">VANAF&nbsp;€49</p>
-          <a class="btn btn--line" href="#contact" data-hover data-scramble>BEKIJK DE FILES</a>
+          <p class="tool__price label">From&nbsp;€49</p>
+          <a class="btn btn--line" href="#contact" data-hover data-roll>Browse the files</a>
         </article>
       </div>
     </section>
 
     <!-- ============ FAQ ============ -->
     <section class="faq section" id="faq">
-      <p class="section__label mono">05&nbsp;—&nbsp;FAQ</p>
-      <h2 class="section__title stretch-title" data-stretch>VRAGEN</h2>
+      <p class="section__label label">05&nbsp;—&nbsp;FAQ</p>
+      <h2 class="section__title track-title" data-track>Questions</h2>
 
       <div class="faq__list">
         <details class="faq__item" data-hover>
-          <summary>Heb ik ervaring nodig?<span class="faq__plus" aria-hidden="true">+</span></summary>
-          <p>Nee. Module 01 begint bij nul. Heb je al ervaring, dan stap je in bij Eigen stijl of Workflow.</p>
+          <summary>Do I need experience?<span class="faq__plus" aria-hidden="true">+</span></summary>
+          <p>No. Module 01 starts from zero. Already experienced? Step in at A Style of Your Own or Workflow.</p>
         </details>
         <details class="faq__item" data-hover>
-          <summary>Welke tools gebruiken we?<span class="faq__plus" aria-hidden="true">+</span></summary>
-          <p>De cursus is tool-onafhankelijk: de principes werken in elk beeldmodel. In de demo's werken we met de nieuwste generatie beeld- en videomodellen plus Claude voor de workflow.</p>
+          <summary>Which tools do we use?<span class="faq__plus" aria-hidden="true">+</span></summary>
+          <p>The course is tool-independent: the principles work in any image model. The demos use the latest generation of image and video models, plus Claude for the workflow.</p>
         </details>
         <details class="faq__item" data-hover>
-          <summary>Hoe lang heb ik toegang?<span class="faq__plus" aria-hidden="true">+</span></summary>
-          <p>Voor altijd. Nieuwe lessen en updates van de modules zitten erbij in.</p>
+          <summary>How long do I keep access?<span class="faq__plus" aria-hidden="true">+</span></summary>
+          <p>Forever. New lessons and module updates are included.</p>
         </details>
         <details class="faq__item" data-hover>
-          <summary>Mag ik het geleerde commercieel gebruiken?<span class="faq__plus" aria-hidden="true">+</span></summary>
-          <p>Ja — sterker nog, module 06 gaat er volledig over: publiceren, klanten en rechten.</p>
+          <summary>Can I use what I make commercially?<span class="faq__plus" aria-hidden="true">+</span></summary>
+          <p>Yes — module 06 is entirely about it: publishing, clients and rights.</p>
         </details>
       </div>
     </section>
 
     <!-- ============ FOOTER ============ -->
     <footer class="footer" id="contact">
-      <p class="footer__cta mono">KLAAR&nbsp;OM&nbsp;TE&nbsp;BEGINNEN?</p>
-      <a class="footer__mail" href="mailto:hallo@maxivisuals.nl" data-hover>HALLO@MAXIVISUALS.NL</a>
+      <p class="footer__cta label">Ready&nbsp;to&nbsp;begin?</p>
+      <a class="footer__mail" href="mailto:hello@wearemade.studio" data-hover>hello@wearemade.studio</a>
 
       <div class="footer__wordmark" aria-hidden="true">
-        <span class="footer__big" data-wave>MAXIVISUALS</span>
+        <span class="footer__big" data-wave>WE&nbsp;ARE&nbsp;MADE</span>
       </div>
 
-      <div class="footer__bottom mono">
-        <span>©&nbsp;2026&nbsp;MAXIVISUALS</span>
-        <span><a href="#" data-hover>INSTAGRAM</a>&nbsp;/&nbsp;<a href="#" data-hover>YOUTUBE</a>&nbsp;/&nbsp;<a href="#" data-hover>TIKTOK</a></span>
-        <a href="#top" data-hover>TERUG&nbsp;OMHOOG&nbsp;↑</a>
+      <div class="footer__bottom label">
+        <span>©&nbsp;2026&nbsp;We&nbsp;Are&nbsp;Made</span>
+        <span><a href="#" data-hover>Instagram</a>&nbsp;/&nbsp;<a href="#" data-hover>YouTube</a>&nbsp;/&nbsp;<a href="#" data-hover>TikTok</a></span>
+        <a href="#top" data-hover>Back&nbsp;to&nbsp;top&nbsp;↑</a>
       </div>
     </footer>
 
