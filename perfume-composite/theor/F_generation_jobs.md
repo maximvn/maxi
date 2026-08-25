@@ -1,25 +1,26 @@
-# F-Series Composite Generation Jobs
+# F-Series Composite Generation Jobs — v2 (corrected references)
 
-Generated: 2026-08-24
+Generated: 2026-08-25
 
-All 6 THEOR perfume bottle composites are generating with uploaded reference photos via Higgsfield media input.
+All 6 THEOR perfume bottle composites regenerated with user-uploaded reference photos via Higgsfield media input.
+**All shots now use corrected base: bottle (f89f75ff) + seaweed white (09b65a54) + rotating scene texture**
 
 ## Generation Details
 
 Model: Nano Banana Pro
-Aspect Ratio: 9:16
-Media Role: image_references (bottle + scene reference photos)
+Aspect Ratio: 4:5 (corrected from 9:16)
+Media Role: image_references (3-media blend: bottle + seaweed base + secondary scene texture)
 
-## Job IDs
+## Job IDs (v2)
 
-| Composite | Job ID | Bottle Ref | Scene Ref | Status |
-|-----------|--------|-----------|-----------|--------|
-| F1_twisted_wet_leaves | f72962e2-2641-4022-aed2-b5e50d131bf2 | fe7f9113-cec9-49b7-bc69-58ce967b5233 | e0775768-4b57-4777-a440-b367d1ddc77e | pending |
-| F2_folded_leaves_void | 87cf1fd6-85d7-4c5b-afa4-a321d216e233 | fe7f9113-cec9-49b7-bc69-58ce967b5233 | 2c4c5321-7c54-4b62-9ee4-8c572c076d80 | pending |
-| F3_sand_ripples_seaweed | 04b477a8-63d7-4065-912b-8b977f67616c | fe7f9113-cec9-49b7-bc69-58ce967b5233 | d67b711b-2f3c-4a7c-9750-1765606aea83 | pending |
-| F4_tidal_moss_erosion | c81152e4-0d9a-42c4-b34b-597ec1b89217 | fe7f9113-cec9-49b7-bc69-58ce967b5233 | 6becc84a-69c4-4d94-8eea-5594c021edfb | pending |
-| F5_rust_chair_field | 48c19a0f-0c22-435c-97e2-ff1fb9216ded | fe7f9113-cec9-49b7-bc69-58ce967b5233 | 30dc7b85-d0bb-4260-8aef-11b901c9db49 | pending |
-| F6_layered_textures | 8fe7d994-636c-4604-8e08-7cdba7ca7a77 | fe7f9113-cec9-49b7-bc69-58ce967b5233 | 787fc2c9-4fdd-4a72-b2a9-e93247f7be63 | pending |
+| Composite | Job ID | @image1 Bottle | @image2 Seaweed Base | @image3 Secondary Scene | Status |
+|-----------|--------|-----------|-----------|-----------|--------|
+| F1_twisted_wet_leaves | 54c2182c-c1f7-40fd-a4f6-9c30f6cbaed0 | f89f75ff-c195-47aa-9d55-095622704e85 | 09b65a54-f662-417d-9d69-35209ef1155d | 603e3796-e19c-44fe-ba56-a0547b938e29 | pending |
+| F2_folded_leaves_void | 301791d0-5272-4408-8902-8a2ddf317ae4 | f89f75ff-c195-47aa-9d55-095622704e85 | 09b65a54-f662-417d-9d69-35209ef1155d | bc6d1e07-fde4-43a9-b3fc-442996f41774 | pending |
+| F3_sand_ripples_seaweed | 6d7c7056-b206-4627-aa94-746de7f44591 | f89f75ff-c195-47aa-9d55-095622704e85 | 09b65a54-f662-417d-9d69-35209ef1155d | aceb5b79-5d18-411c-8d22-162834cbcee7 | pending |
+| F4_tidal_moss_erosion | 1b7e56d3-d724-412f-ae83-afabc161c703 | f89f75ff-c195-47aa-9d55-095622704e85 | 09b65a54-f662-417d-9d69-35209ef1155d | 603e3796-e19c-44fe-ba56-a0547b938e29 | pending |
+| F5_rust_chair_field | 3fe9bd11-5002-4756-8316-efe8a4987a32 | f89f75ff-c195-47aa-9d55-095622704e85 | 09b65a54-f662-417d-9d69-35209ef1155d | bc6d1e07-fde4-43a9-b3fc-442996f41774 | pending |
+| F6_layered_textures | d310ce03-1db2-4d16-80da-47c52e10284c | f89f75ff-c195-47aa-9d55-095622704e85 | 09b65a54-f662-417d-9d69-35209ef1155d | aceb5b79-5d18-411c-8d22-162834cbcee7 | pending |
 
 ## Prompts Used
 
