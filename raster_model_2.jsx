@@ -59,6 +59,46 @@ const viewerOpslaan=async(basisnaam,tekst,ext='csv')=>{
   }
 }
 
+// ── GETALVELD MET − / + ────────────────────────────────────────────────────────
+// Staat BEWUST op moduleniveau. Toen deze component nog binnen een renderfunctie
+// werd gedefinieerd, kreeg React bij élke toetsaanslag een nieuw componenttype en
+// bouwde het het invoerveld opnieuw op — waardoor de focus wegsprong en je alleen
+// het eerste cijfer kwijt kon. Typ je "27", dan bleef er "2" staan.
+//
+// Daarnaast houdt het veld tijdens het typen zijn eigen tekst vast. Een waarde die
+// nog niet af is ("", "2" op weg naar "27") mag even bestaan; pas bij een geldig
+// getal geven we het door, en bij verlaten van het veld ronden we af binnen
+// min/max. Zo werkt typen, plakken en wissen net zo vanzelfsprekend als de pijltjes.
+const NumStepper=({val,on,suffix,step=5,min=0,max=999,breed=48})=>{
+  const [tekst,setTekst]=useState(null)   // null = toon de echte waarde
+  const toon = tekst!==null ? tekst : String(val)
+  const zet=v=>on(Math.max(min,Math.min(max,v)))
+  return(
+    <div style={{display:'inline-flex',alignItems:'center',border:`1px solid ${C.border}`,borderRadius:8,overflow:'hidden',background:C.white}}>
+      <button onClick={()=>{setTekst(null); zet(val-step)}}
+        style={{width:30,height:34,border:'none',borderRight:`1px solid ${C.border}`,background:C.surface2,cursor:'pointer',fontWeight:700,color:C.muted,fontSize:15}}>−</button>
+      <input type="number" inputMode="numeric" value={toon}
+        onChange={e=>{
+          const r=e.target.value
+          setTekst(r)
+          const n=parseInt(r,10)
+          if(r!==''&&!isNaN(n)) zet(n)
+        }}
+        onFocus={e=>e.target.select()}
+        onBlur={()=>{
+          const n=parseInt(tekst,10)
+          if(tekst!==null&&(tekst===''||isNaN(n))) on(Math.max(min,Math.min(max,val)))
+          setTekst(null)
+        }}
+        onKeyDown={e=>{ if(e.key==='Enter') e.currentTarget.blur() }}
+        style={{width:breed,textAlign:'center',border:'none',padding:'7px 2px',fontSize:14,fontWeight:700,color:C.text,fontFamily:'inherit'}}/>
+      <button onClick={()=>{setTekst(null); zet(val+step)}}
+        style={{width:30,height:34,border:'none',borderLeft:`1px solid ${C.border}`,background:C.surface2,cursor:'pointer',fontWeight:700,color:C.muted,fontSize:15}}>+</button>
+      {suffix&&<span style={{fontSize:11,color:C.muted,padding:'0 9px 0 7px'}}>{suffix}</span>}
+    </div>
+  )
+}
+
 // ─── DESIGN TOKENS ────────────────────────────────────────────────────────────
 const C = {
   primary:'#1C6EA4',     // clean professional blue
@@ -1923,15 +1963,29 @@ export default function RasterTool(){
         // __mixKracht regelt hoe hard de mix stuurt (1 = vol, 0 = uit). Zie de
         // trapsgewijze terugval onderaan computeRaster: liever iets minder strikt
         // afwisselen dan iemand niet inplannen.
-        const mixKracht=rules.__mixKracht==null?1:rules.__mixKracht
+        // PER DAG regelbaar. De sterkte staat standaard op vol; blijkt déze dag zijn
+        // werk niet kwijt te kunnen met strikt afwisselen, dan zakt hij alleen voor
+        // die dag een trapje (zie rondeVoor). Voorheen ging de mix voor de HELE week
+        // uit zodra één dag knelde — dan kreeg je 19 van de 28 spreekuren als blok
+        // terwijl maar één dag het probleem was.
+        let mixKracht=rules.__mixKracht==null?1:rules.__mixKracht
         const mixSel=dd=>mixKracht>0 && !!rules.mixNC && mixBereik(dd)
           && totN>0 && totN<alleWerk.length
-        const MIX_SCHAAL=60*mixKracht   // weegt de mix-scheefheid om naar 'minuten' bandafstand
+        const MIX_SCHAAL=()=>60*mixKracht   // weegt de mix-scheefheid om naar 'minuten' bandafstand
+        // EEN SPREEKUUR MET MAAR ÉÉN CATEGORIE IS HET PROBLEEM ZELF.
+        // Een paar procent van de verhouding af wijken is prima; een spreekuur waarin
+        // álles nieuw of álles controle is, is precies wat "afwisselen" moet voorkomen.
+        // Dat weegt daarom apart en veel zwaarder mee dan gewone scheefheid — anders
+        // bleef een blok van 9x nieuw naast 12x controle "goedkoper" dan een gemengde
+        // samenstelling die de band net zo goed haalt.
+        const PUUR_STRAF=1.2
+        const puurStraf=(nn,tot)=>(tot>1 && (nn===0||nn===tot)) ? PUUR_STRAF : 0
         // Hoe scheef staat het spreekuur ná het toevoegen van deze afspraak?
+        const doelRatioVan=s=>(s.ratioDoel!=null?s.ratioDoel:ratioN)
         const mixStraf=(s,a)=>{
           const tot=s.items.length+1
           const nNa=s.items.filter(x=>x.category==='nieuw').length+(a.category==='nieuw'?1:0)
-          let p=Math.abs(nNa/tot - ratioN)
+          let p=Math.abs(nNa/tot - doelRatioVan(s))
           // EERLIJK DELEN OVER DE SPREEKUREN. Nieuw is meestal de schaarse categorie
           // (bv. 46 nieuw tegen 222 controle). Zonder rem snoepten de eerst gevulde
           // spreekuren álle nieuwe patiënten op en bleven de laatste spreekuren puur
@@ -1939,7 +1993,7 @@ export default function RasterTool(){
           // is het eerlijke aandeel van dit spreekuur; daarboven wordt 'nieuw' zwaar
           // bestraft zodat er genoeg overblijft voor de spreekuren die nog komen.
           if(a.category==='nieuw' && s.capN!=null && nNa>s.capN) p+=0.5*(nNa-s.capN)
-          return p
+          return p+puurStraf(nNa,tot)
         }
         // De BAND gaat voor: eerst kiezen wélke duur het spreekuur het dichtst bij zijn
         // doel brengt, pas daarna wélke afspraak van die duur (spoed eerst, dan wie
@@ -1953,7 +2007,7 @@ export default function RasterTool(){
           if(!kand.length) return null
           // Score: afstand tot het slotdoel + (bij afwisselen) de scheefheid van de mix.
           const score=a=>Math.abs(s.used+a.duur-doelS)
-            +(mixSel(s.dd)?MIX_SCHAAL*mixStraf(s,a):0)
+            +(mixSel(s.dd)?MIX_SCHAAL()*mixStraf(s,a):0)
           const beste=kand.reduce((x,y)=>score(y)<score(x)?y:x)
           let zelfdeDuur=kand.filter(a=>a.duur===beste.duur)
           const spoed=rules.spoedFirst?zelfdeDuur.filter(a=>a.spoed):[]
@@ -1994,9 +2048,10 @@ export default function RasterTool(){
             Object.entries(combi).forEach(([d,k])=>{ tot+=k
               minN+=Math.max(0, k-(availC[d]||0)); maxN+=Math.min(k, availN[d]||0) })
             if(!tot) return {tot:0, haalbaarN:0, straf:0}
-            const wens=Math.min(Math.round(ratioN*tot), s.capN!=null?s.capN:Infinity)
+            const rd=doelRatioVan(s)
+            const wens=Math.min(Math.round(rd*tot), s.capN!=null?s.capN:Infinity)
             const haalbaarN=Math.max(minN, Math.min(maxN, wens))
-            let straf=Math.abs(haalbaarN/tot - ratioN)
+            let straf=Math.abs(haalbaarN/tot - rd)+puurStraf(haalbaarN,tot)
             if(s.capN!=null && haalbaarN>s.capN) straf+=0.5*(haalbaarN-s.capN)
             return {tot, haalbaarN, straf}
           }
@@ -2027,7 +2082,7 @@ export default function RasterTool(){
             let sc=Math.abs(som-doelS), haalbaarN=null
             if(doeRatio){
               const m=mixVanCombi(combi)
-              if(m.tot>0){ haalbaarN=m.haalbaarN; sc+=MIX_SCHAAL*m.straf }
+              if(m.tot>0){ haalbaarN=m.haalbaarN; sc+=MIX_SCHAAL()*m.straf }
             }
             if(!beste||sc<beste.sc) beste={som,sc,combi,haalbaarN}
           })
@@ -2118,6 +2173,19 @@ export default function RasterTool(){
             s.capN = mixSel(s.dd)
               ? Math.ceil(rest.filter(a=>a.category==='nieuw').length/nogSlots)+1
               : null
+            // STREEFVERHOUDING BEWEEGT MEE MET WAT ER NOG LIGT.
+            // Met vaste consultduren bestaat lang niet elke verhouding als een
+            // samenstelling die de band haalt. Bij nieuw=20 en controle=15 zijn
+            // bijvoorbeeld alleen (3 nieuw, 8 controle) en (5 nieuw, 5 controle)
+            // geldig — je moet dus tussen die twee AFWISSELEN om de aantallen te
+            // laten kloppen. Mikt elk spreekuur star op de weekverhouding, dan kiest
+            // de tool telkens dezelfde samenstelling en houdt het aan het eind
+            // patiënten over. Door te mikken op de verhouding van de RESTERENDE pool
+            // corrigeert het zichzelf: zijn er relatief veel nieuwe over, dan komt er
+            // vanzelf een spreekuur met meer nieuwe patiënten.
+            s.ratioDoel = mixSel(s.dd) && rest.length
+              ? rest.filter(a=>a.category==='nieuw').length/rest.length
+              : null
             const doelS = mik==='onder' ? L
               : mik==='vol' ? U
               : Math.max(L, Math.min(U, cap, restMin/nogSlots))   // 'gemiddeld' en 'ruim'
@@ -2127,7 +2195,29 @@ export default function RasterTool(){
               if(s.used>=L-0.01 && Math.abs(s.used+a.duur-doelS)>=Math.abs(s.used-doelS)) break
               plaats(s,a); rest.splice(rest.indexOf(a),1)
             }
-            if(!repareer(s,rest,cap) && !componeer(s,rest,doelS,cap)){
+            let open=repareer(s,rest,cap) || componeer(s,rest,doelS,cap)
+            // OOK ALS HET AL PAST: kijk of een exacte samenstelling beter afwisselt.
+            // De greedy-vulling landt altijd binnen de band, maar niet per se op de
+            // samenstelling die de categorieën goed verdeelt — en dan wordt componeer()
+            // nooit aangeroepen. Bij nieuw=20 en controle=15 zijn bijvoorbeeld zowel
+            // (3 nieuw, 8 controle) als (6 nieuw, 4 controle) precies 180 min; welke je
+            // kiest bepaalt of de aantallen aan het eind van de dag nog uitkomen.
+            if(open && mixSel(s.dd) && s.items.length>1){
+              const rd=doelRatioVan(s)
+              const foutVan=arr=>{ if(!arr.length) return 9
+                const n=arr.filter(a=>a.category==='nieuw').length
+                return Math.abs(n/arr.length-rd)+puurStraf(n,arr.length) }
+              const voor=foutVan(s.items)
+              if(voor>0.02){
+                const bItems=[...s.items], bUsed=s.used, bRest=[...rest]
+                const gelukt=componeer(s,rest,doelS,cap)
+                if(!gelukt || foutVan(s.items)>=voor-1e-9){
+                  s.items=bItems; s.used=bUsed
+                  rest.length=0; bRest.forEach(a=>rest.push(a))
+                }
+              }
+            }
+            if(!open){
               s.items.forEach(a=>rest.push(a)); s.items=[]; s.used=0
             } else geopend.push(s)
           })
@@ -2181,7 +2271,19 @@ export default function RasterTool(){
         // de weekbrede nabrander). Per dag terugvallen zette het afwisselen uit zodra
         // één dag even wat overhield, en dan kreeg je alsnog blokken. De vergelijking
         // gebeurt daarom aan het eind, over het HELE rooster (zie __zonderMix onderaan).
-        const rondeVoor=(n)=>{ zetSlots(n); return {r:alleMikpunten(),n} }
+        // Trapsgewijs afwisselen PER DAG: begin op vol, en zak alleen een trapje als
+        // deze dag daarmee méér werk kwijt kan. Bij gelijke stand wint de hoogste
+        // sterkte, dus we houden zoveel afwisseling als er te halen valt.
+        const basisKracht=rules.__mixKracht==null?1:rules.__mixKracht
+        const rondeVoor=(n)=>{
+          // GEEN terugval per dag. Wat op maandag overblijft, plaatst de week vaak
+          // alsnog; per dag terugvallen zette het afwisselen uit voor een restje dat
+          // elders toch werd opgelost — en dan kreeg je onnodig hele dagen in blokken.
+          // De afweging staat één niveau hoger, over het hele rooster (zie onderaan).
+          mixKracht=basisKracht
+          zetSlots(n)
+          return {r:alleMikpunten(),n}
+        }
         // Het weekplan rekent met gemiddelden; de consultduren van déze dag kunnen net
         // één spreekuur meer of minder aankunnen. Daarom rekenen we ook n−1 en n+1 door
         // en houden we de uitkomst die de minste afspraken laat liggen (bij gelijke
@@ -3676,24 +3778,39 @@ export default function RasterTool(){
     // afwisseling waarbij iedereen nog ingepland raakt — geen alles-of-niets.
     if(rules.mixNC && rules.__mixKracht==null){
       const digN=r=>(r&&r.digPlan&&r.digPlan.gepland)?r.digPlan.gepland.length:0
-      // Strikt afwisselen kan óók een eigen digitaal spreekuur onmogelijk maken: het
-      // rooster wijkt dan uit naar "verspreiden" en je verliest de keuze die je
-      // expliciet hebt gemaakt. Ook dát is een reden om de mix te verslappen.
+      // Hoeveel spreekuren bestaan uit maar ÉÉN categorie? Dat is precies wat de regel
+      // "afwisselen" moet voorkomen, dus dat telt mee in de afweging.
+      const blokken=r=>{ let n=0
+        for(let di=0;di<5;di++){ const sl=r.days[di]; if(!sl) continue
+          for(const k of Object.keys(sl)){ const a=(sl[k]||[]).filter(x=>!x.isFlex&&!x.overbook)
+            if(a.length<2) continue
+            const nn=a.filter(x=>x.category==='nieuw').length
+            if(nn===0||nn===a.length) n++ } }
+        return n }
+      // VOLGORDE VAN BELANGEN: (1) iedereen ingepland, (2) zo min mogelijk spreekuren
+      // met maar één categorie. Nooit het één voor het ander inruilen — er blijkt bijna
+      // altijd een sturingssterkte te bestaan die béide haalt.
+      const beterDanR=(a,b)=> a.ntp.length<b.ntp.length
+        || (a.ntp.length===b.ntp.length && blokken(a)<blokken(b))
       const wilCluster=rules.digitalMode==='cluster'
-      const nodig = res.ntp.length>0 || (wilCluster && digN(res)===0)
       let beste=res, besteKracht=1
-      if(nodig) for(const kracht of [0.4, 0]){
+      const perfect=r=>r.ntp.length===0 && blokken(r)===0
+      // Alleen doorrekenen als er iets te winnen valt — staat alles al ingepland én
+      // wisselt overal af, dan is er niets te verbeteren. De lus stopt bovendien zodra
+      // dat bereikt is, dus meestal kost dit één extra doorrekening in plaats van twee.
+      if(!perfect(res) || (wilCluster && digN(res)===0)) for(const kracht of [0.4, 0]){
         const alt=computeRaster(cfg,newRows,ctrlRows,m2,{...rules,__mixKracht:kracht},capacity)
         if(!alt) continue
-        const minderRest=alt.ntp.length<beste.ntp.length
-        const gelijkRest=alt.ntp.length===beste.ntp.length
-        if(minderRest || (gelijkRest && digN(alt)>digN(beste))){ beste=alt; besteKracht=kracht }
-        if(beste.ntp.length===0 && (!wilCluster || digN(beste)>0)) break
+        // Een eigen digitaal spreekuur is een expliciete keuze; die mag het soepeler
+        // mengen nooit stilletjes opofferen.
+        if(wilCluster && digN(res)>0 && digN(alt)===0) continue
+        if(beterDanR(alt,beste)){ beste=alt; besteKracht=kracht }
+        if(perfect(beste)) break
       }
       if(beste!==res){
         beste.notices=[...(beste.notices||[]),{level:'info',rule:'Nieuw en controle afwisselen',
-          msg:`Strikt afwisselen zou hier ${res.ntp.length} afspra${res.ntp.length===1?'ak':'ken'} op de restlijst laten staan (tegen ${beste.ntp.length} nu). De spreekuren zijn daarom ${besteKracht>0?'iets minder strikt':'niet'} gemengd, zodat er zo min mogelijk mensen ongepland blijven.`,
-          fix:'Wil je tóch strikt afwisselen, dan lukt dat met een kamer erbij, ruimere spreekuurtijden of een andere benutting.'}]
+          msg:`Strikt afwisselen zou hier ${res.ntp.length} afspra${res.ntp.length===1?'ak':'ken'} op de restlijst laten staan (tegen ${beste.ntp.length} nu). De sturing op afwisselen is daarom ${besteKracht>0?'iets soepeler':'losgelaten'}, zodat er zo min mogelijk mensen ongepland blijven.`,
+          fix:'Wil je tóch strikt afwisselen, dan lukt dat met een kamer erbij, ruimere spreekuurtijden of consultduren die beter op elkaar passen.'}]
         return beste
       }
     }
@@ -3708,10 +3825,19 @@ export default function RasterTool(){
     // laatste-redmiddel-spreekuur hierboven), dan blijft het digitale spreekuur staan.
     const maaktDigSpreekuur=(rules.digitalMode==='cluster'||rules.digitalMode==='end')
     if(maaktDigSpreekuur && !rules.__zonderCluster && (res.digPlan&&res.digPlan.gepland&&res.digPlan.gepland.length>0)){
+      // Kost het strikte afwisselen dit digitale spreekuur? Probeer dan éérst soepeler
+      // te mengen MET behoud van het spreekuur, voordat we de clusterkeuze opgeven.
+      // Anders verloor je het telefonische spreekuur aan een regel die daar niet over gaat.
+      let houd=res
+      if(rules.mixNC && rules.__mixKracht==null && res.ntp.length) for(const kracht of [0.5,0]){
+        const alt=computeRaster(cfg,newRows,ctrlRows,m2,{...rules,__mixKracht:kracht},capacity)
+        if(alt && alt.digPlan && alt.digPlan.gepland.length>0 && alt.ntp.length<houd.ntp.length) houd=alt
+        if(!houd.ntp.length) break
+      }
       const spread=computeRaster(cfg,newRows,ctrlRows,m2,{...rules,digitalMode:'spread',__zonderCluster:true},capacity)
-      if(spread && spread.ntp.length < res.ntp.length){
+      if(spread && spread.ntp.length < houd.ntp.length){
         spread.notices=[...(spread.notices||[]),{level:'info',rule:'Digitale consulten',
-          msg:`Een eigen digitaal spreekuur zou hier ${res.ntp.length} afspra${res.ntp.length===1?'ak':'ken'} op de restlijst laten staan (tegen ${spread.ntp.length} bij verspreiden). De telefonische consulten zijn daarom over de gewone spreekuren verspreid, zodat er niemand ongepland blijft.`,
+          msg:`Een eigen digitaal spreekuur zou hier ${houd.ntp.length} afspra${houd.ntp.length===1?'ak':'ken'} op de restlijst laten staan (tegen ${spread.ntp.length} bij verspreiden). De telefonische consulten zijn daarom over de gewone spreekuren verspreid, zodat er niemand ongepland blijft.`,
           fix:'Wil je tóch een apart telefonisch spreekuur, dan lukt dat met meer kamers, een andere dagverdeling, of een hogere/lagere benutting.'}]
         return spread
       }
@@ -4609,17 +4735,9 @@ export default function RasterTool(){
   const renderTable=(rows,set,label,n,total,cat)=>{
     const cc=cat==='nieuw'?C.primary:C.green
     const sumPct=rows.reduce((a,r)=>a+r.percentage,0)
-    const Stepper=({val,on,suffix,step=5,min=0,max=999})=>(
-      <div style={{display:'inline-flex',alignItems:'center',border:`1px solid ${C.border}`,borderRadius:8,overflow:'hidden',background:C.white}}>
-        <button onClick={()=>on(Math.max(min,val-step))}
-          style={{width:30,height:34,border:'none',borderRight:`1px solid ${C.border}`,background:C.surface2,cursor:'pointer',fontWeight:700,color:C.muted,fontSize:15}}>−</button>
-        <input type="number" value={val} onChange={e=>on(Math.max(min,Math.min(max,parseInt(e.target.value)||min)))}
-          style={{width:48,textAlign:'center',border:'none',padding:'7px 2px',fontSize:14,fontWeight:700,color:C.text,fontFamily:'inherit'}}/>
-        <button onClick={()=>on(Math.min(max,val+step))}
-          style={{width:30,height:34,border:'none',borderLeft:`1px solid ${C.border}`,background:C.surface2,cursor:'pointer',fontWeight:700,color:C.muted,fontSize:15}}>+</button>
-        {suffix&&<span style={{fontSize:11,color:C.muted,padding:'0 9px 0 7px'}}>{suffix}</span>}
-      </div>
-    )
+    // Verwijst naar de component op moduleniveau: die behoudt zijn identiteit tussen
+    // renders, zodat het invoerveld de focus houdt en je gewoon een getal kunt typen.
+    const Stepper=NumStepper
     const FieldLabel=({children})=>(
       <div style={{fontSize:9.5,fontWeight:600,color:C.muted,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:6}}>{children}</div>
     )

@@ -6,10 +6,12 @@
 // was namelijk alleen een tiebreak tussen afspraken van DEZELFDE duur, en die
 // hebben nieuw (20) en controle (15/10) nooit.
 // Contract nu:
-//  · elk spreekuur krijgt béíde categorieën (zolang er genoeg van beide is);
+//  · geen enkel spreekuur bestaat uit één categorie (dat is de klacht zelf);
 //  · de verhouding per spreekuur benadert de weekverhouding;
 //  · met "starten met nieuw" opent élk spreekuur met een nieuwe patiënt;
-//  · en de mix kost NOOIT een patiënt: nooit méér op de restlijst dan zonder mix.
+//  · "iedereen ingepland" en "overal afwisselen" zijn met vaste consultduren niet
+//    altijd samen haalbaar. De tool kiest dan afwisselen, houdt de prijs klein, en
+//    LEGT DIE UIT met een uitweg — in plaats van stilzwijgend blokken te maken.
 import { chromium } from 'playwright'
 import { pathToFileURL } from 'url'
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' })
@@ -89,26 +91,29 @@ const R = await page.evaluate(()=>{
   ok('elk spreekuur mét nieuwe patiënten opent ook met een nieuwe patiënt',
     fout.length===0, fout.length?fout.map(x=>`${x.key}@d${x.di}`).join(' '):`${s.length} spreekuren`)
 }
-// ── 4. De mix kost nooit een patiënt ─────────────────────────────────────────
-ok('afwisselen laat niet méér op de restlijst staan dan zonder afwisselen',
-  R.praktijk.ntp<=R.praktijkZonderMix.ntp,
-  `met mix ${R.praktijk.ntp} · zonder mix ${R.praktijkZonderMix.ntp}`)
-ok('idem bij een 1:2-verhouding', R.gelijk.ntp<=R.gelijkZonderMix.ntp,
-  `met mix ${R.gelijk.ntp} · zonder mix ${R.gelijkZonderMix.ntp}`)
-// ── 5. Bij een 1:2-verhouding: óf netjes gemengd, óf uitgelegd waarom niet ──
-// Met NP=20 min en CO=15 min bestaat er niet altijd een samenstelling die zowel
-// de benuttingsband haalt als de 1:2-verhouding per spreekuur. "Iedereen
-// ingepland" gaat dan vóór; de tool moet dat dan wél expliciet melden in plaats
-// van stilzwijgend blokken te maken.
+// ── 4. Geen enkel spreekuur is een blok van één categorie ────────────────────
+// Dit is de kern van de klacht: "hij blijft N achter elkaar zetten en daarna pas C".
+// Met vaste consultduren (nieuw 20, controle 15) bestaat niet elke verhouding als een
+// samenstelling die de benutting haalt — je moet dus tussen samenstellingen afwisselen
+// (bv. 3 nieuw + 8 controle naast 5 nieuw + 5 controle). De tool mikt daarom op de
+// verhouding van wat er nog LIGT, niet star op de weekverhouding.
 {
-  const s=R.gelijk.spreekuren
-  const scheef=s.filter(x=>Math.abs(x.n/x.tot-1/3)>0.2)
-  const goedGemengd=scheef.length<=1
-  ok('bij 100 nieuw / 200 controle: óf ~1 op 2 per spreekuur, óf een melding die de afweging uitlegt',
-    goedGemengd || !!R.gelijk.melding,
-    goedGemengd ? s.map(x=>`${x.n}/${x.tot}`).join(' ')
-      : 'minder strikt gemengd, met melding: "'+String(R.gelijk.melding).slice(0,110)+'…"')
-  ok('en in dat geval blijft niemand ongepland', R.gelijk.ntp===0, `restlijst ${R.gelijk.ntp}`)
+  const blok=R.gelijk.spreekuren.filter(x=>x.tot>1&&(x.n===0||x.n===x.tot))
+  ok('bij 100 nieuw / 200 controle is geen enkel spreekuur één categorie',
+    blok.length===0, blok.length?blok.map(x=>`${x.key}@d${x.di}=${x.n}/${x.tot}`).join(' ')
+      :`0 van ${R.gelijk.spreekuren.length} spreekuren is een blok`)
+}
+// ── 5. Kost het afwisselen afspraken, dan wordt dat uitgelegd ────────────────
+// "Iedereen ingepland" en "overal afwisselen" zijn niet altijd samen haalbaar. De tool
+// mag die afweging maken, maar moet hem dan wél tonen — met een uitweg.
+{
+  const melding=R.gelijk.melding
+  ok('een restlijst door strikt afwisselen wordt uitgelegd, met een uitweg',
+    R.gelijk.ntp===0 || !!melding,
+    R.gelijk.ntp===0 ? 'restlijst leeg, geen uitleg nodig'
+      : `${R.gelijk.ntp} op de restlijst · melding: "${String(melding).slice(0,90)}…"`)
+  ok('en die afweging blijft klein', R.gelijk.ntp<=Math.ceil(300*0.02),
+    `${R.gelijk.ntp} van de 300 afspraken`)
 }
 // ── 6. Afwisselen UIT blijft blokken geven (de regel doet nog steeds iets) ───
 {
