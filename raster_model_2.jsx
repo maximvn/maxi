@@ -18,7 +18,13 @@ const wbNaarHref=wb=>{
 // window.claude.downloads aan, maar die staat alleen een vaste lijst extensies
 // toe — .xlsx hoort daar niet bij. Vandaar: bij een lokaal geopend bestand een
 // echte Excel, en in de gedeelde pagina dezelfde gegevens als CSV.
-const kanViewerOpslaan=()=>typeof window!=='undefined'&&!!(window.claude&&window.claude.downloads)
+// De viewer geeft de "downloads"-mogelijkheid asynchroon vrij via claude.use('downloads');
+// zolang die niet is opgelost (of ontbreekt) gedraagt de tool zich als los bestand.
+let viewerDownloads=null
+const viewerDownloadsKlaar=(typeof window!=='undefined'&&window.claude&&typeof window.claude.use==='function')
+  ? Promise.resolve().then(()=>window.claude.use('downloads')).then(d=>{ viewerDownloads=d||null; return viewerDownloads }).catch(()=>null)
+  : Promise.resolve(null)
+const kanViewerOpslaan=()=>!!viewerDownloads
 const wbNaarCsv=(wb,blad)=>{
   const ws=wb.Sheets[blad]
   return ws?XLSX.utils.sheet_to_csv(ws,{FS:';'}):''
@@ -34,7 +40,7 @@ const wbNaarEenCsv=wb=>wb.SheetNames.filter(n=>n!=='_rasterdata').map(n=>
 const viewerOpslaanXlsx=async(basisnaam,wb)=>{
   try{
     const data=XLSX.write(wb,{bookType:'xlsx',type:'array'})
-    await window.claude.downloads.save({filename:`${basisnaam}.xlsx`, data})
+    await viewerDownloads.save({filename:`${basisnaam}.xlsx`, data})
     return {ok:true, xlsx:true, msg:`Opgeslagen als ${basisnaam}.xlsx — één Excel met alle tabbladen.`}
   }catch(e){
     const c=e&&e.code
@@ -48,7 +54,7 @@ const viewerOpslaanXlsx=async(basisnaam,wb)=>{
 // aan in deze weergave, dan bieden we exact dezelfde inhoud als .txt aan.
 const viewerOpslaan=async(basisnaam,tekst,ext='csv')=>{
   try{
-    await window.claude.downloads.save({filename:`${basisnaam}.${ext}`, data:tekst})
+    await viewerDownloads.save({filename:`${basisnaam}.${ext}`, data:tekst})
     return {ok:true, msg:`Opgeslagen als ${basisnaam}.${ext}`}
   }catch(e){
     const c=e&&e.code
@@ -896,6 +902,10 @@ export default function RasterTool(){
   const [tplLink,setTplLink]=useState(null)       // voorbeeld-Excel {href, filename}
   const calRef=useRef(null)
   const fileRef=useRef(null)
+  // Zodra de gedeelde pagina de download-mogelijkheid vrijgeeft, opnieuw tekenen zodat
+  // de exportknop de viewer-route toont in plaats van een (daar inerte) downloadlink.
+  const [,dlTick]=useState(0)
+  useEffect(()=>{ let aan=true; viewerDownloadsKlaar.then(()=>{ if(aan) dlTick(t=>t+1) }); return ()=>{aan=false} },[])
 
   useEffect(()=>{
     const l=document.createElement('link')
@@ -915,6 +925,14 @@ export default function RasterTool(){
   const lastSlotRef=useRef(null)
   const liveLocRef=useRef(null)      // current live location of the block being moved
   const [roomNames,setRoomNames]=useState({})   // {roomIndex: 'spreekuur naam'}
+  // Wisselen van planmodus — vanuit de zijbalk én vanuit de balk boven het raster.
+  const wisselModus=v=>{
+    if(v===modus) return
+    setModus(v); setSelDay(0)
+    if(v==='functie'&&!fk.kamers.length) fkLaadPresetRef.current&&fkLaadPresetRef.current('Longfunctie')
+    setActive(1); setVisited(p=>new Set([...p,1]))
+  }
+  const fkLaadPresetRef=useRef(null)
   // Naam van een kolom: in de functiekamer-modus de echte kamer (A1.213), anders "Kamer n" of de eigen naam.
   const fkActieveKamers=(fk.kamers||[]).filter(k=>k.actief!==false)
   const kamerNaam=r=> (modus==='functie'&&fkActieveKamers[r]) ? (fkActieveKamers[r].naam||`Kamer ${r+1}`) : (roomNames[r]??`Kamer ${r+1}`)
@@ -7928,6 +7946,7 @@ export default function RasterTool(){
     setRoomNames({})
     if(!poli.naam) setPoli(p=>({...p,naam:naam}))
   }
+  fkLaadPresetRef.current=fkLaadPreset
   const fkWeekVan=c=>fkWeekAantal(c,fkReg.wekenPerJaar)
   const fkKleur=i=>FK_PALETTE[i%FK_PALETTE.length]
   const fkFileRef=useRef(null)
@@ -8459,12 +8478,7 @@ export default function RasterTool(){
         <div title="Poli = gelijke spreekkamers met nieuwe en controlepatiënten. Functiekamers = kamers met eigen kwalificaties; de tool adviseert per kamer welke dagdelen open moeten."
           style={{display:'flex',flexDirection:'column',gap:3,marginBottom:10,padding:3,borderRadius:11,background:'rgba(255,255,255,0.08)'}}>
           {[{v:'poli',l:'Poli'},{v:'functie',l:'Functiekamers'}].map(o=>(
-            <button key={o.v} data-modus={o.v} onClick={()=>{
-                if(o.v===modus) return
-                setModus(o.v); setSelDay(0)
-                if(o.v==='functie'&&!fk.kamers.length) fkLaadPreset('Longfunctie')
-                setActive(1); setVisited(p=>new Set([...p,1]))
-              }}
+            <button key={o.v} data-modus={o.v} onClick={()=>wisselModus(o.v)}
               style={{padding:'6px 4px',borderRadius:8,border:'none',cursor:'pointer',fontSize:9.5,fontWeight:700,letterSpacing:'0.02em',
                 background:modus===o.v?'#39C6AC':'transparent',color:modus===o.v?'#04120D':'rgba(255,255,255,0.7)'}}>{o.l}</button>
           ))}
@@ -8569,6 +8583,19 @@ export default function RasterTool(){
             <span style={{fontSize:8.5,fontWeight:700,color:C.primary,verticalAlign:'super',marginLeft:2}}>2.2</span>
           </div>
           <span style={{width:1,height:20,background:C.border}}/>
+          {/* Planmodus — ook hier, zodat de functiekamer-modus niet te missen is */}
+          <div title="Poli-spreekuren: gelijke spreekkamers met nieuwe en controlepatiënten. Functiekamers: kamers met eigen kwalificaties — de tool adviseert per kamer welke dagdelen open moeten en met welke onderzoekscodes."
+            style={{display:'flex',padding:2,background:C.surface2,border:`1px solid ${C.border}`,borderRadius:9}}>
+            {[{v:'poli',l:'Poli-spreekuren'},{v:'functie',l:'🔬 Functiekamers'}].map(o=>(
+              <button key={o.v} data-modus-top={o.v} onClick={()=>wisselModus(o.v)}
+                style={{padding:'5px 12px',borderRadius:7,border:'none',cursor:'pointer',fontSize:12,fontWeight:700,
+                  background:modus===o.v?C.white:'transparent',color:modus===o.v?C.primary:C.muted,
+                  boxShadow:modus===o.v?'0 1px 3px rgba(27,39,51,0.10)':'none',transition:'all 0.13s'}}>{o.l}</button>
+            ))}
+          </div>
+          {modus==='functie'&&<span style={{fontSize:11,fontWeight:600,color:C.green,background:'#EAF5EE',border:'1px solid #C9E6D5',borderRadius:8,padding:'4px 9px'}}>
+            {fkActieveKamers.length} kamers · {fk.codes.filter(fkCodeLabel).length} codes{fk.preset?` · voorbeeldset ${fk.preset}`:''}
+          </span>}
           {/* Vrij invulbare poli — typ de naam of kies een specialisme */}
           <input value={poli.naam} onChange={e=>setPoli(p=>({...p,naam:e.target.value}))}
             placeholder="Naam van de poli…" title="Voor welke poli maak je dit raster?"

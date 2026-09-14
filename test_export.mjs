@@ -30,12 +30,14 @@ const log=[], errs=[]
   page.on('pageerror',e=>errs.push('viewer: '+e.message))
   await page.addInitScript(()=>{
     window.__saves=[]
-    window.claude={ downloads:{ save:async req=>{
+    // Het huidige viewer-contract: claude.use('downloads') levert de namespace (asynchroon).
+    const downloads={ save:async req=>{
       const data=typeof req.data==='string'?req.data:'(binair)'
       window.__saves.push({filename:req.filename, lengte:data.length, kop:data.split('\n')[0]})
       if(/\.xlsx$/.test(req.filename)){ const e=new Error('nope'); e.code='rejected_extension'; throw e }
       return {status:'saved'}
-    }}}
+    }}
+    window.claude={ use:async n=>n==='downloads'?downloads:null }
   })
   await page.goto(url); await page.waitForFunction(()=>window.__cr,null,{timeout:15000})
   await page.waitForTimeout(1200)
@@ -85,7 +87,8 @@ const log=[], errs=[]
   const page = await b.newPage()
   page.on('pageerror',e=>errs.push('declined: '+e.message))
   await page.addInitScript(()=>{
-    window.claude={ downloads:{ save:async()=>{ const e=new Error('nee'); e.code='declined'; throw e } } }
+    const downloads={ save:async()=>{ const e=new Error('nee'); e.code='declined'; throw e } }
+    window.claude={ use:async n=>n==='downloads'?downloads:null }
   })
   await page.goto(url); await page.waitForFunction(()=>window.__cr,null,{timeout:15000})
   await page.waitForTimeout(1200)
