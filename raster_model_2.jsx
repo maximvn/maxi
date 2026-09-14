@@ -1,5 +1,7 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from "react"
 import * as XLSX from 'xlsx'
+import {fkBerekenAdvies,FK_PRESETS,fkNieuweKamer,fkNieuweCode,fkStandaardRegels,fkWeekAantal,fkSnap,fkParseCodes,
+  fkControleerKwalificaties,fkCodeLabel,FK_DD_NAAM} from './functiekamers.js'
 
 // Maak een echte, downloadbare URL van een XLSX-workbook. We gebruiken een Blob
 // + object-URL i.p.v. een data:-URI: grote data:-URI's worden door sommige
@@ -136,6 +138,13 @@ const CTRL_PALETTE = [
   {bg:'#D8ECE4',brd:'#A0CCBC',fg:'#225A4D'},{bg:'#DDEEDF',brd:'#AAD0B2',fg:'#2B6647'},
 ]
 const BUF_COLOR = {bg:'#F0F3F6',brd:'#D2DBE3',fg:'#6A7A88'}
+// Functiekamers: onderzoekscodes krijgen elk een eigen, rustige tint (12 kleuren, daarna herhaald).
+const FK_PALETTE=[
+  {bg:'#DDEAF5',brd:'#A4C4DE',fg:'#1C4E72'},{bg:'#DBEBE0',brd:'#A6CBB2',fg:'#296547'},{bg:'#EEE4F7',brd:'#C9B3E3',fg:'#5B3A86'},
+  {bg:'#FBE9D7',brd:'#EBC49A',fg:'#8A4B12'},{bg:'#E2F0F1',brd:'#A9D2D5',fg:'#1F5C61'},{bg:'#F6E5EA',brd:'#E0B4C1',fg:'#8A3652'},
+  {bg:'#EAF0DA',brd:'#C2D39A',fg:'#4C6212'},{bg:'#E4E8F6',brd:'#B4BEE4',fg:'#33418A'},{bg:'#F5EEDD',brd:'#E0CF9E',fg:'#7A5F12'},
+  {bg:'#E0EEF9',brd:'#A7CCE8',fg:'#1D5A8A'},{bg:'#E9E4E0',brd:'#C9BDB2',fg:'#5E4A3A'},{bg:'#DFF1EA',brd:'#A4D3C1',fg:'#1E5F48'},
+]
 // Flexruimte / buffer — licht oranje, duidelijk te onderscheiden van de afspraken
 const FLEX_COLOR = {bg:'#FFF1DE',bg2:'#FFF9F0',brd:'#F0B96B',fg:'#8A5312'}
 const FLEX_STRIPE=(a=6,b=13)=>`repeating-linear-gradient(45deg,${FLEX_COLOR.bg},${FLEX_COLOR.bg} ${a}px,${FLEX_COLOR.bg2} ${a}px,${FLEX_COLOR.bg2} ${b}px)`
@@ -823,6 +832,12 @@ export default function RasterTool(){
   const [m1Section,setM1Section]=useState(1)
   const [cfg,setCfg]=useState({newPat:10,ctrlPat:20,newCodes:2,ctrlCodes:3})
   const [poli,setPoli]=useState({naam:'',specialisme:''})   // vrij invulbare poli-identiteit
+  // ── PLANMODUS ─────────────────────────────────────────────────────────────
+  // 'poli'    = spreekkamers die onderling gelijk zijn (nieuw/controle, de bestaande engine)
+  // 'functie' = functiekamers met kwalificaties: welke onderzoekscode mag in welke kamer,
+  //             hoe vaak per week, en de tool adviseert per kamer welke dagdelen open moeten.
+  const [modus,setModus]=useState('poli')
+  const [fk,setFk]=useState(()=>({kamers:[],codes:[],regels:fkStandaardRegels(),preset:'',badge:null,open:null}))
   // Capaciteitsbasis: 'auto' = groeit vrij; 'vast' = begrensd tot het gekozen aantal kamers
   const [capacity,setCapacity]=useState({mode:'auto',kamers:3})
   const [newRows,setNewRows]=useState([])
@@ -900,6 +915,9 @@ export default function RasterTool(){
   const lastSlotRef=useRef(null)
   const liveLocRef=useRef(null)      // current live location of the block being moved
   const [roomNames,setRoomNames]=useState({})   // {roomIndex: 'spreekuur naam'}
+  // Naam van een kolom: in de functiekamer-modus de echte kamer (A1.213), anders "Kamer n" of de eigen naam.
+  const fkActieveKamers=(fk.kamers||[]).filter(k=>k.actief!==false)
+  const kamerNaam=r=> (modus==='functie'&&fkActieveKamers[r]) ? (fkActieveKamers[r].naam||`Kamer ${r+1}`) : (roomNames[r]??`Kamer ${r+1}`)
   const [addMenu,setAddMenu]=useState(null)      // {room} when the + menu is open
 
   // Start a drag/resize
@@ -3868,9 +3886,12 @@ export default function RasterTool(){
     return res
   },[])
 
-  const doGenerate=useCallback(()=>{
-    setRaster(computeRaster(cfg,newRows,ctrlRows,m2,rules,capacity))
-  },[cfg,newRows,ctrlRows,m2,rules,capacity,computeRaster])
+  // Eén bouwfunctie voor beide modi: de poli-engine of het functiekamer-advies.
+  const bouwRaster=useCallback(()=> modus==='functie'
+    ? fkBerekenAdvies({kamers:fk.kamers,codes:fk.codes,m2,regels:fk.regels})
+    : computeRaster(cfg,newRows,ctrlRows,m2,rules,capacity)
+  ,[modus,fk.kamers,fk.codes,fk.regels,cfg,newRows,ctrlRows,m2,rules,capacity,computeRaster])
+  const doGenerate=useCallback(()=>{ setRaster(bouwRaster()) },[bouwRaster])
 
   // ── DELIBERATE HERBOUW MET ZICHTBARE UITKOMST ──────────────────────────────
   // De live-sync rekent elke wijziging al direct door, maar een subtiele
@@ -3880,8 +3901,15 @@ export default function RasterTool(){
   // aanpassing is verwerkt. Precies zoals de assistent: analyseren → resultaat tonen.
   const [herbouwToast,setHerbouwToast]=useState(null)
   const herbouwNu=useCallback((gaNaarRaster)=>{
-    const r=computeRaster(cfg,newRows,ctrlRows,m2,rules,capacity)
+    const r=bouwRaster()
     setRaster(r)
+    if(r.fk){
+      const sv=r.fk.samenvatting
+      setHerbouwToast({ntp:r.ntp.length,
+        msg:`Rasteradvies opnieuw opgebouwd: ${sv.dagdelenOpen} van ${sv.dagdelenBeschikbaar} dagdelen open over ${r.fk.advies.length} kamers, dekking ${sv.dekking}%. ${r.ntp.length?`${r.ntp.length} onderzoek(en) op de restlijst.`:'Alles ingepland.'}`})
+      if(gaNaarRaster){ setActive(3); setVisited(p=>new Set([...p,3])) }
+      return
+    }
     const DAY_KORT=['ma','di','wo','do','vr']
     const ddK=dd=>dd==='O'?'ochtend':dd==='M'?'middag':'avond'
     let digTekst=''
@@ -3896,7 +3924,7 @@ export default function RasterTool(){
       msg:`Raster opnieuw opgebouwd op basis van je huidige instellingen.${digTekst?' '+digTekst:''} ${r.ntp.length?`${r.ntp.length} afspraak/afspraken op de restlijst.`:'Alles ingepland.'}`
     })
     if(gaNaarRaster){ setActive(3); setVisited(p=>new Set([...p,3])) }
-  },[cfg,newRows,ctrlRows,m2,rules,capacity,computeRaster])
+  },[bouwRaster,rules])
   useEffect(()=>{ if(!herbouwToast) return; const t=setTimeout(()=>setHerbouwToast(null),6000); return ()=>clearTimeout(t) },[herbouwToast])
 
   // ══ SCENARIO-OPTIMISER ══════════════════════════════════════════════════════
@@ -4313,6 +4341,15 @@ export default function RasterTool(){
   // Test-API voor de invariant-suite (test_invariants.mjs): stelt de pure engine
   // bloot zodat elke regel-combinatie headless gevalideerd kan worden.
   useEffect(()=>{ if(typeof window!=='undefined'){ window.__cr=(a,b,c,d,e,f)=>computeRaster(a,b,c,d,e,f) } },[computeRaster])
+  useEffect(()=>{ if(typeof window!=='undefined'){
+    window.__fk=(kamers,codes,m2x,regels)=>fkBerekenAdvies({kamers,codes,m2:m2x||m2,regels})
+    window.__fkPresets=FK_PRESETS
+    window.__setModus=setModus
+    window.__modus=()=>modus
+    window.__fkState=()=>fk
+    window.__setFk=setFk
+    window.__raster=()=>raster
+  } },[modus,fk,m2,raster])
   // Test-API voor de bijstuur-suite (test_bijsturen.mjs): de opdracht-lezer en de
   // huidige stand, zodat een test kan controleren dat er pas iets verandert ná
   // akkoord en dat de belofte uitkomt.
@@ -4367,6 +4404,7 @@ export default function RasterTool(){
       startNieuwWaar:'both',startControleWaar:'both',mixWaar:'both',digitalWaar:'both',flexWaar:'both',
       flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30})
     setSelDay(0); setRaster(null); setDrag(null)
+    setModus('poli'); setFk({kamers:[],codes:[],regels:fkStandaardRegels(),preset:'',badge:null,open:null}); setRoomNames({})
     setShowFullReset(false)
   }
 
@@ -4413,6 +4451,7 @@ export default function RasterTool(){
   const getColor=appt=>{
     if(appt.isFlex) return {bg:FLEX_COLOR.bg,brd:FLEX_COLOR.brd,fg:FLEX_COLOR.fg}
     if(appt.isBuffer) return BUF_COLOR
+    if(appt.category==='onderzoek') return FK_PALETTE[(appt.ci||0)%FK_PALETTE.length]
     if(appt.category==='controle'&&appt.digitaal) return {bg:'#D6EAE3',brd:'#94C5B4',fg:'#1A5544'}
     if(appt.category==='nieuw') return NEW_PALETTE[appt.ci%NEW_PALETTE.length]||NEW_PALETTE[0]
     if(appt.category==='controle') return CTRL_PALETTE[appt.ci%CTRL_PALETTE.length]||CTRL_PALETTE[0]
@@ -4450,6 +4489,8 @@ export default function RasterTool(){
             flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30,...sr,
             ...(sr.kamerVerdeling==='kamer'?{kamerVerdeling:'dagdeel'}:{})})
         }
+        if(state.fk){ setFk({kamers:state.fk.kamers||[],codes:(state.fk.codes||[]).map(c=>fkNieuweCode(c)),regels:{...fkStandaardRegels(),...(state.fk.regels||{})},preset:state.fk.preset||'',badge:{t:`Kamers en codes hersteld uit ${file.name}.`},open:null}) }
+        if(state.modus==='functie'||state.modus==='poli') setModus(state.modus)
         // Note: raster is not stored (too large), it will be auto-generated
         setRaster(null)
         setImportBadge({
@@ -4577,7 +4618,7 @@ export default function RasterTool(){
             continue
           }
           const headRij=rows.length                       // 0-based index van de kolomkoppen
-          rows.push(['Tijd',...kamers.map(r=>'Kamer '+(r+1))])
+          rows.push(['Tijd',...kamers.map(r=>kamerNaam(r))])
           const eersteRij=rows.length
           tijdRijen.forEach(tr=>{
             rows.push([tr.open?hhmm(tr.min):hhmm(tr.min)+'  (pauze)',...kamers.map(()=>'')])
@@ -4680,7 +4721,7 @@ export default function RasterTool(){
         // op dag → tijd → kamer, zodat de lijst leest als het dagprogramma
         regels.sort((x,y)=>(x.di-y.di)||((x.a.start||0)-(y.a.start||0))||(x.r-y.r))
         regels.forEach(({di,r,pfx,a})=>{
-          ar.push([s(DAYS[di]),ddNaamVan(pfx),s('Kamer '+(r+1)),
+          ar.push([s(DAYS[di]),ddNaamVan(pfx),s(kamerNaam(r)),
             a.start!=null?hhmm(a.start):'', a.end!=null?hhmm(a.end):'',
             s(a.code),s(a.description),s(a.duur),
             s(a.category==='nieuw'?'Nieuw':'Controle'),s(a.digitaal?'Ja':'Nee')])
@@ -4710,7 +4751,28 @@ export default function RasterTool(){
         XLSX.utils.book_append_sheet(wb,wsC,'Configuratie')
 
         // Restore data (config only, no raster)
-        const state={version:'4.0',exportDate:new Date().toISOString(),cfg,newRows,ctrlRows,m2,rules}
+        // ── FUNCTIEKAMER-ADVIES — het raster per kamer als leesbare tabel ────
+        if(raster.fk){
+          const fr=[['RASTERADVIES FUNCTIEKAMERS'],['Geëxporteerd: '+today],
+            [`${raster.fk.samenvatting.dagdelenOpen} van ${raster.fk.samenvatting.dagdelenBeschikbaar} dagdelen open · dekking ${raster.fk.samenvatting.dekking}% · ${raster.fk.samenvatting.rest} op de restlijst · ${raster.fk.samenvatting.weken} weken/jaar · benutting ${raster.fk.samenvatting.benutting}%`],[],
+            ['Kamer','Dagdelen/wk','Ochtend','Middag',...(raster.avondOn?['Avond']:[]),'Benutting','Codes ochtend','Codes middag',...(raster.avondOn?['Codes avond']:[])]]
+          raster.fk.advies.forEach(a=>fr.push([a.naam,a.nOpen,a.perDd.O,a.perDd.M,...(raster.avondOn?[a.perDd.A]:[]),a.benutting+'%',
+            a.profiel.O.join(', '),a.profiel.M.join(', '),...(raster.avondOn?[a.profiel.A.join(', ')]:[])]))
+          fr.push([],['WEEKRASTER PER KAMER (codes × aantal per dagdeel)'],['Kamer','Dag','Dagdeel','Bezetting','Codes'])
+          raster.fk.advies.forEach(a=>a.perDag.forEach((d,di)=>['O','M',...(raster.avondOn?['A']:[])].forEach(dd=>{
+            const c=d[dd]; if(!c||!c.beschikbaar) return
+            fr.push([a.naam,DAYS[di],dd==='O'?'Ochtend':dd==='M'?'Middag':'Avond',c.open?c.pct+'%':'dicht',c.open?c.codes.map(x=>`${x.code} ×${x.n}`).join(', '):''])
+          })))
+          fr.push([],['TOEWIJZING CODE → KAMER'],['Code','Omschrijving','×/wk','Duur','Min/wk','Kamer(s)','Waarom'])
+          raster.fk.toewijzing.forEach(t=>fr.push([t.code,t.oms,t.n,t.duur,t.min,t.kamers.map(k=>t.gesplitst?`${k.naam} (${k.n}×)`:k.naam).join(', '),t.reden]))
+          if(raster.fk.geenKamer.length){ fr.push([],['KAMER NOG TE BEPALEN'],['Code','Omschrijving','×/wk','Duur']); raster.fk.geenKamer.forEach(g=>fr.push([g.code,g.oms,g.n,g.duur])) }
+          if(raster.fk.incidenteel.length){ fr.push([],['INCIDENTEEL (op de flexruimte)'],['Code','Omschrijving','×/wk','Duur']); raster.fk.incidenteel.forEach(g=>fr.push([g.code,g.oms,Math.round(g.aw*100)/100,g.duur])) }
+          if((raster.fk.planregels||[]).length){ fr.push([],['REGELS'],['Geborgd door','Regel','Toelichting']); raster.fk.planregels.forEach(r=>fr.push([r.geborgd==='raster'?'Raster':'Planner',r.t,r.uitleg||''])) }
+          const wsF=XLSX.utils.aoa_to_sheet(fr)
+          wsF['!cols']=[{wch:14},{wch:14},{wch:12},{wch:12},{wch:12},{wch:40},{wch:40},{wch:40}]
+          XLSX.utils.book_append_sheet(wb,wsF,'Functiekamer-advies')
+        }
+        const state={version:'4.1',exportDate:new Date().toISOString(),cfg,newRows,ctrlRows,m2,rules,modus,fk:{kamers:fk.kamers,codes:fk.codes,regels:fk.regels,preset:fk.preset}}
         const wsS=XLSX.utils.aoa_to_sheet([[JSON.stringify(state)]])
         XLSX.utils.book_append_sheet(wb,wsS,'_rasterdata')
 
@@ -6093,6 +6155,13 @@ export default function RasterTool(){
   // variant (nieuw/controle × fysiek/telefonisch/video) direct het raster op sleept.
   const PALETTE=(()=>{
     const uit=[]
+    if(modus==='functie'){
+      fk.codes.forEach((r,i)=>{ if(fkCodeLabel(r)) uit.push({
+        key:'fk'+i,label:r.oms||r.code,code:fkCodeLabel(r),category:'onderzoek',ci:i,digitaal:false,modaliteit:'fysiek',
+        duur:fkSnap(r.duur),clr:FK_PALETTE[i%FK_PALETTE.length],fkCi:i}) })
+      if(!uit.length) uit.push({key:'fk',label:'Onderzoek',code:'ONDZ',category:'onderzoek',ci:0,digitaal:false,modaliteit:'fysiek',duur:15,clr:FK_PALETTE[0]})
+      return uit
+    }
     newRows.forEach((r,i)=>{ if(r.afspraakcode||r.omschrijving) uit.push({
       key:'np'+i,label:r.omschrijving||r.afspraakcode||'Nieuw',code:r.afspraakcode||'NP'+(i+1),
       category:'nieuw',ci:i,digitaal:!!r.digitaal,modaliteit:r.modaliteit||(r.digitaal?'telefonisch':'fysiek'),
@@ -6147,7 +6216,7 @@ export default function RasterTool(){
     })).filter(x=>x.n>0)
     const nReal=realAppts.length||1
     // Wekelijkse vráág (uit de codes) los van wat het raster plaatste
-    const demandMin=Math.round(
+    const demandMin=raster.fk?raster.fk.samenvatting.vraagMin:Math.round(
       newRows.reduce((s,r)=>s+cfg.newPat*((r.percentage||0)/100)*(r.duur||15),0)+
       ctrlRows.reduce((s,r)=>s+cfg.ctrlPat*((r.percentage||0)/100)*(r.duur||15),0))
     const capMin=raster.kpi?raster.kpi.week.capacity:0
@@ -6206,7 +6275,7 @@ export default function RasterTool(){
       else adviezen.push({t:'bad',m:`${nNtp} afspraken passen niet. Ook bij 92% benutting zijn er ${compactRooms} parallelle kamers nodig (nu ${beschRooms}). Voeg een kamer/specialist toe óf verlaag de vraag.`})
     }
     if(zwakkeKamer && zwakkeKamer.cnt>0 && zwakkeKamer.cnt<=3){
-      adviezen.push({t:'warn',m:`Kamer ${zwakkeKamer.r+1} draagt over de hele week maar ${zwakkeKamer.cnt} afspraken — die kamer is nauwelijks rendabel. Overweeg 'm te schrappen en de flexblokken in te korten (benutting omhoog); de vraag past dan efficiënter in ${numRooms-1} kamers.`})
+      adviezen.push({t:'warn',m:`${kamerNaam(zwakkeKamer.r)} draagt over de hele week maar ${zwakkeKamer.cnt} afspraken — die kamer is nauwelijks rendabel. Overweeg 'm te schrappen en de flexblokken in te korten (benutting omhoog); de vraag past dan efficiënter in ${numRooms-1} kamers.`})
     }
     if(nNtp>0 && capacity.mode==='vast' && benutVoorKamers(beschRooms)>97) adviezen.push({t:'bad',m:`Kritisch: met ${beschRooms} kamer${beschRooms===1?'':'s'} past het ook met minimale flex niet. Kun je geen kamer bijzetten, verruim dan de spreekuurtijden of verlaag de weekvraag — de pauzes blijven ongemoeid.`})
     if(nNtp===0 && flexMin>avgDuur*8 && m2.benutting<90){
@@ -6354,9 +6423,11 @@ export default function RasterTool(){
             display:'flex',alignItems:'center',gap:6,padding:'0 6px 0 8px',
             position:'sticky',top:0,zIndex:addMenu&&addMenu.room===room?40:15,borderRight:`1px solid ${C.border}`}}>
             <div style={{flex:1,minWidth:0}}>
-              <input value={roomNames[room]??`Kamer ${room+1}`}
-                onChange={e=>setRoomNames(p=>({...p,[room]:e.target.value}))}
-                title="Naam van het spreekuur — klik om te wijzigen"
+              <input value={kamerNaam(room)}
+                onChange={e=>{ const v=e.target.value
+                  if(modus==='functie'&&fkActieveKamers[room]){ const id=fkActieveKamers[room].id; setFk(p=>({...p,kamers:p.kamers.map(k=>k.id===id?{...k,naam:v}:k)})) }
+                  else setRoomNames(p=>({...p,[room]:v})) }}
+                title={modus==='functie'?"Naam van de functiekamer — klik om te wijzigen":"Naam van het spreekuur — klik om te wijzigen"}
                 style={{width:'100%',border:'1px solid transparent',background:'transparent',
                   fontSize:12.5,fontWeight:700,color:C.text,letterSpacing:'-0.01em',fontFamily:'inherit',
                   padding:'3px 5px',borderRadius:5,cursor:'text'}}
@@ -6529,15 +6600,15 @@ export default function RasterTool(){
           </div>
           <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
             {/* De assistent staat hier, bij het raster zelf — niet weggestopt in een menu. */}
-            <button onClick={()=>{setBijstuur(null); setWiz({modus:'bijsturen'})}}
-              title="Zeg in gewone taal wat er anders moet — de tool rekent het door en laat het je eerst zien"
+            <button onClick={()=>{ if(modus==='functie'){ setOpenPanels(p=>({...p,fkAdvies:true})); window.scrollTo({top:0,behavior:'smooth'}); return } setBijstuur(null); setWiz({modus:'bijsturen'})}}
+              title={modus==='functie'?"Het rasteradvies per functiekamer staat bovenaan — in gewone taal, met de toewijzing en de regels":"Zeg in gewone taal wat er anders moet — de tool rekent het door en laat het je eerst zien"}
               style={{display:'flex',alignItems:'center',gap:7,padding:'8px 15px',borderRadius:11,border:'none',
                 cursor:'pointer',fontSize:12.5,fontWeight:700,color:'#fff',
                 background:'linear-gradient(135deg,#1C6EA4,#39C6AC)',boxShadow:'0 4px 14px rgba(28,110,164,0.3)',
                 transition:'transform 0.12s,box-shadow 0.12s'}}
               onMouseEnter={e=>{e.currentTarget.style.transform='translateY(-1px)';e.currentTarget.style.boxShadow='0 6px 18px rgba(28,110,164,0.38)'}}
               onMouseLeave={e=>{e.currentTarget.style.transform='none';e.currentTarget.style.boxShadow='0 4px 14px rgba(28,110,164,0.3)'}}>
-              ✨ Vraag de assistent
+              {modus==='functie'?'✨ Toon het rasteradvies':'✨ Vraag de assistent'}
             </button>
             <div style={{display:'flex',padding:2,background:C.surface2,border:`1px solid ${C.border}`,borderRadius:9}}>
               {[{v:'dag',l:'Dag'},{v:'week',l:'Week'}].map(o=>(
@@ -6576,7 +6647,7 @@ export default function RasterTool(){
         </div>
 
         {/* ── CAPACITEITSPLANNING — kies het aantal kamers + past-advies ── */}
-        {raster.capacity&&(()=>{
+        {modus==='poli'&&raster.capacity&&(()=>{
           const cap=raster.capacity
           const besch=capacity.kamers
           const nodig=cap.needed
@@ -6672,6 +6743,7 @@ export default function RasterTool(){
           </div>
         )}
 
+        {modus==='functie'&&renderFkAdvies()}
         {/* ── BEZETTINGSKAART — de hele week in één beeld ────────────────────────
              Elke cel is één kamer op één dag in één dagdeel, gekleurd naar jouw
              doelbenutting en jouw drempel. Zo zie je in één oogopslag wat je
@@ -6730,14 +6802,15 @@ export default function RasterTool(){
             const pakt=kaartDrag&&kaartDrag.di===di&&kaartDrag.room===room&&kaartDrag.dd===dd
             const hover=kaartOver&&kaartOver.di===di&&kaartOver.room===room&&kaartOver.dd===dd
             const doelvak=kaartDrag&&!pakt
-            const naam=`Kamer ${room+1} · ${DAGS_NL[di]} · ${DD_INFO[dd].l.toLowerCase()}`
+            const naam=`${kamerNaam(room)} · ${DAGS_NL[di]} · ${DD_INFO[dd].l.toLowerCase()}`
             return(
               <button
                 data-kaartcel={`${di}-${room}-${dd}`}
                 onPointerDown={e=>kaartPak(e,di,room,dd,leeg,
-                  `K${room+1} · ${DAY_ABBR[di]} ${DD_INFO[dd].kort}${leeg?'':` · ${c.appts} afspr`}`)}
+                  `${modus==='functie'?kamerNaam(room):'K'+(room+1)} · ${DAY_ABBR[di]} ${DD_INFO[dd].kort}${leeg?'':` · ${c.appts} afspr`}`)}
                 onClick={()=>{
                   if(kaartNetGesleept.current) return
+                  if(modus==='functie'){ setSelDay(di); setViewMode('dag'); return }
                   const t= leeg
                     ? `op ${DAGS_NL[di]} staan geen afspraken, graag ${DAGS_NL[di]} ook inplannen`
                     : `kamer ${room+1} op ${DAGS_NL[di]} staat op ${c.pct}% bezetting, ik wil richting ${doel}%`
@@ -6839,7 +6912,7 @@ export default function RasterTool(){
                   ))}
                   {Array.from({length:nRooms},(_,room)=>(
                     <React.Fragment key={room}>
-                      <div style={{fontSize:10.5,fontWeight:700,color:C.muted,display:'flex',alignItems:'center'}}>K{room+1}</div>
+                      <div title={kamerNaam(room)} style={{fontSize:10.5,fontWeight:700,color:C.muted,display:'flex',alignItems:'center',whiteSpace:'nowrap'}}>{modus==='functie'?kamerNaam(room):`K${room+1}`}</div>
                       {[0,1,2,3,4].map(di=>(
                         <div key={di}>{dds.map(dd=><Cel key={dd} di={di} room={room} dd={dd}/>)}</div>
                       ))}
@@ -6868,7 +6941,7 @@ export default function RasterTool(){
                 {/* wat springt eruit — met een directe opdracht aan de assistent */}
                 {(legeDagen.length>0||onderDrempel.length>0)&&(
                   <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:10}}>
-                    {legeDagen.map(({di,reden})=>(
+                    {modus==='poli'&&legeDagen.map(({di,reden})=>(
                       <button key={'d'+di} title={reden.lang} onClick={()=>{
                           const t=`op ${DAGS_NL[di]} staan geen afspraken, graag ${DAGS_NL[di]} ook inplannen`
                           setWiz({modus:'bijsturen', voorstelTekst:t}); zoekVoorstel(parseOpdracht(t)) }}
@@ -6877,7 +6950,7 @@ export default function RasterTool(){
                         ⚑ {DAY_ABBR[di]} is leeg ({reden.kort}) — laten meedraaien
                       </button>
                     ))}
-                    {onderDrempel.slice(0,3).map((x,i)=>(
+                    {modus==='poli'&&onderDrempel.slice(0,3).map((x,i)=>(
                       <button key={'k'+i} onClick={()=>{
                           const t=`kamer ${x.room+1} op ${DAGS_NL[x.di]} staat op ${x.pct}% bezetting, ik wil richting ${doel}%`
                           setWiz({modus:'bijsturen', voorstelTekst:t}); zoekVoorstel(parseOpdracht(t)) }}
@@ -6897,7 +6970,7 @@ export default function RasterTool(){
              De optimiser rekent hetzelfde door als altijd, maar wat je hier ziet
              is één zin en één knop. Alle tabellen, doelfuncties en afwegingen
              staan onder "geavanceerd" voor wie ze wil zien. */}
-        {(()=>{
+        {modus==='poli'&&(()=>{
           const bezig=!!(optim&&optim.bezig)
           const klaar=optim&&!optim.bezig&&optim.resultaten
           const beste=klaar&&optim.resultaten[0]
@@ -6949,7 +7022,7 @@ export default function RasterTool(){
         })()}
 
         {/* ── GEAVANCEERD — alles wat je niet hoeft te zien om te beginnen ── */}
-        <div style={{marginBottom:12}}>
+        {modus==='poli'&&<div style={{marginBottom:12}}>
           <button onClick={()=>setToonGeav(v=>!v)}
             style={{display:'flex',alignItems:'center',gap:9,width:'100%',padding:'10px 15px',borderRadius:12,
               border:`1px solid ${C.border}`,background:toonGeav?C.white:'transparent',cursor:'pointer',
@@ -6959,8 +7032,8 @@ export default function RasterTool(){
             <span style={{transition:'transform 0.2s',transform:toonGeav?'rotate(90deg)':'none',display:'inline-block'}}>▸</span>
             {toonGeav?'VERBERG DE DETAILS':'MEER DETAILS — ALLE VARIANTEN, WAT DE ENGINE DEED, ANALYSE EN GEHEUGEN'}
           </button>
-        </div>
-        {toonGeav&&(<div style={{animation:'pmUp 0.25s ease both'}}>
+        </div>}
+        {modus==='poli'&&toonGeav&&(<div style={{animation:'pmUp 0.25s ease both'}}>
         {/* ── SCENARIO-OPTIMISER — laat de tool zélf de beste instellingen zoeken ── */}
         <div style={{marginBottom:12,border:`1px solid ${C.border}`,borderRadius:12,overflow:'hidden',background:C.white}}>
           <div style={{display:'flex',alignItems:'center',gap:9,padding:'10px 15px',flexWrap:'wrap',
@@ -7661,6 +7734,7 @@ export default function RasterTool(){
                     <div key={a.id}
                       onMouseDown={e=>startDrag(e,{mode:'move',appt:a,fromDay:a.day,fromSlot:'ntp'})}
                       onTouchStart={e=>startDrag(e,{mode:'move',appt:a,fromDay:a.day,fromSlot:'ntp'})}
+                      title={a._reden?`${a.code}: ${a._reden}`:undefined}
                       style={{fontSize:11,padding:'5px 8px',borderRadius:5,marginBottom:4,cursor:'grab',userSelect:'none',
                         background:clr.bg,color:clr.fg,border:`1px solid ${clr.brd}`,
                         display:'flex',alignItems:'center',gap:4}}>
@@ -7676,19 +7750,29 @@ export default function RasterTool(){
         <div style={{display:'flex',gap:16,marginTop:14,flexWrap:'wrap',alignItems:'center'}}>
           <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'center',flex:1}}>
             <span style={{fontSize:10.5,fontWeight:700,color:C.muted,textTransform:'uppercase'}}>Legenda</span>
+            {modus==='functie'
+              ? <div style={{display:'flex',alignItems:'center',gap:5,fontSize:11.5,color:C.muted}}>
+                  <span style={{width:11,height:11,borderRadius:3,background:FK_PALETTE[0].bg,border:`1px solid ${FK_PALETTE[0].brd}`}}/>Onderzoek (eigen kleur per code)
+                </div>
+              : <>
             <div style={{display:'flex',alignItems:'center',gap:5,fontSize:11.5,color:C.muted}}>
               <span style={{width:11,height:11,borderRadius:3,background:NEW_PALETTE[0].bg,border:`1px solid ${NEW_PALETTE[0].brd}`}}/>Nieuw
             </div>
             <div style={{display:'flex',alignItems:'center',gap:5,fontSize:11.5,color:C.muted}}>
               <span style={{width:11,height:11,borderRadius:3,background:CTRL_PALETTE[0].bg,border:`1px solid ${CTRL_PALETTE[0].brd}`}}/>Controle
             </div>
+                </>}
             <div style={{display:'flex',alignItems:'center',gap:5,fontSize:11.5,color:C.muted}}>
               <span style={{width:11,height:11,borderRadius:3,background:FLEX_STRIPE(2,5),border:`1px dashed ${FLEX_COLOR.brd}`}}/>Flex ({100-m2.benutting}%)
             </div>
           </div>
           <div style={{display:'flex',gap:14,fontSize:12,fontWeight:600}}>
+            {raster.fk
+              ? <span style={{color:C.primary}}>🔬 {allAppts.filter(a=>a.category==='onderzoek').length} onderzoeken · {raster.fk.advies.length} kamers</span>
+              : <>
             <span style={{color:C.primary}}>👥 {nNieuw} nieuw</span>
             <span style={{color:C.green}}>📋 {totC} controle ({pctTel}% tel.)</span>
+                </>}
             <span style={{color:nNtp>0?C.danger:C.green}}>⏳ {nNtp} te plannen</span>
           </div>
         </div>
@@ -7827,7 +7911,505 @@ export default function RasterTool(){
 
 
   // Index 0 = Tijden (renderMod1), index 1 = Gegevens (renderMod0)
-  const mods=[renderMod1,renderMod0,renderMod2,renderMod3]
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ══ FUNCTIEKAMERS — invoer, regels en rasteradvies ═══════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════════
+  const fkKamers=fk.kamers||[], fkCodes=fk.codes||[], fkReg=fk.regels||fkStandaardRegels()
+  const fkZet=fn=>setFk(p=>({...p,...fn(p)}))
+  const fkZetKamer=(i,patch)=>fkZet(p=>({kamers:p.kamers.map((k,j)=>j===i?{...k,...patch}:k)}))
+  const fkZetCode=(i,patch)=>fkZet(p=>({codes:p.codes.map((c,j)=>j===i?{...c,...patch}:c)}))
+  const fkZetRegel=(patch)=>fkZet(p=>({regels:{...(p.regels||fkStandaardRegels()),...patch}}))
+  const fkLaadPreset=naam=>{
+    const pr=FK_PRESETS[naam]; if(!pr) return
+    setFk({kamers:pr.kamers.map(k=>({...k,ddDagen:{O:{...k.ddDagen.O},M:{...k.ddDagen.M},A:{...k.ddDagen.A}}})),
+      codes:pr.codes.map(c=>({...c,kamers:{...c.kamers},dagdelen:{...c.dagdelen},weekdagen:{...c.weekdagen}})),
+      regels:{...fkStandaardRegels(),planregels:pr.planregels.map(r=>({...r}))},preset:naam,
+      badge:{t:`Voorbeeldset "${naam}" geladen — ${pr.kamers.length} kamers, ${pr.codes.length} codes met de aantallen van 2025.`}})
+    setRoomNames({})
+    if(!poli.naam) setPoli(p=>({...p,naam:naam}))
+  }
+  const fkWeekVan=c=>fkWeekAantal(c,fkReg.wekenPerJaar)
+  const fkKleur=i=>FK_PALETTE[i%FK_PALETTE.length]
+  const fkFileRef=useRef(null)
+  const fkImporteer=e=>{
+    const file=e.target.files[0]; if(!file) return
+    e.target.value=''
+    const reader=new FileReader()
+    reader.onload=ev=>{
+      try{
+        const wb=XLSX.read(ev.target.result,{type:'binary'})
+        const ws=wb.Sheets[wb.SheetNames[0]]
+        const aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:''})
+        const codes=fkParseCodes(aoa,fkKamers)
+        const zonder=codes.filter(c=>!Object.keys(c.kamers).length).length
+        fkZet(()=>({codes,badge:{t:`${codes.length} codes ingelezen uit ${file.name}${zonder?` — bij ${zonder} codes is nog geen kamer herkend; vink die hieronder aan`:''}.`}}))
+      }catch(err){ alert('Import mislukt:\n\n'+err.message) }
+    }
+    reader.readAsBinaryString(file)
+  }
+  const fkVoorbeeldExcel=()=>{
+    const wb=XLSX.utils.book_new()
+    const rows=[['Omschrijving','Intern','Aantal','AantalMinuten','Gemiddelde duur','Opmerking'],
+      ...fkCodes.map(c=>[c.oms,c.code,c.aantalJaar||'',c.aantalJaar?Math.round(c.aantalJaar*c.duur):'',c.duur,
+        [Object.keys(c.kamers||{}).filter(id=>c.kamers[id]).map(id=>(fkKamers.find(k=>k.id===id)||{}).naam).filter(Boolean).join(', '),c.opmerking].filter(Boolean).join(' — ')])]
+    const ws=XLSX.utils.aoa_to_sheet(rows.length>1?rows:[...rows,['Spirometrie','SPIR',892,17905,20.1,'A1.253, A1.213, A1.215']])
+    ws['!cols']=[{wch:38},{wch:10},{wch:8},{wch:14},{wch:14},{wch:50}]
+    XLSX.utils.book_append_sheet(wb,ws,'Codes')
+    const a=document.createElement('a'); a.href=wbNaarHref(wb); a.download='functiekamer_codes.xlsx'; a.click()
+  }
+  const FkDagenGrid=({waarde,onChange,klein})=>(
+    <div style={{display:'grid',gridTemplateColumns:'auto repeat(5,1fr)',gap:klein?2:3,alignItems:'center'}}>
+      <span/>
+      {DAY_ABBR.map(d=><span key={d} style={{fontSize:9,fontWeight:700,color:C.muted,textAlign:'center'}}>{d}</span>)}
+      {['O','M','A'].map(dd=>(
+        <React.Fragment key={dd}>
+          <span style={{fontSize:9.5,fontWeight:700,color:C.muted,paddingRight:4}}>{dd==='O'?'Och':dd==='M'?'Mid':'Av'}</span>
+          {WEEKDAY_KEYS.map(k=>{ const aan=!!(waarde[dd]||{})[k]
+            return <button key={k} onClick={()=>onChange(dd,k,!aan)} title={`${DD_INFO[dd==='O'?0:dd==='M'?1:2].l} ${k}`}
+              style={{height:klein?14:18,borderRadius:4,border:`1px solid ${aan?C.primary:C.border}`,cursor:'pointer',
+                background:aan?C.primary:C.white,color:aan?'#fff':C.muted,fontSize:8,fontWeight:700}}>{aan?'✓':''}</button> })}
+        </React.Fragment>
+      ))}
+    </div>
+  )
+  const fkSamenvatting=(()=>{
+    const perKamer={}; fkKamers.forEach(k=>{perKamer[k.id]={codes:0,alleenHier:0,min:0}})
+    let totMin=0, totN=0
+    fkCodes.forEach(c=>{ if(!fkCodeLabel(c)) return
+      const aw=fkWeekVan(c); const min=aw*fkSnap(c.duur); totMin+=min; totN+=aw
+      const ids=Object.keys(c.kamers||{}).filter(id=>c.kamers[id]&&perKamer[id])
+      ids.forEach(id=>{ perKamer[id].codes++; if(ids.length===1){ perKamer[id].alleenHier++; perKamer[id].min+=min } })
+    })
+    return {perKamer,totMin:Math.round(totMin),totN:Math.round(totN*10)/10,
+      zonderKamer:fkCodes.filter(c=>fkCodeLabel(c)&&fkWeekVan(c)>0&&!Object.keys(c.kamers||{}).some(id=>c.kamers[id])).length}
+  })()
+
+  const renderFkInvoer=()=>(
+    <div style={{animation:'fadeIn 0.18s ease'}}>
+      {miniHero('FUNCTIEKAMERS','Kamers en','kwalificaties','Leg vast welke onderzoeken op welke kamer kunnen en hoe vaak elk onderzoek per week voorkomt. De tool stelt daarna per kamer een raster voor.')}
+
+      {/* ── STARTPUNT ── */}
+      <Card style={{marginBottom:16}}>
+        <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:12,flexWrap:'wrap'}}>
+          <div>
+            <H3 style={{margin:'0 0 4px'}}>Startpunt</H3>
+            <p style={{fontSize:11.5,color:C.muted,margin:0,lineHeight:1.55}}>
+              Laad de voorbeeldset uit het wensendocument, lees je eigen codelijst in (Excel/CSV met de kolommen
+              omschrijving · intern · aantal · aantalMinuten · gemiddelde duur · opmerking) of begin leeg.
+            </p>
+          </div>
+        </div>
+        <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:12}}>
+          {Object.keys(FK_PRESETS).map(n=>(
+            <Btn key={n} small variant={fk.preset===n?'primary':'secondary'}
+              onClick={()=>{ if(!fkCodes.length||window.confirm(`Voorbeeldset "${n}" laden?\n\nDit vervangt de huidige kamers en codes.`)) fkLaadPreset(n) }}>
+              ⤓ {n} (voorbeeldset 2025)
+            </Btn>
+          ))}
+          <Btn small variant="secondary" onClick={()=>fkFileRef.current&&fkFileRef.current.click()}>📥 Codelijst importeren</Btn>
+          <input ref={fkFileRef} type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}} onChange={fkImporteer}/>
+          <Btn small variant="secondary" onClick={fkVoorbeeldExcel} title="Download de huidige codelijst als Excel — ook bruikbaar als invulsjabloon">⤓ Sjabloon / huidige lijst</Btn>
+          <Btn small variant="secondary" onClick={()=>{ if(!fkCodes.length||window.confirm('Alle kamers en codes wissen?')) setFk({kamers:[fkNieuweKamer('Kamer 1')],codes:[fkNieuweCode()],regels:fkStandaardRegels(),preset:'',badge:null}) }}>○ Leeg beginnen</Btn>
+        </div>
+        {fk.badge&&(
+          <div style={{marginTop:12,padding:'8px 12px',borderRadius:9,background:'#EAF5EE',border:'1px solid #C9E6D5',fontSize:11.5,color:C.green,fontWeight:600}}>✓ {fk.badge.t}</div>
+        )}
+      </Card>
+
+      {/* ── KAMERS ── */}
+      <Card style={{marginBottom:16}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
+          <div>
+            <H3 style={{margin:'0 0 3px'}}>Kamers — {fkKamers.length} {fkKamers.length===1?'kamer':'kamers'}</H3>
+            <p style={{fontSize:11.5,color:C.muted,margin:0,lineHeight:1.5}}>Elke kamer heeft een naam, een omschrijving van wat er kan, en de dagdelen waarop de kamer beschikbaar is. De kwalificaties zelf (welke code waar mag) vink je aan bij de codes.</p>
+          </div>
+          <Btn small onClick={()=>fkZet(p=>({kamers:[...p.kamers,fkNieuweKamer(`Kamer ${p.kamers.length+1}`)]}))}>+ Kamer</Btn>
+        </div>
+        <div style={{display:'flex',flexDirection:'column',gap:10}}>
+          {fkKamers.map((k,i)=>{ const sv=fkSamenvatting.perKamer[k.id]||{codes:0,alleenHier:0,min:0}
+            return(
+            <div key={k.id} style={{border:`1px solid ${C.border}`,borderRadius:14,padding:'12px 14px',background:k.actief===false?C.surface2:C.white,opacity:k.actief===false?0.7:1}}>
+              <div style={{display:'flex',gap:10,alignItems:'center',marginBottom:8}}>
+                <span style={{width:12,height:12,borderRadius:4,background:fkKleur(i).brd,flexShrink:0}}/>
+                <input value={k.naam} onChange={e=>fkZetKamer(i,{naam:e.target.value})} placeholder="Kamernummer, bv. A1.213"
+                  style={{width:120,border:`1px solid ${C.border}`,borderRadius:8,padding:'7px 10px',fontSize:13,fontWeight:700,fontFamily:'inherit',color:C.text}}/>
+                <input value={k.oms} onChange={e=>fkZetKamer(i,{oms:e.target.value})} placeholder="Wat kan er in deze kamer? (apparatuur, onderzoeken)"
+                  style={{flex:1,border:`1px solid ${C.border}`,borderRadius:8,padding:'7px 10px',fontSize:12,fontFamily:'inherit',color:C.text}}/>
+                <label title="Kamer tijdelijk buiten gebruik — de codes blijven staan, maar er wordt niets in gepland"
+                  style={{display:'flex',alignItems:'center',gap:5,fontSize:11,fontWeight:600,color:C.muted,cursor:'pointer',whiteSpace:'nowrap'}}>
+                  <input type="checkbox" checked={k.actief!==false} onChange={e=>fkZetKamer(i,{actief:e.target.checked})}/> in gebruik
+                </label>
+                <button onClick={()=>{ if(window.confirm(`Kamer ${k.naam||i+1} verwijderen?`)) fkZet(p=>({kamers:p.kamers.filter((_,j)=>j!==i)})) }} title="Kamer verwijderen"
+                  style={{width:28,height:28,borderRadius:8,border:`1px solid ${C.border}`,background:C.white,color:C.muted,cursor:'pointer',fontSize:14}}>×</button>
+              </div>
+              <div style={{display:'flex',gap:16,alignItems:'flex-start',flexWrap:'wrap'}}>
+                <div style={{flex:'0 0 auto'}}>
+                  <div style={{fontSize:9.5,fontWeight:600,color:C.muted,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:5}}>Beschikbaar</div>
+                  <FkDagenGrid klein waarde={k.ddDagen||{}} onChange={(dd,dag,aan)=>fkZetKamer(i,{ddDagen:{...(k.ddDagen||{}),[dd]:{...((k.ddDagen||{})[dd]||{}),[dag]:aan}}})}/>
+                </div>
+                <div style={{fontSize:11.5,color:C.muted,lineHeight:1.6,paddingTop:14}}>
+                  <b style={{color:C.text}}>{sv.codes}</b> codes gekwalificeerd · <b style={{color:C.text}}>{sv.alleenHier}</b> kunnen alléén hier
+                  {sv.min>0&&<> · vaste vraag <b style={{color:C.text}}>{Math.round(sv.min/60*10)/10} u/wk</b></>}
+                </div>
+              </div>
+            </div>
+          )})}
+          {!fkKamers.length&&<div style={{fontSize:12,color:C.muted,textAlign:'center',padding:'14px 0'}}>Nog geen kamers — laad de voorbeeldset of voeg een kamer toe.</div>}
+        </div>
+      </Card>
+
+      {/* ── CODES ── */}
+      <Card style={{marginBottom:16}}>
+        <div style={{display:'flex',alignItems:'flex-end',justifyContent:'space-between',marginBottom:10,gap:10,flexWrap:'wrap'}}>
+          <div>
+            <H3 style={{margin:'0 0 3px'}}>Onderzoekscodes — {fkCodes.filter(fkCodeLabel).length} codes</H3>
+            <p style={{fontSize:11.5,color:C.muted,margin:0,lineHeight:1.5}}>
+              Per code: hoe vaak per jaar (of per week), de duur, en in welke kamers het onderzoek kan.
+              Samen <b style={{color:C.text}}>{fkSamenvatting.totN}</b> onderzoeken en <b style={{color:C.text}}>{Math.round(fkSamenvatting.totMin/60*10)/10} uur</b> per week.
+              {fkSamenvatting.zonderKamer>0&&<span style={{color:C.danger,fontWeight:600}}> {fkSamenvatting.zonderKamer} code(s) zonder kamer.</span>}
+            </p>
+          </div>
+          <div style={{display:'flex',alignItems:'center',gap:8}}>
+            <span style={{fontSize:10.5,fontWeight:600,color:C.muted}}>Weken per jaar</span>
+            <NumStepper val={fkReg.wekenPerJaar} on={v=>fkZetRegel({wekenPerJaar:v})} step={1} min={30} max={52} breed={40}/>
+            <Btn small onClick={()=>fkZet(p=>({codes:[...p.codes,fkNieuweCode()]}))}>+ Code</Btn>
+          </div>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'86px 1fr 62px 58px 62px 54px',gap:6,padding:'0 6px 6px',fontSize:9.5,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.05em'}}>
+          <span>Code</span><span>Omschrijving</span><span>Per jaar</span><span>Per wk</span><span>Duur</span><span>Min/wk</span>
+        </div>
+        <div style={{display:'flex',flexDirection:'column',gap:6}}>
+          {fkCodes.map((c,i)=>{ const aw=fkWeekVan(c); const open=!!fk.open&&fk.open===i
+            const ids=Object.keys(c.kamers||{}).filter(id=>c.kamers[id]&&fkKamers.some(k=>k.id===id))
+            const geenKamer=aw>0&&!ids.length&&fkCodeLabel(c)
+            return(
+            <div key={i} style={{border:`1px solid ${geenKamer?'#F1CFC8':C.border}`,borderRadius:10,padding:'7px 6px',background:geenKamer?'#FDF7F5':C.white}}>
+              <div style={{display:'grid',gridTemplateColumns:'86px 1fr 62px 58px 62px 54px',gap:6,alignItems:'center'}}>
+                <input value={c.code} onChange={e=>fkZetCode(i,{code:e.target.value})} placeholder="Code"
+                  style={{border:`1px solid ${C.border}`,borderRadius:7,padding:'6px 8px',fontSize:12,fontWeight:700,fontFamily:'inherit',color:fkKleur(i).fg,background:fkKleur(i).bg,minWidth:0}}/>
+                <input value={c.oms} onChange={e=>fkZetCode(i,{oms:e.target.value})} placeholder="Omschrijving"
+                  style={{border:`1px solid ${C.border}`,borderRadius:7,padding:'6px 8px',fontSize:12,fontFamily:'inherit',color:C.text,minWidth:0}}/>
+                <input type="number" value={c.aantalJaar||''} onChange={e=>fkZetCode(i,{aantalJaar:+e.target.value||0,bron:'jaar'})} placeholder="0" title="Aantal per jaar (bv. uit 2025)"
+                  style={{border:`1px solid ${c.bron!=='week'?C.primary:C.border}`,borderRadius:7,padding:'6px 6px',fontSize:12,fontFamily:'inherit',color:C.text,minWidth:0,textAlign:'right'}}/>
+                <input type="number" step="0.5" value={c.bron==='week'?(c.aantalWeek||''):(Math.round(aw*10)/10||'')} onChange={e=>fkZetCode(i,{aantalWeek:+e.target.value||0,bron:'week'})} placeholder="0" title="Aantal per week — typ hier om het jaartotaal te overrulen"
+                  style={{border:`1px solid ${c.bron==='week'?C.primary:C.border}`,borderRadius:7,padding:'6px 6px',fontSize:12,fontFamily:'inherit',color:c.bron==='week'?C.text:C.muted,minWidth:0,textAlign:'right'}}/>
+                <input type="number" step="5" value={c.duur} onChange={e=>fkZetCode(i,{duur:+e.target.value||5})} title="Duur in minuten (raster van 5 min)"
+                  style={{border:`1px solid ${C.border}`,borderRadius:7,padding:'6px 6px',fontSize:12,fontFamily:'inherit',color:C.text,minWidth:0,textAlign:'right'}}/>
+                <span style={{fontSize:11.5,fontWeight:700,color:C.text,textAlign:'right',fontVariantNumeric:'tabular-nums'}}>{Math.round(aw*fkSnap(c.duur))}</span>
+              </div>
+              <div style={{display:'flex',alignItems:'center',gap:6,marginTop:6,flexWrap:'wrap'}}>
+                <span style={{fontSize:9.5,fontWeight:700,color:C.muted,marginRight:2}}>KAMERS</span>
+                {fkKamers.map((k,ki)=>{ const aan=!!(c.kamers||{})[k.id]
+                  return <button key={k.id} onClick={()=>fkZetCode(i,{kamers:{...(c.kamers||{}),[k.id]:!aan}})} title={`${k.naam}: ${aan?'gekwalificeerd — klik om uit te zetten':'niet gekwalificeerd — klik om aan te zetten'}`}
+                    style={{padding:'3px 9px',borderRadius:20,border:`1px solid ${aan?fkKleur(ki).brd:C.border}`,cursor:'pointer',fontSize:10.5,fontWeight:700,
+                      background:aan?fkKleur(ki).bg:C.white,color:aan?fkKleur(ki).fg:C.muted}}>{aan?'✓ ':''}{k.naam||`Kamer ${ki+1}`}</button> })}
+                {geenKamer&&<span style={{fontSize:10.5,color:C.danger,fontWeight:600}}>← nog geen kamer</span>}
+                <span style={{flex:1}}/>
+                <span style={{fontSize:9.5,fontWeight:700,color:C.muted}}>DAGDEEL</span>
+                {['O','M','A'].map(dd=>{ const aan=(c.dagdelen||{})[dd]!==false&&(dd!=='A'||!!(c.dagdelen||{}).A)
+                  return <button key={dd} onClick={()=>fkZetCode(i,{dagdelen:{O:(c.dagdelen||{}).O!==false,M:(c.dagdelen||{}).M!==false,A:!!(c.dagdelen||{}).A,[dd]:!aan}})}
+                    style={{padding:'3px 8px',borderRadius:6,border:`1px solid ${aan?C.primary:C.border}`,cursor:'pointer',fontSize:10,fontWeight:700,background:aan?C.blueAccent:C.white,color:aan?C.primary:C.muted}}>
+                    {dd==='O'?'Och':dd==='M'?'Mid':'Av'}</button> })}
+                <button onClick={()=>fkZet(p=>({open:open?null:i}))} title="Meer opties: weekdagen, apparaat, koppeling, voorkeurskamer, spreiden, opmerking"
+                  style={{padding:'3px 8px',borderRadius:6,border:`1px solid ${C.border}`,cursor:'pointer',fontSize:10,fontWeight:700,background:open?C.surface2:C.white,color:C.muted}}>{open?'▾ minder':'▸ meer'}</button>
+                <button onClick={()=>fkZet(p=>({codes:p.codes.filter((_,j)=>j!==i),open:null}))} title="Code verwijderen"
+                  style={{width:24,height:24,borderRadius:6,border:`1px solid ${C.border}`,background:C.white,color:C.muted,cursor:'pointer',fontSize:13}}>×</button>
+              </div>
+              {(c.opmerking&&!open)&&<div style={{fontSize:10.5,color:C.muted,marginTop:5,fontStyle:'italic'}}>{c.opmerking}</div>}
+              {open&&(
+                <div style={{marginTop:8,paddingTop:8,borderTop:`1px dashed ${C.border}`,display:'flex',gap:14,flexWrap:'wrap',alignItems:'flex-start'}}>
+                  <div>
+                    <div style={{fontSize:9.5,fontWeight:600,color:C.muted,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:4}}>Weekdagen</div>
+                    <div style={{display:'flex',gap:3}}>
+                      {DAY_ABBR.map(d=>{ const aan=(c.weekdagen||{})[d]!==false
+                        return <button key={d} onClick={()=>fkZetCode(i,{weekdagen:{...{MA:true,DI:true,WO:true,DO:true,VR:true},...(c.weekdagen||{}),[d]:!aan}})}
+                          style={{width:30,height:22,borderRadius:5,border:`1px solid ${aan?C.primary:C.border}`,cursor:'pointer',fontSize:9.5,fontWeight:700,background:aan?C.primary:C.white,color:aan?'#fff':C.muted}}>{d}</button> })}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{fontSize:9.5,fontWeight:600,color:C.muted,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:4}}>Apparaat (één toestel)</div>
+                    <input value={c.apparaat||''} onChange={e=>fkZetCode(i,{apparaat:e.target.value})} placeholder="bv. NO-meter" title="Codes met hetzelfde apparaat gaan naar dezelfde kamer en staan nooit gelijktijdig"
+                      style={{width:110,border:`1px solid ${C.border}`,borderRadius:7,padding:'5px 8px',fontSize:11.5,fontFamily:'inherit'}}/>
+                  </div>
+                  <div>
+                    <div style={{fontSize:9.5,fontWeight:600,color:C.muted,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:4}}>Altijd samen met (koppel)</div>
+                    <input value={c.koppel||''} onChange={e=>fkZetCode(i,{koppel:e.target.value})} placeholder="bv. B1+B2" title="Codes met dezelfde koppelnaam worden als één blok gepland"
+                      style={{width:100,border:`1px solid ${C.border}`,borderRadius:7,padding:'5px 8px',fontSize:11.5,fontFamily:'inherit'}}/>
+                  </div>
+                  <div>
+                    <div style={{fontSize:9.5,fontWeight:600,color:C.muted,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:4}}>Voorkeurskamer</div>
+                    <select value={c.voorkeur||''} onChange={e=>fkZetCode(i,{voorkeur:e.target.value})}
+                      style={{border:`1px solid ${C.border}`,borderRadius:7,padding:'5px 8px',fontSize:11.5,fontFamily:'inherit',background:C.white}}>
+                      <option value="">geen voorkeur</option>
+                      {fkKamers.filter(k=>(c.kamers||{})[k.id]).map(k=><option key={k.id} value={k.id}>{k.naam}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <div style={{fontSize:9.5,fontWeight:600,color:C.muted,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:4}}>Over de week</div>
+                    <select value={c.spreiden||'auto'} onChange={e=>fkZetCode(i,{spreiden:e.target.value})}
+                      style={{border:`1px solid ${C.border}`,borderRadius:7,padding:'5px 8px',fontSize:11.5,fontFamily:'inherit',background:C.white}}>
+                      <option value="auto">automatisch (vanaf {fkReg.spreidVanaf}×/wk spreiden)</option>
+                      <option value="ja">spreiden over de dagen</option>
+                      <option value="nee">clusteren in zo min mogelijk dagdelen</option>
+                    </select>
+                  </div>
+                  <div style={{flex:'1 1 220px'}}>
+                    <div style={{fontSize:9.5,fontWeight:600,color:C.muted,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:4}}>Opmerking</div>
+                    <input value={c.opmerking||''} onChange={e=>fkZetCode(i,{opmerking:e.target.value})} placeholder="bv. voorkeur, voorwaarden, wie het doet"
+                      style={{width:'100%',border:`1px solid ${C.border}`,borderRadius:7,padding:'5px 8px',fontSize:11.5,fontFamily:'inherit',boxSizing:'border-box'}}/>
+                  </div>
+                </div>
+              )}
+            </div>
+          )})}
+          {!fkCodes.length&&<div style={{fontSize:12,color:C.muted,textAlign:'center',padding:'14px 0'}}>Nog geen codes — laad de voorbeeldset, importeer een lijst of voeg een code toe.</div>}
+        </div>
+      </Card>
+    </div>
+  )
+
+  const renderFkRegels=()=>{
+    const met=f=>fkCodes.filter(c=>fkCodeLabel(c)&&f(c)).map(c=>c.code)
+    const apparaten=[...new Set(fkCodes.map(c=>(c.apparaat||'').trim()).filter(Boolean))]
+    const koppels=[...new Set(fkCodes.map(c=>(c.koppel||'').trim()).filter(Boolean))]
+    const RadioRij=({v,l,d,huidig,zet})=>(
+      <label style={{display:'flex',gap:10,alignItems:'flex-start',padding:'9px 12px',borderRadius:10,cursor:'pointer',
+        border:`1px solid ${huidig===v?C.primary:C.border}`,background:huidig===v?C.blueAccent:C.white,marginBottom:6}}>
+        <input type="radio" checked={huidig===v} onChange={()=>zet(v)} style={{marginTop:2}}/>
+        <span><b style={{fontSize:12.5,color:C.text}}>{l}</b><br/><span style={{fontSize:11.5,color:C.muted,lineHeight:1.5}}>{d}</span></span>
+      </label>
+    )
+    return(
+      <div style={{animation:'fadeIn 0.18s ease'}}>
+        {miniHero('PLANREGELS','Regels voor','functiekamers','Hoe vult de tool de dagdelen per kamer, en welke regels blijven mensenwerk van de planner?')}
+
+        <Card style={{marginBottom:16}}>
+          <H3 style={{margin:'0 0 4px'}}>Dagdelen vullen</H3>
+          <p style={{fontSize:11.5,color:C.muted,margin:'0 0 10px',lineHeight:1.55}}>
+            De doelbenutting ({m2.benutting}%) en de dagdeeltijden staan bij <b>Tijden</b>. Een dagdeel wordt tot die benutting
+            (±2,5 procentpunt) gevuld; de rest is flexruimte voor incidentele onderzoeken en uitloop.
+          </p>
+          <RadioRij v="heleDagen" l="Hele dagen, gespreid over de week" huidig={fkReg.vulwijze} zet={v=>fkZetRegel({vulwijze:v})}
+            d="Een kamer draait bij voorkeur ochtend én middag op dezelfde dag; die dagen liggen verspreid over de week en elke kamer begint op een andere dag, zodat niet alle kamers dezelfde dag dicht zijn."/>
+          <RadioRij v="spreiden" l="Eerst alle ochtenden, dan de middagen" huidig={fkReg.vulwijze} zet={v=>fkZetRegel({vulwijze:v})}
+            d="Elke kamer is zoveel mogelijk dagen open, desnoods alleen 's ochtends. Handig als patiënten elke dag terecht moeten kunnen."/>
+          <div style={{display:'flex',gap:18,flexWrap:'wrap',marginTop:12}}>
+            <label style={{display:'flex',gap:8,alignItems:'flex-start',cursor:'pointer',flex:'1 1 240px'}}>
+              <input type="checkbox" checked={fkReg.verdichten!==false} onChange={e=>fkZetRegel({verdichten:e.target.checked})} style={{marginTop:3}}/>
+              <span><b style={{fontSize:12.5}}>Dagdelen zo vol mogelijk</b><br/><span style={{fontSize:11.5,color:C.muted,lineHeight:1.5}}>Een dagdeel gaat dicht zodra alles erin elders past. Uit = liever méér dagdelen op een lagere bezetting.</span></span>
+            </label>
+            <div>
+              <div style={{fontSize:9.5,fontWeight:600,color:C.muted,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:5}}>Minimumbezetting</div>
+              <NumStepper val={fkReg.minBezetting} on={v=>fkZetRegel({minBezetting:v})} suffix="%" step={5} min={0} max={m2.benutting}/>
+              <div style={{fontSize:10.5,color:C.muted,marginTop:4,maxWidth:200,lineHeight:1.45}}>Een dunner dagdeel gaat alleen open als het werk nergens anders past — en wordt dan bijgevuld uit vollere dagdelen.</div>
+            </div>
+            <div>
+              <div style={{fontSize:9.5,fontWeight:600,color:C.muted,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:5}}>Spreiden vanaf</div>
+              <NumStepper val={fkReg.spreidVanaf} on={v=>fkZetRegel({spreidVanaf:v})} suffix="× / wk" step={1} min={1} max={50}/>
+              <div style={{fontSize:10.5,color:C.muted,marginTop:4,maxWidth:200,lineHeight:1.45}}>Codes die vaker voorkomen worden over de dagen gespreid; zeldzamere codes worden geclusterd in zo min mogelijk dagdelen.</div>
+            </div>
+          </div>
+        </Card>
+
+        <Card style={{marginBottom:16}}>
+          <H3 style={{margin:'0 0 4px'}}>Bijzondere regels — wat de engine zelf bewaakt</H3>
+          <p style={{fontSize:11.5,color:C.muted,margin:'0 0 10px',lineHeight:1.55}}>Deze regels stel je per code in bij <b>Gegevens</b> (▸ meer). Zo staat het er nu:</p>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:10}}>
+            {[
+              {k:'Alleen bepaalde dagdelen',v:met(c=>(c.dagdelen||{}).O===false||(c.dagdelen||{}).M===false),d:'Deze codes mogen niet in elk dagdeel (bv. uitlezen alleen \'s ochtends).'},
+              {k:'Eén gekwalificeerde kamer',v:met(c=>Object.keys(c.kamers||{}).filter(id=>c.kamers[id]).length===1),d:'Kunnen maar in één kamer en gaan daar altijd heen.'},
+              {k:'Apparaat-gebonden',v:apparaten.map(a=>`${a}: ${met(c=>(c.apparaat||'').trim()===a).join(', ')}`),d:'Eén toestel → alle codes ermee in één kamer, nooit gelijktijdig.'},
+              {k:'Gekoppeld (één blok)',v:koppels.map(g=>`${g}: ${met(c=>(c.koppel||'').trim()===g).join(' + ')}`),d:'Worden altijd samen, aansluitend, in dezelfde kamer gepland.'},
+              {k:'Voorkeurskamer',v:met(c=>c.voorkeur),d:'Gaan naar hun voorkeurskamer zolang die ruimte heeft.'},
+            ].map(x=>(
+              <div key={x.k} style={{border:`1px solid ${C.border}`,borderRadius:10,padding:'9px 12px',background:C.surface2}}>
+                <div style={{fontSize:11.5,fontWeight:700,color:C.text}}>{x.k} <span style={{color:C.muted,fontWeight:600}}>· {x.v.length}</span></div>
+                <div style={{fontSize:10.5,color:C.muted,lineHeight:1.45,margin:'2px 0 4px'}}>{x.d}</div>
+                <div style={{fontSize:11,color:C.primary,fontWeight:600,lineHeight:1.5}}>{x.v.length?x.v.join(x.v.some(s=>s.includes(':'))?' · ':', '):'—'}</div>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        <Card style={{marginBottom:16}}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}}>
+            <H3 style={{margin:0}}>Regels voor de planner</H3>
+            <Btn small onClick={()=>fkZetRegel({planregels:[...(fkReg.planregels||[]),{t:'',geborgd:'planner',uitleg:''}]})}>+ Regel</Btn>
+          </div>
+          <p style={{fontSize:11.5,color:C.muted,margin:'0 0 10px',lineHeight:1.55}}>
+            Regels over één patiënt (welke onderzoeken niet op dezelfde dag, niet in verschillende kamers) kent het raster niet — dat blijft
+            mensenwerk bij het boeken. Ze staan hier zodat ze bij het raster en in de export meegaan. Per regel staat of het raster hem
+            <b> borgt</b> of dat hij <b>mensenwerk</b> is.
+          </p>
+          <div style={{display:'flex',flexDirection:'column',gap:6}}>
+            {(fkReg.planregels||[]).map((r,i)=>(
+              <div key={i} style={{display:'flex',gap:8,alignItems:'flex-start',border:`1px solid ${C.border}`,borderRadius:10,padding:'8px 10px'}}>
+                <select value={r.geborgd||'planner'} onChange={e=>fkZetRegel({planregels:fkReg.planregels.map((x,j)=>j===i?{...x,geborgd:e.target.value}:x)})}
+                  style={{border:`1px solid ${C.border}`,borderRadius:7,padding:'5px 6px',fontSize:11,fontFamily:'inherit',background:r.geborgd==='raster'?'#EAF5EE':'#FDF6E3',color:r.geborgd==='raster'?C.green:'#8A6A12',fontWeight:700}}>
+                  <option value="raster">✓ raster borgt</option><option value="planner">☐ mensenwerk</option>
+                </select>
+                <div style={{flex:1}}>
+                  <input value={r.t} onChange={e=>fkZetRegel({planregels:fkReg.planregels.map((x,j)=>j===i?{...x,t:e.target.value}:x)})} placeholder="De regel in één zin"
+                    style={{width:'100%',boxSizing:'border-box',border:`1px solid ${C.border}`,borderRadius:7,padding:'6px 8px',fontSize:12,fontFamily:'inherit',fontWeight:600}}/>
+                  <input value={r.uitleg||''} onChange={e=>fkZetRegel({planregels:fkReg.planregels.map((x,j)=>j===i?{...x,uitleg:e.target.value}:x)})} placeholder="Toelichting (optioneel)"
+                    style={{width:'100%',boxSizing:'border-box',border:`1px solid ${C.border}`,borderRadius:7,padding:'5px 8px',fontSize:11,fontFamily:'inherit',marginTop:4,color:C.muted}}/>
+                </div>
+                <button onClick={()=>fkZetRegel({planregels:fkReg.planregels.filter((_,j)=>j!==i)})} title="Regel verwijderen"
+                  style={{width:26,height:26,borderRadius:7,border:`1px solid ${C.border}`,background:C.white,color:C.muted,cursor:'pointer'}}>×</button>
+              </div>
+            ))}
+            {!(fkReg.planregels||[]).length&&<div style={{fontSize:12,color:C.muted,textAlign:'center',padding:'10px 0'}}>Nog geen regels — de voorbeeldset brengt er vijf mee.</div>}
+          </div>
+        </Card>
+      </div>
+    )
+  }
+
+  // ── RASTERADVIES — de uitkomst per kamer, in gewone taal ──────────────────
+  const renderFkAdvies=()=>{
+    if(!raster||!raster.fk) return null
+    const {advies,samenvatting:sv,toewijzing,incidenteel,geenKamer,planregels}=raster.fk
+    const fouten=fkControleerKwalificaties(raster,fkKamers,fkCodes)
+    const dds=['O','M',...(raster.avondOn?['A']:[])]
+    const zinVoor=a=>{
+      const dagen=a.dagen.map(d=>`${DAY_ABBR[d.di].toLowerCase()}${d.heleDag?'':` (${d.dd.map(x=>FK_DD_NAAM[x]).join('+')})`}`).join(', ')
+      const och=a.profiel.O.length?`'s ochtends ${a.profiel.O.join(', ')}`:''
+      const mid=a.profiel.M.length?`'s middags ${a.profiel.M.join(', ')}`:''
+      const av=a.profiel.A.length?`'s avonds ${a.profiel.A.join(', ')}`:''
+      if(!a.nOpen) return `${a.naam} hoeft niet open: er is geen vraag aan toegewezen.`
+      return `${a.naam} moet ${a.nOpen} ${a.nOpen===1?'dagdeel':'dagdelen'} per week open (${dagen}) met ${[och,mid,av].filter(Boolean).join(' en ')}.`
+    }
+    const Chip=({l,v,kleur})=>(
+      <div style={{padding:'7px 12px',borderRadius:10,background:C.white,border:`1px solid ${C.border}`,minWidth:88}}>
+        <div style={{fontSize:9,fontWeight:700,color:C.muted,letterSpacing:'0.08em',textTransform:'uppercase'}}>{l}</div>
+        <div style={{fontSize:16,fontWeight:800,color:kleur||C.text,fontVariantNumeric:'tabular-nums'}}>{v}</div>
+      </div>
+    )
+    const open=openPanels.fkAdvies!==false
+    return(
+      <div style={{marginBottom:14,background:C.white,border:`1px solid ${C.border}`,borderRadius:14,boxShadow:C.shadow,overflow:'hidden'}}>
+        <div onClick={()=>togglePanel('fkAdvies')} style={{padding:'10px 16px',display:'flex',alignItems:'center',gap:10,cursor:'pointer',
+          background:'linear-gradient(135deg,#0E3450,#1C6EA4)',color:'#fff'}}>
+          <span style={{fontSize:12.5,fontWeight:800,letterSpacing:'0.03em'}}>RASTERADVIES — FUNCTIEKAMERS</span>
+          <span style={{fontSize:11,opacity:0.85}}>· {sv.dagdelenOpen} van {sv.dagdelenBeschikbaar} dagdelen open · dekking {sv.dekking}% · {sv.rest?`${sv.rest} op de restlijst`:'alles ingepland'}</span>
+          <span style={{flex:1}}/>
+          <span style={{fontSize:11,opacity:0.85}}>{open?'▾ inklappen':'▸ uitklappen'}</span>
+        </div>
+        {open&&(
+        <div style={{padding:'14px 16px'}}>
+          {/* kerncijfers */}
+          <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:14}}>
+            <Chip l="Codes" v={sv.codes}/>
+            <Chip l="Onderzoeken / wk" v={sv.afspraken}/>
+            <Chip l="Vraag" v={`${Math.round(sv.vraagMin/60*10)/10} u`}/>
+            <Chip l="Capaciteit" v={`${Math.round(sv.capMin/60*10)/10} u`}/>
+            <Chip l="Dekking" v={`${sv.dekking}%`} kleur={sv.dekking>=100?C.green:C.danger}/>
+            <Chip l="Dagdelen open" v={`${sv.dagdelenOpen} / ${sv.dagdelenBeschikbaar}`}/>
+            <Chip l="Restlijst" v={sv.rest} kleur={sv.rest?C.danger:C.green}/>
+            <Chip l="Weken / jaar" v={sv.weken}/>
+          </div>
+
+          {/* in gewone taal */}
+          <div style={{padding:'10px 14px',borderRadius:10,background:C.blueAccent,border:`1px solid #C5DCEC`,marginBottom:14,fontSize:12.5,lineHeight:1.65,color:C.ink2}}>
+            <div style={{fontSize:9.5,fontWeight:700,color:C.primary,letterSpacing:'0.1em',marginBottom:4}}>HET ADVIES IN GEWONE TAAL</div>
+            {advies.map(a=><div key={a.kamerId}>• {zinVoor(a)}</div>)}
+            {!!geenKamer.length&&<div style={{color:C.danger,fontWeight:600}}>• Nog geen kamer voor: {geenKamer.map(g=>`${g.code} (${g.n}×/wk)`).join(', ')} — vink bij Gegevens een kamer aan.</div>}
+            {!!incidenteel.length&&<div style={{color:C.muted}}>• {incidenteel.length} codes komen minder dan eens per twee weken voor (samen ± {raster.fk.incidenteelMin} min/wk) en horen op de flexruimte: {incidenteel.map(x=>x.code).join(', ')}.</div>}
+          </div>
+
+          {/* per kamer */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(300px,1fr))',gap:10,marginBottom:14}}>
+            {advies.map(a=>(
+              <div key={a.kamerId} style={{border:`1px solid ${C.border}`,borderRadius:12,padding:'12px 14px',background:C.white}}>
+                <div style={{display:'flex',alignItems:'baseline',gap:8,marginBottom:2}}>
+                  <span style={{width:10,height:10,borderRadius:3,background:fkKleur(a.r).brd}}/>
+                  <span style={{fontSize:14,fontWeight:800,color:C.text}}>{a.naam}</span>
+                  <span style={{fontSize:11,color:C.muted,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flex:1}} title={a.oms}>{a.oms}</span>
+                </div>
+                <div style={{display:'flex',gap:12,alignItems:'baseline',margin:'6px 0 8px'}}>
+                  <span style={{fontSize:26,fontWeight:800,color:C.primary,lineHeight:1}}>{a.nOpen}</span>
+                  <span style={{fontSize:11.5,color:C.muted,lineHeight:1.4}}>dagdelen / week open<br/>{a.perDd.O} ochtend · {a.perDd.M} middag{raster.avondOn?` · ${a.perDd.A} avond`:''} · benutting {a.benutting}%</span>
+                  {a.rest>0&&<span style={{marginLeft:'auto',fontSize:11,fontWeight:700,color:C.danger,background:'#FBEDEA',padding:'3px 8px',borderRadius:8}}>{a.rest} past niet</span>}
+                </div>
+                {/* weekstrip */}
+                <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:4,marginBottom:8}}>
+                  {a.perDag.map((d,di)=>(
+                    <div key={di} style={{textAlign:'center'}}>
+                      <div style={{fontSize:9.5,fontWeight:700,color:C.muted,marginBottom:2}}>{DAY_ABBR[di]}</div>
+                      {dds.map(dd=>{ const c=d[dd]; const dicht=!c||!c.beschikbaar||!c.open
+                        const kl=dicht?null:bandKleur(c.pct,m2.benutting||85,fkReg.minBezetting||0)
+                        return <div key={dd} title={dicht?`${FK_DD_NAAM[dd]}: ${c&&c.beschikbaar?'dicht':'niet beschikbaar'}`:`${FK_DD_NAAM[dd]}: ${c.used} van ${c.bruto} min (${c.pct}%)\n${c.codes.map(x=>`${x.code} ×${x.n}`).join(', ')}`}
+                          onClick={()=>{ setSelDay(di); setViewMode('dag') }}
+                          style={{height:22,borderRadius:5,marginBottom:3,cursor:'pointer',fontSize:9.5,fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',
+                            border:`1px solid ${dicht?C.border:kl.brd}`,background:dicht?(c&&c.beschikbaar?`repeating-linear-gradient(45deg,${C.surface2},${C.surface2} 3px,${C.white} 3px,${C.white} 6px)`:C.surface2):kl.bg,color:dicht?C.muted:kl.fg}}>
+                          {dicht?'':`${c.pct}%`}</div> })}
+                    </div>
+                  ))}
+                </div>
+                {dds.map(dd=>a.profiel[dd].length>0&&(
+                  <div key={dd} style={{fontSize:11,color:C.text,lineHeight:1.5,marginBottom:2}}>
+                    <b style={{color:C.muted,textTransform:'capitalize'}}>{FK_DD_NAAM[dd]}:</b> {a.profiel[dd].map(code=>{ const x=a.codes.find(c=>c.code===code)
+                      return <span key={code} style={{display:'inline-block',margin:'1px 3px 1px 0',padding:'1px 7px',borderRadius:8,background:C.surface2,border:`1px solid ${C.border}`,fontWeight:600}}>{code}{x?<span style={{color:C.muted,fontWeight:500}}> ×{x.n}</span>:null}</span> })}
+                  </div>
+                ))}
+                {!a.nOpen&&<div style={{fontSize:11,color:C.muted}}>Geen vraag toegewezen — deze kamer blijft dicht.</div>}
+              </div>
+            ))}
+          </div>
+
+          {/* kwalificatie-waarschuwingen na slepen */}
+          {!!fouten.length&&(
+            <div style={{padding:'9px 12px',borderRadius:10,background:'#FBEDEA',border:'1px solid #F1CFC8',fontSize:11.5,color:C.danger,marginBottom:12,lineHeight:1.55}}>
+              <b>△ {fouten.length} blok{fouten.length===1?' staat':'ken staan'} in een kamer zonder kwalificatie:</b>{' '}
+              {fouten.slice(0,8).map(f=>`${f.code} in ${f.kamer} (${DAY_ABBR[f.di]} ${toTime(f.start)})`).join(' · ')}{fouten.length>8?' · …':''}.
+              Sleep ze terug of vink de kamer aan bij de code.
+            </div>
+          )}
+
+          {/* toewijzing + regels */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(320px,1fr))',gap:12}}>
+            <div>
+              <div style={{fontSize:9.5,fontWeight:700,color:C.primary,letterSpacing:'0.1em',marginBottom:6}}>TOEWIJZING CODE → KAMER</div>
+              <div style={{maxHeight:260,overflowY:'auto',border:`1px solid ${C.border}`,borderRadius:10}}>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:11}}>
+                  <thead><tr style={{background:C.surface2}}>
+                    {['Code','×/wk','Min/wk','Kamer(s)','Waarom'].map(h=><th key={h} style={{textAlign:'left',padding:'5px 8px',fontSize:9.5,color:C.muted,letterSpacing:'0.05em',position:'sticky',top:0,background:C.surface2}}>{h}</th>)}
+                  </tr></thead>
+                  <tbody>
+                    {toewijzing.map(t=>(
+                      <tr key={t.code} style={{borderTop:`1px solid ${C.border}`}}>
+                        <td style={{padding:'4px 8px',fontWeight:700}}>{t.code}</td>
+                        <td style={{padding:'4px 8px'}}>{t.n}</td>
+                        <td style={{padding:'4px 8px'}}>{t.min}</td>
+                        <td style={{padding:'4px 8px',fontWeight:600,color:C.primary}}>{t.kamers.map(k=>t.gesplitst?`${k.naam} (${k.n}×)`:k.naam).join(', ')}</td>
+                        <td style={{padding:'4px 8px',color:C.muted}}>{t.reden}</td>
+                      </tr>
+                    ))}
+                    {!toewijzing.length&&<tr><td colSpan={5} style={{padding:10,color:C.muted,textAlign:'center'}}>Nog geen codes met vraag én kamer.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div>
+              <div style={{fontSize:9.5,fontWeight:700,color:C.primary,letterSpacing:'0.1em',marginBottom:6}}>REGELS — WAT HET RASTER BORGT EN WAT MENSENWERK BLIJFT</div>
+              <div style={{display:'flex',flexDirection:'column',gap:5}}>
+                {(planregels||[]).filter(r=>r.t).map((r,i)=>(
+                  <div key={i} style={{display:'flex',gap:8,alignItems:'flex-start',padding:'7px 10px',borderRadius:9,border:`1px solid ${C.border}`,background:C.white}}>
+                    <span style={{fontSize:9.5,fontWeight:800,padding:'2px 7px',borderRadius:6,whiteSpace:'nowrap',
+                      background:r.geborgd==='raster'?'#EAF5EE':'#FDF6E3',color:r.geborgd==='raster'?C.green:'#8A6A12'}}>{r.geborgd==='raster'?'✓ RASTER':'☐ PLANNER'}</span>
+                    <span style={{fontSize:11.5,lineHeight:1.45,color:C.text}}>{r.t}{r.uitleg&&<span style={{color:C.muted}}> — {r.uitleg}</span>}</span>
+                  </div>
+                ))}
+                {!(planregels||[]).some(r=>r.t)&&<div style={{fontSize:11.5,color:C.muted}}>Geen regels vastgelegd (zie Regels).</div>}
+              </div>
+            </div>
+          </div>
+        </div>)}
+      </div>
+    )
+  }
+
+  const mods=[renderMod1, modus==='functie'?renderFkInvoer:renderMod0, modus==='functie'?renderFkRegels:renderMod2, renderMod3]
 
   // ─── LAYOUT — POLIRASTER STUDIO (live workspace: rail + panel + canvas) ────
   const clockStr=now.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'})
@@ -7870,11 +8452,25 @@ export default function RasterTool(){
           </div>
           <div style={{textAlign:'center',lineHeight:1.1}}>
             <div style={{fontSize:11,fontWeight:800,color:'#EAF6FB',letterSpacing:'-0.01em'}}>PoliRaster</div>
-            <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:7.5,color:'#7FD4C0',letterSpacing:'0.18em'}}>STUDIO 2.1</div>
+            <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:7.5,color:'#7FD4C0',letterSpacing:'0.18em'}}>STUDIO 2.2</div>
           </div>
         </div>
+        {/* Planmodus: poli-spreekuren of functiekamers */}
+        <div title="Poli = gelijke spreekkamers met nieuwe en controlepatiënten. Functiekamers = kamers met eigen kwalificaties; de tool adviseert per kamer welke dagdelen open moeten."
+          style={{display:'flex',flexDirection:'column',gap:3,marginBottom:10,padding:3,borderRadius:11,background:'rgba(255,255,255,0.08)'}}>
+          {[{v:'poli',l:'Poli'},{v:'functie',l:'Functiekamers'}].map(o=>(
+            <button key={o.v} data-modus={o.v} onClick={()=>{
+                if(o.v===modus) return
+                setModus(o.v); setSelDay(0)
+                if(o.v==='functie'&&!fk.kamers.length) fkLaadPreset('Longfunctie')
+                setActive(1); setVisited(p=>new Set([...p,1]))
+              }}
+              style={{padding:'6px 4px',borderRadius:8,border:'none',cursor:'pointer',fontSize:9.5,fontWeight:700,letterSpacing:'0.02em',
+                background:modus===o.v?'#39C6AC':'transparent',color:modus===o.v?'#04120D':'rgba(255,255,255,0.7)'}}>{o.l}</button>
+          ))}
+        </div>
         {/* Begeleide intake — stelt vragen en zet de hele planning klaar */}
-        <button onClick={()=>setWiz(raster?{modus:'kies'}:{modus:'intake',stap:0,ant:{}})}
+        <button onClick={()=>{ if(modus==='functie'){ nav(3); setOpenPanels(p=>({...p,fkAdvies:true})); return } setWiz(raster?{modus:'kies'}:{modus:'intake',stap:0,ant:{}}) }}
           title="Assistent — de hele opzet doorlopen, of dit raster bijsturen met een opdracht in gewone taal"
           style={{display:'flex',alignItems:'center',justifyContent:'center',gap:6,marginBottom:12,
             padding:'10px 6px',borderRadius:12,border:'1px solid rgba(93,214,188,0.45)',cursor:'pointer',
@@ -7882,13 +8478,13 @@ export default function RasterTool(){
             fontSize:10.5,fontWeight:700,letterSpacing:'0.02em'}}
           onMouseEnter={e=>e.currentTarget.style.background='linear-gradient(135deg,rgba(93,214,188,0.4),rgba(28,110,164,0.4))'}
           onMouseLeave={e=>e.currentTarget.style.background='linear-gradient(135deg,rgba(93,214,188,0.24),rgba(28,110,164,0.24))'}>
-          ✨ Assistent
+          {modus==='functie'?'✨ Advies':'✨ Assistent'}
         </button>
         {/* stappen */}
         <div style={{display:'flex',flexDirection:'column',gap:6,flex:1}}>
           {RAIL.map((r,i)=>{
             const on=active===r.id
-            const done = r.id===1?(newRows.some(x=>x.afspraakcode||x.omschrijving)||ctrlRows.some(x=>x.afspraakcode||x.omschrijving))
+            const done = r.id===1?(modus==='functie'?fk.codes.some(fkCodeLabel):(newRows.some(x=>x.afspraakcode||x.omschrijving)||ctrlRows.some(x=>x.afspraakcode||x.omschrijving)))
               : r.id===3?!!raster : true
             return(
               <button key={r.id} onClick={()=>nav(r.id)} title={r.label} style={{
@@ -7934,7 +8530,7 @@ export default function RasterTool(){
             <div>
               <div style={{fontSize:9,fontWeight:700,color:C.primary,letterSpacing:'0.2em',marginBottom:3}}>INSTELLINGEN</div>
               <div style={{fontFamily:"'Newsreader',Georgia,serif",fontSize:21,fontWeight:500,color:C.text}}>
-                {active===0?'Spreekuurtijden':active===1?'Gegevens invoer':'Planregels'}
+                {active===0?'Spreekuurtijden':active===1?(modus==='functie'?'Functiekamers':'Gegevens invoer'):'Planregels'}
               </div>
             </div>
             <button onClick={()=>nav(3)} title="Paneel sluiten — volledig raster"
@@ -7970,7 +8566,7 @@ export default function RasterTool(){
           borderBottom:`1px solid ${C.border}`,padding:'9px 22px',display:'flex',alignItems:'center',gap:14}}>
           <div style={{fontSize:13,fontWeight:700,color:C.text,letterSpacing:'-0.01em'}}>
             PoliRaster <span style={{fontFamily:"'Newsreader',Georgia,serif",fontStyle:'italic',color:C.primary}}>Studio</span>
-            <span style={{fontSize:8.5,fontWeight:700,color:C.primary,verticalAlign:'super',marginLeft:2}}>2.1</span>
+            <span style={{fontSize:8.5,fontWeight:700,color:C.primary,verticalAlign:'super',marginLeft:2}}>2.2</span>
           </div>
           <span style={{width:1,height:20,background:C.border}}/>
           {/* Vrij invulbare poli — typ de naam of kies een specialisme */}
@@ -7980,7 +8576,7 @@ export default function RasterTool(){
               borderRadius:7,padding:'5px 9px',minWidth:130,maxWidth:240,fontFamily:'inherit',transition:'all 0.12s'}}
             onFocus={e=>{e.target.style.background=C.white;e.target.style.borderColor=C.border}}
             onBlur={e=>{e.target.style.background='transparent';e.target.style.borderColor='transparent'}}/>
-          <select value={poli.specialisme} onChange={e=>{
+          {modus==='poli'&&<select value={poli.specialisme} onChange={e=>{
               const v=e.target.value
               if(!v){ setPoli(p=>({...p,specialisme:''})); return }
               // Voorbeeldcodes laden — vraag alleen om bevestiging als er al eigen codes staan
@@ -7996,8 +8592,8 @@ export default function RasterTool(){
               borderRadius:7,padding:'5px 8px',cursor:'pointer',fontFamily:'inherit'}}>
             <option value="">Specialisme…</option>
             {SPECIALISMEN.map(s=><option key={s} value={s}>{s}</option>)}
-          </select>
-          {poli.specialisme&&SPEC_PRESETS[poli.specialisme]&&(
+          </select>}
+          {modus==='poli'&&poli.specialisme&&SPEC_PRESETS[poli.specialisme]&&(
             <button onClick={()=>{ if(!heeftCodes()||window.confirm(`Voorbeeldcodes voor ${poli.specialisme} opnieuw laden?\n\nDit vervangt de huidige afspraakcodes.`)) kiesSpecialisme(poli.specialisme,true) }}
               title="Laad opnieuw de voorbeeldcodes voor dit specialisme"
               style={{fontSize:11,fontWeight:600,color:C.primary,background:C.blueAccent,border:`1px solid ${C.primary}`,

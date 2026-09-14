@@ -1,10 +1,11 @@
-# PoliRaster Studio 2.1
+# PoliRaster Studio 2.2
 
 Doorontwikkeling van de originele PoliRaster-tool — **op hetzelfde fundament**, niet
 een vervanging. De sterke punten van het origineel zijn behouden en er zijn gerichte
 2.0-verbeteringen op gebouwd.
 
-Bestand: `raster_model_2.jsx` (React-component, `xlsx` als enige dependency).
+Bestanden: `raster_model_2.jsx` (React-component, `xlsx` als enige dependency) en `functiekamers.js`
+(de engine en de voorbeeldset voor de functiekamer-modus).
 Losse, klikbare versie: `dist/polimodel.html` (alles ingebundeld, direct in de browser te openen).
 
 ## Behouden uit het origineel
@@ -42,6 +43,55 @@ Losse, klikbare versie: `dist/polimodel.html` (alles ingebundeld, direct in de b
   - *Modaliteitsmix* (aandeel fysiek/telefonisch/beeldbellen),
   - *Analyse & advies* — concrete signalen over tekort/overschot, onzekerheid vs. buffer,
     aandeel consulten op afstand en te hoge benutting.
+
+## Functiekamers — kamers met kwalificaties (nieuw in 2.2)
+
+Naast de poli-modus (gelijke spreekkamers, nieuwe en controlepatiënten) heeft de tool nu een
+tweede planmodus: **Functiekamers**. Schakel links in de zijbalk tussen **Poli** en
+**Functiekamers**; alles wat de poli-modus kan, blijft precies zo werken.
+
+Het uitgangspunt uit het wensendocument: kamers zijn *niet* gelijk. Elke kamer heeft
+**kwalificaties** (welke afspraakcodes er mogen), elke code heeft een **vraag per week**
+(aantal × duur), en de tool doet een **voorstel per kamer**: welke dagdelen open moeten, met
+welke codes 's ochtends en welke 's middags.
+
+- **Kamers** — naam, omschrijving, in gebruik ja/nee, en per dagdeel de weekdagen waarop de
+  kamer beschikbaar is.
+- **Onderzoekscodes** — per code het aantal per jaar (bv. de cijfers van 2025) *of* per week,
+  de duur, de gekwalificeerde kamers (één klik per kamer), de toegestane dagdelen en weekdagen.
+  Onder **▸ meer**: voorkeurskamer, *apparaat* (één toestel → alle codes ermee in één kamer,
+  nooit gelijktijdig), *koppel* (altijd samen als één blok, bv. B1+B2), en spreiden/clusteren.
+- **Voorbeeldset Longfunctie** — de vier kamers A1.243, A1.253, A1.213 en A1.215 met alle 49
+  codes en aantallen uit 2025, inclusief de kamers uit de opmerkingen van de functielaborant.
+  Codes waarvan de kamer nog niet bekend is ("??", "nog geen plek") staan bewust zonder kamer op
+  de lijst *kamer nog te bepalen* — er wordt niets verzonnen.
+- **Import** van een codelijst (Excel/CSV met omschrijving · intern · aantal · aantalMinuten ·
+  gemiddelde duur · opmerking); de kamers worden uit de opmerking herkend (A1.213, A.253, A213).
+- **Regels voor de planner** — regels over één patiënt (bodybox in A1.213 en DCO in A1.215 nooit
+  bij dezelfde patiënt; inspannings-/provocatietesten niet op dezelfde dag als br.dil) kent het
+  raster niet; ze staan bij het raster en in de export, gemerkt als *raster borgt* of *mensenwerk*.
+
+### Hoe de engine rekent (`functiekamers.js`)
+
+1. **Toewijzing code → kamer.** Meest beperkte codes eerst (één gekwalificeerde kamer), daarna
+   op laagste belasting; apparaat-gebonden codes gaan als groep naar één kamer, gekoppelde codes
+   worden één blok. Past een code niet in één kamer, dan wordt hij verdeeld over de
+   gekwalificeerde kamers — met melding.
+2. **Dagdelen per kamer.** Per kamer gaat het aantal dagdelen open dat de vraag nodig heeft,
+   bij voorkeur hele dagen gespreid over de week (elke kamer begint op een andere dag). Codes met
+   ≥ 5 per week worden over de dagen gespreid, zeldzamere codes geclusterd. Elk dagdeel wordt tot
+   de doelbenutting gevuld (dezelfde band van ±2,5 procentpunt als in de poli-modus); een dagdeel
+   gaat dicht zodra alles erin elders past, en een dun dagdeel dat niet dicht kan wordt bijgevuld
+   uit vollere dagdelen.
+3. **Rasteradvies.** Boven het raster staat per kamer: het aantal dagdelen per week, de
+   weekstrip met bezetting per dagdeel, en het profiel *ochtend: … · middag: …*; daaronder de
+   toewijzing met de reden per code, de restlijst met reden, en de planner-regels. In gewone
+   taal: *"A1.243 moet 6 dagdelen per week open (ma, wo, vr) met 's ochtends POLUIT en 's middags
+   CTHZ, NTHZ, POLKNO."*
+
+Het raster zelf is hetzelfde weekraster als altijd — met de echte kamernamen als kolommen,
+sleepbaar, met bezettingskaart en Excel-export (extra tabblad **Functiekamer-advies**). Sleep
+je een onderzoek naar een kamer zonder kwalificatie, dan meldt het advies dat.
 
 ## Assistent — begeleide intake
 
@@ -314,4 +364,5 @@ node test_gesprek.mjs      # doorvragen: onderwerpherkenning en de hele gespreks
 node test_strak.mjs        # geen gaten in de kamernummering + "zo strak mogelijk"
 node test_digitaal.mjs     # eigen digitaal spreekuur + bundelen zonder scheve week
 node test_efficient.mjs    # nooit restlijst terwijl er een dagdeel vrij staat
+node test_functiekamers.mjs # functiekamers: kwalificaties, apparaat, koppeling, advies en de modus-schakelaar
 ```
