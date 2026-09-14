@@ -124,7 +124,49 @@ export const FK_PRESET_LONGFUNCTIE={
      uitleg:'Alle codes met het apparaat "NO-meter" gaan naar dezelfde kamer, zodat ze nooit gelijktijdig staan.'},
   ],
 }
-export const FK_PRESETS={'Longfunctie':FK_PRESET_LONGFUNCTIE}
+// ─── ANDERE VAKGROEPEN — een vooringevulde basis om zelf verder in te vullen ───────
+// Dit zijn VOORBEELDCIJFERS (herkenbare onderzoeken, plausibele aantallen en duren),
+// bedoeld als startpunt; de gebruiker vervangt ze door de eigen jaarcijfers.
+const mkPreset=(naam,kamers,codes,planregels=[],voorbeeld=true)=>{
+  const K=kamers.map(([id,kn,oms])=>({...fkNieuweKamer(kn,oms,id)}))
+  return {naam,voorbeeld,kamers:K,
+    codes:codes.map(([code,oms,aantalJaar,duur,ids,extra={}])=>fkNieuweCode({code,oms,aantalJaar,duur:fkSnap(duur),bron:'jaar',kamers:km(...ids),...extra})),
+    planregels}
+}
+export const FK_PRESET_CARDIOLOGIE=mkPreset('Cardiologie (functie)',
+  [['c_ecg','ECG-kamer','ECG, holter en eventrecorder aansluiten en uitlezen, 24-uurs bloeddruk'],
+   ['c_echo1','Echo 1','Echocardiografie'],['c_echo2','Echo 2','Echocardiografie, ook stress-echo'],
+   ['c_fiets','Fietskamer','Inspannings-ECG en fietsergometrie'],['c_pm','Pacemakerkamer','Pacemaker- en ICD-controles']],
+  [['ECG','Rust-ECG',3600,15,['c_ecg','c_fiets']],['HOLA','Holter aansluiten',900,15,['c_ecg']],['HOLU','Holter uitlezen',900,20,['c_ecg'],{dagdelen:dd(true,false),opmerking:"'s Ochtends uitlezen"}],
+   ['ABPM','24-uurs bloeddrukmeting',400,15,['c_ecg']],['EVR','Eventrecorder',200,15,['c_ecg']],
+   ['ECHO','Echocardiografie',2400,45,['c_echo1','c_echo2']],['SECHO','Stress-echo',150,60,['c_echo2']],
+   ['XECG','Inspannings-ECG',900,30,['c_fiets']],['CPET','Fietsergometrie met gasanalyse',200,60,['c_fiets']],
+   ['PMC','Pacemakercontrole',800,30,['c_pm']],['ICDC','ICD-controle',300,30,['c_pm']]],
+  [{t:'Stress-echo alleen met cardioloog aanwezig; plannen op dagdelen met supervisie.',geborgd:'planner',uitleg:''}])
+export const FK_PRESET_KNF=mkPreset('Neurologie / KNF',
+  [['n_eeg','EEG-kamer','EEG, slaap-EEG'],['n_emg','EMG-kamer','EMG, zenuwgeleiding, evoked potentials'],['n_dup','Duplexkamer','Duplex halsvaten, TCD']],
+  [['EEG','EEG standaard',800,60,['n_eeg']],['EEGS','Slaap-EEG',240,90,['n_eeg'],{dagdelen:dd(true,false)}],
+   ['EMG','EMG',1000,45,['n_emg']],['ZGO','Zenuwgeleidingsonderzoek',600,30,['n_emg']],['SEP','Somatosensibele evoked potentials',120,60,['n_emg']],
+   ['VEP','Visuele evoked potentials',100,45,['n_emg']],['DUP','Duplex halsvaten',400,30,['n_dup']],['TCD','Transcranieel doppler',80,45,['n_dup']]],
+  [])
+export const FK_PRESET_AUDIO=mkPreset('KNO / Audiologie',
+  [['a_cab1','Audiocabine 1','Toon- en spraakaudiometrie, tympanometrie, OAE'],['a_cab2','Audiocabine 2','Toon- en spraakaudiometrie, BERA'],['a_vest','Evenwichtskamer','ENG/VNG, calorisch onderzoek']],
+  [['TA','Toonaudiogram',3000,20,['a_cab1','a_cab2']],['SA','Spraakaudiogram',1500,15,['a_cab1','a_cab2']],['TYMP','Tympanometrie',1200,10,['a_cab1','a_cab2']],
+   ['OAE','Oto-akoestische emissies',400,15,['a_cab1']],['BERA','Hersenstamaudiometrie',250,60,['a_cab2'],{opmerking:'Stille cabine'}],
+   ['VNG','Videonystagmografie',300,60,['a_vest']],['CAL','Calorisch onderzoek',150,45,['a_vest']],['HTC','Hoortoestelcontrole',800,20,['a_cab1','a_cab2']]],
+  [{t:'BERA bij kinderen alleen na melatonine-afspraak; niet in hetzelfde dagdeel als VNG.',geborgd:'planner',uitleg:''}])
+export const FK_PRESET_MDL=mkPreset('MDL (functie)',
+  [['m_man','Manometrie/pH-kamer','Slokdarmmanometrie, pH-metrie aansluiten en uitlezen'],['m_adem','Ademtestkamer','Waterstof-ademtesten, FibroScan']],
+  [['MANO','Slokdarmmanometrie',250,45,['m_man']],['PHA','pH-metrie aansluiten',200,30,['m_man']],['PHU','pH-metrie uitlezen',200,20,['m_man'],{dagdelen:dd(true,false)}],
+   ['H2','Waterstof-ademtest',240,150,['m_adem'],{dagdelen:dd(true,false),opmerking:'Nuchter, dus alleen ochtend'}],['FIBRO','FibroScan',600,20,['m_adem']],['ARM','Anorectale manometrie',120,45,['m_man']]],
+  [])
+export const FK_PRESETS={
+  'Longfunctie':{...FK_PRESET_LONGFUNCTIE,voorbeeld:false},
+  'Cardiologie (functie)':FK_PRESET_CARDIOLOGIE,
+  'Neurologie / KNF':FK_PRESET_KNF,
+  'KNO / Audiologie':FK_PRESET_AUDIO,
+  'MDL (functie)':FK_PRESET_MDL,
+}
 
 // ─── IMPORT VAN EEN CODELIJST (Excel/CSV) ────────────────────────────────────────
 // Leest de tabel zoals die in het wensendocument staat: omschrijving · code (intern) ·
@@ -143,18 +185,24 @@ export function fkParseCodes(aoa,kamers){
       aantal:cells.findIndex(c=>c==='aantal'||c.startsWith('aantal ')||c==='n'||c.includes('aantal 20')||c==='aantaljaar'),
       minuten:vind(['aantalminuten','totaal min','minuten totaal']),
       duur:vind(['gemiddelde duur','gem. duur','duur','minuten per']),
-      opm:vind(['opmerking','kamer','locatie']),
+      opm:vind(['opmerking','locatie']),
+      kamersKol:cells.findIndex(c=>c==='kamers'||c==='kamer'||c.startsWith('kamer(s)')),
+      dagdelenKol:cells.findIndex(c=>c.startsWith('dagdeel')),
       week:vind(['per week','aantalweek','weekaantal']),
     }
     if(k.code>=0&&(k.aantal>=0||k.week>=0)){ hIx=i; kol=k; break }
   }
   if(hIx<0) throw new Error('Geen kopregel gevonden. Verwacht minimaal de kolommen "code" (of "intern") en "aantal".')
+  // Kamers herkennen: op naam (A1.213, "Echo 1"), of op kamernummer in vrije tekst (A.253, A213).
   const kamerVoor=txt=>{
-    const out={}
-    const nums=[...String(txt||'').matchAll(/A\s?1?\.?\s?(\d{3})/gi)].map(m=>m[1])
+    const out={}; const t=String(txt||'')
+    ;(kamers||[]).forEach(k=>{ const n=String(k.naam||'').trim(); if(n&&t.toLowerCase().includes(n.toLowerCase())) out[k.id]=true })
+    const nums=[...t.matchAll(/A\s?1?\.?\s?(\d{3})/gi)].map(m=>m[1])
     nums.forEach(n=>{ const k=(kamers||[]).find(x=>String(x.naam||'').replace(/\D/g,'').endsWith(n)); if(k) out[k.id]=true })
     return out
   }
+  const dagdelenVoor=txt=>{ const t=String(txt||'').toLowerCase(); if(!t.trim()) return null
+    return {O:/och|ocht|o\b|^o/.test(t)||/beide|alle/.test(t),M:/mid|m\b/.test(t)||/beide|alle/.test(t),A:/avo|av\b/.test(t)} }
   const codes=[]
   for(let i=hIx+1;i<aoa.length;i++){
     const r=aoa[i]||[]; const code=String(r[kol.code]??'').trim(); if(!code) continue
@@ -163,12 +211,37 @@ export function fkParseCodes(aoa,kamers){
     let duur=kol.duur>=0?+String(r[kol.duur]??'').replace(',','.')||0:0
     if(!duur&&kol.minuten>=0&&aantalJaar>0) duur=(+String(r[kol.minuten]??'').replace(',','.')||0)/aantalJaar
     const opm=kol.opm>=0?String(r[kol.opm]??'').trim():''
+    const kamerTxt=kol.kamersKol>=0?String(r[kol.kamersKol]??''):''
+    const kamersUit={...kamerVoor(opm),...kamerVoor(kamerTxt)}
+    const dagdelen=kol.dagdelenKol>=0?dagdelenVoor(r[kol.dagdelenKol]):null
     codes.push(fkNieuweCode({code,oms:kol.oms>=0?String(r[kol.oms]??'').trim():code,
       duur:fkSnap(duur||15),aantalJaar,aantalWeek,bron:aantalWeek>0&&!aantalJaar?'week':'jaar',
-      kamers:kamerVoor(opm),opmerking:opm}))
+      kamers:kamersUit,...(dagdelen&&(dagdelen.O||dagdelen.M||dagdelen.A)?{dagdelen}:{}),opmerking:opm}))
   }
   if(!codes.length) throw new Error('Geen codes gevonden onder de kopregel.')
   return codes
+}
+
+// Blad "Kamers": kamer · omschrijving · (optioneel) ochtend/middag/avond-dagen als tekst "ma di wo do vr".
+export function fkParseKamers(aoa){
+  if(!aoa||!aoa.length) return []
+  const norm=s=>String(s==null?'':s).toLowerCase().trim()
+  let hIx=-1,kol={}
+  for(let i=0;i<Math.min(10,aoa.length);i++){
+    const cells=(aoa[i]||[]).map(norm)
+    const k={naam:cells.findIndex(c=>c==='kamer'||c==='naam'||c==='kamernummer'),oms:cells.findIndex(c=>c.startsWith('omschrijving')||c==='wat kan er'),
+      O:cells.findIndex(c=>c.startsWith('ochtend')),M:cells.findIndex(c=>c.startsWith('middag')),A:cells.findIndex(c=>c.startsWith('avond'))}
+    if(k.naam>=0){ hIx=i; kol=k; break }
+  }
+  if(hIx<0) return []
+  const dagen=(txt,std)=>{ const t=String(txt??'').toLowerCase(); if(!t.trim()) return fkAlleDagen(std)
+    if(/^(ja|x|alle|✓)$/.test(t.trim())) return fkAlleDagen(true); if(/^(nee|-|geen)$/.test(t.trim())) return fkAlleDagen(false)
+    const o={}; FK_DAG_KEYS.forEach(d=>{o[d]=t.includes(d)}); return o }
+  const out=[]
+  for(let i=hIx+1;i<aoa.length;i++){ const r=aoa[i]||[]; const naam=String(r[kol.naam]??'').trim(); if(!naam) continue
+    out.push({...fkNieuweKamer(naam,kol.oms>=0?String(r[kol.oms]??'').trim():''),
+      ddDagen:{O:dagen(kol.O>=0?r[kol.O]:'',true),M:dagen(kol.M>=0?r[kol.M]:'',true),A:dagen(kol.A>=0?r[kol.A]:'',false)}}) }
+  return out
 }
 
 // ─── DE ENGINE ───────────────────────────────────────────────────────────────────
@@ -285,23 +358,30 @@ export function fkBerekenAdvies({kamers,codes,m2,regels}){
     const beste=kies(kandidaten,totMin,it.voorkeur)
     if(it.voorkeur&&beste===it.voorkeur&&kandidaten.length>1) redenen.push('voorkeurskamer')
     else if(kandidaten.length>1) redenen.push(`laagste belasting van ${kandidaten.map(naamVan).join(' / ')}`)
-    if(load[beste]+totMin<=cap[beste] || kandidaten.length===1 || groep.length>1){
+    // Past het in één kamer zonder die (bijna) vol te trekken, dan gaat alles daarheen.
+    // Zou de kamer boven ~92% komen terwijl een andere gekwalificeerde kamer ruimte heeft,
+    // dan wordt het volume verdeeld — anders blijft er geen speling voor de grote blokken.
+    const pastRuim=load[beste]+totMin<=cap[beste]*0.92
+    if(pastRuim || kandidaten.length===1 || groep.length>1 || (load[beste]+totMin<=cap[beste] && !kandidaten.some(id=>id!==beste&&load[id]<cap[id]*0.92))){
       load[beste]+=totMin
       groep.forEach(x=>{ delen.push({item:x,kamerId:beste,n:x.n}); toewijzing.push({code:x.code,oms:x.oms,n:x.n,duur:x.duur,min:x.min,kamers:[{kamerId:beste,naam:naamVan(beste),n:x.n}],reden:redenen.join('; '),gesplitst:false}) })
       return
     }
-    // Past niet in één kamer: verdeel over de gekwalificeerde kamers naar vrije ruimte.
+    // Verdelen over de gekwalificeerde kamers zó dat ze op dezelfde belasting uitkomen.
+    const totCap=som(kandidaten,id=>cap[id]), totLoad=som(kandidaten,id=>load[id])
+    const doelRatio=(totLoad+totMin)/Math.max(1,totCap)
     let rest=it.n; const stukken=[]
     kandidaten.slice().sort((a,b)=>(cap[b]-load[b])-(cap[a]-load[a])).forEach(id=>{
       if(rest<=0) return
-      const vrij=Math.max(0,cap[id]-load[id]); const neem=Math.min(rest,Math.floor(vrij/it.duur))
+      const neem=Math.max(0,Math.min(rest,Math.round((doelRatio*cap[id]-load[id])/it.duur)))
       if(neem>0){ stukken.push({kamerId:id,n:neem}); load[id]+=neem*it.duur; rest-=neem }
     })
-    if(rest>0){ const s=stukken.find(x=>x.kamerId===beste)||(stukken.push({kamerId:beste,n:0}),stukken[stukken.length-1]); s.n+=rest; load[beste]+=rest*it.duur }
+    if(rest>0){ const id=kandidaten.slice().sort((a,b)=>(cap[b]-load[b])-(cap[a]-load[a]))[0]
+      const s=stukken.find(x=>x.kamerId===id)||(stukken.push({kamerId:id,n:0}),stukken[stukken.length-1]); s.n+=rest; load[id]+=rest*it.duur }
     stukken.forEach(s=>delen.push({item:it,kamerId:s.kamerId,n:s.n}))
     toewijzing.push({code:it.code,oms:it.oms,n:it.n,duur:it.duur,min:it.min,kamers:stukken.map(s=>({kamerId:s.kamerId,naam:naamVan(s.kamerId),n:s.n})),
-      reden:'verdeeld over meerdere kamers omdat het volume niet in één kamer past',gesplitst:stukken.length>1})
-    if(stukken.length>1) melding('info','Verdeeld over kamers',`${it.code} (${it.n}×/wk) past niet in één kamer en is verdeeld: ${stukken.map(s=>`${s.n}× in ${naamVan(s.kamerId)}`).join(', ')}.`)
+      reden:stukken.length>1?'verdeeld over meerdere kamers zodat beide op dezelfde belasting uitkomen':'enige kamer met ruimte',gesplitst:stukken.length>1})
+    if(stukken.length>1) melding('info','Verdeeld over kamers',`${it.code} (${it.n}×/wk) is over meerdere kamers verdeeld zodat ze gelijk belast zijn: ${stukken.map(s=>`${s.n}× in ${naamVan(s.kamerId)}`).join(', ')}.`)
   })
 
   // ── DAGDELEN per kamer: open wat nodig is, cluster of spreid per code ─────────

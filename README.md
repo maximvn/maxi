@@ -55,6 +55,12 @@ Het uitgangspunt uit het wensendocument: kamers zijn *niet* gelijk. Elke kamer h
 (aantal × duur), en de tool doet een **voorstel per kamer**: welke dagdelen open moeten, met
 welke codes 's ochtends en welke 's middags.
 
+- **Twee manieren om te beginnen**, net als bij de poli: **Excel inladen** (een codelijst met
+  code · omschrijving · aantal per jaar · duur · kamers · dagdelen, optioneel een blad "Kamers",
+  of een eerder opgeslagen sessie) of **Zelf invullen** met een vooringevulde basis per vakgroep:
+  Longfunctie (de cijfers van 2025), Cardiologie, Neurologie/KNF, KNO/Audiologie en MDL
+  (herkenbare onderzoeken met voorbeeldcijfers, duidelijk zo gemerkt). Daarna twee stappen:
+  **1 Kamers** en **2 Onderzoeken**, met zoeken, filteren op "zonder kamer" en sorteren.
 - **Kamers** — naam, omschrijving, in gebruik ja/nee, en per dagdeel de weekdagen waarop de
   kamer beschikbaar is.
 - **Onderzoekscodes** — per code het aantal per jaar (bv. de cijfers van 2025) *of* per week,

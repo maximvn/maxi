@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from "react"
 import * as XLSX from 'xlsx'
-import {fkBerekenAdvies,FK_PRESETS,fkNieuweKamer,fkNieuweCode,fkStandaardRegels,fkWeekAantal,fkSnap,fkParseCodes,
+import {fkBerekenAdvies,FK_PRESETS,fkNieuweKamer,fkNieuweCode,fkStandaardRegels,fkWeekAantal,fkSnap,fkParseCodes,fkParseKamers,
   fkControleerKwalificaties,fkCodeLabel,FK_DD_NAAM} from './functiekamers.js'
 
 // Maak een echte, downloadbare URL van een XLSX-workbook. We gebruiken een Blob
@@ -843,7 +843,7 @@ export default function RasterTool(){
   // 'functie' = functiekamers met kwalificaties: welke onderzoekscode mag in welke kamer,
   //             hoe vaak per week, en de tool adviseert per kamer welke dagdelen open moeten.
   const [modus,setModus]=useState('poli')
-  const [fk,setFk]=useState(()=>({kamers:[],codes:[],regels:fkStandaardRegels(),preset:'',badge:null,open:null}))
+  const [fk,setFk]=useState(()=>({kamers:[],codes:[],regels:fkStandaardRegels(),preset:'',badge:null,open:null,mode:null,sectie:1}))
   // Capaciteitsbasis: 'auto' = groeit vrij; 'vast' = begrensd tot het gekozen aantal kamers
   const [capacity,setCapacity]=useState({mode:'auto',kamers:3})
   const [newRows,setNewRows]=useState([])
@@ -929,7 +929,6 @@ export default function RasterTool(){
   const wisselModus=v=>{
     if(v===modus) return
     setModus(v); setSelDay(0)
-    if(v==='functie'&&!fk.kamers.length) fkLaadPresetRef.current&&fkLaadPresetRef.current('Longfunctie')
     setActive(1); setVisited(p=>new Set([...p,1]))
   }
   const fkLaadPresetRef=useRef(null)
@@ -4422,7 +4421,7 @@ export default function RasterTool(){
       startNieuwWaar:'both',startControleWaar:'both',mixWaar:'both',digitalWaar:'both',flexWaar:'both',
       flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30})
     setSelDay(0); setRaster(null); setDrag(null)
-    setModus('poli'); setFk({kamers:[],codes:[],regels:fkStandaardRegels(),preset:'',badge:null,open:null}); setRoomNames({})
+    setModus('poli'); setFk({kamers:[],codes:[],regels:fkStandaardRegels(),preset:'',badge:null,open:null,mode:null,sectie:1}); setRoomNames({})
     setShowFullReset(false)
   }
 
@@ -4507,7 +4506,7 @@ export default function RasterTool(){
             flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30,...sr,
             ...(sr.kamerVerdeling==='kamer'?{kamerVerdeling:'dagdeel'}:{})})
         }
-        if(state.fk){ setFk({kamers:state.fk.kamers||[],codes:(state.fk.codes||[]).map(c=>fkNieuweCode(c)),regels:{...fkStandaardRegels(),...(state.fk.regels||{})},preset:state.fk.preset||'',badge:{t:`Kamers en codes hersteld uit ${file.name}.`},open:null}) }
+        if(state.fk&&(state.fk.kamers||[]).length){ setFk({kamers:state.fk.kamers||[],codes:(state.fk.codes||[]).map(c=>fkNieuweCode(c)),regels:{...fkStandaardRegels(),...(state.fk.regels||{})},preset:state.fk.preset||'',badge:{t:`Kamers en codes hersteld uit ${file.name}.`},open:null,mode:'excel',sectie:2}) }
         if(state.modus==='functie'||state.modus==='poli') setModus(state.modus)
         // Note: raster is not stored (too large), it will be auto-generated
         setRaster(null)
@@ -6195,6 +6194,16 @@ export default function RasterTool(){
   })()
 
   const renderMod3=()=>{
+    if(modus==='functie'&&!fkActieveKamers.length){
+      return(
+        <div style={{animation:'fadeIn 0.18s ease',padding:'60px 40px',textAlign:'center',background:C.white,borderRadius:14,border:`1px solid ${C.border}`,maxWidth:640,margin:'40px auto'}}>
+          <div style={{fontSize:44,marginBottom:12}}>🔬</div>
+          <div style={{fontFamily:"'Newsreader',Georgia,serif",fontSize:24,color:C.text,marginBottom:8}}>Functiekamers — nog geen kamers</div>
+          <div style={{fontSize:13,color:C.muted,lineHeight:1.6,marginBottom:18}}>Kies links bij <b>Gegevens</b> hoe je wilt beginnen: een Excel inladen, of zelf invullen met een vooringevulde basis voor je vakgroep. Het rasteradvies verschijnt hier zodra er kamers en onderzoeken zijn.</div>
+          <Btn onClick={()=>{ nav(1); setFk(p=>({...p,mode:null})) }}>Naar het startscherm →</Btn>
+        </div>
+      )
+    }
     if(!raster){
       return(
         <div style={{animation:'fadeIn 0.18s ease'}}>
@@ -7941,8 +7950,10 @@ export default function RasterTool(){
     const pr=FK_PRESETS[naam]; if(!pr) return
     setFk({kamers:pr.kamers.map(k=>({...k,ddDagen:{O:{...k.ddDagen.O},M:{...k.ddDagen.M},A:{...k.ddDagen.A}}})),
       codes:pr.codes.map(c=>({...c,kamers:{...c.kamers},dagdelen:{...c.dagdelen},weekdagen:{...c.weekdagen}})),
-      regels:{...fkStandaardRegels(),planregels:pr.planregels.map(r=>({...r}))},preset:naam,
-      badge:{t:`Voorbeeldset "${naam}" geladen — ${pr.kamers.length} kamers, ${pr.codes.length} codes met de aantallen van 2025.`}})
+      regels:{...fkStandaardRegels(),planregels:(pr.planregels||[]).map(r=>({...r}))},preset:naam,mode:'manual',sectie:1,open:null,zoek:'',filter:'alle',
+      badge:{t:pr.voorbeeld
+        ?`Basis "${naam}" klaargezet — ${pr.kamers.length} kamers en ${pr.codes.length} codes met voorbeeldcijfers. Vervang ze door je eigen jaarcijfers.`
+        :`"${naam}" geladen — ${pr.kamers.length} kamers, ${pr.codes.length} codes met de aantallen van 2025.`}})
     setRoomNames({})
     if(!poli.naam) setPoli(p=>({...p,naam:naam}))
   }
@@ -7957,22 +7968,52 @@ export default function RasterTool(){
     reader.onload=ev=>{
       try{
         const wb=XLSX.read(ev.target.result,{type:'binary'})
-        const ws=wb.Sheets[wb.SheetNames[0]]
-        const aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:''})
-        const codes=fkParseCodes(aoa,fkKamers)
-        const zonder=codes.filter(c=>!Object.keys(c.kamers).length).length
-        fkZet(()=>({codes,badge:{t:`${codes.length} codes ingelezen uit ${file.name}${zonder?` — bij ${zonder} codes is nog geen kamer herkend; vink die hieronder aan`:''}.`}}))
+        // 1) Een eerder opgeslagen sessie van deze tool → alles terugzetten.
+        if(wb.Sheets['_rasterdata']){
+          const rows=XLSX.utils.sheet_to_json(wb.Sheets['_rasterdata'],{header:1})
+          const state=JSON.parse(rows[0][0])
+          if(!state.fk||!(state.fk.kamers||[]).length) throw new Error('Deze sessie bevat geen functiekamers. Exporteer opnieuw vanuit de functiekamer-modus, of laad een codelijst.')
+          if(state.m2) setM2({avondOn:false,avondStart:'17:00',avondEnd:'20:00',verAvond:0,...state.m2,ddDagen:ddDagenVan(state.m2)})
+          setFk({kamers:state.fk.kamers||[],codes:(state.fk.codes||[]).map(c=>fkNieuweCode(c)),regels:{...fkStandaardRegels(),...(state.fk.regels||{})},preset:state.fk.preset||'',
+            mode:'excel',sectie:2,open:null,zoek:'',filter:'alle',badge:{t:`Sessie hersteld uit ${file.name}: ${(state.fk.kamers||[]).length} kamers en ${(state.fk.codes||[]).length} codes.`}})
+          return
+        }
+        // 2) Een codelijst, eventueel met een blad "Kamers".
+        const kamerBlad=wb.SheetNames.find(n=>/kamer/i.test(n))
+        const kamersNieuw=kamerBlad?fkParseKamers(XLSX.utils.sheet_to_json(wb.Sheets[kamerBlad],{header:1,defval:''})):[]
+        const kamersVoor=kamersNieuw.length?kamersNieuw:fkKamers
+        const codeBlad=wb.SheetNames.find(n=>/code|onderzoek/i.test(n)&&n!==kamerBlad)||wb.SheetNames.find(n=>n!==kamerBlad)||wb.SheetNames[0]
+        const aoa=XLSX.utils.sheet_to_json(wb.Sheets[codeBlad],{header:1,defval:''})
+        const codes=fkParseCodes(aoa,kamersVoor)
+        // Kamers die alleen in de codelijst genoemd worden (A1.213 in een opmerking) maar nog niet bestaan → aanmaken.
+        const kamersAf=[...kamersVoor]
+        if(!kamersAf.length){
+          const nums=new Set(); aoa.flat().forEach(v=>[...String(v??'').matchAll(/A\s?1?\.?\s?(\d{3})/gi)].forEach(m=>nums.add(m[1])))
+          ;[...nums].sort().forEach(n=>kamersAf.push(fkNieuweKamer('A1.'+n)))
+        }
+        const codes2=kamersAf!==kamersVoor||kamersAf.length!==kamersVoor.length?fkParseCodes(aoa,kamersAf):codes
+        const zonder=codes2.filter(c=>fkWeekAantal(c,fkReg.wekenPerJaar)>0&&!Object.keys(c.kamers).length).length
+        fkZet(p=>({kamers:kamersAf,codes:codes2,preset:'',mode:'excel',sectie:zonder?2:1,open:null,zoek:'',filter:zonder?'zonderKamer':'alle',
+          badge:{t:`${codes2.length} codes${kamersNieuw.length?` en ${kamersNieuw.length} kamers`:''} ingelezen uit ${file.name}${zonder?` — bij ${zonder} codes is nog geen kamer herkend; vink die hieronder aan`:''}.`}}))
       }catch(err){ alert('Import mislukt:\n\n'+err.message) }
     }
     reader.readAsBinaryString(file)
   }
   const fkVoorbeeldExcel=()=>{
     const wb=XLSX.utils.book_new()
-    const rows=[['Omschrijving','Intern','Aantal','AantalMinuten','Gemiddelde duur','Opmerking'],
-      ...fkCodes.map(c=>[c.oms,c.code,c.aantalJaar||'',c.aantalJaar?Math.round(c.aantalJaar*c.duur):'',c.duur,
-        [Object.keys(c.kamers||{}).filter(id=>c.kamers[id]).map(id=>(fkKamers.find(k=>k.id===id)||{}).naam).filter(Boolean).join(', '),c.opmerking].filter(Boolean).join(' — ')])]
-    const ws=XLSX.utils.aoa_to_sheet(rows.length>1?rows:[...rows,['Spirometrie','SPIR',892,17905,20.1,'A1.253, A1.213, A1.215']])
-    ws['!cols']=[{wch:38},{wch:10},{wch:8},{wch:14},{wch:14},{wch:50}]
+    const bron=fkCodes.filter(fkCodeLabel).length?{kamers:fkKamers,codes:fkCodes}:FK_PRESETS['Longfunctie']
+    const dagenTxt=o=>WEEKDAY_KEYS.filter(d=>(o||{})[d]).join(' ')
+    const wk=XLSX.utils.aoa_to_sheet([['Kamer','Omschrijving','Ochtend (dagen)','Middag (dagen)','Avond (dagen)'],
+      ...bron.kamers.map(k=>[k.naam,k.oms,dagenTxt(k.ddDagen&&k.ddDagen.O),dagenTxt(k.ddDagen&&k.ddDagen.M),dagenTxt(k.ddDagen&&k.ddDagen.A)])])
+    wk['!cols']=[{wch:14},{wch:60},{wch:16},{wch:16},{wch:16}]
+    XLSX.utils.book_append_sheet(wb,wk,'Kamers')
+    const naamVan=id=>(bron.kamers.find(k=>k.id===id)||{}).naam
+    const rows=[['Code','Omschrijving','Aantal per jaar','Duur (min)','Kamers','Dagdelen','Opmerking'],
+      ...bron.codes.map(c=>[c.code,c.oms,c.aantalJaar||'',c.duur,
+        Object.keys(c.kamers||{}).filter(id=>c.kamers[id]).map(naamVan).filter(Boolean).join(', '),
+        ['O','M','A'].filter(d=>d==='A'?!!(c.dagdelen||{}).A:(c.dagdelen||{})[d]!==false).map(d=>FK_DD_NAAM[d]).join(' '),c.opmerking||''])]
+    const ws=XLSX.utils.aoa_to_sheet(rows)
+    ws['!cols']=[{wch:10},{wch:40},{wch:14},{wch:10},{wch:28},{wch:16},{wch:50}]
     XLSX.utils.book_append_sheet(wb,ws,'Codes')
     const a=document.createElement('a'); a.href=wbNaarHref(wb); a.download='functiekamer_codes.xlsx'; a.click()
   }
@@ -8003,189 +8044,289 @@ export default function RasterTool(){
       zonderKamer:fkCodes.filter(c=>fkCodeLabel(c)&&fkWeekVan(c)>0&&!Object.keys(c.kamers||{}).some(id=>c.kamers[id])).length}
   })()
 
-  const renderFkInvoer=()=>(
-    <div style={{animation:'fadeIn 0.18s ease'}}>
-      {miniHero('FUNCTIEKAMERS','Kamers en','kwalificaties','Leg vast welke onderzoeken op welke kamer kunnen en hoe vaak elk onderzoek per week voorkomt. De tool stelt daarna per kamer een raster voor.')}
+  const renderFkInvoer=()=>{
+    const start=!fk.mode
+    const sectie=fk.sectie||1
+    const zoek=(fk.zoek||'').toLowerCase().trim()
+    const filter=fk.filter||'alle'
+    const sorteer=fk.sorteer||'invoer'
+    const nCodes=fkCodes.filter(fkCodeLabel).length
+    const presetInfo=fk.preset?FK_PRESETS[fk.preset]:null
+    const Stap=({n,l,actief,klaar,onClick})=>(
+      <button onClick={onClick} style={{display:'flex',alignItems:'center',gap:8,padding:'7px 12px',borderRadius:10,cursor:'pointer',
+        border:`1px solid ${actief?C.primary:C.border}`,background:actief?C.blueAccent:C.white,color:actief?C.primary:C.text,fontWeight:700,fontSize:12}}>
+        <span style={{width:20,height:20,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:800,
+          background:klaar?'#39C6AC':actief?C.primary:C.surface2,color:klaar||actief?'#fff':C.muted}}>{klaar?'✓':n}</span>{l}
+      </button>
+    )
+    const Lab=({children})=><div style={{fontSize:9.5,fontWeight:600,color:C.muted,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:4}}>{children}</div>
+    const inp={border:`1px solid ${C.border}`,borderRadius:7,padding:'6px 8px',fontSize:12,fontFamily:'inherit',color:C.text,minWidth:0,background:C.white}
 
-      {/* ── STARTPUNT ── */}
-      <Card style={{marginBottom:16}}>
-        <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:12,flexWrap:'wrap'}}>
-          <div>
-            <H3 style={{margin:'0 0 4px'}}>Startpunt</H3>
-            <p style={{fontSize:11.5,color:C.muted,margin:0,lineHeight:1.55}}>
-              Laad de voorbeeldset uit het wensendocument, lees je eigen codelijst in (Excel/CSV met de kolommen
-              omschrijving · intern · aantal · aantalMinuten · gemiddelde duur · opmerking) of begin leeg.
-            </p>
-          </div>
-        </div>
-        <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:12}}>
-          {Object.keys(FK_PRESETS).map(n=>(
-            <Btn key={n} small variant={fk.preset===n?'primary':'secondary'}
-              onClick={()=>{ if(!fkCodes.length||window.confirm(`Voorbeeldset "${n}" laden?\n\nDit vervangt de huidige kamers en codes.`)) fkLaadPreset(n) }}>
-              ⤓ {n} (voorbeeldset 2025)
-            </Btn>
-          ))}
-          <Btn small variant="secondary" onClick={()=>fkFileRef.current&&fkFileRef.current.click()}>📥 Codelijst importeren</Btn>
-          <input ref={fkFileRef} type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}} onChange={fkImporteer}/>
-          <Btn small variant="secondary" onClick={fkVoorbeeldExcel} title="Download de huidige codelijst als Excel — ook bruikbaar als invulsjabloon">⤓ Sjabloon / huidige lijst</Btn>
-          <Btn small variant="secondary" onClick={()=>{ if(!fkCodes.length||window.confirm('Alle kamers en codes wissen?')) setFk({kamers:[fkNieuweKamer('Kamer 1')],codes:[fkNieuweCode()],regels:fkStandaardRegels(),preset:'',badge:null}) }}>○ Leeg beginnen</Btn>
-        </div>
-        {fk.badge&&(
-          <div style={{marginTop:12,padding:'8px 12px',borderRadius:9,background:'#EAF5EE',border:'1px solid #C9E6D5',fontSize:11.5,color:C.green,fontWeight:600}}>✓ {fk.badge.t}</div>
-        )}
-      </Card>
-
-      {/* ── KAMERS ── */}
-      <Card style={{marginBottom:16}}>
-        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
-          <div>
-            <H3 style={{margin:'0 0 3px'}}>Kamers — {fkKamers.length} {fkKamers.length===1?'kamer':'kamers'}</H3>
-            <p style={{fontSize:11.5,color:C.muted,margin:0,lineHeight:1.5}}>Elke kamer heeft een naam, een omschrijving van wat er kan, en de dagdelen waarop de kamer beschikbaar is. De kwalificaties zelf (welke code waar mag) vink je aan bij de codes.</p>
-          </div>
-          <Btn small onClick={()=>fkZet(p=>({kamers:[...p.kamers,fkNieuweKamer(`Kamer ${p.kamers.length+1}`)]}))}>+ Kamer</Btn>
-        </div>
-        <div style={{display:'flex',flexDirection:'column',gap:10}}>
-          {fkKamers.map((k,i)=>{ const sv=fkSamenvatting.perKamer[k.id]||{codes:0,alleenHier:0,min:0}
-            return(
-            <div key={k.id} style={{border:`1px solid ${C.border}`,borderRadius:14,padding:'12px 14px',background:k.actief===false?C.surface2:C.white,opacity:k.actief===false?0.7:1}}>
-              <div style={{display:'flex',gap:10,alignItems:'center',marginBottom:8}}>
-                <span style={{width:12,height:12,borderRadius:4,background:fkKleur(i).brd,flexShrink:0}}/>
-                <input value={k.naam} onChange={e=>fkZetKamer(i,{naam:e.target.value})} placeholder="Kamernummer, bv. A1.213"
-                  style={{width:120,border:`1px solid ${C.border}`,borderRadius:8,padding:'7px 10px',fontSize:13,fontWeight:700,fontFamily:'inherit',color:C.text}}/>
-                <input value={k.oms} onChange={e=>fkZetKamer(i,{oms:e.target.value})} placeholder="Wat kan er in deze kamer? (apparatuur, onderzoeken)"
-                  style={{flex:1,border:`1px solid ${C.border}`,borderRadius:8,padding:'7px 10px',fontSize:12,fontFamily:'inherit',color:C.text}}/>
-                <label title="Kamer tijdelijk buiten gebruik — de codes blijven staan, maar er wordt niets in gepland"
-                  style={{display:'flex',alignItems:'center',gap:5,fontSize:11,fontWeight:600,color:C.muted,cursor:'pointer',whiteSpace:'nowrap'}}>
-                  <input type="checkbox" checked={k.actief!==false} onChange={e=>fkZetKamer(i,{actief:e.target.checked})}/> in gebruik
-                </label>
-                <button onClick={()=>{ if(window.confirm(`Kamer ${k.naam||i+1} verwijderen?`)) fkZet(p=>({kamers:p.kamers.filter((_,j)=>j!==i)})) }} title="Kamer verwijderen"
-                  style={{width:28,height:28,borderRadius:8,border:`1px solid ${C.border}`,background:C.white,color:C.muted,cursor:'pointer',fontSize:14}}>×</button>
+    // ── STARTSCHERM — twee opties, net als bij de poli ─────────────────────────
+    if(start) return(
+      <div style={{animation:'fadeIn 0.18s ease'}}>
+        {miniHero('FUNCTIEKAMERS','Hoe wil je','beginnen?','Laad een Excel in, of vul zelf in met een vooringevulde basis voor je vakgroep. Alles is daarna aan te passen.')}
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(250px,1fr))',gap:14}}>
+          {/* Optie 1: Excel */}
+          <div data-fk-start="excel" onClick={()=>fkFileRef.current&&fkFileRef.current.click()}
+            style={{background:C.white,border:`1.5px solid ${C.border}`,borderRadius:18,padding:'22px 22px 20px',cursor:'pointer',transition:'all 0.16s',position:'relative',overflow:'hidden'}}
+            onMouseEnter={e=>{e.currentTarget.style.borderColor=C.green;e.currentTarget.style.boxShadow='0 14px 34px rgba(46,139,87,0.14)';e.currentTarget.style.transform='translateY(-2px)'}}
+            onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.boxShadow='none';e.currentTarget.style.transform='none'}}>
+            <div style={{position:'absolute',right:-40,top:-40,width:130,height:130,borderRadius:'50%',background:'#E7F3EC',opacity:0.6}}/>
+            <div style={{position:'relative'}}>
+              <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:12}}>
+                <div style={{width:46,height:46,borderRadius:14,background:'linear-gradient(140deg,#4FB77E,#2E8B57)',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 8px 18px rgba(46,139,87,0.28)',fontSize:20}}>📥</div>
+                <div>
+                  <div style={{fontSize:9.5,fontWeight:700,color:C.green,letterSpacing:'0.16em'}}>OPTIE 1</div>
+                  <div style={{fontFamily:"'Newsreader',Georgia,serif",fontSize:21,fontWeight:500,color:C.text}}>Excel inladen</div>
+                </div>
               </div>
-              <div style={{display:'flex',gap:16,alignItems:'flex-start',flexWrap:'wrap'}}>
-                <div style={{flex:'0 0 auto'}}>
-                  <div style={{fontSize:9.5,fontWeight:600,color:C.muted,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:5}}>Beschikbaar</div>
-                  <FkDagenGrid klein waarde={k.ddDagen||{}} onChange={(dd,dag,aan)=>fkZetKamer(i,{ddDagen:{...(k.ddDagen||{}),[dd]:{...((k.ddDagen||{})[dd]||{}),[dag]:aan}}})}/>
+              <div style={{fontSize:12.5,color:C.muted,lineHeight:1.6,marginBottom:12}}>
+                Upload je codelijst (code · omschrijving · aantal per jaar · duur · kamers) of een eerder opgeslagen sessie. Kamers en onderzoeken worden meteen ingeladen.
+              </div>
+              <span style={{display:'inline-flex',alignItems:'center',gap:8,fontSize:13,fontWeight:700,color:'#fff',background:C.green,borderRadius:10,padding:'9px 16px'}}>Bestand kiezen →</span>
+              <button onClick={e=>{e.stopPropagation(); fkVoorbeeldExcel()}} title="Excel-sjabloon met de kolommen die de tool verwacht"
+                style={{display:'block',marginTop:12,background:'none',border:'none',cursor:'pointer',fontSize:11.5,fontWeight:600,color:C.green,padding:0,textDecoration:'underline'}}>⤓ Sjabloon downloaden</button>
+            </div>
+          </div>
+          {/* Optie 2: zelf invullen met een basis per vakgroep */}
+          <div style={{background:C.white,border:`1.5px solid ${C.border}`,borderRadius:18,padding:'22px 22px 20px',position:'relative',overflow:'hidden'}}>
+            <div style={{position:'absolute',right:-40,top:-40,width:130,height:130,borderRadius:'50%',background:C.blueAccent,opacity:0.5}}/>
+            <div style={{position:'relative'}}>
+              <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:12}}>
+                <div style={{width:46,height:46,borderRadius:14,background:`linear-gradient(140deg,${C.light},${C.primary})`,display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 8px 18px rgba(28,110,164,0.28)',fontSize:20}}>✎</div>
+                <div>
+                  <div style={{fontSize:9.5,fontWeight:700,color:C.primary,letterSpacing:'0.16em'}}>OPTIE 2</div>
+                  <div style={{fontFamily:"'Newsreader',Georgia,serif",fontSize:21,fontWeight:500,color:C.text}}>Zelf invullen</div>
                 </div>
-                <div style={{fontSize:11.5,color:C.muted,lineHeight:1.6,paddingTop:14}}>
-                  <b style={{color:C.text}}>{sv.codes}</b> codes gekwalificeerd · <b style={{color:C.text}}>{sv.alleenHier}</b> kunnen alléén hier
-                  {sv.min>0&&<> · vaste vraag <b style={{color:C.text}}>{Math.round(sv.min/60*10)/10} u/wk</b></>}
-                </div>
+              </div>
+              <div style={{fontSize:12.5,color:C.muted,lineHeight:1.6,marginBottom:12}}>
+                Kies je vakgroep. De kamers en onderzoeken staan dan alvast klaar als basis; je past aantallen, duren en kamers aan.
+              </div>
+              <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                {Object.entries(FK_PRESETS).map(([n,p])=>(
+                  <button key={n} data-fk-preset={n} onClick={()=>fkLaadPreset(n)}
+                    style={{display:'flex',alignItems:'center',gap:10,padding:'9px 12px',borderRadius:10,border:`1px solid ${C.border}`,background:C.white,cursor:'pointer',textAlign:'left',transition:'all 0.12s'}}
+                    onMouseEnter={e=>{e.currentTarget.style.borderColor=C.primary;e.currentTarget.style.background=C.blueAccent}}
+                    onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.background=C.white}}>
+                    <span style={{fontSize:12.5,fontWeight:700,color:C.text,flex:1}}>{n}</span>
+                    <span style={{fontSize:10.5,color:C.muted}}>{p.kamers.length} kamers · {p.codes.length} codes{p.voorbeeld?' · voorbeeldcijfers':' · cijfers 2025'}</span>
+                    <span style={{color:C.primary,fontWeight:700}}>→</span>
+                  </button>
+                ))}
+                <button data-fk-preset="leeg" onClick={()=>setFk({kamers:[fkNieuweKamer('Kamer 1'),fkNieuweKamer('Kamer 2')],codes:[fkNieuweCode({code:'',oms:''})],regels:fkStandaardRegels(),preset:'',badge:null,open:null,mode:'manual',sectie:1})}
+                  style={{padding:'8px 12px',borderRadius:10,border:`1px dashed ${C.border}`,background:'transparent',cursor:'pointer',fontSize:12,fontWeight:600,color:C.muted,textAlign:'left'}}>○ Leeg beginnen — eigen kamers en codes</button>
               </div>
             </div>
-          )})}
-          {!fkKamers.length&&<div style={{fontSize:12,color:C.muted,textAlign:'center',padding:'14px 0'}}>Nog geen kamers — laad de voorbeeldset of voeg een kamer toe.</div>}
+          </div>
         </div>
-      </Card>
+        <input ref={fkFileRef} type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}} onChange={fkImporteer}/>
+      </div>
+    )
 
-      {/* ── CODES ── */}
-      <Card style={{marginBottom:16}}>
-        <div style={{display:'flex',alignItems:'flex-end',justifyContent:'space-between',marginBottom:10,gap:10,flexWrap:'wrap'}}>
-          <div>
-            <H3 style={{margin:'0 0 3px'}}>Onderzoekscodes — {fkCodes.filter(fkCodeLabel).length} codes</H3>
-            <p style={{fontSize:11.5,color:C.muted,margin:0,lineHeight:1.5}}>
-              Per code: hoe vaak per jaar (of per week), de duur, en in welke kamers het onderzoek kan.
-              Samen <b style={{color:C.text}}>{fkSamenvatting.totN}</b> onderzoeken en <b style={{color:C.text}}>{Math.round(fkSamenvatting.totMin/60*10)/10} uur</b> per week.
-              {fkSamenvatting.zonderKamer>0&&<span style={{color:C.danger,fontWeight:600}}> {fkSamenvatting.zonderKamer} code(s) zonder kamer.</span>}
-            </p>
-          </div>
-          <div style={{display:'flex',alignItems:'center',gap:8}}>
-            <span style={{fontSize:10.5,fontWeight:600,color:C.muted}}>Weken per jaar</span>
-            <NumStepper val={fkReg.wekenPerJaar} on={v=>fkZetRegel({wekenPerJaar:v})} step={1} min={30} max={52} breed={40}/>
-            <Btn small onClick={()=>fkZet(p=>({codes:[...p.codes,fkNieuweCode()]}))}>+ Code</Btn>
-          </div>
+    // ── INVULSCHERM — twee stappen: kamers, onderzoeken ───────────────────────
+    const zichtbaar=fkCodes.map((c,i)=>({c,i})).filter(({c})=>{
+      if(filter==='zonderKamer'&&(fkWeekVan(c)<=0||Object.keys(c.kamers||{}).some(id=>c.kamers[id]&&fkKamers.some(k=>k.id===id)))) return false
+      if(filter==='dagdeel'&&!((c.dagdelen||{}).O===false||(c.dagdelen||{}).M===false)) return false
+      if(zoek&&!(`${c.code} ${c.oms} ${c.opmerking||''}`.toLowerCase().includes(zoek))) return false
+      return true
+    }).sort((a,b)=> sorteer==='volume' ? fkWeekVan(b.c)*fkSnap(b.c.duur)-fkWeekVan(a.c)*fkSnap(a.c.duur)
+      : sorteer==='code' ? fkCodeLabel(a.c).localeCompare(fkCodeLabel(b.c)) : a.i-b.i)
+    return(
+      <div style={{animation:'fadeIn 0.18s ease'}}>
+        {/* kop: terug, stappen, herkomst */}
+        <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginBottom:12}}>
+          <button onClick={()=>fkZet(()=>({mode:null}))} title="Terug naar het startscherm (kamers en codes blijven bewaard)"
+            style={{padding:'7px 10px',borderRadius:10,border:`1px solid ${C.border}`,background:C.white,cursor:'pointer',fontSize:11.5,fontWeight:600,color:C.muted}}>← Start</button>
+          <Stap n={1} l="Kamers" actief={sectie===1} klaar={sectie!==1&&fkKamers.length>0} onClick={()=>fkZet(()=>({sectie:1}))}/>
+          <Stap n={2} l="Onderzoeken" actief={sectie===2} klaar={false} onClick={()=>fkZet(()=>({sectie:2}))}/>
+          <span style={{flex:1}}/>
+          {fk.preset&&<span style={{fontSize:10.5,fontWeight:700,padding:'4px 9px',borderRadius:8,background:presetInfo&&presetInfo.voorbeeld?'#FDF6E3':'#EAF5EE',color:presetInfo&&presetInfo.voorbeeld?'#8A6A12':C.green,border:`1px solid ${presetInfo&&presetInfo.voorbeeld?'#EBD08A':'#C9E6D5'}`}}
+            title={presetInfo&&presetInfo.voorbeeld?'Dit zijn voorbeeldcijfers als startpunt — vervang ze door je eigen jaarcijfers':'Aantallen uit 2025, uit het wensendocument'}>
+            {fk.preset}{presetInfo&&presetInfo.voorbeeld?' · voorbeeldcijfers':''}</span>}
         </div>
-        <div style={{display:'grid',gridTemplateColumns:'86px 1fr 62px 58px 62px 54px',gap:6,padding:'0 6px 6px',fontSize:9.5,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.05em'}}>
-          <span>Code</span><span>Omschrijving</span><span>Per jaar</span><span>Per wk</span><span>Duur</span><span>Min/wk</span>
+        {fk.badge&&<div style={{marginBottom:12,padding:'8px 12px',borderRadius:9,background:'#EAF5EE',border:'1px solid #C9E6D5',fontSize:11.5,color:C.green,fontWeight:600,display:'flex',gap:8,alignItems:'center'}}>
+          <span style={{flex:1}}>✓ {fk.badge.t}</span><button onClick={()=>fkZet(()=>({badge:null}))} style={{border:'none',background:'none',cursor:'pointer',color:C.green,fontSize:14}}>×</button></div>}
+        {/* samenvatting in één regel */}
+        <div style={{display:'flex',gap:14,flexWrap:'wrap',padding:'9px 14px',borderRadius:11,background:C.surface2,border:`1px solid ${C.border}`,marginBottom:14,fontSize:11.5,color:C.muted,alignItems:'center'}}>
+          <span><b style={{color:C.text,fontSize:13}}>{fkActieveKamers.length}</b> kamers</span>
+          <span><b style={{color:C.text,fontSize:13}}>{nCodes}</b> codes</span>
+          <span><b style={{color:C.text,fontSize:13}}>{fkSamenvatting.totN}</b> onderzoeken/wk</span>
+          <span><b style={{color:C.text,fontSize:13}}>{Math.round(fkSamenvatting.totMin/60*10)/10}</b> uur/wk</span>
+          {fkSamenvatting.zonderKamer>0
+            ? <button onClick={()=>fkZet(()=>({sectie:2,filter:'zonderKamer'}))} style={{marginLeft:'auto',padding:'4px 10px',borderRadius:8,border:'1px solid #F1CFC8',background:'#FBEDEA',color:C.danger,fontSize:11,fontWeight:700,cursor:'pointer'}}>
+                △ {fkSamenvatting.zonderKamer} zonder kamer — toon</button>
+            : <span style={{marginLeft:'auto',color:C.green,fontWeight:700}}>✓ elke code heeft een kamer</span>}
         </div>
-        <div style={{display:'flex',flexDirection:'column',gap:6}}>
-          {fkCodes.map((c,i)=>{ const aw=fkWeekVan(c); const open=!!fk.open&&fk.open===i
-            const ids=Object.keys(c.kamers||{}).filter(id=>c.kamers[id]&&fkKamers.some(k=>k.id===id))
-            const geenKamer=aw>0&&!ids.length&&fkCodeLabel(c)
-            return(
-            <div key={i} style={{border:`1px solid ${geenKamer?'#F1CFC8':C.border}`,borderRadius:10,padding:'7px 6px',background:geenKamer?'#FDF7F5':C.white}}>
-              <div style={{display:'grid',gridTemplateColumns:'86px 1fr 62px 58px 62px 54px',gap:6,alignItems:'center'}}>
-                <input value={c.code} onChange={e=>fkZetCode(i,{code:e.target.value})} placeholder="Code"
-                  style={{border:`1px solid ${C.border}`,borderRadius:7,padding:'6px 8px',fontSize:12,fontWeight:700,fontFamily:'inherit',color:fkKleur(i).fg,background:fkKleur(i).bg,minWidth:0}}/>
-                <input value={c.oms} onChange={e=>fkZetCode(i,{oms:e.target.value})} placeholder="Omschrijving"
-                  style={{border:`1px solid ${C.border}`,borderRadius:7,padding:'6px 8px',fontSize:12,fontFamily:'inherit',color:C.text,minWidth:0}}/>
-                <input type="number" value={c.aantalJaar||''} onChange={e=>fkZetCode(i,{aantalJaar:+e.target.value||0,bron:'jaar'})} placeholder="0" title="Aantal per jaar (bv. uit 2025)"
-                  style={{border:`1px solid ${c.bron!=='week'?C.primary:C.border}`,borderRadius:7,padding:'6px 6px',fontSize:12,fontFamily:'inherit',color:C.text,minWidth:0,textAlign:'right'}}/>
-                <input type="number" step="0.5" value={c.bron==='week'?(c.aantalWeek||''):(Math.round(aw*10)/10||'')} onChange={e=>fkZetCode(i,{aantalWeek:+e.target.value||0,bron:'week'})} placeholder="0" title="Aantal per week — typ hier om het jaartotaal te overrulen"
-                  style={{border:`1px solid ${c.bron==='week'?C.primary:C.border}`,borderRadius:7,padding:'6px 6px',fontSize:12,fontFamily:'inherit',color:c.bron==='week'?C.text:C.muted,minWidth:0,textAlign:'right'}}/>
-                <input type="number" step="5" value={c.duur} onChange={e=>fkZetCode(i,{duur:+e.target.value||5})} title="Duur in minuten (raster van 5 min)"
-                  style={{border:`1px solid ${C.border}`,borderRadius:7,padding:'6px 6px',fontSize:12,fontFamily:'inherit',color:C.text,minWidth:0,textAlign:'right'}}/>
-                <span style={{fontSize:11.5,fontWeight:700,color:C.text,textAlign:'right',fontVariantNumeric:'tabular-nums'}}>{Math.round(aw*fkSnap(c.duur))}</span>
+
+        {sectie===1&&(
+          <Card style={{marginBottom:14,padding:18}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10,gap:10}}>
+              <div>
+                <H3 style={{margin:'0 0 3px'}}>Kamers</H3>
+                <p style={{fontSize:11.5,color:C.muted,margin:0,lineHeight:1.5}}>Naam, wat er kan, en op welke dagdelen de kamer beschikbaar is. Welke code in welke kamer mag, vink je aan bij stap 2.</p>
               </div>
-              <div style={{display:'flex',alignItems:'center',gap:6,marginTop:6,flexWrap:'wrap'}}>
-                <span style={{fontSize:9.5,fontWeight:700,color:C.muted,marginRight:2}}>KAMERS</span>
-                {fkKamers.map((k,ki)=>{ const aan=!!(c.kamers||{})[k.id]
-                  return <button key={k.id} onClick={()=>fkZetCode(i,{kamers:{...(c.kamers||{}),[k.id]:!aan}})} title={`${k.naam}: ${aan?'gekwalificeerd — klik om uit te zetten':'niet gekwalificeerd — klik om aan te zetten'}`}
-                    style={{padding:'3px 9px',borderRadius:20,border:`1px solid ${aan?fkKleur(ki).brd:C.border}`,cursor:'pointer',fontSize:10.5,fontWeight:700,
-                      background:aan?fkKleur(ki).bg:C.white,color:aan?fkKleur(ki).fg:C.muted}}>{aan?'✓ ':''}{k.naam||`Kamer ${ki+1}`}</button> })}
-                {geenKamer&&<span style={{fontSize:10.5,color:C.danger,fontWeight:600}}>← nog geen kamer</span>}
-                <span style={{flex:1}}/>
-                <span style={{fontSize:9.5,fontWeight:700,color:C.muted}}>DAGDEEL</span>
-                {['O','M','A'].map(dd=>{ const aan=(c.dagdelen||{})[dd]!==false&&(dd!=='A'||!!(c.dagdelen||{}).A)
-                  return <button key={dd} onClick={()=>fkZetCode(i,{dagdelen:{O:(c.dagdelen||{}).O!==false,M:(c.dagdelen||{}).M!==false,A:!!(c.dagdelen||{}).A,[dd]:!aan}})}
-                    style={{padding:'3px 8px',borderRadius:6,border:`1px solid ${aan?C.primary:C.border}`,cursor:'pointer',fontSize:10,fontWeight:700,background:aan?C.blueAccent:C.white,color:aan?C.primary:C.muted}}>
-                    {dd==='O'?'Och':dd==='M'?'Mid':'Av'}</button> })}
-                <button onClick={()=>fkZet(p=>({open:open?null:i}))} title="Meer opties: weekdagen, apparaat, koppeling, voorkeurskamer, spreiden, opmerking"
-                  style={{padding:'3px 8px',borderRadius:6,border:`1px solid ${C.border}`,cursor:'pointer',fontSize:10,fontWeight:700,background:open?C.surface2:C.white,color:C.muted}}>{open?'▾ minder':'▸ meer'}</button>
-                <button onClick={()=>fkZet(p=>({codes:p.codes.filter((_,j)=>j!==i),open:null}))} title="Code verwijderen"
-                  style={{width:24,height:24,borderRadius:6,border:`1px solid ${C.border}`,background:C.white,color:C.muted,cursor:'pointer',fontSize:13}}>×</button>
-              </div>
-              {(c.opmerking&&!open)&&<div style={{fontSize:10.5,color:C.muted,marginTop:5,fontStyle:'italic'}}>{c.opmerking}</div>}
-              {open&&(
-                <div style={{marginTop:8,paddingTop:8,borderTop:`1px dashed ${C.border}`,display:'flex',gap:14,flexWrap:'wrap',alignItems:'flex-start'}}>
-                  <div>
-                    <div style={{fontSize:9.5,fontWeight:600,color:C.muted,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:4}}>Weekdagen</div>
-                    <div style={{display:'flex',gap:3}}>
-                      {DAY_ABBR.map(d=>{ const aan=(c.weekdagen||{})[d]!==false
-                        return <button key={d} onClick={()=>fkZetCode(i,{weekdagen:{...{MA:true,DI:true,WO:true,DO:true,VR:true},...(c.weekdagen||{}),[d]:!aan}})}
-                          style={{width:30,height:22,borderRadius:5,border:`1px solid ${aan?C.primary:C.border}`,cursor:'pointer',fontSize:9.5,fontWeight:700,background:aan?C.primary:C.white,color:aan?'#fff':C.muted}}>{d}</button> })}
+              <Btn small onClick={()=>fkZet(p=>({kamers:[...p.kamers,fkNieuweKamer(`Kamer ${p.kamers.length+1}`)]}))}>+ Kamer</Btn>
+            </div>
+            <div style={{display:'flex',flexDirection:'column',gap:8}}>
+              {fkKamers.map((k,i)=>{ const sv=fkSamenvatting.perKamer[k.id]||{codes:0,alleenHier:0,min:0}
+                return(
+                <div key={k.id} style={{border:`1px solid ${C.border}`,borderRadius:12,padding:'10px 12px',background:k.actief===false?C.surface2:C.white,opacity:k.actief===false?0.65:1}}>
+                  <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:8}}>
+                    <span style={{width:10,height:10,borderRadius:3,background:fkKleur(i).brd,flexShrink:0}}/>
+                    <input value={k.naam} onChange={e=>fkZetKamer(i,{naam:e.target.value})} placeholder="Kamer, bv. A1.213" style={{...inp,width:100,fontWeight:700}}/>
+                    <input value={k.oms} onChange={e=>fkZetKamer(i,{oms:e.target.value})} placeholder="Wat kan er in deze kamer?" style={{...inp,flex:1}}/>
+                    <label title="Buiten gebruik: de codes blijven staan, maar er wordt niets in gepland" style={{display:'flex',alignItems:'center',gap:4,fontSize:10.5,fontWeight:600,color:C.muted,cursor:'pointer',whiteSpace:'nowrap'}}>
+                      <input type="checkbox" checked={k.actief!==false} onChange={e=>fkZetKamer(i,{actief:e.target.checked})}/> in gebruik</label>
+                    <button onClick={()=>{ if(window.confirm(`Kamer ${k.naam||i+1} verwijderen?`)) fkZet(p=>({kamers:p.kamers.filter((_,j)=>j!==i)})) }} title="Kamer verwijderen"
+                      style={{width:26,height:26,borderRadius:7,border:`1px solid ${C.border}`,background:C.white,color:C.muted,cursor:'pointer',fontSize:13}}>×</button>
+                  </div>
+                  <div style={{display:'flex',gap:16,alignItems:'center',flexWrap:'wrap'}}>
+                    <FkDagenGrid klein waarde={k.ddDagen||{}} onChange={(dd,dag,aan)=>fkZetKamer(i,{ddDagen:{...(k.ddDagen||{}),[dd]:{...((k.ddDagen||{})[dd]||{}),[dag]:aan}}})}/>
+                    <div style={{fontSize:11,color:C.muted,lineHeight:1.6}}>
+                      <b style={{color:C.text}}>{sv.codes}</b> codes mogen hier · <b style={{color:C.text}}>{sv.alleenHier}</b> alléén hier
+                      {sv.min>0&&<> · vaste vraag <b style={{color:C.text}}>{Math.round(sv.min/60*10)/10} u/wk</b></>}
                     </div>
                   </div>
-                  <div>
-                    <div style={{fontSize:9.5,fontWeight:600,color:C.muted,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:4}}>Apparaat (één toestel)</div>
-                    <input value={c.apparaat||''} onChange={e=>fkZetCode(i,{apparaat:e.target.value})} placeholder="bv. NO-meter" title="Codes met hetzelfde apparaat gaan naar dezelfde kamer en staan nooit gelijktijdig"
-                      style={{width:110,border:`1px solid ${C.border}`,borderRadius:7,padding:'5px 8px',fontSize:11.5,fontFamily:'inherit'}}/>
-                  </div>
-                  <div>
-                    <div style={{fontSize:9.5,fontWeight:600,color:C.muted,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:4}}>Altijd samen met (koppel)</div>
-                    <input value={c.koppel||''} onChange={e=>fkZetCode(i,{koppel:e.target.value})} placeholder="bv. B1+B2" title="Codes met dezelfde koppelnaam worden als één blok gepland"
-                      style={{width:100,border:`1px solid ${C.border}`,borderRadius:7,padding:'5px 8px',fontSize:11.5,fontFamily:'inherit'}}/>
-                  </div>
-                  <div>
-                    <div style={{fontSize:9.5,fontWeight:600,color:C.muted,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:4}}>Voorkeurskamer</div>
-                    <select value={c.voorkeur||''} onChange={e=>fkZetCode(i,{voorkeur:e.target.value})}
-                      style={{border:`1px solid ${C.border}`,borderRadius:7,padding:'5px 8px',fontSize:11.5,fontFamily:'inherit',background:C.white}}>
-                      <option value="">geen voorkeur</option>
-                      {fkKamers.filter(k=>(c.kamers||{})[k.id]).map(k=><option key={k.id} value={k.id}>{k.naam}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <div style={{fontSize:9.5,fontWeight:600,color:C.muted,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:4}}>Over de week</div>
-                    <select value={c.spreiden||'auto'} onChange={e=>fkZetCode(i,{spreiden:e.target.value})}
-                      style={{border:`1px solid ${C.border}`,borderRadius:7,padding:'5px 8px',fontSize:11.5,fontFamily:'inherit',background:C.white}}>
-                      <option value="auto">automatisch (vanaf {fkReg.spreidVanaf}×/wk spreiden)</option>
-                      <option value="ja">spreiden over de dagen</option>
-                      <option value="nee">clusteren in zo min mogelijk dagdelen</option>
-                    </select>
-                  </div>
-                  <div style={{flex:'1 1 220px'}}>
-                    <div style={{fontSize:9.5,fontWeight:600,color:C.muted,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:4}}>Opmerking</div>
-                    <input value={c.opmerking||''} onChange={e=>fkZetCode(i,{opmerking:e.target.value})} placeholder="bv. voorkeur, voorwaarden, wie het doet"
-                      style={{width:'100%',border:`1px solid ${C.border}`,borderRadius:7,padding:'5px 8px',fontSize:11.5,fontFamily:'inherit',boxSizing:'border-box'}}/>
-                  </div>
                 </div>
-              )}
+              )})}
+              {!fkKamers.length&&<div style={{fontSize:12,color:C.muted,textAlign:'center',padding:'14px 0'}}>Nog geen kamers — voeg een kamer toe.</div>}
             </div>
-          )})}
-          {!fkCodes.length&&<div style={{fontSize:12,color:C.muted,textAlign:'center',padding:'14px 0'}}>Nog geen codes — laad de voorbeeldset, importeer een lijst of voeg een code toe.</div>}
-        </div>
-      </Card>
-    </div>
-  )
+            <div style={{display:'flex',justifyContent:'flex-end',marginTop:12}}>
+              <Btn onClick={()=>fkZet(()=>({sectie:2}))}>Volgende: onderzoeken →</Btn>
+            </div>
+          </Card>
+        )}
+
+        {sectie===2&&(
+          <Card style={{marginBottom:14,padding:18}}>
+            <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:10,marginBottom:10,flexWrap:'wrap'}}>
+              <div>
+                <H3 style={{margin:'0 0 3px'}}>Onderzoeken</H3>
+                <p style={{fontSize:11.5,color:C.muted,margin:0,lineHeight:1.5}}>Per code: aantal per jaar, duur, en de kamers waar het kan. Klik ▸ voor dagdelen, weekdagen en bijzondere regels.</p>
+              </div>
+              <div style={{display:'flex',alignItems:'center',gap:6}}>
+                <span style={{fontSize:10.5,fontWeight:600,color:C.muted}}>weken/jaar</span>
+                <NumStepper val={fkReg.wekenPerJaar} on={v=>fkZetRegel({wekenPerJaar:v})} step={1} min={30} max={52} breed={38}/>
+                <Btn small onClick={()=>fkZet(p=>({codes:[...p.codes,fkNieuweCode()],open:p.codes.length,zoek:'',filter:'alle'}))}>+ Code</Btn>
+              </div>
+            </div>
+            {/* werkbalk: zoeken, filteren, sorteren */}
+            <div style={{display:'flex',gap:6,alignItems:'center',marginBottom:8,flexWrap:'wrap'}}>
+              <input value={fk.zoek||''} onChange={e=>fkZet(()=>({zoek:e.target.value}))} placeholder="Zoek code of omschrijving…" style={{...inp,flex:'1 1 150px'}}/>
+              {[{v:'alle',l:'Alle'},{v:'zonderKamer',l:`Zonder kamer (${fkSamenvatting.zonderKamer})`},{v:'dagdeel',l:'Alleen ochtend/middag'}].map(f=>(
+                <button key={f.v} onClick={()=>fkZet(()=>({filter:f.v}))} style={{padding:'5px 10px',borderRadius:8,border:`1px solid ${filter===f.v?C.primary:C.border}`,background:filter===f.v?C.blueAccent:C.white,color:filter===f.v?C.primary:C.muted,fontSize:11,fontWeight:700,cursor:'pointer'}}>{f.l}</button>
+              ))}
+              <select value={sorteer} onChange={e=>fkZet(()=>({sorteer:e.target.value}))} style={{...inp,padding:'5px 6px',fontSize:11}}>
+                <option value="invoer">volgorde: invoer</option><option value="volume">volgorde: meeste minuten</option><option value="code">volgorde: code A–Z</option>
+              </select>
+            </div>
+            {/* tabel */}
+            <div style={{border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
+              <div style={{display:'grid',gridTemplateColumns:'78px 1fr 60px 52px 54px 24px',gap:6,padding:'6px 8px',background:C.surface2,fontSize:9.5,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.05em',borderBottom:`1px solid ${C.border}`}}>
+                <span>Code</span><span>Omschrijving</span><span style={{textAlign:'right'}}>Per jaar</span><span style={{textAlign:'right'}}>Duur</span><span style={{textAlign:'right'}}>Min/wk</span><span/>
+              </div>
+              {zichtbaar.map(({c,i},ri)=>{ const aw=fkWeekVan(c); const open=fk.open===i
+                const ids=Object.keys(c.kamers||{}).filter(id=>c.kamers[id]&&fkKamers.some(k=>k.id===id))
+                const geenKamer=aw>0&&!ids.length&&!!fkCodeLabel(c)
+                const dagd=c.dagdelen||{}
+                return(
+                <div key={i} style={{borderTop:ri?`1px solid ${C.border}`:'none',background:geenKamer?'#FDF7F5':(open?'#F8FAFC':C.white),padding:'6px 8px'}}>
+                  <div style={{display:'grid',gridTemplateColumns:'78px 1fr 60px 52px 54px 24px',gap:6,alignItems:'center'}}>
+                    <input value={c.code} onChange={e=>fkZetCode(i,{code:e.target.value})} placeholder="Code" style={{...inp,padding:'5px 7px',fontWeight:700,color:fkKleur(i).fg,background:fkKleur(i).bg,borderColor:fkKleur(i).brd}}/>
+                    <input value={c.oms} onChange={e=>fkZetCode(i,{oms:e.target.value})} placeholder="Omschrijving" style={{...inp,padding:'5px 7px'}}/>
+                    <input type="number" value={c.bron==='week'?'':(c.aantalJaar||'')} onChange={e=>fkZetCode(i,{aantalJaar:+e.target.value||0,bron:'jaar'})} placeholder={c.bron==='week'?`${c.aantalWeek}/wk`:'0'} title={c.bron==='week'?`Vast op ${c.aantalWeek} per week (zie ▸)`:'Aantal per jaar'}
+                      style={{...inp,padding:'5px 6px',textAlign:'right'}}/>
+                    <input type="number" step="5" value={c.duur} onChange={e=>fkZetCode(i,{duur:+e.target.value||5})} title="Duur in minuten" style={{...inp,padding:'5px 6px',textAlign:'right'}}/>
+                    <span style={{fontSize:11.5,fontWeight:700,color:C.text,textAlign:'right',fontVariantNumeric:'tabular-nums'}}>{Math.round(aw*fkSnap(c.duur))}</span>
+                    <button onClick={()=>fkZet(()=>({open:open?null:i}))} title="Dagdelen, weekdagen, apparaat, koppeling, voorkeurskamer, opmerking"
+                      style={{width:24,height:24,borderRadius:6,border:`1px solid ${C.border}`,cursor:'pointer',background:open?C.primary:C.white,color:open?'#fff':C.muted,fontSize:11,fontWeight:700}}>{open?'▾':'▸'}</button>
+                  </div>
+                  <div style={{display:'flex',alignItems:'center',gap:4,marginTop:5,flexWrap:'wrap'}}>
+                    {fkKamers.map((k,ki)=>{ const aan=!!(c.kamers||{})[k.id]
+                      return <button key={k.id} onClick={()=>fkZetCode(i,{kamers:{...(c.kamers||{}),[k.id]:!aan}})} title={`${k.naam}: ${aan?'mag hier — klik om uit te zetten':'mag hier niet — klik om aan te zetten'}`}
+                        style={{padding:'2px 8px',borderRadius:12,border:`1px solid ${aan?fkKleur(ki).brd:C.border}`,cursor:'pointer',fontSize:10,fontWeight:700,
+                          background:aan?fkKleur(ki).bg:C.white,color:aan?fkKleur(ki).fg:'#B4BEC8'}}>{aan?'✓ ':''}{k.naam||`Kamer ${ki+1}`}</button> })}
+                    {geenKamer&&<span style={{fontSize:10.5,color:C.danger,fontWeight:700}}>← kies een kamer</span>}
+                    <span style={{flex:1}}/>
+                    {(dagd.O===false||dagd.M===false||dagd.A)&&<span style={{fontSize:10,fontWeight:700,color:C.primary,background:C.blueAccent,padding:'2px 7px',borderRadius:8}}>
+                      alleen {['O','M','A'].filter(d=>d==='A'?!!dagd.A:dagd[d]!==false).map(d=>FK_DD_NAAM[d]).join(' + ')}</span>}
+                    {c.apparaat&&<span style={{fontSize:10,fontWeight:700,color:'#5B3A86',background:'#EEE4F7',padding:'2px 7px',borderRadius:8}}>⚙ {c.apparaat}</span>}
+                    {c.koppel&&<span style={{fontSize:10,fontWeight:700,color:'#8A4B12',background:'#FBE9D7',padding:'2px 7px',borderRadius:8}}>🔗 {c.koppel}</span>}
+                    {c.opmerking&&!open&&<span title={c.opmerking} style={{fontSize:10,color:C.muted,maxWidth:160,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontStyle:'italic'}}>{c.opmerking}</span>}
+                  </div>
+                  {open&&(
+                    <div style={{marginTop:8,paddingTop:8,borderTop:`1px dashed ${C.border}`,display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))',gap:10,alignItems:'start'}}>
+                      <div>
+                        <Lab>Dagdelen</Lab>
+                        <div style={{display:'flex',gap:3}}>
+                          {['O','M','A'].map(dd=>{ const aan=dd==='A'?!!dagd.A:dagd[dd]!==false
+                            return <button key={dd} onClick={()=>fkZetCode(i,{dagdelen:{O:dagd.O!==false,M:dagd.M!==false,A:!!dagd.A,[dd]:!aan}})}
+                              style={{padding:'4px 9px',borderRadius:6,border:`1px solid ${aan?C.primary:C.border}`,cursor:'pointer',fontSize:10.5,fontWeight:700,background:aan?C.primary:C.white,color:aan?'#fff':C.muted}}>{FK_DD_NAAM[dd]}</button> })}
+                        </div>
+                      </div>
+                      <div>
+                        <Lab>Weekdagen</Lab>
+                        <div style={{display:'flex',gap:3}}>
+                          {DAY_ABBR.map(d=>{ const aan=(c.weekdagen||{})[d]!==false
+                            return <button key={d} onClick={()=>fkZetCode(i,{weekdagen:{...{MA:true,DI:true,WO:true,DO:true,VR:true},...(c.weekdagen||{}),[d]:!aan}})}
+                              style={{width:28,height:22,borderRadius:5,border:`1px solid ${aan?C.primary:C.border}`,cursor:'pointer',fontSize:9.5,fontWeight:700,background:aan?C.primary:C.white,color:aan?'#fff':C.muted}}>{d}</button> })}
+                        </div>
+                      </div>
+                      <div>
+                        <Lab>Vast aantal per week</Lab>
+                        <div style={{display:'flex',gap:6,alignItems:'center'}}>
+                          <input type="number" step="0.5" value={c.bron==='week'?(c.aantalWeek||''):''} placeholder={`${Math.round(aw*10)/10} uit jaar`} onChange={e=>fkZetCode(i,{aantalWeek:+e.target.value||0,bron:e.target.value===''?'jaar':'week'})} style={{...inp,width:80}}/>
+                          {c.bron==='week'&&<button onClick={()=>fkZetCode(i,{bron:'jaar'})} style={{border:'none',background:'none',color:C.primary,fontSize:10.5,cursor:'pointer',fontWeight:600}}>terug naar jaar</button>}
+                        </div>
+                      </div>
+                      <div>
+                        <Lab>Apparaat (één toestel)</Lab>
+                        <input value={c.apparaat||''} onChange={e=>fkZetCode(i,{apparaat:e.target.value})} placeholder="bv. NO-meter" title="Codes met hetzelfde apparaat gaan naar één kamer en staan nooit gelijktijdig" style={{...inp,width:'100%',boxSizing:'border-box'}}/>
+                      </div>
+                      <div>
+                        <Lab>Altijd samen met (koppel)</Lab>
+                        <input value={c.koppel||''} onChange={e=>fkZetCode(i,{koppel:e.target.value})} placeholder="bv. B1+B2" title="Codes met dezelfde koppelnaam worden als één blok gepland" style={{...inp,width:'100%',boxSizing:'border-box'}}/>
+                      </div>
+                      <div>
+                        <Lab>Voorkeurskamer</Lab>
+                        <select value={c.voorkeur||''} onChange={e=>fkZetCode(i,{voorkeur:e.target.value})} style={{...inp,width:'100%'}}>
+                          <option value="">geen voorkeur</option>
+                          {fkKamers.filter(k=>(c.kamers||{})[k.id]).map(k=><option key={k.id} value={k.id}>{k.naam}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <Lab>Over de week</Lab>
+                        <select value={c.spreiden||'auto'} onChange={e=>fkZetCode(i,{spreiden:e.target.value})} style={{...inp,width:'100%'}}>
+                          <option value="auto">automatisch (≥{fkReg.spreidVanaf}×/wk spreiden)</option>
+                          <option value="ja">spreiden over de dagen</option>
+                          <option value="nee">clusteren in weinig dagdelen</option>
+                        </select>
+                      </div>
+                      <div style={{gridColumn:'1 / -1',display:'flex',gap:8,alignItems:'flex-end'}}>
+                        <div style={{flex:1}}>
+                          <Lab>Opmerking</Lab>
+                          <input value={c.opmerking||''} onChange={e=>fkZetCode(i,{opmerking:e.target.value})} placeholder="bv. voorwaarden, wie het doet" style={{...inp,width:'100%',boxSizing:'border-box'}}/>
+                        </div>
+                        <button onClick={()=>fkZet(p=>({codes:p.codes.filter((_,j)=>j!==i),open:null}))}
+                          style={{padding:'6px 10px',borderRadius:7,border:`1px solid #F1CFC8`,background:'#FBEDEA',color:C.danger,cursor:'pointer',fontSize:11,fontWeight:700,whiteSpace:'nowrap'}}>× Verwijderen</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )})}
+              {!zichtbaar.length&&<div style={{fontSize:12,color:C.muted,textAlign:'center',padding:'16px 0'}}>{nCodes?'Geen codes die aan het filter voldoen.':'Nog geen codes — klik op + Code.'}</div>}
+            </div>
+            <div style={{display:'flex',justifyContent:'space-between',marginTop:12,alignItems:'center'}}>
+              <Btn small variant="secondary" onClick={()=>fkZet(()=>({sectie:1}))}>← Kamers</Btn>
+              <Btn onClick={()=>herbouwNu(true)}>Naar het rasteradvies →</Btn>
+            </div>
+          </Card>
+        )}
+        <input ref={fkFileRef} type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}} onChange={fkImporteer}/>
+      </div>
+    )
+  }
 
   const renderFkRegels=()=>{
     const met=f=>fkCodes.filter(c=>fkCodeLabel(c)&&f(c)).map(c=>c.code)
@@ -8594,7 +8735,7 @@ export default function RasterTool(){
             ))}
           </div>
           {modus==='functie'&&<span style={{fontSize:11,fontWeight:600,color:C.green,background:'#EAF5EE',border:'1px solid #C9E6D5',borderRadius:8,padding:'4px 9px'}}>
-            {fkActieveKamers.length} kamers · {fk.codes.filter(fkCodeLabel).length} codes{fk.preset?` · voorbeeldset ${fk.preset}`:''}
+            {fkActieveKamers.length} kamers · {fk.codes.filter(fkCodeLabel).length} codes{fk.preset?` · ${FK_PRESETS[fk.preset]&&FK_PRESETS[fk.preset].voorbeeld?'voorbeeldset':'set'} ${fk.preset}`:''}
           </span>}
           {/* Vrij invulbare poli — typ de naam of kies een specialisme */}
           <input value={poli.naam} onChange={e=>setPoli(p=>({...p,naam:e.target.value}))}
