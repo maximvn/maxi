@@ -2,6 +2,7 @@ import React, { useState, useMemo, useCallback, useRef, useEffect } from "react"
 import * as XLSX from 'xlsx'
 import {fkBerekenAdvies,FK_PRESETS,fkNieuweKamer,fkNieuweCode,fkStandaardRegels,fkWeekAantal,fkSnap,fkParseCodes,fkParseKamers,
   fkControleerKwalificaties,fkCodeLabel,FK_DD_NAAM} from './functiekamers.js'
+import {analyseerVraag,antwoordVoor,beantwoordStatus,kennisPerCategorie,zoekKennis,VOORBEELDVRAGEN,KENNIS} from './assistent.js'
 
 // Maak een echte, downloadbare URL van een XLSX-workbook. We gebruiken een Blob
 // + object-URL i.p.v. een data:-URI: grote data:-URI's worden door sommige
@@ -571,6 +572,44 @@ const parseOpdracht=tekst=>{
   if(dichtWoord&&g.dag!=null) return {type:'dag-dicht', ...g, tekst}
   if(openWoord&&g.dag!=null)  return {type:'dag-open', ...g, tekst}
   if(g.pct!=null&&(g.kamer!=null||g.dag!=null)) return {type:'benutting', ...g, tekst}
+  // ── Directe opdrachten voor de overige regels. Alleen bij een duidelijke richting
+  //    ("spoed vooraan", "flex verspreiden"); een losse opmerking ("de spoed loopt niet
+  //    lekker") blijft een onderwerp waarop de assistent doorvraagt.
+  if(/kamers?.{0,20}(zelf bepalen|automatisch)|automatisch.{0,10}kamers|capaciteit (vrij|automatisch|zelf)/.test(t)) return {type:'kamers', delta:0, auto:true, ...g, tekst}
+  if(/drempel (loslaten|uit|weg|eraf)|geen drempel|zonder drempel|minimumbezetting uit/.test(t)) return {type:'drempel', aan:false, ...g, tekst}
+  if(/spoed.{0,15}(vooraan|eerst|voorop|als eerste|bovenaan)/.test(t)) return {type:'spoed', aan:true, ...g, tekst}
+  if(/spoed.{0,25}(gewoon mee|meelopen|niet (meer )?eerst|niet vooraan|uit\b)/.test(t)) return {type:'spoed', aan:false, ...g, tekst}
+  if(/(digita|telefonisch|beeldbel|video).{0,35}(eigen spreekuur|cluster|bij elkaar|samen in|bundel)/.test(t)) return {type:'digitaal', mode:'cluster', ...g, tekst}
+  if(/(digita|telefonisch|beeldbel|video).{0,35}(einde|eind van|achteraan|laatste)/.test(t)) return {type:'digitaal', mode:'end', ...g, tekst}
+  if(/(digita|telefonisch|beeldbel|video).{0,35}(verdeel|verdeeld|verspreid|spreiden|over de dag|tussen de)/.test(t)) return {type:'digitaal', mode:'spread', ...g, tekst}
+  if(/(flex|buffer).{0,30}(verspreid|spreiden|tussen de afspraken|verdelen over)/.test(t)) return {type:'flex', mode:'spread', ...g, tekst}
+  if(/(flex|buffer).{0,30}(einde|eind|achteraan|een blok|één blok)/.test(t)) return {type:'flex', mode:'end', ...g, tekst}
+  if(/ochtend.{0,30}(eerder|vroeger)/.test(t)) return {type:'tijden', wat:'och-eerder', ...g, tekst}
+  if(/ochtend.{0,30}(langer|later door|doorlopen|later stoppen)/.test(t)) return {type:'tijden', wat:'och-langer', ...g, tekst}
+  if(/middag.{0,30}(langer|later door|doorlopen|later stoppen)/.test(t)) return {type:'tijden', wat:'mid-langer', ...g, tekst}
+  if(/avondspreekuur|avond.{0,20}(erbij|toevoegen|openen|open|inplannen)/.test(t)) return {type:'tijden', wat:'avond', ...g, tekst}
+  if(/(open|begin|start).{0,20}met een (nieuwe|nieuw)/.test(t)) return {type:'opening', wat:'nieuw', ...g, tekst}
+  if(/(open|begin|start).{0,20}met een controle/.test(t)) return {type:'opening', wat:'controle', ...g, tekst}
+  if(/in blokken|blokken plannen|eerst alle nieuwe|niet (meer )?afwisselen|ongemengd/.test(t)) return {type:'volgorde', mix:false, ...g, tekst}
+  if(/door elkaar|om en om|om-en-om|afwisselen|gemengd plannen/.test(t)) return {type:'volgorde', mix:true, ...g, tekst}
+  if(/kamers? .{0,15}gelijk belasten|gelijk verdelen over de kamers|alle kamers gelijk|kamers gelijk/.test(t)) return {type:'kamerverdeling', v:'gelijk', ...g, tekst}
+  if(/kamer voor kamer|een voor een vol|één voor één|dagdeel voor dagdeel|kamer na kamer/.test(t)) return {type:'kamerverdeling', v:'dagdeel', ...g, tekst}
+  if(/gelijk over (alle|de) (werk)?dagen|gelijk over de week|elke dag even/.test(t)) return {type:'verdeling', vorm:'gelijk', ...g, tekst}
+  if(/zwaarder aan het begin|zwaartepunt naar voren|begin van de week (voller|zwaarder|drukker)/.test(t)) return {type:'verdeling', vorm:'begin', ...g, tekst}
+  if(/zwaarder aan het eind|zwaartepunt naar achteren|eind van de week (voller|zwaarder|drukker)/.test(t)) return {type:'verdeling', vorm:'eind', ...g, tekst}
+  if(/zo gelijkmatig mogelijk|beste spreiding|gelijkmatig(er)? (over|verdeeld)/.test(t)) return {type:'verdeling', vorm:'best', ...g, tekst}
+  const mVo=t.match(/(\d{2}) ?%.{0,25}(in de )?ochtend/)||t.match(/ochtend.{0,10}(\d{2}) ?%/)
+  if(mVo&&/van de vraag|van de afspraken|ochtend zwaarder|verhouding|verdeling/.test(t)) return {type:'dagdeelverdeling', verOch:clamp(parseInt(mVo[1]),10,90), ...g, tekst}
+  if(/ochtend zwaarder|meer in de ochtend/.test(t)) return {type:'dagdeelverdeling', verOch:60, ...g, tekst}
+  if(/middag zwaarder|meer in de middag/.test(t)) return {type:'dagdeelverdeling', verOch:40, ...g, tekst}
+  const mAant=t.match(/(\d{1,2}) ?% (meer|minder) (patient|patiënt)/)
+  if(mAant) return {type:'aantallen', delta:(mAant[2]==='meer'?1:-1)*parseInt(mAant[1]), ...g, tekst}
+  if(/meer (patient|patiënt)|drukker|groei/.test(t)) return {type:'aantallen', delta:10, ...g, tekst}
+  if(/minder (patient|patiënt)|rustiger/.test(t)) return {type:'aantallen', delta:-10, ...g, tekst}
+  const mDuur=t.match(/(\d{1,2}) minuten (langer|korter)/)
+  if(mDuur) return {type:'duur', delta:(mDuur[2]==='langer'?1:-1)*parseInt(mDuur[1]), ...g, tekst}
+  if(/consult(en)?.{0,15}(langer|meer tijd)/.test(t)) return {type:'duur', delta:5, ...g, tekst}
+  if(/consult(en)?.{0,15}(korter|minder tijd)/.test(t)) return {type:'duur', delta:-5, ...g, tekst}
   // Geen complete opdracht? Dan pakken we het ONDERWERP en vragen we door — dat
   // is beter dan een doodlopend "niet begrepen".
   const ow=ONDERWERP_WOORDEN.find(([,re])=>re.test(t))
@@ -708,6 +747,7 @@ const opdrachtOmschrijving=op=>{
       'mid-langer':'Het middagspreekuur een half uur langer laten doorlopen.',
       'avond':'Een avondspreekuur toevoegen (17:00–20:00, 10% van de vraag).'}[op.wat]
     case 'spoed':      return op.aan?'Spoedafspraken vooraan in het spreekuur.':'Spoedafspraken gewoon mee laten lopen.'
+    case 'drempel':    return 'De minimumbezetting loslaten, zodat ook half gevulde dagdelen opengaan.'
     case 'digitaal':   return {spread:'Digitale consulten verdeeld over de dag.',
       cluster:'Alle digitale consulten samen in één eigen spreekuur.', end:'Digitale consulten aan het einde van het spreekuur.'}[op.mode]
     case 'flex':       return op.mode==='end'?'Flexruimte in één blok aan het einde.':'Flexruimte verspreid tussen de afspraken.'
@@ -726,7 +766,7 @@ const OpdrachtInvoer=({onZoek,bezig,initieel})=>{
     <div>
       <textarea value={t} onChange={e=>setT(e.target.value)} rows={2}
         onKeyDown={e=>{ if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)) start() }}
-        placeholder="Bijvoorbeeld: op dinsdag staan geen afspraken, graag dinsdag ook inplannen"
+        placeholder="Bijvoorbeeld: dinsdag ook inplannen · wat is de band van 2,5 procentpunt · hoe vol is kamer 2 op dinsdag"
         style={{width:'100%',padding:'11px 13px',borderRadius:11,border:`1.5px solid ${C.border}`,
           fontSize:13,fontFamily:'inherit',color:C.text,resize:'vertical',lineHeight:1.5}}/>
       <div style={{display:'flex',alignItems:'center',gap:9,marginTop:8,flexWrap:'wrap'}}>
@@ -4198,6 +4238,8 @@ export default function RasterTool(){
       const v=varianten[op.wat]
       if(v) K.push({l:v.l, knoppen:[v.k], st:{...nu, m2:v.m2}})
     }
+    if(op.type==='drempel') K.push({l:'Geen minimumbezetting meer — elk dagdeel met vraag gaat open',
+      knoppen:['Minimumbezetting → geen drempel'], st:{...nu, rules:{...rules,restOpruimen:false}}})
     if(op.type==='spoed') K.push({l:op.aan?'Spoed vooraan in het spreekuur':'Spoed loopt gewoon mee',
       knoppen:[`Spoed eerst → ${op.aan?'aan (ochtend + middag)':'uit'}`],
       st:{...nu, rules:{...rules,spoedFirst:op.aan,spoedDagdeel:'both'}}})
@@ -4355,6 +4397,63 @@ export default function RasterTool(){
     if(k.st.cfg!==cfg) setCfg(k.st.cfg)
   },[m2,rules,capacity,newRows,ctrlRows,cfg])
 
+  // ══ ASSISTENT — vragen beantwoorden (kennisbank + status) naast het bijsturen ══
+  // Elke tekst gaat eerst door de vraaganalyse: een opdracht gaat de bestaande
+  // bijstuur-keten in (doorrekenen → voorstel → pas toe); een vraag om uitleg of
+  // een statusvraag krijgt een antwoord uit de kennisbank of uit het raster; wat
+  // half begrepen is, krijgt een wedervraag. Het gesprek onthoudt de vorige vraag,
+  // zodat "en op woensdag?" op de vorige vraag voortbouwt.
+  const [gesprek,setGesprek]=useState([])
+  const laatsteVraagRef=useRef(null)
+  const assistentCtx=useCallback(()=>({
+    raster,m2,rules,cfg,capacity,kpi:raster&&raster.kpi,modus,
+    fkKamers:modus==='functie'?(fk.kamers||[]).filter(k=>k.actief!==false):[],
+    kamerNamen:Array.from({length:(raster&&raster.numRooms)||0},(_,i)=>kamerNaam(i)),
+    codes:modus==='functie'?(fk.codes||[]).map(fkCodeLabel).filter(Boolean):[...newRows,...ctrlRows].map(r=>r.afspraakcode).filter(Boolean),
+    codesRows:[...newRows,...ctrlRows],fkRegels:fk.regels,
+  }),[raster,m2,rules,cfg,capacity,modus,fk,newRows,ctrlRows,roomNames])
+  const verwerkVraag=useCallback(tekst=>{
+    const ctx=assistentCtx()
+    const a=analyseerVraag(tekst,ctx,parseOpdracht,laatsteVraagRef.current)
+    laatsteVraagRef.current=a
+    setGesprek(g=>[...g.filter(x=>x.vraag!==tekst).slice(-19),{vraag:tekst,soort:a.soort,id:a.id||null}])
+    if(a.soort==='opdracht'){
+      if(modus==='functie'){
+        setBijstuur({op:{type:'antwoord'},vraag:tekst,antwoord:{soort:'antwoord',bron:'hulp',cat:'hulp',titel:'Bijsturen met een opdracht werkt in de poli-modus',
+          tekst:'In de functiekamer-modus stuur je het advies bij via de gegevens zelf: vink bij een code een andere kamer aan, zet een kamer op meer of minder dagdelen open, of pas de regels aan (vulwijze, minimumbezetting, spreiden). Het rasteradvies rekent elke wijziging direct door. Vragen over dit raster kan ik wél beantwoorden: "hoeveel dagdelen moet A1.243 open", "welke codes hebben geen kamer".',
+          acties:[{l:'Naar Gegevens',nav:1},{l:'Naar Regels',nav:2},{l:'Wat kan de assistent?',vraag:'wat kan de assistent'}]}})
+        return
+      }
+      if(a.alsVraag||a.vervolgOp) setWiz(w=>w?{...w,laatsteLezing:a.alsVraag?'Dat klinkt als een opdracht; ik reken hem meteen door.':'Ik pas de vorige opdracht toe op wat je nu noemt.'}:w)
+      zoekVoorstel(a.op); return
+    }
+    if(a.soort==='onbekend'){ zoekVoorstel(a.op||{type:'onbekend',knoop:'start'}); return }
+    setBijstuur({op:{type:'antwoord'},vraag:tekst,antwoord:a})
+  },[assistentCtx,modus,zoekVoorstel])
+  const toonKennis=useCallback(id=>{
+    const a=antwoordVoor(id,assistentCtx()); if(!a) return
+    laatsteVraagRef.current=a
+    setBijstuur({op:{type:'antwoord'},antwoord:a})
+  },[assistentCtx])
+  // Knoppen onder een antwoord: navigeren, een opdracht doorrekenen, een vervolgvraag
+  // stellen, een ander onderwerp tonen of een wedervraag beantwoorden.
+  const doeActie=useCallback((x)=>{
+    const sluit=()=>{ setWiz(null); setBijstuur(null) }
+    if(x.kennis) return toonKennis(x.kennis)
+    if(x.opdr) return verwerkVraag(x.opdr)
+    if(x.vraag) return verwerkVraag(x.vraag)
+    if(x.ent){ setBijstuur(b=>{ const vorige=b&&b.antwoord; const st=vorige&&vorige.status; const ent={...((vorige&&vorige.ent)||{}),...x.ent}
+      const a=st?beantwoordStatus(st,assistentCtx(),ent):null; if(a){ laatsteVraagRef.current=a; return {op:{type:'antwoord'},antwoord:a} } return b }); return }
+    if(x.nav!=null){ sluit(); nav(x.nav); return }
+    if(x.dag!=null){ sluit(); setSelDay(x.dag); setViewMode('dag'); nav(3); return }
+    if(x.modus){ sluit(); wisselModus(x.modus); return }
+    if(x.actie==='export'){ sluit(); setShowExport(true); return }
+    if(x.actie==='intake'){ setBijstuur(null); setWiz({modus:'intake',stap:0,ant:{}}); return }
+    if(x.actie==='index'){ setBijstuur({op:{type:'antwoord'},index:true}); return }
+    if(x.actie==='fk-zonderkamer'){ sluit(); if(modus!=='functie') wisselModus('functie'); setFk(p=>({...p,mode:p.mode||'manual',sectie:2,filter:'zonderKamer'})); nav(1); return }
+    if(x.actie==='fk-start'){ sluit(); if(modus!=='functie') wisselModus('functie'); setFk(p=>({...p,mode:null})); nav(1); return }
+  },[toonKennis,verwerkVraag,assistentCtx,modus])
+
   // Test-API voor de invariant-suite (test_invariants.mjs): stelt de pure engine
   // bloot zodat elke regel-combinatie headless gevalideerd kan worden.
   useEffect(()=>{ if(typeof window!=='undefined'){ window.__cr=(a,b,c,d,e,f)=>computeRaster(a,b,c,d,e,f) } },[computeRaster])
@@ -4366,7 +4465,9 @@ export default function RasterTool(){
     window.__fkState=()=>fk
     window.__setFk=setFk
     window.__raster=()=>raster
-  } },[modus,fk,m2,raster])
+    window.__vraag=(t,vorige)=>analyseerVraag(t,assistentCtx(),parseOpdracht,vorige)
+    window.__kennis=KENNIS
+  } },[modus,fk,m2,raster,assistentCtx])
   // Test-API voor de bijstuur-suite (test_bijsturen.mjs): de opdracht-lezer en de
   // huidige stand, zodat een test kan controleren dat er pas iets verandert ná
   // akkoord en dat de belofte uitkomt.
@@ -8625,7 +8726,7 @@ export default function RasterTool(){
           ))}
         </div>
         {/* Begeleide intake — stelt vragen en zet de hele planning klaar */}
-        <button onClick={()=>{ if(modus==='functie'){ nav(3); setOpenPanels(p=>({...p,fkAdvies:true})); return } setWiz(raster?{modus:'kies'}:{modus:'intake',stap:0,ant:{}}) }}
+        <button onClick={()=>{ if(modus==='functie'){ setBijstuur(null); setWiz({modus:'bijsturen'}); return } setWiz(raster?{modus:'kies'}:{modus:'intake',stap:0,ant:{}}) }}
           title="Assistent — de hele opzet doorlopen, of dit raster bijsturen met een opdracht in gewone taal"
           style={{display:'flex',alignItems:'center',justifyContent:'center',gap:6,marginBottom:12,
             padding:'10px 6px',borderRadius:12,border:'1px solid rgba(93,214,188,0.45)',cursor:'pointer',
@@ -8633,7 +8734,7 @@ export default function RasterTool(){
             fontSize:10.5,fontWeight:700,letterSpacing:'0.02em'}}
           onMouseEnter={e=>e.currentTarget.style.background='linear-gradient(135deg,rgba(93,214,188,0.4),rgba(28,110,164,0.4))'}
           onMouseLeave={e=>e.currentTarget.style.background='linear-gradient(135deg,rgba(93,214,188,0.24),rgba(28,110,164,0.24))'}>
-          {modus==='functie'?'✨ Advies':'✨ Assistent'}
+          ✨ Assistent
         </button>
         {/* stappen */}
         <div style={{display:'flex',flexDirection:'column',gap:6,flex:1}}>
@@ -8865,7 +8966,15 @@ export default function RasterTool(){
           const ddsB=[0,1].concat(raster&&raster.avondOn?[2]:[])
           // Wat valt er nú op aan het raster? Elk signaal is meteen een opdracht.
           const signalen=[]
-          if(raster){
+          if(raster&&modus==='functie'&&raster.fk){
+            if(raster.fk.geenKamer.length) signalen.push({ico:'△', kleur:'#8A6A12', bg:'#FDF6E3', brd:'#EBD08A',
+              t:`${raster.fk.geenKamer.length} codes zonder kamer: ${raster.fk.geenKamer.map(g=>g.code).join(', ')}`, opdr:'wat betekent kamer nog te bepalen'})
+            raster.fk.advies.filter(a=>a.rest>0).forEach(a=>signalen.push({ico:'△', kleur:'#B3402C', bg:'#FBEDEA', brd:'#E8B3A8',
+              t:`${a.naam}: ${a.rest} onderzoeken passen niet`, opdr:`hoeveel dagdelen moet ${a.naam} open`}))
+            raster.fk.advies.forEach(a=>signalen.push({ico:'🔬', kleur:'#1C6EA4', bg:'#E4F0F8', brd:'#A4C4DE',
+              t:`${a.naam}: ${a.nOpen} dagdelen per week`, opdr:`hoeveel dagdelen moet ${a.naam} open`}))
+          }
+          if(raster&&modus!=='functie'){
             ;[0,1,2,3,4].forEach(di=>{ const d=dagMeting(raster,di)
               if(!d.open) signalen.push({ico:'⚑', kleur:'#B3402C', bg:'#FBEDEA', brd:'#E8B3A8',
                 t:`${DAGS_NL[di]}: geen enkel spreekuur`,
@@ -8883,7 +8992,7 @@ export default function RasterTool(){
               opdr:'alles moet ingepland worden, niets meer op de restlijst'})
           }
           const b=bijstuur
-          const start=t=>zoekVoorstel(parseOpdracht(t))
+          const start=t=>verwerkVraag(t)
           const keuze=b&&b.kandidaten?b.kandidaten[b.keuze||0]:null
           const Getal=({voor,na,omlaagGoed,eenheid=''})=>{
             const d=na-voor
@@ -8943,9 +9052,9 @@ export default function RasterTool(){
                   <div style={{padding:'14px 24px 12px',background:C.white,display:'flex',alignItems:'center',gap:10}}>
                     <span style={{fontSize:9.5,fontWeight:800,color:C.primary,letterSpacing:'0.14em',textTransform:'uppercase'}}>Bijsturen</span>
                     <div style={{flex:1}}/>
-                    <button onClick={()=>setWiz({modus:'intake',stap:0,ant:{}})}
+                    {modus!=='functie'&&<button onClick={()=>setWiz({modus:'intake',stap:0,ant:{}})}
                       style={{padding:'6px 12px',borderRadius:9,border:`1px solid ${C.border}`,background:C.white,
-                        cursor:'pointer',fontSize:11,fontWeight:600,color:C.muted}}>Hele opzet opnieuw</button>
+                        cursor:'pointer',fontSize:11,fontWeight:600,color:C.muted}}>Hele opzet opnieuw</button>}
                     <button onClick={()=>{setWiz(null);setBijstuur(null)}} title="Sluiten"
                       style={{width:28,height:28,borderRadius:9,border:`1px solid ${C.border}`,background:C.white,
                         color:C.muted,cursor:'pointer',fontSize:15,lineHeight:1}}>×</button>
@@ -8953,11 +9062,10 @@ export default function RasterTool(){
 
                   <div style={{flex:1,overflowY:'auto',padding:'18px 24px 24px'}}>
                     <div style={{fontFamily:"'Newsreader',Georgia,serif",fontSize:24,fontWeight:500,color:C.text,
-                      lineHeight:1.25,marginBottom:7}}>Wat moet er anders?</div>
+                      lineHeight:1.25,marginBottom:7}}>Wat moet er anders — of wat wil je weten?</div>
                     <p style={{fontSize:12.5,color:C.muted,lineHeight:1.6,margin:'0 0 14px',maxWidth:640}}>
-                      Schrijf het zoals je het tegen een collega zou zeggen. Ik lees er een opdracht uit, reken door
-                      welke instellingen dat vragen, en laat je zien wat het oplevert — pas als jij akkoord gaat,
-                      verandert er iets aan je raster.
+                      Schrijf het zoals je het tegen een collega zou zeggen. Een opdracht reken ik door en laat ik je eerst
+                      zien; een vraag beantwoord ik uit de kennisbank of uit je raster. Begrijp ik je half, dan vraag ik door.
                     </p>
                     <OpdrachtInvoer key={wiz.voorstelTekst||'leeg'} initieel={wiz.voorstelTekst||''}
                       onZoek={start} bezig={!!(b&&b.bezig)}/>
@@ -8966,19 +9074,136 @@ export default function RasterTool(){
                       <div style={{marginTop:16,border:`1px solid ${C.border}`,background:C.white,borderRadius:12,padding:'12px 15px'}}>
                         <div style={{fontSize:9.5,fontWeight:800,color:C.muted,letterSpacing:'0.1em',
                           textTransform:'uppercase',marginBottom:7}}>Dit begrijp ik</div>
-                        <div style={{fontSize:12,color:C.text,lineHeight:1.9}}>
-                          · <b>Een dag laten meedraaien</b> — "op dinsdag staan geen afspraken, graag ook inplannen"<br/>
-                          · <b>Een dag vrijhouden</b> — "vrijdag niet meer inplannen"<br/>
-                          · <b>Bezetting van een kamer</b> — "kamer 3 op maandag moet richting 85%"<br/>
-                          · <b>Bezetting in het algemeen</b> — "ik wil nergens een spreekuur onder de 80%"<br/>
-                          · <b>Kamers</b> — "er mag een kamer bij" of "het moet met één kamer minder"<br/>
-                          · <b>Restlijst</b> — "alles moet ingepland worden"
+                        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))',gap:10,fontSize:12,color:C.text,lineHeight:1.7}}>
+                          <div><b style={{color:C.primary}}>Bijsturen</b> — "dinsdag ook inplannen", "kamer 3 op maandag richting 85%", "er mag een kamer bij", "spoed vooraan", "een avondspreekuur erbij", "alles inplannen"</div>
+                          <div><b style={{color:C.primary}}>Uitleg</b> — "wat is de band", "wat doet de minimumbezetting", "waarom staat er iets op de restlijst", "hoe kiest de tool een kamer", "wat is een goede benutting"</div>
+                          <div><b style={{color:C.primary}}>Status</b> — "hoe vol is kamer 2 op dinsdag", "welke dagen zijn leeg", "hoeveel kamer-dagen", "waar staat NP", "welke instellingen staan aan"</div>
+                        </div>
+                        <div style={{display:'flex',gap:6,flexWrap:'wrap',marginTop:10,alignItems:'center'}}>
+                          {VOORBEELDVRAGEN.slice(0,6).map(v=>(
+                            <button key={v} onClick={()=>start(v)}
+                              style={{padding:'5px 10px',borderRadius:14,border:`1px solid ${C.border}`,background:C.surface2,cursor:'pointer',fontSize:11,color:C.text}}
+                              onMouseEnter={e=>e.currentTarget.style.borderColor=C.primary} onMouseLeave={e=>e.currentTarget.style.borderColor=C.border}>{v}?</button>
+                          ))}
+                          <button onClick={()=>setBijstuur({op:{type:'antwoord'},index:true})} data-onderwerpen
+                            style={{padding:'5px 11px',borderRadius:14,border:`1px solid ${C.primary}`,background:C.blueAccent,cursor:'pointer',fontSize:11,fontWeight:700,color:C.primary}}>📚 Alle onderwerpen ({KENNIS.length})</button>
+                        </div>
+                        {gesprek.length>0&&(
+                          <div style={{marginTop:10,paddingTop:8,borderTop:`1px dashed ${C.border}`,fontSize:11,color:C.muted}}>
+                            Eerder gevraagd: {gesprek.slice(-5).reverse().map((g,i)=>(
+                              <button key={i} onClick={()=>start(g.vraag)} style={{border:'none',background:'none',cursor:'pointer',color:C.primary,fontSize:11,padding:'0 4px',textDecoration:'underline'}}>{g.vraag}</button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* KENNISBANK — een antwoord, een keuze, een wedervraag of de onderwerpenlijst */}
+                    {b&&!b.bezig&&b.index&&(()=>{
+                      const zoek=(b.zoek||'').trim()
+                      const res=zoek?zoekKennis(zoek,12).map(x=>x.k):null
+                      return(
+                        <div data-kennis-index style={{marginTop:16,border:`1.5px solid ${C.primary}`,background:C.white,borderRadius:13,overflow:'hidden',animation:'pmUp 0.22s ease both'}}>
+                          <div style={{padding:'11px 15px',background:C.blueAccent,borderBottom:`1px solid ${C.border}`,display:'flex',gap:10,alignItems:'center',flexWrap:'wrap'}}>
+                            <div>
+                              <div style={{fontSize:9.5,fontWeight:800,color:C.primary,letterSpacing:'0.1em',textTransform:'uppercase'}}>Alle onderwerpen</div>
+                              <div style={{fontSize:12,color:C.muted}}>{KENNIS.length} onderwerpen — klik er een aan, of zoek.</div>
+                            </div>
+                            <input value={b.zoek||''} onChange={e=>setBijstuur(x=>({...x,zoek:e.target.value}))} placeholder="Zoek een onderwerp…"
+                              style={{marginLeft:'auto',border:`1px solid ${C.border}`,borderRadius:8,padding:'6px 10px',fontSize:12,fontFamily:'inherit',minWidth:180}}/>
+                          </div>
+                          <div style={{padding:'12px 15px',maxHeight:360,overflowY:'auto'}}>
+                            {(res?[{cat:'zoek',naam:res.length?`${res.length} gevonden`:'Niets gevonden — probeer een ander woord',items:res}]:kennisPerCategorie()).map(g=>(
+                              <div key={g.cat} style={{marginBottom:10}}>
+                                <div style={{fontSize:9.5,fontWeight:800,color:C.muted,letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:5}}>{g.naam}</div>
+                                <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
+                                  {g.items.map(k=>(
+                                    <button key={k.id} onClick={()=>toonKennis(k.id)}
+                                      style={{padding:'5px 10px',borderRadius:9,border:`1px solid ${C.border}`,background:C.white,cursor:'pointer',fontSize:11.5,color:C.text,textAlign:'left'}}
+                                      onMouseEnter={e=>{e.currentTarget.style.borderColor=C.primary;e.currentTarget.style.background=C.blueAccent}}
+                                      onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.background=C.white}}>{k.titel}</button>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    })()}
+
+                    {b&&!b.bezig&&b.antwoord&&(b.antwoord.soort==='keuze'||b.antwoord.soort==='vervolgvraag')&&(
+                      <div data-wedervraag style={{marginTop:16,border:`1.5px solid ${C.primary}`,background:C.white,borderRadius:13,overflow:'hidden',animation:'pmUp 0.22s ease both'}}>
+                        <div style={{padding:'11px 15px',background:C.blueAccent,borderBottom:`1px solid ${C.border}`}}>
+                          <div style={{fontSize:9.5,fontWeight:800,color:C.primary,letterSpacing:'0.1em',textTransform:'uppercase'}}>{b.antwoord.soort==='vervolgvraag'?'Even doorvragen':'Ik wil je goed begrijpen'}</div>
+                          <div style={{fontSize:13.5,fontWeight:700,color:C.text,marginTop:3}}>{b.antwoord.vraag}</div>
+                          {b.antwoord.uitleg&&<div style={{fontSize:11.5,color:C.muted,marginTop:2,lineHeight:1.5}}>{b.antwoord.uitleg}</div>}
+                        </div>
+                        <div style={{padding:'13px 15px',display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(180px,1fr))',gap:8}}>
+                          {(b.antwoord.opties||[]).map((o,i)=>(
+                            <button key={i} onClick={()=>doeActie(o)}
+                              style={{textAlign:'left',padding:'10px 13px',borderRadius:11,cursor:'pointer',border:`1.5px solid ${C.border}`,background:C.white,transition:'all 0.12s'}}
+                              onMouseEnter={e=>{e.currentTarget.style.borderColor=C.primary;e.currentTarget.style.background=C.blueAccent}}
+                              onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.background=C.white}}>
+                              <div style={{fontSize:12.5,fontWeight:700,color:C.text}}>{o.l}</div>
+                              {o.s&&<div style={{fontSize:11,color:C.muted,marginTop:2}}>{o.s}</div>}
+                            </button>
+                          ))}
+                          {b.antwoord.soort==='keuze'&&(
+                            <button onClick={()=>zoekVoorstel({type:'onderwerp',knoop:'start'})}
+                              style={{textAlign:'left',padding:'10px 13px',borderRadius:11,cursor:'pointer',border:`1.5px dashed ${C.border}`,background:C.white}}>
+                              <div style={{fontSize:12.5,fontWeight:700,color:C.muted}}>Nee, ik wil iets bijsturen →</div>
+                              <div style={{fontSize:11,color:C.muted,marginTop:2}}>kies een onderwerp om aan te passen</div>
+                            </button>
+                          )}
                         </div>
                       </div>
                     )}
 
+                    {b&&!b.bezig&&b.antwoord&&b.antwoord.soort==='antwoord'&&(()=>{
+                      const a=b.antwoord
+                      const CAT={begrip:'Uitleg',instelling:'Instelling',engine:'Hoe de tool rekent',werkwijze:'Werkwijze',functiekamers:'Functiekamers',vuistregel:'Vuistregel',status:'Uit je raster',hulp:'Hulp'}
+                      return(
+                        <div data-antwoord style={{marginTop:16,animation:'pmUp 0.22s ease both'}}>
+                          <div style={{border:`1.5px solid ${C.primary}`,background:C.white,borderRadius:13,overflow:'hidden'}}>
+                            <div style={{padding:'10px 15px',background:C.blueAccent,borderBottom:`1px solid ${C.border}`,display:'flex',alignItems:'center',gap:8}}>
+                              <span style={{fontSize:9.5,fontWeight:800,color:C.primary,letterSpacing:'0.1em',textTransform:'uppercase'}}>{CAT[a.cat]||'Antwoord'}</span>
+                              <span style={{fontSize:13,fontWeight:700,color:C.text}}>{a.titel}</span>
+                              {a.bron==='status'&&<span style={{marginLeft:'auto',fontSize:10,color:C.muted}}>berekend uit het huidige raster</span>}
+                            </div>
+                            <div style={{padding:'13px 15px'}}>
+                              <div style={{fontSize:13,lineHeight:1.7,color:C.text,whiteSpace:'pre-line'}}>{a.tekst}</div>
+                              {(a.acties||[]).length>0&&(
+                                <div style={{display:'flex',gap:7,flexWrap:'wrap',marginTop:12}}>
+                                  {a.acties.map((x,i)=>(
+                                    <button key={i} onClick={()=>doeActie(x)}
+                                      style={{padding:'7px 13px',borderRadius:10,border:'none',cursor:'pointer',fontSize:12,fontWeight:700,color:'#fff',
+                                        background:x.opdr?'linear-gradient(135deg,#1C6EA4,#39C6AC)':C.primary}}>{x.opdr?'⚙ ':x.nav!=null||x.actie||x.modus||x.dag!=null?'→ ':'? '}{x.l}</button>
+                                  ))}
+                                </div>
+                              )}
+                              {((a.zieOok||[]).length>0||(a.alternatieven||[]).length>0)&&(
+                                <div style={{marginTop:12,paddingTop:10,borderTop:`1px solid ${C.border}`,fontSize:11.5,color:C.muted,display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
+                                  <span>{(a.alternatieven||[]).length?'Bedoelde je misschien:':'Zie ook:'}</span>
+                                  {[...(a.alternatieven||[]),...(a.zieOok||[])].filter((z,i,arr)=>z.kennis!==a.id&&arr.findIndex(y=>y.kennis===z.kennis)===i).map((z,i)=>(
+                                    <button key={i} onClick={()=>doeActie(z)} style={{padding:'4px 9px',borderRadius:12,border:`1px solid ${C.border}`,background:C.surface2,cursor:'pointer',fontSize:11,color:C.text}}>{z.l}</button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <div style={{display:'flex',gap:8,marginTop:8,alignItems:'center'}}>
+                            <button onClick={()=>setBijstuur(null)} style={{padding:'7px 12px',borderRadius:10,border:`1px solid ${C.border}`,background:C.white,cursor:'pointer',fontSize:11.5,fontWeight:600,color:C.muted}}>Nog een vraag</button>
+                            <button onClick={()=>setBijstuur({op:{type:'antwoord'},index:true})} style={{padding:'7px 12px',borderRadius:10,border:`1px solid ${C.border}`,background:C.white,cursor:'pointer',fontSize:11.5,fontWeight:600,color:C.muted}}>📚 Alle onderwerpen</button>
+                          </div>
+                        </div>
+                      )
+                    })()}
+
                     {b&&b.bezig&&(
                       <div style={{marginTop:16,fontSize:12.5,color:C.muted}}>Ik reken de mogelijkheden door…</div>
+                    )}
+                    {b&&!b.bezig&&b.kandidaten&&wiz.laatsteLezing&&(
+                      <div style={{marginTop:12,fontSize:11.5,color:C.muted,fontStyle:'italic'}}>{wiz.laatsteLezing}</div>
                     )}
 
                     {/* GESPREK — geen doodlopend "kan niet", maar doorvragen tot er

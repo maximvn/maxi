@@ -300,6 +300,33 @@ Ze zijn er nog, maar je hoeft ze niet te zien om te kunnen werken.
 
 De knop **✨ Vraag de assistent** staat bovenaan bij het raster zelf, niet weggestopt in een menu.
 
+## Assistent — vragen stellen (kennisbank, status en wedervragen)
+
+De assistent beantwoordt nu ook vragen, naast het bijsturen. Alles wat je typt gaat eerst
+door een **vraaganalyse** (`assistent.js`, volledig op regels — geen taalmodel, dus geen
+verzinsels):
+
+- **Een opdracht** ("dinsdag ook inplannen", "spoed vooraan", "een avondspreekuur erbij",
+  "60% van de vraag in de ochtend", "10% meer patiënten") gaat de bestaande bijstuur-keten
+  in: doorrekenen, voorstel, pas toe. De opdracht-lezer herkent nu álle regeltypen direct,
+  niet alleen dagen, bezetting, kamers en de restlijst.
+- **Een vraag om uitleg** ("wat is de band van 2,5 procentpunt", "wat doet de
+  minimumbezetting", "waarom staat er iets op de restlijst", "hoe kiest de tool een kamer",
+  "wat is een goede benutting") krijgt een antwoord uit de **kennisbank**: 64 onderwerpen in
+  zes categorieën — begrippen, instellingen en planregels, hoe de tool rekent, werkwijze in
+  de tool, functiekamers en vuistregels. Antwoorden bevatten live cijfers uit je eigen
+  instellingen en raster, knoppen (ga naar…, doe dit…) en verwante onderwerpen.
+- **Een statusvraag** over het huidige raster ("hoe vol is kamer 2 op dinsdag", "welke dagen
+  zijn leeg", "hoeveel kamer-dagen", "waar staat NP", "welke instellingen staan aan",
+  "hoeveel dagdelen moet A1.243 open") wordt berekend uit het raster zelf.
+- **Wedervragen.** Ontbreekt er iets ("hoe druk is het" — welke dag?), dan vraagt de
+  assistent dat eerst. Raakt een vraag twee onderwerpen, dan kies je ("Bedoel je…?").
+  Herkent hij een vraag niet, dan toont hij de onderwerpen die het dichtst bij je woorden
+  komen. Een korte aanvulling ("en op woensdag?") bouwt voort op de vorige vraag.
+- **Alle onderwerpen** staat als doorzoekbare lijst in het venster; voorbeeldvragen staan
+  als knoppen klaar. De assistent werkt in beide modi; in de functiekamer-modus legt hij bij
+  een bijstuur-opdracht uit waar je die aanpassing in de gegevens doet.
+
 ## Assistent — bijsturen met een losse opdracht
 
 Naast de begeleide intake heeft de assistent een **bijstuur-modus**: je typt in gewone taal
@@ -371,4 +398,5 @@ node test_strak.mjs        # geen gaten in de kamernummering + "zo strak mogelij
 node test_digitaal.mjs     # eigen digitaal spreekuur + bundelen zonder scheve week
 node test_efficient.mjs    # nooit restlijst terwijl er een dagdeel vrij staat
 node test_functiekamers.mjs # functiekamers: kwalificaties, apparaat, koppeling, advies en de modus-schakelaar
+node test_kennis.mjs       # assistent: vraaganalyse, kennisbank, statusvragen, wedervragen
 ```
