@@ -26,8 +26,15 @@ function applyChartDefaults() {
   Chart.defaults.font.size = 11.5;
   Chart.defaults.color = c.muted;
   Chart.defaults.borderColor = c.grid;
-  // Geen animatie: elke instelling hertekent de grafieken direct.
-  Chart.defaults.animation = false;
+  // Korte, sterke ease-out: nieuwe staven groeien vanaf de basislijn, bij een
+  // filterwijziging morphen ze naar de nieuwe waarde. Kleuren niet animeren.
+  Chart.defaults.animation.duration = REDUCED() ? 0 : 320;
+  Chart.defaults.animation.easing = 'easeOutQuart';
+  Chart.defaults.animations.colors = false;
+  Chart.defaults.transitions.active.animation.duration = 0;
+  // Venstergrootte wijzigen hoort niet te animeren: direct hertekenen.
+  Chart.defaults.transitions.resize = { animation: { duration: 0 } };
+  Chart.defaults.transitions.attach = { animation: { duration: 0 } };
   Chart.defaults.maintainAspectRatio = false;
   Chart.defaults.plugins.legend.display = false;
   Object.assign(Chart.defaults.plugins.tooltip, {
@@ -95,6 +102,20 @@ const dayBandPlugin = {
 
 function mkChart(el, config) {
   if (!el) return null;
+  const prev = takeStashed(el, config);
+  if (prev) {
+    // Zelfde grafiek, nieuwe stand: data vervangen zodat staven en lijnen morphen.
+    prev.data.labels = config.data.labels;
+    config.data.datasets.forEach((d, i) => {
+      const t = prev.data.datasets[i];
+      Object.keys(t).forEach(k => { if (!(k in d)) delete t[k]; });
+      Object.assign(t, d);
+    });
+    prev.options = config.options;
+    prev.update();
+    CHARTS.push(prev);
+    return prev;
+  }
   const ch = new Chart(el, config);
   CHARTS.push(ch);
   return ch;

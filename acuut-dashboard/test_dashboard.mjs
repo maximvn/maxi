@@ -37,9 +37,13 @@ async function run(theme, width) {
     // echte upload: beide DUMMY-bestanden moeten automatisch aan IC Spoed / Electief gekoppeld worden
     await page.setInputFiles('#multi-file', fs.readdirSync(path.join(dir, 'testdata')).map(f => path.join(dir, 'testdata', f)))
     await page.waitForFunction(() => document.querySelectorAll('.tag.ok').length === 2, null, { timeout: 30000 })
-    const ok = await page.evaluate(() => Object.keys(window.S && STORE).join(','))
-    if (ok !== 'ic-spoed,ic-electief' && ok !== 'ic-electief,ic-spoed') errors.push('upload herkend als: ' + ok)
-    for (const id of ['ic-spoed', 'ic-electief']) await page.click(`[data-act="unload"][data-arg="${id}"]`)
+    const ok = await page.evaluate(() => Object.keys(STORE).sort().join(','))
+    if (ok !== '6.1,6.2') errors.push('upload herkend als: ' + ok)
+    // hetzelfde bestand als losse analyse
+    await page.setInputFiles('#file-loose', path.join(dir, 'testdata', fs.readdirSync(path.join(dir, 'testdata'))[0]))
+    await page.waitForFunction(() => Object.keys(STORE).some(k => k.startsWith('L')), null, { timeout: 30000 })
+    await page.screenshot({ path: `${out}/02a-upload-${theme}-${width}.png`, fullPage: true })
+    for (const id of ['6.1', '6.2', 'L1']) await page.click(`[data-act="unload"][data-arg="${id}"]`)
   }
   await page.click('[data-act="demo-all"]')
   await page.waitForSelector('.tag.demo', { timeout: 30000 })
@@ -48,7 +52,7 @@ async function run(theme, width) {
   await page.click('[data-act="go"][data-arg="dash"]')
   const shots = width < 600 ? [['IC', 'overzicht']] : [
     ['IC', 'overzicht'], ['IC', 'stromen'], ['IC', 'bedden'], ['IC', 'vpk'], ['IC', 'prognose'],
-    ['SEH', 'overzicht'], ['ALL', 'overzicht'], ['ALL', 'vpk'], ['ALL', 'stromen'],
+    ['SEH', 'overzicht'], ['SEH', 'instroom'], ['SEH', 'jdt'], ['ALL', 'overzicht'], ['ALL', 'vpk'], ['ALL', 'stromen'],
   ]
   for (const [u, v] of shots) {
     await page.click(`[data-act="unit"][data-arg="${u}"]`)
@@ -66,6 +70,20 @@ async function run(theme, width) {
     await page.click('[data-act="view"][data-arg="vpk"]')
     await page.click('[data-act="step"][data-path="plan.all.D"][data-arg="1"]')
     await page.waitForTimeout(300)
+    // stromenkiezer: triage erbij → waarschuwing dubbel tellen
+    await page.click('[data-act="unit"][data-arg="SEH"]')
+    await page.click('[data-act="view"][data-arg="overzicht"]')
+    await page.click('#picker-btn')
+    await page.waitForTimeout(300)
+    await page.click('#pick-t3')
+    await page.waitForTimeout(300)
+    await page.screenshot({ path: `${out}/04b-picker-${tag}.png` })
+    await page.keyboard.press('Escape')
+    await page.click('[data-act="metric"][data-arg="max"]')
+    await page.waitForTimeout(120)
+    await page.screenshot({ path: `${out}/04c-midmorph-${tag}.png` })
+    await page.waitForTimeout(900)
+    await page.screenshot({ path: `${out}/04d-SEH-triage-${tag}.png`, fullPage: true })
     // Nieuwbouw
     await page.click('[data-act="go"][data-arg="start"]')
     await page.click('[data-act="mode"][data-arg="nieuw"]')

@@ -5,15 +5,19 @@
 /* ── Componenten & frame voor de huidige tab ────────────────────────── */
 function compsFor(unitId) {
   if (unitId === 'ALL') {
-    return unitsOf().map((u, i) => ({ id: u.id, label: u.label, streams: loadedStreams(u), ci: i }))
+    return unitsOf().map((u, i) => ({ id: u.id, label: u.label, streams: selectedFor(u), color: 's' + (i + 1) }))
       .filter(c => c.streams.length && !S.off[c.id]);
   }
   const u = unitDef(unitId);
-  return loadedStreams(u).filter(s => !S.off[s]).map(s => ({ id: s, label: STREAMS[s].label, streams: [s], ci: streamColorIdx(u, s) }));
+  return selectedFor(u).map(k => ({ id: k, label: dsLabel(k), streams: [k], color: colorFor(u, k) }));
+}
+function availableViews() {
+  const u = S.unit === 'ALL' ? null : unitDef(S.unit);
+  return VIEWS.filter(v => !v.extra || (u && (u.extra || []).includes(v.extra)));
 }
 function currentFrame() { const comps = compsFor(S.unit); return comps.length ? buildFrame(comps, S.filter) : null; }
-const colorOf = c => C().series[c.ci % 8];
-const cssColor = c => `var(--s${(c.ci % 8) + 1})`;
+const colorOf = c => tok(c.color);
+const cssColor = c => `var(--${c.color})`;
 function bedsOf(unitId) { return unitId === 'ALL' ? unitsOf().reduce((s, u) => s + cfgOf(u.id).beds, 0) : cfgOf(unitId).beds; }
 const mv = st => (st ? st[S.metric] : null);
 const mLabel = () => METRICS[S.metric].short;
@@ -74,8 +78,13 @@ function monthly(frame) {
 const needOf = (v, ratio) => (v == null ? null : Math.ceil(v / ratio - 1e-9));
 
 /* ── Gedeelde bouwstenen ───────────────────────────────────────────── */
+// Getal dat naar zijn nieuwe waarde telt: kn(5.2) of kn(78, 0).
+const kn = (v, d = 1) => ({ n: v, d });
 function kpi(label, val, unit, sub, status) {
-  return `<div class="kpi"><div class="kpi-label">${label}</div><div class="kpi-val num">${val}${unit ? `<small>${unit}</small>` : ''}</div>${status || ''}${sub ? `<div class="kpi-sub">${sub}</div>` : ''}</div>`;
+  const v = val && typeof val === 'object'
+    ? `<span data-count="${val.n}" data-dec="${val.d}" data-count-key="${esc(S.unit + '|' + S.view + '|' + label)}">${fmt(val.n, val.d)}</span>`
+    : val;
+  return `<div class="kpi stagger"><div class="kpi-label">${label}</div><div class="kpi-val num">${v}${unit ? `<small>${unit}</small>` : ''}</div>${status || ''}${sub ? `<div class="kpi-sub">${sub}</div>` : ''}</div>`;
 }
 function statusPill(kind, text) {
   const ic = kind === 'good' ? ICON.check : kind === 'info' ? ICON.info : ICON.alert;
@@ -91,7 +100,7 @@ function weekModeControl(frame) {
   const weeks = weekList(frame);
   if (!S.weekSel || !weeks.includes(S.weekSel)) S.weekSel = weeks[weeks.length - 1];
   return `<div class="set-row">
-    <div class="seg small" role="group" aria-label="Weekweergave">
+    <div class="seg small" role="group" aria-label="Weekweergave" data-ind="weekmode">
       <button class="${S.weekMode === 'typical' ? 'on' : ''}" data-act="weekmode" data-arg="typical">Typische week</button>
       <button class="${S.weekMode === 'week' ? 'on' : ''}" data-act="weekmode" data-arg="week" ${weeks.length ? '' : 'disabled'}>Specifieke week</button>
     </div>
@@ -113,60 +122,74 @@ function dashScreen() {
   const u = isAll ? null : unitDef(S.unit);
   const frame = currentFrame();
   const span = frame && frame.all.length ? `${fmtDay(frame.all[0].ds)} ${frame.all[0].y} – ${fmtDay(frame.all[frame.all.length - 1].ds)} ${frame.all[frame.all.length - 1].y}` : 'geen data';
-  const chipsFor = isAll
-    ? units.map((x, i) => ({ id: x.id, label: x.label, ci: i, ok: loadedStreams(x).length > 0 }))
-    : u.streams.map(sid => ({ id: sid, label: STREAMS[sid].label, ci: streamColorIdx(u, sid), ok: !!STORE[sid] }));
   const years = frame ? frame.years : [];
   if (S.filter.year !== 'all' && !years.includes(+S.filter.year)) S.filter.year = 'all';
+  const views = availableViews();
+  const extraView = ['instroom', 'jdt'].includes(S.view);
+  let streamGroup;
+  if (isAll) {
+    streamGroup = `<div class="f-group"><span class="f-label">Afdelingen</span>
+      ${units.map((x, i) => { const ok = selectedFor(x).length > 0; return `<button class="chip ${!ok || S.off[x.id] ? 'off' : ''}" data-act="toggle" data-arg="${x.id}" ${ok ? '' : 'disabled title="Nog geen data geladen"'} aria-pressed="${ok && !S.off[x.id]}"><i class="sw" style="background:var(--s${i + 1})"></i>${esc(x.label)}</button>`; }).join('')}
+    </div>`;
+  } else {
+    const sel = selectedFor(u);
+    const warn = overlapWarnings(sel);
+    const avail = loadedPool(u).length;
+    streamGroup = `<div class="f-group f-streams"><span class="f-label">Stromen</span>
+      ${sel.map(k => `<button class="chip" data-act="unsel" data-arg="${k}" title="Klik om ${esc(DS[k].label)} uit te zetten"><i class="sw" style="background:var(--${colorFor(u, k)})"></i>${esc(dsLabel(k))}<span class="x" aria-hidden="true">×</span></button>`).join('')}
+      <button class="chip add" id="picker-btn" data-act="picker" aria-expanded="${S.pickerOpen}" aria-haspopup="dialog">${ICON.layers}Stromen kiezen <span class="cnt">${sel.length}/${avail}</span></button>
+      ${warn.length ? `<span class="status warn" title="${esc(warn.join(' · '))}">${ICON.alert}Telt dubbel</span>` : ''}
+    </div>`;
+  }
   return `<div class="wrap">
     <div class="dash-head">
       <div>
         <div class="eyebrow">${MODES[S.mode].label}</div>
         <h1>${isAll ? 'Alle afdelingen' : esc(u.long)}</h1>
-        <div class="sub">${frame ? `${frame.days.length.toLocaleString('nl-NL')} dagen in selectie · ${span}` : 'Nog geen data voor deze afdeling'}</div>
+        <div class="sub">${frame ? `${frame.days.length.toLocaleString('nl-NL')} dagen in selectie · ${span}` : 'Nog geen bezettingsdata gekozen voor deze afdeling'}</div>
       </div>
       <div class="btn-row">
         <button class="btn" data-act="go" data-arg="data">${ICON.file} Data beheren</button>
-        <button class="btn" data-act="export">${ICON.upload.replace('M12 15V4M7 9l5-5 5 5', 'M12 4v11M7 10l5 5 5-5')} Exporteer tabellen</button>
+        <button class="btn" data-act="export">${ICON.download} Exporteer tabellen</button>
       </div>
     </div>
     <div class="loc-row">
       <span class="loc-label">Locatie</span>
-      <div class="seg" role="tablist" aria-label="Locatie">
-        ${units.map(x => `<button role="tab" aria-selected="${S.unit === x.id}" class="${S.unit === x.id ? 'on' : ''} ${loadedStreams(x).length ? '' : 'empty'}" data-act="unit" data-arg="${x.id}">${esc(x.label)}</button>`).join('')}
+      <div class="seg" role="tablist" aria-label="Locatie" data-ind="loc">
+        ${units.map(x => `<button role="tab" aria-selected="${S.unit === x.id}" class="${S.unit === x.id ? 'on' : ''} ${unitHasData(x) ? '' : 'empty'}" data-act="unit" data-arg="${x.id}">${esc(x.label)}</button>`).join('')}
         <button role="tab" aria-selected="${isAll}" class="${isAll ? 'on' : ''}" data-act="unit" data-arg="ALL">Alle</button>
       </div>
     </div>
-    <nav class="tabs" role="tablist" aria-label="Weergave">
-      ${VIEWS.map(v => `<button role="tab" aria-selected="${S.view === v.id}" class="${S.view === v.id ? 'on' : ''}" data-act="view" data-arg="${v.id}">${v.label}</button>`).join('')}
+    <nav class="tabs" role="tablist" aria-label="Weergave" data-ind="view">
+      ${views.map(v => `<button role="tab" aria-selected="${S.view === v.id}" class="${S.view === v.id ? 'on' : ''}" data-act="view" data-arg="${v.id}">${v.label}</button>`).join('')}
     </nav>
-    <div class="filters">
-      <div class="f-group"><span class="f-label">${isAll ? 'Afdelingen' : 'Stromen'}</span>
-        ${chipsFor.map(c => `<button class="chip ${!c.ok || S.off[c.id] ? 'off' : ''}" data-act="toggle" data-arg="${c.id}" ${c.ok ? '' : 'disabled title="Nog geen data geladen"'} aria-pressed="${c.ok && !S.off[c.id]}"><i class="sw" style="background:var(--s${(c.ci % 8) + 1})"></i>${esc(c.label)}</button>`).join('')}
-      </div>
+    ${extraView ? '' : `<div class="filters">
+      ${streamGroup}
       <div class="f-group"><span class="f-label">Periode</span>
         <select data-filter="year" id="f-year" aria-label="Jaar"><option value="all">Alle jaren</option>${years.map(y => `<option value="${y}" ${String(y) === String(S.filter.year) ? 'selected' : ''}>${y}</option>`).join('')}</select>
         <select data-filter="months" id="f-months" aria-label="Seizoen of kwartaal">
           ${[['all', 'Heel jaar'], ['winter', 'Winter'], ['lente', 'Lente'], ['zomer', 'Zomer'], ['herfst', 'Herfst'], ['q1', 'Q1'], ['q2', 'Q2'], ['q3', 'Q3'], ['q4', 'Q4']].map(([v, l]) => `<option value="${v}" ${S.filter.months === v ? 'selected' : ''}>${l}</option>`).join('')}
         </select>
-        <div class="seg small" role="group" aria-label="Dagen">${[['all', 'Alle dagen'], ['werk', 'Werkdagen'], ['weekend', 'Weekend']].map(([v, l]) => `<button class="${S.filter.days === v ? 'on' : ''}" data-act="days" data-arg="${v}">${l}</button>`).join('')}</div>
+        <div class="seg small" role="group" aria-label="Dagen" data-ind="days">${[['all', 'Alle dagen'], ['werk', 'Werkdagen'], ['weekend', 'Weekend']].map(([v, l]) => `<button class="${S.filter.days === v ? 'on' : ''}" data-act="days" data-arg="${v}">${l}</button>`).join('')}</div>
       </div>
       <div class="f-group"><span class="f-label">Norm</span>
-        <div class="seg small" role="group" aria-label="Norm">${Object.entries(METRICS).map(([k, m]) => `<button class="${S.metric === k ? 'on' : ''}" data-act="metric" data-arg="${k}" title="${m.desc}">${m.short}</button>`).join('')}</div>
+        <div class="seg small" role="group" aria-label="Norm" data-ind="metric">${Object.entries(METRICS).map(([k, m]) => `<button class="${S.metric === k ? 'on' : ''}" data-act="metric" data-arg="${k}" title="${m.desc}">${m.short}</button>`).join('')}</div>
       </div>
-    </div>
+    </div>`}
     <div id="view"></div>
   </div>`;
 }
 
 function renderView() {
   const el = $('#view');
+  if (S.view === 'instroom') return viewInstroom(el);
+  if (S.view === 'jdt') return viewJDT(el);
   const frame = currentFrame();
   if (!frame || !frame.days.length) {
     const noData = !frame;
     el.innerHTML = `<div class="empty-state">
-      <h2>${noData ? 'Nog geen data voor deze afdeling' : 'Geen dagen in deze selectie'}</h2>
-      <p>${noData ? 'Laad de Excel-bestanden van de stromen van deze afdeling, of start met de voorbeelddata.' : 'Verruim de periode- of dagfilter in de strook hierboven.'}</p>
+      <h2>${noData ? 'Nog geen stromen gekozen' : 'Geen dagen in deze selectie'}</h2>
+      <p>${noData ? (S.unit !== 'ALL' && loadedPool(unitDef(S.unit)).length ? 'Kies met "Stromen kiezen" welke bestanden je wilt bekijken.' : 'Laad de Excel-bestanden van deze afdeling, of start met de voorbeelddata.') : 'Verruim de periode- of dagfilter in de strook hierboven.'}</p>
       ${noData ? `<button class="btn primary" data-act="go" data-arg="data">${ICON.file} Naar data inladen</button>` : ''}
     </div>`;
     return;
@@ -193,14 +216,14 @@ function viewOverview(el, frame) {
 
   el.innerHTML = `
     <div class="kpis">
-      ${kpi('Gemiddelde bezetting', fmt(all.avg), 'patiënten', `${fmt(all.avg / beds * 100, 0)}% van ${beds} bedden`)}
-      ${kpi(`Bezetting (${mLabel()})`, fmt(mv(all)), 'patiënten', METRICS[S.metric].desc)}
-      ${kpi('Tijd volledig bezet', fmt(full, 1), '%', `kwartieren met ≥ ${beds} patiënten`, statusPill(fullKind, fullKind === 'good' ? 'Ruim voldoende' : fullKind === 'warn' ? 'Let op' : 'Vaak vol'))}
+      ${kpi('Gemiddelde bezetting', kn(all.avg), 'patiënten', `${fmt(all.avg / beds * 100, 0)}% van ${beds} bedden`)}
+      ${kpi(`Bezetting (${mLabel()})`, kn(mv(all)), 'patiënten', METRICS[S.metric].desc)}
+      ${kpi('Tijd volledig bezet', kn(full), '%', `kwartieren met ≥ ${beds} patiënten`, statusPill(fullKind, fullKind === 'good' ? 'Ruim voldoende' : fullKind === 'warn' ? 'Let op' : 'Vaak vol'))}
       ${kpi('Drukste moment', `${WD_SHORT[peak.wd]} ${pad2(peak.h)}:00`, '', `gemiddeld ${fmt(peak.v)} patiënten`)}
-      ${staff ? kpi('Diensten per week', `${staff.need}`, `nodig · ${staff.plan} ingepland`, `o.b.v. ${mLabel()} en ratio per dienst`, statusPill(staff.need > staff.plan ? 'crit' : 'good', staff.need > staff.plan ? `${staff.need - staff.plan} tekort` : staff.need === staff.plan ? 'Sluitend' : `${staff.plan - staff.need} ruimte`)) : kpi('Afdelingen', frame.comps.length, '', frame.comps.map(c => c.label).join(' · '))}
+      ${staff ? kpi('Diensten per week', kn(staff.need, 0), `nodig · ${staff.plan} ingepland`, `o.b.v. ${mLabel()} en ratio per dienst`, statusPill(staff.need > staff.plan ? 'crit' : 'good', staff.need > staff.plan ? `${staff.need - staff.plan} tekort` : staff.need === staff.plan ? 'Sluitend' : `${staff.plan - staff.need} ruimte`)) : kpi('Afdelingen', frame.comps.length, '', frame.comps.map(c => c.label).join(' · '))}
     </div>
     <div class="grid g-3-1">
-      <section class="panel">
+      <section class="panel stagger">
         <div class="panel-head">
           <div><h2>Bezetting per dienst</h2><div class="desc">${S.weekMode === 'typical' ? `Gemiddelde per stroom; streepje loopt van P10 tot ${mLabel()} van het totaal.` : 'Gemiddelde per stroom in deze dienst; streepje loopt van laagste tot hoogste bezetting.'}</div></div>
           ${weekModeControl(frame)}
@@ -208,18 +231,18 @@ function viewOverview(el, frame) {
         <div class="chart-box tall"><canvas id="ch-week" role="img" aria-label="Bezetting per dag en dienst"></canvas></div>
         ${legendHTML(frame.comps, `<span class="sep"></span><span><i class="wh"></i>Spreiding</span><span><i class="ln"></i>Open bedden</span><span class="sep"></span><span class="key"><b>D</b> Dag <b>A</b> Avond <b>N</b> Nacht</span>`)}
       </section>
-      <section class="panel">
+      <section class="panel stagger">
         <div class="panel-head"><div><h2>Signalen</h2><div class="desc">Automatisch afgeleid uit de selectie.</div></div></div>
         <ul class="insights">${insights(frame, cells, all, beds).map(i => `<li><span class="ic ${i.kind}">${i.kind === 'good' ? ICON.check : i.kind === 'info' ? ICON.info : ICON.alert}</span><span>${i.text}</span></li>`).join('')}</ul>
       </section>
     </div>
     <div class="grid g-2" style="margin-top:16px">
-      <section class="panel">
+      <section class="panel stagger">
         <div class="panel-head"><div><h2>Dagverloop (24 uur)</h2><div class="desc">Gemiddelde bezetting per kwartier, gestapeld per ${S.unit === 'ALL' ? 'afdeling' : 'stroom'}; de lijn is ${mLabel()} van het totaal.</div></div></div>
         <div class="chart-box"><canvas id="ch-day" role="img" aria-label="Dagverloop"></canvas></div>
         ${legendHTML(frame.comps, `<span class="sep"></span><span><i class="ln solid"></i>${mLabel()} totaal</span><span><i class="ln"></i>Open bedden</span>`)}
       </section>
-      <section class="panel">
+      <section class="panel stagger">
         <div class="panel-head"><div><h2>Bezetting per maand</h2><div class="desc">Gemiddelde per stroom; streepje van P10 tot ${mLabel()}.</div></div></div>
         <div class="chart-box"><canvas id="ch-month" role="img" aria-label="Bezetting per maand"></canvas></div>
         ${legendHTML(frame.comps, `<span class="sep"></span><span><i class="wh"></i>Spreiding</span><span><i class="ln"></i>Open bedden</span>`)}
@@ -366,30 +389,30 @@ function viewStreams(el, frame) {
 
   el.innerHTML = `
     <div class="stream-cards">
-      ${comps.map((c, ci) => `<button class="s-card ${ci === fi ? 'on' : ''}" data-act="focus" data-arg="${c.id}" aria-pressed="${ci === fi}">
-        <div class="s-card-head"><span class="s-card-name"><i class="sw" style="background:${cssColor(c)}"></i>${esc(c.label)}</span>${S.unit === 'ALL' ? `<span class="tag">${c.streams.length} ${c.streams.length === 1 ? 'stroom' : 'stromen'}</span>` : `<span class="tag ${STORE[c.id].source === 'bestand' ? 'ok' : 'demo'}">${STORE[c.id].source}</span>`}</div>
+      ${comps.map((c, ci) => `<button class="s-card stagger ${ci === fi ? 'on' : ''}" data-act="focus" data-arg="${c.id}" aria-pressed="${ci === fi}">
+        <div class="s-card-head"><span class="s-card-name"><i class="sw" style="background:${cssColor(c)}"></i>${esc(c.label)}</span>${S.unit === 'ALL' ? `<span class="tag">${c.streams.length} ${c.streams.length === 1 ? 'stroom' : 'stromen'}</span>` : `<span class="tag ${STORE[c.id].source === 'bestand' ? 'ok' : 'demo'}">${DS[c.id].role === 'basis' ? STORE[c.id].source : DS[c.id].role}</span>`}</div>
         <div class="s-card-nums"><div><span>Gemiddeld</span><b>${fmt(per[ci].avg)}</b></div><div><span>${mLabel()}</span><b>${fmt(mv(per[ci]))}</b></div><div><span>Max</span><b>${fmt(per[ci].max, 0)}</b></div></div>
         <div class="spark"><canvas id="sp-${ci}" aria-hidden="true"></canvas></div>
         <div class="share"><span>${fmt(per[ci].avg / totAvg * 100, 0)}% van totaal</span><span class="share-bar"><i style="width:${per[ci].avg / totAvg * 100}%;background:${cssColor(c)}"></i></span></div>
       </button>`).join('')}
     </div>
     <div class="grid g-2">
-      <section class="panel">
+      <section class="panel stagger">
         <div class="panel-head"><div><h2>Dagverloop per ${kindWord}</h2><div class="desc">Gemiddelde bezetting per kwartier, niet gestapeld — zo vergelijk je de vorm van elke ${kindWord}.</div></div></div>
         <div class="chart-box"><canvas id="ch-sday" role="img" aria-label="Dagverloop per ${kindWord}"></canvas></div>
         ${legendHTML(comps)}
       </section>
-      <section class="panel">
+      <section class="panel stagger">
         <div class="panel-head"><div><h2>Weekpatroon · ${esc(comps[fi].label)}</h2><div class="desc">Gemiddelde bezetting per weekdag en uur. Klik een kaart hierboven om een andere ${kindWord} te kiezen.</div></div></div>
         <div class="table-wrap">${heatmapHTML(frame, fi)}</div>
       </section>
     </div>
-    <section class="panel" style="margin-top:16px">
+    <section class="panel stagger" style="margin-top:16px">
       <div class="panel-head"><div><h2>Trend per maand</h2><div class="desc">Gemiddelde bezetting per maand per ${kindWord}.</div></div></div>
       <div class="chart-box short"><canvas id="ch-strend" role="img" aria-label="Trend per maand"></canvas></div>
       ${legendHTML(comps)}
     </section>
-    <section class="panel" style="margin-top:16px">
+    <section class="panel stagger" style="margin-top:16px">
       <div class="panel-head"><div><h2>Kerncijfers per ${kindWord} en dienst</h2><div class="desc">Aantal gelijktijdig aanwezige patiënten, berekend over alle kwartieren in de selectie.</div></div></div>
       <div class="table-wrap">${streamTable(frame)}</div>
     </section>`;
@@ -423,22 +446,22 @@ function viewStreams(el, frame) {
   });
 }
 
-function heatmapHTML(frame, ci) {
+function heatmapHTML(frame, ci, agg = 'mean', unitLbl = 'patiënten (gem.)') {
   const grid = [];
   let max = 0;
   for (let wd = 0; wd < 7; wd++) {
     const days = frame.days.filter(d => d.wd === wd);
     const row = [];
-    for (let h = 0; h < 24; h++) { const v = mean(collect(days, [[0, h * 4], [0, h * 4 + 1], [0, h * 4 + 2], [0, h * 4 + 3]], ci)); row.push(v); if (v > max) max = v; }
+    for (let h = 0; h < 24; h++) { const v = mean(collect(days, [[0, h * 4], [0, h * 4 + 1], [0, h * 4 + 2], [0, h * 4 + 3]], ci)) * (agg === 'sum' ? 4 : 1); row.push(v); if (v > max) max = v; }
     grid.push(row);
   }
   const steps = 8;
   const cls = v => Math.min(steps - 1, Math.floor((v / (max || 1)) * steps));
   return `<div class="heat" role="table" aria-label="Weekpatroon">
     <div></div>${Array.from({ length: 24 }, (_, h) => `<div class="hh">${h % 3 === 0 ? pad2(h) : ''}</div>`).join('')}
-    ${grid.map((row, wd) => `<div class="hl">${WD_SHORT[wd]}</div>${row.map((v, h) => { const s = cls(v); return `<div class="c" style="background:var(--seq-${s});color:${s >= 5 ? 'var(--surface)' : 'var(--ink-2)'}" title="${WD_LONG[wd]} ${pad2(h)}:00–${pad2(h + 1)}:00 · gem. ${fmt(v)} patiënten">${v >= 10 ? Math.round(v) : fmt(v, 1)}</div>`; }).join('')}`).join('')}
+    ${grid.map((row, wd) => `<div class="hl">${WD_SHORT[wd]}</div>${row.map((v, h) => { const s = cls(v); return `<div class="c" style="background:var(--seq-${s});color:${s >= 5 ? 'var(--surface)' : 'var(--ink-2)'}" title="${WD_LONG[wd]} ${pad2(h)}:00–${pad2(h + 1)}:00 · gem. ${fmt(v)} ${unitLbl.replace(' (gem.)', '')}">${v >= 10 ? Math.round(v) : fmt(v, 1)}</div>`; }).join('')}`).join('')}
   </div>
-  <div class="heat-scale"><span>0</span><span class="ramp">${Array.from({ length: steps }, (_, i) => `<i style="background:var(--seq-${i})"></i>`).join('')}</span><span>${fmt(max)} patiënten (gem.)</span></div>`;
+  <div class="heat-scale"><span>0</span><span class="ramp">${Array.from({ length: steps }, (_, i) => `<i style="background:var(--seq-${i})"></i>`).join('')}</span><span>${fmt(max)} ${unitLbl}</span></div>`;
 }
 
 function streamTable(frame) {
@@ -469,44 +492,44 @@ function viewBeds(el, frame) {
 
   el.innerHTML = `
     <div class="grid g-3-1" style="margin-bottom:16px">
-      <section class="panel">
+      <section class="panel stagger">
         <div class="panel-head"><div><h2>Beddencapaciteit</h2><div class="desc">${isAll ? 'Som van de bedden van alle afdelingen. Pas de bedden per afdeling aan in hun eigen tabblad.' : 'Stel het aantal open bedden in; alle grafieken en de verpleegkundige inzet rekenen direct mee.'}</div></div></div>
         <div class="settings">
           <div class="set"><label for="in-beds">Open bedden</label>${isAll ? `<div class="kpi-val num">${beds}</div>` : `<div class="set-row">${stepper('beds', beds, 'Open bedden')}<input type="range" min="1" max="${Math.max(40, maxV + 5)}" value="${beds}" data-path="beds" data-out="in-beds" aria-label="Open bedden schuif"></div>`}</div>
-          <div class="set"><label>Gewenste dekking</label><div class="seg small" role="group" aria-label="Gewenste dekking">${[90, 95, 99].map(t => `<button class="${S.bedTarget === t ? 'on' : ''}" data-act="target" data-arg="${t}">${t}%</button>`).join('')}</div><span class="hint">Deel van de tijd dat iedereen een bed moet hebben.</span></div>
+          <div class="set"><label>Gewenste dekking</label><div class="seg small" role="group" aria-label="Gewenste dekking" data-ind="target">${[90, 95, 99].map(t => `<button class="${S.bedTarget === t ? 'on' : ''}" data-act="target" data-arg="${t}">${t}%</button>`).join('')}</div><span class="hint">Deel van de tijd dat iedereen een bed moet hebben.</span></div>
         </div>
       </section>
-      <section class="panel">
+      <section class="panel stagger">
         <div class="panel-head"><div><h2>Advies</h2></div></div>
-        <div class="kpi-val num">${advise}<small>bedden</small></div>
+        <div class="kpi-val num"><span data-count="${advise}" data-dec="0" data-count-key="advies">${advise}</span><small>bedden</small></div>
         <div class="kpi-sub" style="margin:4px 0 8px">nodig om ${S.bedTarget}% van de tijd iedereen op te vangen</div>
         ${advise > beds ? statusPill('crit', `${advise - beds} bedden tekort t.o.v. ${beds}`) : advise === beds ? statusPill('good', 'Precies passend') : statusPill('good', `${beds - advise} bedden ruimte`)}
       </section>
     </div>
     <div class="kpis">
-      ${kpi('Tijd volledig bezet', fmt(full), '%', `≥ ${beds} patiënten tegelijk`)}
-      ${kpi('Tijd boven capaciteit', fmt(overflow), '%', `meer patiënten dan bedden`, statusPill(overflow < 1 ? 'good' : overflow < 5 ? 'warn' : 'crit', overflow < 1 ? 'Zelden' : overflow < 5 ? 'Regelmatig' : 'Vaak'))}
-      ${kpi('Gemiddeld vrije bedden', fmt(free), 'bedden', `bij ${beds} open bedden`)}
-      ${kpi('Gemiddelde benutting', fmt(all.avg / beds * 100, 0), '%', `gem. ${fmt(all.avg)} van ${beds} bedden`)}
+      ${kpi('Tijd volledig bezet', kn(full), '%', `≥ ${beds} patiënten tegelijk`)}
+      ${kpi('Tijd boven capaciteit', kn(overflow), '%', `meer patiënten dan bedden`, statusPill(overflow < 1 ? 'good' : overflow < 5 ? 'warn' : 'crit', overflow < 1 ? 'Zelden' : overflow < 5 ? 'Regelmatig' : 'Vaak'))}
+      ${kpi('Gemiddeld vrije bedden', kn(free), 'bedden', `bij ${beds} open bedden`)}
+      ${kpi('Gemiddelde benutting', kn(all.avg / beds * 100, 0), '%', `gem. ${fmt(all.avg)} van ${beds} bedden`)}
     </div>
     <div class="grid g-2">
-      <section class="panel">
+      <section class="panel stagger">
         <div class="panel-head"><div><h2>Hoe vaak liggen er N patiënten?</h2><div class="desc">Aandeel van alle kwartieren per aantal gelijktijdige patiënten. Rood = meer patiënten dan open bedden.</div></div></div>
         <div class="chart-box"><canvas id="ch-hist" role="img" aria-label="Verdeling van de bezetting"></canvas></div>
         <div class="legend"><span><i class="sw" style="background:var(--s1)"></i>Past binnen ${beds} bedden</span><span><i class="sw" style="background:var(--crit)"></i>Boven capaciteit</span></div>
       </section>
-      <section class="panel">
+      <section class="panel stagger">
         <div class="panel-head"><div><h2>Bedden nodig per uur</h2><div class="desc">Gemiddelde, ${mLabel()} en maximum per uur van de dag, tegen de open bedden.</div></div></div>
         <div class="chart-box"><canvas id="ch-bedhour" role="img" aria-label="Bedden nodig per uur"></canvas></div>
         <div class="legend"><span><i class="ln solid" style="border-color:var(--s1)"></i>Gemiddeld</span><span><i class="ln solid" style="border-color:var(--ink)"></i>${mLabel()}</span><span><i class="ln solid" style="border-color:var(--muted)"></i>Maximum</span><span><i class="ln"></i>Open bedden</span></div>
       </section>
     </div>
     <div class="grid g-2" style="margin-top:16px">
-      <section class="panel">
+      <section class="panel stagger">
         <div class="panel-head"><div><h2>Kans op een volle afdeling</h2><div class="desc">Percentage van de kwartieren met ≥ ${beds} patiënten, per weekdag en uur.</div></div></div>
         <div class="table-wrap">${fullHeatHTML(frame, beds)}</div>
       </section>
-      <section class="panel">
+      <section class="panel stagger">
         <div class="panel-head"><div><h2>Bedden per weekdag</h2><div class="desc">Advies = bedden die nodig zijn voor ${S.bedTarget}% dekking op die dag.</div></div></div>
         <div class="table-wrap">${bedTable(frame, beds)}</div>
       </section>
@@ -598,7 +621,7 @@ function viewStaff(el, frame) {
   const c = C();
 
   el.innerHTML = `
-    <section class="panel" style="margin-bottom:16px">
+    <section class="panel stagger" style="margin-bottom:16px">
       <div class="panel-head"><div><h2>Diensten en normen</h2><div class="desc">Benodigd = bezetting (${mLabel()}) gedeeld door het aantal patiënten per verpleegkundige, naar boven afgerond.</div></div></div>
       <div class="settings">
         ${SHIFT_KEYS.map(k => `<div class="set">
@@ -610,13 +633,13 @@ function viewStaff(el, frame) {
       </div>
     </section>
     <div class="kpis">
-      ${kpi('Diensten per week nodig', sum.need, '', `typische week, norm ${mLabel()}`)}
-      ${kpi('Diensten per week ingepland', sum.plan, '', 'volgens het rooster hieronder', statusPill(sum.need > sum.plan ? 'crit' : 'good', sum.need > sum.plan ? `${sum.need - sum.plan} tekort` : sum.need === sum.plan ? 'Sluitend' : `${sum.plan - sum.need} overschot`))}
-      ${kpi('FTE nodig', fmt(sum.fteNeed), 'FTE', `bij ${S.fteHours} uur per FTE`)}
-      ${kpi('FTE ingepland', fmt(sum.ftePlan), 'FTE', `verschil ${sum.ftePlan - sum.fteNeed >= 0 ? '+' : ''}${fmt(sum.ftePlan - sum.fteNeed)} FTE`)}
+      ${kpi('Diensten per week nodig', kn(sum.need, 0), '', `typische week, norm ${mLabel()}`)}
+      ${kpi('Diensten per week ingepland', kn(sum.plan, 0), '', 'volgens het rooster hieronder', statusPill(sum.need > sum.plan ? 'crit' : 'good', sum.need > sum.plan ? `${sum.need - sum.plan} tekort` : sum.need === sum.plan ? 'Sluitend' : `${sum.plan - sum.need} overschot`))}
+      ${kpi('FTE nodig', kn(sum.fteNeed), 'FTE', `bij ${S.fteHours} uur per FTE`)}
+      ${kpi('FTE ingepland', kn(sum.ftePlan), 'FTE', `verschil ${sum.ftePlan - sum.fteNeed >= 0 ? '+' : ''}${fmt(sum.ftePlan - sum.fteNeed)} FTE`)}
     </div>
     <div class="grid g-2">
-      <section class="panel">
+      <section class="panel stagger">
         <div class="panel-head">
           <div><h2>Verpleegkundigen (nodig − ingepland)</h2><div class="desc">Boven de nul: tekort. Onder de nul: meer ingepland dan nodig. Streepje: van nodig bij gemiddelde tot nodig bij maximum.</div></div>
           ${weekModeControl(frame)}
@@ -624,13 +647,13 @@ function viewStaff(el, frame) {
         <div class="chart-box"><canvas id="ch-staffdiff" role="img" aria-label="Verschil nodig en ingepland"></canvas></div>
         <div class="legend"><span><i class="sw" style="background:var(--div-pos)"></i>Tekort</span><span><i class="sw" style="background:var(--div-neg)"></i>Overschot</span><span class="sep"></span><span><i class="wh"></i>Bandbreedte</span><span class="sep"></span><span class="key"><b>D</b> Dag <b>A</b> Avond <b>N</b> Nacht</span></div>
       </section>
-      <section class="panel">
+      <section class="panel stagger">
         <div class="panel-head"><div><h2>Nodig en ingepland per dienst</h2><div class="desc">Benodigde verpleegkundigen (staaf) tegen het rooster (lijn).</div></div></div>
         <div class="chart-box"><canvas id="ch-staffabs" role="img" aria-label="Nodig en ingepland"></canvas></div>
         <div class="legend"><span><i class="sw" style="background:var(--s1)"></i>Nodig (${mLabel()})</span><span><i class="ln solid" style="border-color:var(--ink)"></i>Ingepland</span></div>
       </section>
     </div>
-    <section class="panel" style="margin-top:16px">
+    <section class="panel stagger" style="margin-top:16px">
       <div class="panel-head"><div><h2>Rooster</h2><div class="desc">Pas het aantal ingeplande verpleegkundigen per dag en dienst aan. ${short.length ? `<b style="color:var(--crit)">${short.length} diensten</b> komen tekort.` : 'Geen tekorten in de huidige selectie.'}</div></div></div>
       <div class="table-wrap">${rosterTable(cells, cfg)}</div>
     </section>`;
@@ -690,12 +713,12 @@ function viewStaffAll(el) {
   const tot = ok.reduce((a, r) => ({ need: a.need + r.sum.need, plan: a.plan + r.sum.plan, fn: a.fn + r.sum.fteNeed, fp: a.fp + r.sum.ftePlan }), { need: 0, plan: 0, fn: 0, fp: 0 });
   el.innerHTML = `
     <div class="kpis">
-      ${kpi('Diensten per week nodig', tot.need, '', `alle afdelingen, norm ${mLabel()}`)}
-      ${kpi('Diensten per week ingepland', tot.plan, '', '', statusPill(tot.need > tot.plan ? 'crit' : 'good', tot.need > tot.plan ? `${tot.need - tot.plan} tekort` : 'Sluitend of ruimte'))}
-      ${kpi('FTE nodig', fmt(tot.fn), 'FTE', `bij ${S.fteHours} uur per FTE`)}
-      ${kpi('FTE ingepland', fmt(tot.fp), 'FTE', `verschil ${tot.fp - tot.fn >= 0 ? '+' : ''}${fmt(tot.fp - tot.fn)} FTE`)}
+      ${kpi('Diensten per week nodig', kn(tot.need, 0), '', `alle afdelingen, norm ${mLabel()}`)}
+      ${kpi('Diensten per week ingepland', kn(tot.plan, 0), '', '', statusPill(tot.need > tot.plan ? 'crit' : 'good', tot.need > tot.plan ? `${tot.need - tot.plan} tekort` : 'Sluitend of ruimte'))}
+      ${kpi('FTE nodig', kn(tot.fn), 'FTE', `bij ${S.fteHours} uur per FTE`)}
+      ${kpi('FTE ingepland', kn(tot.fp), 'FTE', `verschil ${tot.fp - tot.fn >= 0 ? '+' : ''}${fmt(tot.fp - tot.fn)} FTE`)}
     </div>
-    <section class="panel">
+    <section class="panel stagger">
       <div class="panel-head"><div><h2>Diensten per week, per afdeling</h2><div class="desc">Elke afdeling rekent met haar eigen ratio's en rooster (instellen in het tabblad van de afdeling).</div></div></div>
       <div class="chart-box short"><canvas id="ch-staffall" role="img" aria-label="Diensten per afdeling"></canvas></div>
       <div class="legend"><span><i class="sw" style="background:var(--s1)"></i>Nodig</span><span><i class="sw" style="background:var(--axis)"></i>Ingepland</span></div>
@@ -740,25 +763,25 @@ function viewForecast(el, frame) {
   const c = C();
 
   el.innerHTML = `
-    <section class="panel" style="margin-bottom:16px">
+    <section class="panel stagger" style="margin-bottom:16px">
       <div class="panel-head">
         <div><h2>Prognose ${fc.fcYear}</h2><div class="desc">Per week de P${fmt(pct, pct % 1 ? 1 : 0)} van de dagmaxima, met lineaire trend × seizoensindex per weeknummer. Gebaseerd op ${fc.nWeeks} weken historie (${fc.years[0]}–${fc.years[fc.years.length - 1]}). Periode- en dagfilters gelden hier niet; de prognose gebruikt alle historie.</div></div>
-        <div class="set"><label>Weigeringskans</label><div class="seg small" role="group" aria-label="Weigeringskans">${[1, 2.5, 5, 10].map(r => `<button class="${S.refusal === r ? 'on' : ''}" data-act="refusal" data-arg="${r}">${fmt(r, r % 1 ? 1 : 0)}%</button>`).join('')}</div></div>
+        <div class="set"><label>Weigeringskans</label><div class="seg small" role="group" aria-label="Weigeringskans" data-ind="refusal">${[1, 2.5, 5, 10].map(r => `<button class="${S.refusal === r ? 'on' : ''}" data-act="refusal" data-arg="${r}">${fmt(r, r % 1 ? 1 : 0)}%</button>`).join('')}</div></div>
       </div>
     </section>
     <div class="kpis">
       ${kpi('Drukste week', `wk ${peak.week}`, '', `${fmt(peak.val)} patiënten · ${fmtDay(peak.monday)}${peak.vacation ? ' · ' + peak.vacation.toLowerCase() : ''}`)}
-      ${kpi('Weken boven bedden', overWeeks, `van 52`, `prognose > ${beds} bedden`, statusPill(overWeeks === 0 ? 'good' : overWeeks < 8 ? 'warn' : 'crit', overWeeks === 0 ? 'Past het hele jaar' : `${overWeeks} weken krap`))}
+      ${kpi('Weken boven bedden', kn(overWeeks, 0), `van 52`, `prognose > ${beds} bedden`, statusPill(overWeeks === 0 ? 'good' : overWeeks < 8 ? 'warn' : 'crit', overWeeks === 0 ? 'Past het hele jaar' : `${overWeeks} weken krap`))}
       ${kpi('Trend', `${fc.slopePerYear >= 0 ? '+' : ''}${fmt(fc.slopePerYear)}`, 'pat./jaar', 'lineaire trend in de wekelijkse piek')}
       ${kpi('Effect schoolvakanties', `${vacDiff >= 0 ? '+' : ''}${fmt(vacDiff, 0)}`, '%', 'seizoensindex vakantieweken t.o.v. overige weken')}
     </div>
-    <section class="panel">
+    <section class="panel stagger">
       <div class="panel-head"><div><h2>Verwachte piekbezetting per week</h2><div class="desc">Staaf = prognose; streepje = historisch gemiddelde tot maximum in dat weeknummer. Rood = boven de ${beds} bedden.</div></div></div>
       <div class="chart-box tall"><canvas id="ch-fc" role="img" aria-label="Prognose per week"></canvas></div>
       <div class="legend"><span><i class="sw" style="background:var(--s1)"></i>Prognose binnen capaciteit</span><span><i class="sw" style="background:var(--crit)"></i>Boven capaciteit</span><span class="sep"></span><span><i class="wh"></i>Historie gem.–max</span><span><i class="ln"></i>Open bedden</span></div>
     </section>
     ${isAll ? `<p class="note">Per afdeling zie je in hun eigen tabblad ook de benodigde verpleegkundigen per week.</p>` : `
-    <section class="panel" style="margin-top:16px">
+    <section class="panel stagger" style="margin-top:16px">
       <div class="panel-head"><div><h2>Verpleegkundigen nodig per week</h2><div class="desc">⌈ prognose per dienst ÷ ratio ⌉, vergeleken met het gemiddelde rooster van die dienst. Klik of beweeg over een week voor details.</div></div></div>
       <div class="table-wrap">${forecastStrip(shiftFc, cfg)}</div>
       <div class="heat-scale"><span class="diff neg">−1</span> overschot <span class="diff zero">0</span> sluitend <span class="diff pos">+1</span> tekort t.o.v. rooster</div>
@@ -813,4 +836,163 @@ function exportTables() {
     XLSX.writeFile(wb, name);
     toast(`Geëxporteerd: ${name}`);
   } catch (e) { toast('Exporteren lukt hier niet; open het dashboard lokaal in de browser.'); }
+}
+
+/* ═════════════ 6. SEH-INSTROOM ═════════════ */
+function viewInstroom(el) {
+  const sets = DATASETS.filter(d => d.kind === 'in');
+  const loaded = sets.filter(d => STORE[d.key]);
+  if (!loaded.length) {
+    el.innerHTML = `<div class="empty-state stagger"><h2>Nog geen instroombestanden</h2><p>Laad de SEH-instroombestanden (inbehandeling- of wachttijd-status) om de aankomsten per uur te zien.</p><button class="btn primary" data-act="go" data-arg="data">${ICON.file} Naar data inladen</button></div>`;
+    return;
+  }
+  if (!S.inSel || !S.inSel.some(k => STORE[k])) S.inSel = loaded.filter(d => d.status === 'Inbehandeling').map(d => d.key);
+  if (!S.inSel.length) S.inSel = [loaded[0].key];
+  const sel = S.inSel.filter(k => STORE[k]);
+  const comps = sel.map(k => ({ id: k, label: DS[k].label, streams: [k], color: 's' + (sets.findIndex(d => d.key === k) + 1) }));
+  const frame = buildFrame(comps, S.filter);
+  const years = frame ? frame.years : [];
+  const head = `<div class="filters">
+    <div class="f-group"><span class="f-label">Instroom</span>
+      ${loaded.map(d => { const on = sel.includes(d.key); return `<button class="chip ${on ? '' : 'off'}" data-act="insel" data-arg="${d.key}" aria-pressed="${on}"><i class="sw" style="background:var(--s${sets.indexOf(d) + 1})"></i>${esc(d.label)}</button>`; }).join('')}
+    </div>
+    <div class="f-group"><span class="f-label">Periode</span>
+      <select data-filter="year" id="f-year" aria-label="Jaar"><option value="all">Alle jaren</option>${years.map(y => `<option value="${y}" ${String(y) === String(S.filter.year) ? 'selected' : ''}>${y}</option>`).join('')}</select>
+      <div class="seg small" role="group" aria-label="Dagen" data-ind="days">${[['all', 'Alle dagen'], ['werk', 'Werkdagen'], ['weekend', 'Weekend']].map(([v, l]) => `<button class="${S.filter.days === v ? 'on' : ''}" data-act="days" data-arg="${v}">${l}</button>`).join('')}</div>
+    </div>
+  </div>`;
+  if (!frame || !frame.days.length) { el.innerHTML = head + `<div class="empty-state"><h2>Geen dagen in deze selectie</h2><p>Verruim de periode- of dagfilter.</p></div>`; return; }
+
+  const dayTot = ci => frame.days.map(d => { let t = 0; for (let q = 0; q < 96; q++) t += d.parts[ci][q]; return t; });
+  const perHour = ci => Array.from({ length: 24 }, (_, h) => mean(collect(frame.days, [[0, h * 4], [0, h * 4 + 1], [0, h * 4 + 2], [0, h * 4 + 3]], ci)) * 4);
+  const t0 = stats(dayTot(0)), h0 = perHour(0);
+  const peakH = h0.indexOf(Math.max(...h0));
+  const wdAvg = WD_SHORT.map((_, wd) => { const dd = frame.days.filter(d => d.wd === wd); return dd.length ? mean(dd.map(d => { let t = 0; for (let q = 0; q < 96; q++) t += d.parts[0][q]; return t; })) : 0; });
+  const peakWd = wdAvg.indexOf(Math.max(...wdAvg));
+  const c = C();
+
+  el.innerHTML = head + `
+    <div class="kpis">
+      ${kpi('Aankomsten per dag', kn(t0.avg), 'gem.', esc(comps[0].label))}
+      ${kpi('Drukke dag (P95)', kn(t0.p95, 0), 'aankomsten', `max ${fmt(t0.max, 0)} op één dag`)}
+      ${kpi('Drukste uur', `${pad2(peakH)}:00`, '', `gem. ${fmt(h0[peakH])} aankomsten per uur`)}
+      ${kpi('Drukste weekdag', WD_LONG[peakWd], '', `gem. ${fmt(wdAvg[peakWd])} aankomsten`)}
+    </div>
+    <div class="grid g-2">
+      <section class="panel stagger">
+        <div class="panel-head"><div><h2>Aankomsten per uur van de dag</h2><div class="desc">Gemiddeld aantal aankomsten per uur, per gekozen instroomreeks.</div></div></div>
+        <div class="chart-box"><canvas id="ch-in-hour" role="img" aria-label="Aankomsten per uur"></canvas></div>
+        ${legendHTML(comps)}
+      </section>
+      <section class="panel stagger">
+        <div class="panel-head"><div><h2>Weekpatroon · ${esc(comps[0].label)}</h2><div class="desc">Gemiddeld aantal aankomsten per weekdag en uur.</div></div></div>
+        <div class="table-wrap">${heatmapHTML(frame, 0, 'sum', 'aankomsten per uur (gem.)')}</div>
+      </section>
+    </div>
+    <section class="panel stagger" style="margin-top:16px">
+      <div class="panel-head"><div><h2>Aankomsten per dag, per maand</h2><div class="desc">Gemiddeld aantal aankomsten per dag in elke maand.</div></div></div>
+      <div class="chart-box short"><canvas id="ch-in-month" role="img" aria-label="Aankomsten per maand"></canvas></div>
+      ${legendHTML(comps)}
+    </section>
+    <section class="panel stagger" style="margin-top:16px">
+      <div class="panel-head"><div><h2>Instroom per dienst</h2><div class="desc">Gemiddeld aantal aankomsten per dienst en per dag.</div></div></div>
+      <div class="table-wrap"><table class="data" data-name="Instroom"><thead><tr><th>Reeks</th><th class="num">Per dag</th><th class="num">P95 per dag</th><th class="num">Max per dag</th>${SHIFT_KEYS.map(k => `<th class="num">${SHIFT_INFO[k].label} <span class="mono">${shiftTimes(k)}</span></th>`).join('')}</tr></thead><tbody>
+        ${comps.map((cp, ci) => { const t = stats(dayTot(ci)); return `<tr><td><span class="cell-name"><i class="sw" style="background:${cssColor(cp)}"></i>${esc(cp.label)}</span></td><td class="num">${fmt(t.avg)}</td><td class="num">${fmt(t.p95, 0)}</td><td class="num">${fmt(t.max, 0)}</td>${SHIFT_KEYS.map(k => `<td class="num">${fmt(mean(collect(frame.days, shiftSlots(k), ci)) * shiftSlots(k).length)}</td>`).join('')}</tr>`; }).join('')}
+      </tbody></table></div>
+    </section>`;
+
+  mkChart($('#ch-in-hour'), {
+    type: 'bar',
+    data: { labels: h0.map((_, h) => `${pad2(h)}:00`), datasets: comps.map((cp, ci) => ({ label: cp.label, data: perHour(ci), backgroundColor: colorOf(cp), borderRadius: { topLeft: 3, topRight: 3 }, borderSkipped: 'bottom', barPercentage: 0.9, categoryPercentage: 0.82 })) },
+    options: {
+      interaction: { mode: 'index', intersect: false },
+      scales: { x: { grid: { display: false }, border: { color: c.axis }, ticks: { maxRotation: 0, autoSkip: true, autoSkipPadding: 10 } }, y: { beginAtZero: true, grid: { color: c.grid }, border: { display: false } } },
+      plugins: { tooltip: { callbacks: { label: it => ` ${it.dataset.label}: ${fmt(it.raw)} per uur` } } },
+    },
+  });
+  const months = [...new Set(frame.days.map(d => `${d.y}-${pad2(d.m)}`))];
+  mkChart($('#ch-in-month'), {
+    type: 'line',
+    data: { labels: months.map(k => `${MONTH_SHORT[+k.slice(5) - 1]} ${k.slice(2, 4)}`), datasets: comps.map((cp, ci) => ({ label: cp.label, borderColor: colorOf(cp), backgroundColor: colorOf(cp), borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, tension: 0.25,
+      data: months.map(k => { const dd = frame.days.filter(d => `${d.y}-${pad2(d.m)}` === k); return mean(dd.map(d => { let t = 0; for (let q = 0; q < 96; q++) t += d.parts[ci][q]; return t; })); }) })) },
+    options: { interaction: { mode: 'index', intersect: false }, scales: { x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkipPadding: 10 } }, y: { beginAtZero: true, grid: { color: c.grid }, border: { display: false } } }, plugins: { tooltip: { callbacks: { label: it => ` ${it.dataset.label}: ${fmt(it.raw)} per dag` } } } },
+  });
+}
+
+/* ═════════════ 7. JDT SEH WERKDRUK ═════════════ */
+// Werkdruk % = JDT-punten ÷ (verpleegkundigen × 30) × 100, per uur.
+function viewJDT(el) {
+  const st = STORE.jdt;
+  if (!st) {
+    el.innerHTML = `<div class="empty-state stagger"><h2>Nog geen JDT-bestand</h2><p>Laad het JDT SEH-bestand (tabbladen "JDT aantal" en "%") om de werkdruk per uur te zien.</p><button class="btn primary" data-act="go" data-arg="data">${ICON.file} Naar data inladen</button></div>`;
+    return;
+  }
+  if (!S.jdtVpk) S.jdtVpk = st.vpkBase.slice(0, 24);
+  const years = [...new Set(st.days.map(d => d.y))];
+  if (S.jdtYear !== 'all' && !years.includes(+S.jdtYear)) S.jdtYear = 'all';
+  const days = st.days.filter(d => (S.jdtYear === 'all' || d.y === +S.jdtYear) && (S.filter.days === 'all' || (S.filter.days === 'werk' ? d.wd < 5 : d.wd >= 5)));
+  const pct = (a, h) => (a == null || !S.jdtVpk[h] ? null : a / (S.jdtVpk[h] * 30) * 100);
+  const hourStats = Array.from({ length: 24 }, (_, h) => stats(days.map(d => pct(d.hours[h], h)).filter(v => v != null)));
+  const allP = days.flatMap(d => d.hours.map((a, h) => pct(a, h)).filter(v => v != null));
+  const tot = stats(allP);
+  const over = allP.length ? allP.filter(v => v > 100).length / allP.length * 100 : 0;
+  const peakH = hourStats.reduce((b, s2, h) => (s2 && s2.avg > (hourStats[b] ? hourStats[b].avg : -1) ? h : b), 0);
+  const pts = mean(days.map(d => d.hours.reduce((a, b) => a + (b || 0), 0)));
+  const c = C();
+  const heat = WD_SHORT.map((_, wd) => Array.from({ length: 24 }, (_, h) => mean(days.filter(d => d.wd === wd).map(d => pct(d.hours[h], h)).filter(v => v != null))));
+  const cellBg = v => (v >= 100 ? `color-mix(in srgb, var(--div-pos) ${Math.min(95, 30 + (v - 100) * 1.4)}%, var(--surface))` : `color-mix(in srgb, var(--div-neg) ${Math.max(4, Math.min(60, (100 - v) * 0.55))}%, var(--surface))`);
+
+  el.innerHTML = `<div class="filters">
+      <div class="f-group"><span class="f-label">Jaar</span>
+        <div class="seg small" role="group" aria-label="Jaar" data-ind="jdtyear">${['all', ...years].map(y => `<button class="${String(S.jdtYear) === String(y) ? 'on' : ''}" data-act="jdtyear" data-arg="${y}">${y === 'all' ? 'Alle jaren' : y}</button>`).join('')}</div>
+      </div>
+      <div class="f-group"><span class="f-label">Dagen</span>
+        <div class="seg small" role="group" aria-label="Dagen" data-ind="days">${[['all', 'Alle dagen'], ['werk', 'Werkdagen'], ['weekend', 'Weekend']].map(([v, l]) => `<button class="${S.filter.days === v ? 'on' : ''}" data-act="days" data-arg="${v}">${l}</button>`).join('')}</div>
+      </div>
+      <span class="note" style="margin:0">${esc(st.fileName)} · ${days.length.toLocaleString('nl-NL')} dagen</span>
+    </div>
+    <div class="kpis">
+      ${kpi('Gemiddelde werkdruk', kn(tot ? tot.avg : 0, 0), '%', 'JDT-punten ÷ (vpk × 30)')}
+      ${kpi('Uren boven 100%', kn(over), '%', 'van alle uren in de selectie', statusPill(over < 5 ? 'good' : over < 15 ? 'warn' : 'crit', over < 5 ? 'Beheersbaar' : over < 15 ? 'Regelmatig te hoog' : 'Vaak te hoog'))}
+      ${kpi('Zwaarste uur', `${pad2(peakH)}:00`, '', `gem. ${fmt(hourStats[peakH] ? hourStats[peakH].avg : 0, 0)}% bij ${S.jdtVpk[peakH]} vpk`)}
+      ${kpi('JDT-punten per dag', kn(pts, 0), 'gem.', `${fmt(pts / 24, 0)} per uur`)}
+    </div>
+    <section class="panel stagger">
+      <div class="panel-head"><div><h2>Werkdruk per uur</h2><div class="desc">Gemiddelde, P95 en maximum per uur, bij de verpleegkundigen hieronder. Boven de lijn is de werkdruk hoger dan 100%.</div></div></div>
+      <div class="chart-box"><canvas id="ch-jdt" role="img" aria-label="Werkdruk per uur"></canvas></div>
+      <div class="legend"><span><i class="ln solid" style="border-color:var(--s1)"></i>Gemiddeld</span><span><i class="ln solid" style="border-color:var(--ink)"></i>P95</span><span><i class="ln solid" style="border-color:var(--muted)"></i>Maximum</span><span><i class="ln"></i>100% werkdruk</span></div>
+    </section>
+    <section class="panel stagger" style="margin-top:16px">
+      <div class="panel-head"><div><h2>Verpleegkundigen per uur</h2><div class="desc">Pas de bezetting per uur aan; de werkdruk rekent direct mee. Startwaarden komen uit het tabblad "%" van het bestand.</div></div>
+        <div class="set-row"><button class="btn small" data-act="step" data-path="jdtvpk.all" data-arg="-1">Alle uren −1</button><button class="btn small" data-act="step" data-path="jdtvpk.all" data-arg="1">Alle uren +1</button></div></div>
+      <div class="table-wrap"><table class="data jdt-table" data-name="JDT vpk"><thead><tr><th>Uur</th>${S.jdtVpk.map((_, h) => `<th class="num">${pad2(h)}</th>`).join('')}</tr></thead><tbody>
+        <tr><td>Vpk</td>${S.jdtVpk.map((v, h) => `<td class="num"><span class="vstep"><button data-act="step" data-path="jdtvpk.${h}" data-arg="1" aria-label="Meer vpk om ${pad2(h)}:00">+</button><input type="number" id="in-jdtvpk-${h}" data-path="jdtvpk.${h}" value="${v}" aria-label="Vpk om ${pad2(h)}:00"><button data-act="step" data-path="jdtvpk.${h}" data-arg="-1" aria-label="Minder vpk om ${pad2(h)}:00">−</button></span></td>`).join('')}</tr>
+        <tr><td>Gem. %</td>${hourStats.map(s2 => { const v = s2 ? s2.avg : null; return `<td class="num"><span class="pctcell" style="background:${v == null ? 'transparent' : cellBg(v)};color:${v >= 140 ? '#fff' : 'var(--ink)'}">${v == null ? '—' : Math.round(v)}</span></td>`; }).join('')}</tr>
+      </tbody></table></div>
+    </section>
+    <section class="panel stagger" style="margin-top:16px">
+      <div class="panel-head"><div><h2>Werkdruk per weekdag en uur</h2><div class="desc">Gemiddelde werkdruk in %. Rood boven 100%, blauw eronder.</div></div></div>
+      <div class="table-wrap"><div class="heat" role="table" aria-label="Werkdruk per weekdag en uur">
+        <div></div>${Array.from({ length: 24 }, (_, h) => `<div class="hh">${h % 3 === 0 ? pad2(h) : ''}</div>`).join('')}
+        ${heat.map((row, wd) => `<div class="hl">${WD_SHORT[wd]}</div>${row.map((v, h) => `<div class="c" style="background:${cellBg(v)};color:${v >= 140 ? '#fff' : 'var(--ink-2)'}" title="${WD_LONG[wd]} ${pad2(h)}:00 · ${fmt(v, 0)}% werkdruk">${Math.round(v)}</div>`).join('')}`).join('')}
+      </div></div>
+      <div class="heat-scale"><span>Laag</span><span class="ramp"><i style="background:color-mix(in srgb, var(--div-neg) 50%, var(--surface))"></i><i style="background:color-mix(in srgb, var(--div-neg) 20%, var(--surface))"></i><i style="background:var(--surface-2)"></i><i style="background:color-mix(in srgb, var(--div-pos) 40%, var(--surface))"></i><i style="background:color-mix(in srgb, var(--div-pos) 80%, var(--surface))"></i></span><span>100% = grens</span></div>
+    </section>`;
+
+  mkChart($('#ch-jdt'), {
+    type: 'line',
+    data: {
+      labels: hourStats.map((_, h) => `${pad2(h)}:00`),
+      datasets: [
+        { label: 'Gemiddeld', data: hourStats.map(s2 => s2 && s2.avg), borderColor: c.series[0], backgroundColor: alpha(c.series[0], 0.12), fill: 'origin', borderWidth: 2, pointRadius: 0, tension: 0.3 },
+        { label: 'P95', data: hourStats.map(s2 => s2 && s2.p95), borderColor: c.ink, borderWidth: 2, pointRadius: 0, tension: 0.3 },
+        { label: 'Maximum', data: hourStats.map(s2 => s2 && s2.max), borderColor: c.muted, borderWidth: 1.5, pointRadius: 0, stepped: 'middle' },
+      ],
+    },
+    options: {
+      interaction: { mode: 'index', intersect: false },
+      scales: { x: { grid: { display: false }, border: { color: c.axis }, ticks: { maxRotation: 0, autoSkipPadding: 12 } }, y: { beginAtZero: true, suggestedMax: 120, grid: { color: c.grid }, border: { display: false }, ticks: { callback: v => v + '%' } } },
+      plugins: { capLine: { value: 100, label: '100% werkdruk' }, tooltip: { callbacks: { label: it => ` ${it.dataset.label}: ${fmt(it.raw, 0)}%`, footer: it => `${S.jdtVpk[it[0].dataIndex]} verpleegkundigen` } } },
+    },
+  });
 }
