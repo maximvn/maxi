@@ -27,7 +27,7 @@ const S = {
   bandGran: 'hour',      // bandbreedte per uur / weekdag / maand
   trendMode: 'stroom',     // trend per maand: per stroom, samen of beide
   playing: false,        // peilmoment afspelen in Overzicht
-  peil: null,            // { ds } — de gekozen dag in de historie
+  win: null,             // Overzicht: venster van het bezettingsverloop { gran, start }
   nurseTab: 'vpk',       // Overzicht: verpleegkundigen of patiëntcapaciteit
   rangeMode: 'peil',     // Overzicht: rond Nu of typische week
   fcRange: 'next',       // prognose: komende 13 weken of heel jaar
@@ -426,7 +426,8 @@ document.addEventListener('click', e => {
     'advice-apply': applyAdvice,
     staffday: () => { S.staffDay = +arg; render(); },
     play: togglePlay,
-    peil: () => { const f = currentFrame(); if (f) { stopPlay(); movePeil(+arg, f); const y = window.scrollY; render(); window.scrollTo({ top: y }); } },
+    win: () => { const f = currentFrame(); if (f) { stopPlay(); moveWin(+arg, f); const y = window.scrollY; render(); window.scrollTo({ top: y }); } },
+    wingran: () => { const f = currentFrame(); if (f) { stopPlay(); const w = winOf(f); w.gran = arg; w.start = alignStart(w.start, arg); render(); } },
     nursetab: () => { S.nurseTab = arg; render(); },
     rangemode: () => { S.rangeMode = arg; render(); },
     fcrange: () => { S.fcRange = arg; render(); },
@@ -456,7 +457,7 @@ document.addEventListener('change', e => {
   if (t.dataset.path) { setValue(t.dataset.path, t.value); return; }
   if (t.id === 'week-select') { S.weekSel = t.value; render(); }
   if (t.id === 'jdt-date' && t.value) { S.jdtDate = t.value; render(); return; }
-  if (t.id === 'peil-date' && t.value) { stopPlay(); S.peil = { ds: t.value }; render(); }
+  if (t.id === 'win-date' && t.value) { stopPlay(); const f = currentFrame(); if (f) { const w = winOf(f); w.start = alignStart(t.value, w.gran); render(); } }
 });
 document.addEventListener('input', e => {
   const t = e.target;
@@ -551,20 +552,15 @@ function applyAdvice() {
 /* ── Tijdlijn afspelen: week na week door de historie ─────────────── */
 let PLAY_T = null;
 function togglePlay() { if (S.playing) { stopPlay(); render(); } else startPlay(); }
-// Afspelen: "Bezetting per dienst" loopt week na week door de gemeten historie.
+// Afspelen: het venster van het bezettingsverloop schuift periode voor periode door de historie.
 function startPlay() {
   const f = currentFrame(); if (!f) return;
-  const weeks = weekList(f); if (!weeks.length) return;
-  S.weekMode = 'week'; S.playing = true;
-  if (!S.weekSel || weeks.indexOf(S.weekSel) >= weeks.length - 1) S.weekSel = weeks[Math.max(0, weeks.length - 53)];
-  render();
+  winOf(f); S.playing = true; render();
   PLAY_T = setInterval(() => {
-    const fr = currentFrame(); const ws = fr ? weekList(fr) : [];
-    const i = ws.indexOf(S.weekSel);
-    if (S.screen !== 'dash' || S.view !== 'overzicht' || i < 0 || i >= ws.length - 1) { stopPlay(); render(); return; }
-    S.weekSel = ws[i + 1];
+    const fr = currentFrame();
+    if (S.screen !== 'dash' || S.view !== 'overzicht' || !fr || !moveWin(1, fr)) { stopPlay(); render(); return; }
     const y = window.scrollY; render(); window.scrollTo({ top: y });
-  }, 1100);
+  }, 1300);
 }
 function stopPlay() { S.playing = false; clearInterval(PLAY_T); PLAY_T = null; }
 function stepWeek(delta) {
@@ -589,6 +585,6 @@ function boot() {
   try { const t = localStorage.getItem('acuut-dash-theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) { /* negeren */ }
   loadSettings();
   applyChartDefaults();
-  Chart.register(revealPlugin, nowMarkerPlugin, whiskerPlugin, capLinePlugin, dayBandPlugin);
+  Chart.register(revealPlugin, nowMarkerPlugin, brushPlugin, whiskerPlugin, capLinePlugin, dayBandPlugin);
   render({ enter: true });
 }

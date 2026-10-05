@@ -526,3 +526,7 @@ body.busy .appbar::after { opacity: 1; animation: slide 1.1s linear infinite; }
 .cal-c { border: 0; height: 18px; border-radius: 2px; padding: 0; font-size: 9.5px; font-weight: 600; font-variant-numeric: tabular-nums; cursor: pointer; }
 .cal-c:hover, .cal-c:focus-visible { outline: 2px solid var(--ink); outline-offset: 0; }
 .cal-c.sel { outline: 2px solid var(--s1); outline-offset: 1px; }
+.hero-title { font: 600 22px/1.2 var(--font-display); margin-top: 2px; }
+.hero-chart { height: 380px; }
+.brush-box { position: relative; height: 64px; margin-top: 12px; border-top: 1px solid var(--line); padding-top: 6px; }
+@media (max-width: 640px) { .hero-chart { height: 300px; } }
