@@ -1,0 +1,2110 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Acuut Capaciteitsdashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: klinische regiekamer — vaste app-balk met stappen, daaronder
+   locatie-tabs (zoals het Slingeland-dashboard), weergave-tabs, één
+   filterstrook, en een raster van panelen. Rustig koel-grijs, marineblauw
+   als accent; kleur in grafieken is uitsluitend data. */
+:root {
+  --bg: #f3f5f8;
+  --surface: #ffffff;
+  --surface-2: #f7f8fb;
+  --ink: #0f1a2b;
+  --ink-2: #47536a;
+  --muted: #7d8799;
+  --line: #e1e5ec;
+  --line-strong: #c9d0dc;
+  --accent: #133f8c;
+  --accent-ink: #ffffff;
+  --accent-soft: #e7eefa;
+  --focus: #2a78d6;
+  --grid: #e8ebf0;
+  --axis: #c3c9d4;
+  --good: #0a8a0a; --good-soft: #e5f4e5;
+  --warn: #b77a00; --warn-soft: #fdf3dc;
+  --crit: #c93535; --crit-soft: #fbe7e7;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #4a3aa7; --s8: #e34948;
+  --div-pos: #d03b3b; --div-neg: #2a78d6;
+  --seq-0: #f1f6fd; --seq-1: #cde2fb; --seq-2: #9ec5f4; --seq-3: #6da7ec; --seq-4: #3987e5; --seq-5: #256abf; --seq-6: #184f95; --seq-7: #0d366b;
+  --heat-0: #fdf1ea; --heat-1: #fbd9c6; --heat-2: #f6b292; --heat-3: #ee8a5d; --heat-4: #d9622f; --heat-5: #a8441b;
+  --shadow: 0 1px 2px rgba(15, 26, 43, .05), 0 4px 16px rgba(15, 26, 43, .04);
+  --font-ui: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: 'IBM Plex Sans Condensed', 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  --r: 6px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0c1118; --surface: #141a23; --surface-2: #19202b; --ink: #edf1f7; --ink-2: #b4bdcc; --muted: #8590a3;
+    --line: #262f3c; --line-strong: #364152; --accent: #7fa8ee; --accent-ink: #0c1118; --accent-soft: #1b2a44; --focus: #7fa8ee;
+    --grid: #222a36; --axis: #3a4555;
+    --good: #2bb52b; --good-soft: #13281a; --warn: #e3a51c; --warn-soft: #2d2410; --crit: #ec6a6a; --crit-soft: #351919;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+    --div-pos: #e66767; --div-neg: #3987e5;
+    --seq-0: #16202d; --seq-1: #13294a; --seq-2: #173a68; --seq-3: #1c5cab; --seq-4: #2a78d6; --seq-5: #5598e7; --seq-6: #86b6ef; --seq-7: #cde2fb;
+    --heat-0: #241a16; --heat-1: #4a2616; --heat-2: #7a3518; --heat-3: #b34a1d; --heat-4: #e06a33; --heat-5: #f6a27a;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4); color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0c1118; --surface: #141a23; --surface-2: #19202b; --ink: #edf1f7; --ink-2: #b4bdcc; --muted: #8590a3;
+  --line: #262f3c; --line-strong: #364152; --accent: #7fa8ee; --accent-ink: #0c1118; --accent-soft: #1b2a44; --focus: #7fa8ee;
+  --grid: #222a36; --axis: #3a4555;
+  --good: #2bb52b; --good-soft: #13281a; --warn: #e3a51c; --warn-soft: #2d2410; --crit: #ec6a6a; --crit-soft: #351919;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+  --div-pos: #e66767; --div-neg: #3987e5;
+  --seq-0: #16202d; --seq-1: #13294a; --seq-2: #173a68; --seq-3: #1c5cab; --seq-4: #2a78d6; --seq-5: #5598e7; --seq-6: #86b6ef; --seq-7: #cde2fb;
+  --heat-0: #241a16; --heat-1: #4a2616; --heat-2: #7a3518; --heat-3: #b34a1d; --heat-4: #e06a33; --heat-5: #f6a27a;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .4); color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { min-height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 400 14px/1.5 var(--font-ui); -webkit-font-smoothing: antialiased; }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+h1, h2, h3 { text-wrap: balance; margin: 0; }
+.num, td.num, .mono { font-variant-numeric: tabular-nums; }
+.mono { font-family: var(--font-mono); }
+[hidden] { display: none !important; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
+
+/* ── App-balk ─────────────────────────────────────────────── */
+.appbar {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 30;
+  display: flex; align-items: center; gap: 24px; flex-wrap: wrap;
+  padding: 10px clamp(16px, 3vw, 32px); background: var(--surface); border-bottom: 1px solid var(--line);
+}
+.brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.brand-mark { width: 28px; height: 28px; border-radius: 6px; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; flex: none; }
+.brand-mark svg { width: 16px; height: 16px; }
+.brand-text { line-height: 1.15; }
+.brand-eyebrow { font-size: 11px; color: var(--muted); letter-spacing: .04em; }
+.brand-title { font-weight: 600; font-size: 15px; }
+.stepper { display: flex; align-items: center; gap: 4px; margin-left: auto; flex-wrap: wrap; }
+.step { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 999px; border: 0; background: none; color: var(--muted); font-size: 13px; }
+.step .dot { width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid var(--line-strong); display: grid; place-items: center; font-size: 11px; font-weight: 600; }
+.step.done { color: var(--ink-2); }
+.step.done .dot { background: var(--accent-soft); border-color: transparent; color: var(--accent); }
+.step.active { color: var(--ink); font-weight: 600; background: var(--accent-soft); }
+.step.active .dot { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.step:disabled { cursor: default; opacity: .6; }
+.step-sep { width: 16px; height: 1px; background: var(--line-strong); }
+.appbar-actions { display: flex; gap: 8px; align-items: center; }
+.icon-btn { width: 32px; height: 32px; border-radius: var(--r); border: 1px solid var(--line); background: var(--surface); display: grid; place-items: center; color: var(--ink-2); }
+.icon-btn:hover { border-color: var(--line-strong); color: var(--ink); }
+.icon-btn svg { width: 16px; height: 16px; }
+
+.wrap { max-width: 1480px; margin: 0 auto; padding-inline: clamp(16px, 3vw, 32px); padding-block: 24px 64px; }
+
+/* ── Startscherm ──────────────────────────────────────────── */
+.start { display: grid; gap: 28px; padding-top: 3vh; }
+.start-head { max-width: 680px; }
+.eyebrow { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+.start-head h1 { font: 600 clamp(28px, 4vw, 40px)/1.1 var(--font-display); letter-spacing: -.01em; margin-top: 6px; }
+.start-head p { color: var(--ink-2); font-size: 15px; margin: 10px 0 0; max-width: 62ch; }
+.mode-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.mode-card {
+  text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 22px;
+  display: grid; gap: 14px; transition: border-color .15s, box-shadow .15s, transform .15s; box-shadow: var(--shadow);
+}
+.mode-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+.mode-card h2 { font: 600 24px/1.15 var(--font-display); }
+.mode-card p { margin: 0; color: var(--ink-2); max-width: 52ch; }
+.mode-units { display: flex; flex-wrap: wrap; gap: 8px; }
+.unit-pill { border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; background: var(--surface-2); min-width: 0; }
+.unit-pill b { display: block; font-size: 13px; }
+.unit-pill span { display: block; font-size: 11.5px; color: var(--muted); }
+.mode-go { font-weight: 600; color: var(--accent); display: flex; align-items: center; gap: 6px; }
+.start-steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; color: var(--ink-2); font-size: 13px; }
+.start-steps div { border-top: 2px solid var(--line-strong); padding-top: 10px; }
+.start-steps b { display: block; color: var(--ink); font-size: 13.5px; margin-bottom: 2px; }
+
+/* ── Data inladen ─────────────────────────────────────────── */
+.page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+.page-head h1 { font: 600 28px/1.15 var(--font-display); margin-top: 4px; }
+.page-head p { margin: 6px 0 0; color: var(--ink-2); max-width: 70ch; }
+.btn { display: inline-flex; align-items: center; gap: 8px; border-radius: var(--r); padding: 8px 14px; border: 1px solid var(--line-strong); background: var(--surface); font-weight: 500; font-size: 13.5px; white-space: nowrap; }
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.primary:hover { filter: brightness(1.08); color: var(--accent-ink); }
+.btn:disabled { opacity: .45; cursor: not-allowed; filter: none; }
+.btn svg { width: 15px; height: 15px; }
+.btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.dropzone {
+  border: 1.5px dashed var(--line-strong); border-radius: 10px; background: var(--surface); padding: 22px;
+  display: flex; align-items: center; gap: 18px; flex-wrap: wrap; transition: border-color .15s, background .15s;
+}
+.dropzone.over { border-color: var(--accent); background: var(--accent-soft); }
+.dropzone .dz-icon { width: 44px; height: 44px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; flex: none; }
+.dropzone .dz-icon svg { width: 22px; height: 22px; }
+.dropzone .dz-text { flex: 1 1 260px; min-width: 0; }
+.dropzone b { font-size: 15px; }
+.dropzone p { margin: 2px 0 0; color: var(--ink-2); font-size: 13px; }
+.load-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; margin-top: 18px; }
+.load-unit { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.load-unit-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 14px 16px 10px; border-bottom: 1px solid var(--line); }
+.load-unit-head h3 { font-size: 15px; }
+.load-unit-head span { font-size: 12px; color: var(--muted); }
+.slot { display: grid; grid-template-columns: 10px 1fr auto; align-items: center; gap: 10px; padding: 11px 16px; border-bottom: 1px solid var(--line); }
+.slot:last-child { border-bottom: 0; }
+.slot .sw { width: 10px; height: 10px; border-radius: 3px; }
+.slot-name { font-weight: 500; font-size: 13.5px; }
+.slot-meta { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.slot-meta.ok { color: var(--ink-2); }
+.slot-body { min-width: 0; }
+.slot-actions { display: flex; gap: 6px; align-items: center; }
+.tag { font-size: 11px; font-weight: 500; padding: 2px 7px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); color: var(--ink-2); white-space: nowrap; }
+.tag.ok { background: var(--good-soft); color: var(--good); border-color: transparent; }
+.tag.demo { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
+.link-btn { border: 0; background: none; color: var(--accent); font-size: 12.5px; font-weight: 500; padding: 4px 6px; border-radius: 4px; }
+.link-btn:hover { background: var(--accent-soft); }
+.link-btn.danger { color: var(--muted); }
+.link-btn.danger:hover { color: var(--crit); background: var(--crit-soft); }
+.load-foot { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 20px; padding: 16px 18px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+.load-foot p { margin: 0; color: var(--ink-2); }
+.unmatched { margin-top: 14px; background: var(--warn-soft); border-radius: 8px; padding: 12px 14px; display: grid; gap: 8px; font-size: 13px; }
+.unmatched-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.unmatched-row code { font-family: var(--font-mono); font-size: 12px; overflow-wrap: anywhere; }
+select, input[type="number"], input[type="time"] { background: var(--surface); border: 1px solid var(--line-strong); border-radius: 5px; padding: 5px 8px; font-size: 13px; }
+.toast { position: fixed; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--surface); padding: 10px 16px; border-radius: 8px; font-size: 13px; z-index: 60; box-shadow: var(--shadow); max-width: calc(100% - 32px); }
+
+/* ── Dashboard ────────────────────────────────────────────── */
+.dash-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+.dash-head h1 { font: 600 26px/1.15 var(--font-display); }
+.dash-head .sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+.loc-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.loc-label { font-weight: 600; font-size: 13px; }
+.seg { display: inline-flex; background: var(--surface-2); border: 1px solid var(--line); border-radius: 7px; padding: 3px; gap: 2px; flex-wrap: wrap; }
+.seg button { border: 0; background: none; padding: 6px 14px; border-radius: 5px; font-weight: 500; font-size: 13.5px; color: var(--ink-2); display: flex; align-items: center; gap: 6px; }
+.seg button:hover { color: var(--ink); background: var(--surface); }
+.seg button.on { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 0 0 1px var(--line-strong), 0 1px 2px rgba(0,0,0,.06); }
+.seg button .cnt { font-size: 11px; color: var(--muted); font-weight: 500; }
+.seg button.empty { opacity: .55; }
+.seg.small button { padding: 4px 10px; font-size: 12.5px; }
+
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin: 16px 0 0; overflow-x: auto; scrollbar-width: none; }
+.tabs button { border: 0; background: none; padding: 10px 14px; font-weight: 500; color: var(--ink-2); border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; font-size: 14px; }
+.tabs button:hover { color: var(--ink); }
+.tabs button.on { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+
+.filters {
+  position: sticky; top: calc(53px + env(safe-area-inset-top, 0px)); z-index: 20;
+  display: flex; gap: 10px 22px; align-items: center; flex-wrap: wrap;
+  padding: 10px 0; background: var(--bg); border-bottom: 1px solid var(--line); margin-bottom: 18px;
+}
+.f-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.f-label { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; font-weight: 500; }
+.chip {
+  display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line-strong); background: var(--surface);
+  border-radius: 999px; padding: 4px 11px 4px 9px; font-size: 13px; font-weight: 500; color: var(--ink);
+}
+.chip .sw { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.chip.off { color: var(--muted); background: transparent; border-style: dashed; }
+.chip.off .sw { opacity: .3; }
+.chip:disabled { cursor: not-allowed; opacity: .5; }
+
+.grid { display: grid; gap: 16px; }
+.g-2 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); }
+.g-3-1 { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+@media (max-width: 1000px) { .g-3-1 { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; min-width: 0; }
+.panel-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.panel-head h2 { font-size: 15px; font-weight: 600; }
+.panel-head .desc { font-size: 12.5px; color: var(--muted); margin-top: 2px; max-width: 70ch; }
+.chart-box { position: relative; height: 300px; }
+.chart-box.tall { height: 360px; }
+.chart-box.short { height: 220px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12.5px; color: var(--ink-2); margin-top: 10px; align-items: center; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend .sw { width: 10px; height: 10px; border-radius: 3px; }
+.legend .ln { width: 16px; height: 0; border-top: 2px dashed var(--ink); }
+.legend .ln.solid { border-top-style: solid; }
+.legend .wh { width: 10px; height: 12px; border: solid var(--ink-2); border-width: 1.5px 0; position: relative; }
+.legend .wh::after { content: ''; position: absolute; left: 4px; top: 0; bottom: 0; border-left: 1.5px solid var(--ink-2); }
+.legend .sep { width: 1px; height: 14px; background: var(--line-strong); }
+.legend .key b { color: var(--ink); font-weight: 600; }
+
+/* KPI-tegels */
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.kpi { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: grid; gap: 4px; align-content: start; }
+.kpi-label { font-size: 12px; color: var(--ink-2); font-weight: 500; }
+.kpi-val { font: 600 28px/1.1 var(--font-display); letter-spacing: -.01em; }
+.kpi-val small { font: 500 13px var(--font-ui); color: var(--muted); margin-left: 3px; letter-spacing: 0; }
+.kpi-sub { font-size: 12px; color: var(--muted); }
+.status { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; width: fit-content; }
+.status svg { width: 12px; height: 12px; }
+.status.good { background: var(--good-soft); color: var(--good); }
+.status.warn { background: var(--warn-soft); color: var(--warn); }
+.status.crit { background: var(--crit-soft); color: var(--crit); }
+
+/* Tabellen */
+.table-wrap { overflow-x: auto; margin: 0 -2px; }
+table.data { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.data th { text-align: left; font-weight: 500; font-size: 12px; color: var(--muted); padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+table.data td { padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+table.data tr:last-child td { border-bottom: 0; }
+table.data th.num, table.data td.num { text-align: right; }
+table.data tr.sub td { color: var(--ink-2); }
+table.data tr.total td { font-weight: 600; border-top: 1px solid var(--line-strong); }
+table.data tbody tr:hover td { background: var(--surface-2); }
+.cell-name { display: flex; align-items: center; gap: 8px; font-weight: 500; white-space: nowrap; }
+.cell-name .sw { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.diff { display: inline-block; min-width: 34px; text-align: center; font-weight: 600; font-size: 12px; padding: 2px 6px; border-radius: 4px; }
+.diff.pos { background: var(--crit-soft); color: var(--crit); }
+.diff.neg { background: var(--accent-soft); color: var(--accent); }
+.diff.zero { background: var(--good-soft); color: var(--good); }
+.stepper-input { display: inline-flex; align-items: center; border: 1px solid var(--line-strong); border-radius: 5px; overflow: hidden; background: var(--surface); }
+.stepper-input button { border: 0; background: var(--surface-2); width: 24px; height: 28px; color: var(--ink-2); font-weight: 600; }
+.stepper-input button:hover { color: var(--accent); }
+.stepper-input input { width: 44px; border: 0; text-align: center; padding: 4px 0; font-variant-numeric: tabular-nums; -moz-appearance: textfield; background: transparent; }
+.stepper-input input::-webkit-inner-spin-button { -webkit-appearance: none; }
+
+/* Stroomkaarten */
+.stream-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 12px; margin-bottom: 16px; }
+.s-card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px 10px; text-align: left; display: grid; gap: 8px; transition: border-color .15s, box-shadow .15s; }
+.s-card:hover { border-color: var(--line-strong); }
+.s-card.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.s-card-head { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+.s-card-name { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; min-width: 0; }
+.s-card-name .sw { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.s-card-nums { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.s-card-nums div { display: grid; }
+.s-card-nums span { font-size: 11px; color: var(--muted); }
+.s-card-nums b { font: 600 19px/1.2 var(--font-display); font-variant-numeric: tabular-nums; }
+.s-card .spark { height: 54px; position: relative; }
+.share { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--muted); }
+.share-bar { flex: 1; height: 4px; background: var(--grid); border-radius: 2px; overflow: hidden; }
+.share-bar i { display: block; height: 100%; border-radius: 2px; }
+
+/* Heatmap */
+.heat { display: grid; grid-template-columns: 34px repeat(24, minmax(0, 1fr)); gap: 2px; font-size: 10.5px; min-width: 560px; }
+.heat .hl { color: var(--muted); display: flex; align-items: center; font-size: 11px; }
+.heat .hh { color: var(--muted); text-align: center; font-size: 10px; padding-bottom: 2px; }
+.heat .c { aspect-ratio: 1.25; border-radius: 3px; display: grid; place-items: center; font-variant-numeric: tabular-nums; cursor: default; position: relative; }
+.heat .c:hover { outline: 2px solid var(--ink); outline-offset: 0; z-index: 1; }
+.heat-scale { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--muted); margin-top: 10px; }
+.heat-scale .ramp { display: flex; height: 8px; width: 160px; border-radius: 2px; overflow: hidden; }
+.heat-scale .ramp i { flex: 1; }
+
+/* Instellingen */
+.settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.set { display: grid; gap: 4px; }
+.set label { font-size: 12px; color: var(--ink-2); font-weight: 500; }
+.set .hint { font-size: 11.5px; color: var(--muted); }
+.set-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+input[type="range"] { accent-color: var(--accent); width: 100%; }
+
+.insights { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.insights li { display: grid; grid-template-columns: 20px 1fr; gap: 8px; font-size: 13px; color: var(--ink-2); align-items: start; }
+.insights li b { color: var(--ink); font-weight: 600; }
+.insights .ic { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; }
+.insights .ic svg { width: 12px; height: 12px; }
+.insights .ic.good { background: var(--good-soft); color: var(--good); }
+.insights .ic.warn { background: var(--warn-soft); color: var(--warn); }
+.insights .ic.crit { background: var(--crit-soft); color: var(--crit); }
+.insights .ic.info { background: var(--accent-soft); color: var(--accent); }
+
+.empty-state { background: var(--surface); border: 1px dashed var(--line-strong); border-radius: 10px; padding: 40px 24px; text-align: center; display: grid; gap: 10px; justify-items: center; color: var(--ink-2); }
+.empty-state h2 { font-size: 17px; color: var(--ink); }
+.empty-state p { margin: 0; max-width: 52ch; }
+
+.strip { display: grid; grid-template-columns: 54px repeat(52, minmax(0, 1fr)); gap: 2px; min-width: 760px; font-size: 10.5px; }
+.strip .sl { color: var(--ink-2); font-weight: 500; display: flex; align-items: center; font-size: 12px; }
+.strip .sc { height: 26px; border-radius: 3px; display: grid; place-items: center; font-weight: 600; font-variant-numeric: tabular-nums; cursor: pointer; }
+.strip .sc:hover { outline: 2px solid var(--ink); }
+.strip .sh { color: var(--muted); text-align: center; font-size: 10px; }
+
+.chart-tip { font-size: 12px; }
+.note { font-size: 12px; color: var(--muted); margin-top: 8px; }
+
+@media (max-width: 640px) {
+  .appbar { gap: 10px; }
+  .stepper { order: 3; width: 100%; margin-left: 0; }
+  .step-sep { display: none; }
+  .step .lbl { display: none; }
+  .filters { position: static; }
+  .kpi-val { font-size: 24px; }
+  .chart-box { height: 260px; }
+}
+
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+</head>
+<body>
+<header class="appbar">
+  <div class="brand">
+    <div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg></div>
+    <div class="brand-text"><div class="brand-eyebrow">Slingeland Ziekenhuis</div><div class="brand-title" id="brand-title">Capaciteit &amp; bezetting</div></div>
+  </div>
+  <nav class="stepper" id="stepper" aria-label="Stappen"></nav>
+  <div class="appbar-actions">
+    <button class="icon-btn" data-act="theme" aria-label="Wissel licht/donker thema" title="Licht / donker"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/></svg></button>
+  </div>
+</header>
+<main id="screen"></main>
+<script>
+/* ════════════════════════════════════════════════════════════════════
+   CONFIGURATIE — stromen, afdelingen en de twee omgevingen
+   (Oudbouw / Nieuwbouw). Alles wat per ziekenhuis verschilt staat hier.
+   ════════════════════════════════════════════════════════════════════ */
+
+// Elke stroom = één Excel-bestand met dezelfde vorm: per dag een rij,
+// kolom "Datum" + 96 kwartierkolommen (00:00 … 23:45) met de bezetting.
+// `match` herkent het bestand automatisch aan de bestandsnaam.
+// IC-totaalbestanden (spoed+electief, +SCU) worden niet automatisch gekoppeld:
+// het dashboard telt de losse stromen zelf op.
+const IC_FILE = n => /(icu|_ic_|intensive)/.test(n) && !/spoed_en_electief|incl_|scu/.test(n);
+const STREAMS = {
+  'ic-spoed': {
+    dept: 'IC', label: 'Spoed', long: 'IC — spoedpatiënten (excl. AI)',
+    match: n => IC_FILE(n) && /spoed/.test(n) && !/elect/.test(n),
+    demo: { base: 3.6, amp: 0.9, peak: 18, wkd: [1, 1, 1, 1, 1.02, 0.97, 0.96], season: 0.18, trend: 0.04, max: 12 },
+  },
+  'ic-electief': {
+    dept: 'IC', label: 'Electief', long: 'IC — electieve patiënten (excl. recovery)',
+    match: n => IC_FILE(n) && /elect/.test(n),
+    demo: { base: 1.3, amp: 1.1, peak: 15, wkd: [1.35, 1.4, 1.35, 1.3, 1.05, 0.35, 0.25], season: -0.05, trend: 0.02, max: 6 },
+  },
+  'ic-recovery': {
+    dept: 'IC', label: 'Recovery', long: 'IC — recovery-patiënten',
+    match: n => IC_FILE(n) && /recovery/.test(n) && !/excl_*recovery|elect|spoed/.test(n),
+    demo: { base: 0.7, amp: 1.2, peak: 16, wkd: [1.4, 1.4, 1.4, 1.3, 1.1, 0.2, 0.1], season: 0, trend: 0, max: 4 },
+  },
+  'ccu-cardio': {
+    dept: 'CCU', label: 'Cardiologie', long: 'CCU — cardiologie, alle patiënten',
+    match: n => /ccu|cardio/.test(n) && !/scenario/.test(n),
+    demo: { base: 2.6, amp: 0.6, peak: 14, wkd: [1.08, 1.05, 1, 1, 1, 0.92, 0.9], season: 0.12, trend: 0.03, max: 8 },
+  },
+  'ccu-scu': {
+    dept: 'CCU', label: 'SCU', long: 'SCU — stroke care unit, alle patiënten',
+    match: n => /scu/.test(n) && !/icu/.test(n) && !/scenario/.test(n),
+    demo: { base: 1.8, amp: 0.5, peak: 13, wkd: [1.05, 1, 1, 1, 1, 0.95, 0.95], season: 0.1, trend: 0.02, max: 6 },
+  },
+  'seh-excl-rad': {
+    dept: 'SEH', label: 'SEH excl. radiologie', long: 'SEH — alle bezoeken, exclusief radiologie',
+    match: n => /seh/.test(n) && /exclusief|excl/.test(n) && /radiologie/.test(n) && !/instroom|urgentie|uur/.test(n),
+    demo: { base: 6.5, amp: 5.2, peak: 14, wkd: [1.15, 1.02, 1, 1, 1.04, 0.95, 0.98], season: 0.06, trend: 0.05, max: 26 },
+  },
+  'seh-rad': {
+    dept: 'SEH', label: 'Radiologie', long: 'SEH — patiënten op radiologie-onderzoek',
+    match: n => /seh/.test(n) && /radiologie/.test(n) && !/exclusief|excl/.test(n) && !/instroom/.test(n),
+    demo: { base: 0.9, amp: 0.8, peak: 13, wkd: [1.1, 1, 1, 1, 1.05, 0.9, 0.9], season: 0, trend: 0.02, max: 5 },
+  },
+  'seh-kind': {
+    dept: 'SEH', label: 'Kinderen', long: 'Kindergeneeskunde poli (NSEH)',
+    match: n => /kind/.test(n),
+    demo: { base: 0.8, amp: 0.9, peak: 17, wkd: [1, 1, 1, 1, 1, 1.25, 1.25], season: 0.3, trend: 0, max: 5 },
+  },
+  'ehh': {
+    dept: 'EHH', label: 'Eerste Harthulp', long: 'EHH — alle patiënten',
+    match: n => /ehh|eerste.?harthulp/.test(n),
+    demo: { base: 1.5, amp: 1.1, peak: 12, wkd: [1.1, 1.05, 1, 1, 1, 0.85, 0.85], season: 0.1, trend: 0.03, max: 7 },
+  },
+};
+const STREAM_ORDER = Object.keys(STREAMS);
+
+// Afdelingen zoals ze in de Oudbouw bestaan. Bedden, ratio (patiënten per
+// verpleegkundige) en ingeplande diensten zijn startwaarden; alles is in het
+// dashboard aan te passen.
+const DEPTS = {
+  IC:  { label: 'IC',  long: 'Intensive Care',            beds: 10, ratio: { D: 2.5, A: 2.5, N: 3 }, plan: { D: 4, A: 4, N: 3 } },
+  CCU: { label: 'CCU', long: 'CCU / SCU',                 beds: 8,  ratio: { D: 2,   A: 2,   N: 3 }, plan: { D: 3, A: 3, N: 2 } },
+  SEH: { label: 'SEH', long: 'Spoedeisende Hulp',         beds: 18, ratio: { D: 3,   A: 3,   N: 4 }, plan: { D: 5, A: 5, N: 3 } },
+  EHH: { label: 'EHH', long: 'Eerste Harthulp',           beds: 5,  ratio: { D: 3,   A: 3,   N: 4 }, plan: { D: 1, A: 1, N: 1 } },
+};
+
+// Een "unit" is een tabblad in het dashboard: een set stromen die samen één
+// beddenpool en één bemensing delen.
+const MODES = {
+  oud: {
+    label: 'Oudbouw', eyebrow: 'Bestaande situatie',
+    desc: 'Elke afdeling apart, met eigen bedden en bemensing. Per afdeling zie je de stromen los van elkaar.',
+    units: [
+      { id: 'IC',  ...DEPTS.IC,  streams: ['ic-spoed', 'ic-electief', 'ic-recovery'] },
+      { id: 'CCU', ...DEPTS.CCU, streams: ['ccu-cardio', 'ccu-scu'] },
+      { id: 'SEH', ...DEPTS.SEH, streams: ['seh-excl-rad', 'seh-rad', 'seh-kind'] },
+      { id: 'EHH', ...DEPTS.EHH, streams: ['ehh'] },
+    ],
+  },
+  nieuw: {
+    label: 'Nieuwbouw', eyebrow: 'Toekomstige situatie',
+    desc: 'Afdelingen samengevoegd: de Acute Poort (SEH + EHH) en de Hotfloor (IC + CCU/SCU) delen bedden en personeel.',
+    units: [
+      { id: 'AP', label: 'Acute Poort', long: 'Acute Poort — SEH + EHH', beds: 23,
+        ratio: { D: 3, A: 3, N: 4 }, plan: { D: 6, A: 6, N: 4 },
+        streams: ['seh-excl-rad', 'seh-rad', 'seh-kind', 'ehh'] },
+      { id: 'HF', label: 'Hotfloor', long: 'Hotfloor — IC + CCU/SCU', beds: 18,
+        ratio: { D: 2.5, A: 2.5, N: 3 }, plan: { D: 7, A: 7, N: 5 },
+        streams: ['ic-spoed', 'ic-electief', 'ic-recovery', 'ccu-cardio', 'ccu-scu'] },
+    ],
+  },
+};
+
+// Diensten — D(ag) / A(vond) / N(acht), tijden instelbaar.
+const SHIFT_KEYS = ['D', 'A', 'N'];
+const SHIFT_INFO = {
+  D: { label: 'Dag',   start: 7 * 60,       end: 15 * 60 + 30 },
+  A: { label: 'Avond', start: 15 * 60 + 30, end: 23 * 60 },
+  N: { label: 'Nacht', start: 23 * 60,      end: 7 * 60 },
+};
+
+const METRICS = {
+  avg:  { short: 'Gem.',  label: 'Gemiddeld',     desc: 'Gemiddelde bezetting over alle kwartieren' },
+  p95:  { short: 'P95',   label: 'P95',           desc: '95% van de kwartieren ligt op of onder deze waarde' },
+  mu2s: { short: 'µ+2σ',  label: 'µ + 2σ',        desc: 'Gemiddelde plus twee standaarddeviaties (planningsnorm)' },
+  max:  { short: 'Max',   label: 'Maximum',       desc: 'Hoogste gemeten bezetting' },
+};
+
+const VIEWS = [
+  { id: 'overzicht', label: 'Overzicht' },
+  { id: 'stromen',   label: 'Stromen' },
+  { id: 'bedden',    label: 'Bedden' },
+  { id: 'vpk',       label: 'Verpleegkundige inzet' },
+  { id: 'prognose',  label: 'Prognose' },
+];
+
+const WD_SHORT = ['Ma', 'Di', 'Wo', 'Do', 'Vr', 'Za', 'Zo'];
+const WD_LONG = ['Maandag', 'Dinsdag', 'Woensdag', 'Donderdag', 'Vrijdag', 'Zaterdag', 'Zondag'];
+const MONTH_SHORT = ['jan', 'feb', 'mrt', 'apr', 'mei', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'];
+
+// Voorbeeldbestanden die naast het dashboard staan (map testdata/).
+const SAMPLE_FILES = [
+  'testdata/2_1_ICU_Input_rekenmodel_en_analyse_spoed_excl_AI_DUMMY.xlsx',
+  'testdata/2_2_ICU_Input_rekenmodel_en_analyse_electief_excl__recovery_AI_DUMMY.xlsx',
+];
+
+/* ════════════════════════════════════════════════════════════════════
+   DATA — inlezen van de Excel-bestanden, voorbeelddata, en de
+   rekenkern (dagframes, diensten, statistiek).
+   ════════════════════════════════════════════════════════════════════ */
+
+// streamId -> { fileName, source: 'bestand'|'voorbeeld'|'synthetisch', days: Map(date -> Float32Array(96)) }
+const STORE = {};
+
+/* ── Hulpfuncties datum ─────────────────────────────────────────────── */
+const pad2 = n => String(n).padStart(2, '0');
+const ymd = (y, m, d) => `${y}-${pad2(m)}-${pad2(d)}`;
+function dateParts(ds) { return { y: +ds.slice(0, 4), m: +ds.slice(5, 7), d: +ds.slice(8, 10) }; }
+function utcDate(ds) { const p = dateParts(ds); return new Date(Date.UTC(p.y, p.m - 1, p.d)); }
+function addDays(ds, n) { const d = utcDate(ds); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+function weekdayOf(ds) { return (utcDate(ds).getUTCDay() + 6) % 7; } // 0 = maandag
+function isoWeek(ds) {
+  const d = utcDate(ds); const day = (d.getUTCDay() + 6) % 7;
+  d.setUTCDate(d.getUTCDate() - day + 3);
+  const isoYear = d.getUTCFullYear();
+  const jan4 = new Date(Date.UTC(isoYear, 0, 4));
+  const week = 1 + Math.round(((d - jan4) / 86400000 - 3 + ((jan4.getUTCDay() + 6) % 7)) / 7);
+  return { isoYear, week };
+}
+function isoWeekMonday(isoYear, week) {
+  const jan4 = new Date(Date.UTC(isoYear, 0, 4));
+  const mon = new Date(jan4); mon.setUTCDate(jan4.getUTCDate() - ((jan4.getUTCDay() + 6) % 7) + (week - 1) * 7);
+  return mon.toISOString().slice(0, 10);
+}
+function fmtDay(ds) { const p = dateParts(ds); return `${WD_SHORT[weekdayOf(ds)]} ${p.d} ${MONTH_SHORT[p.m - 1]}`; }
+const slotLabel = q => `${pad2(Math.floor(q / 4))}:${pad2((q % 4) * 15)}`;
+
+/* ── Excel inlezen ──────────────────────────────────────────────────── */
+// Herkent een kwartierkolom in de kop: Excel-tijd (0..1), "H:MM(:SS)" of een Date.
+function headerToSlot(h) {
+  let mins = null;
+  if (typeof h === 'number' && h >= 0 && h < 1) mins = Math.round(h * 1440);
+  else if (h instanceof Date) mins = h.getUTCHours() * 60 + h.getUTCMinutes();
+  else if (typeof h === 'string') {
+    const m = h.trim().match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+    if (m) mins = +m[1] * 60 + +m[2];
+  }
+  if (mins == null || mins % 15 !== 0 || mins >= 1440) return null;
+  return mins / 15;
+}
+// Datumcel → 'YYYY-MM-DD'. Excel-serienummer, Date, ISO, D-M-YYYY of M/D/YYYY.
+function cellToDate(v) {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number') {
+    const p = XLSX.SSF.parse_date_code(v);
+    return p && p.y > 1900 ? ymd(p.y, p.m, p.d) : null;
+  }
+  if (v instanceof Date) return isNaN(v) ? null : ymd(v.getFullYear(), v.getMonth() + 1, v.getDate());
+  const s = String(v).trim();
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return ymd(+m[1], +m[2], +m[3]);
+  m = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})/);
+  if (m) {
+    let a = +m[1], b = +m[2], y = +m[3]; if (y < 100) y += 2000;
+    // Met "/" is de Excel-export Amerikaans (M/D); met "-" of "." Nederlands (D-M).
+    const usa = s.includes('/') && a <= 12;
+    const [mo, d] = usa ? [a, b] : [b, a];
+    return ymd(y, mo, d);
+  }
+  return null;
+}
+const toNum = v => {
+  if (v == null || v === '') return NaN;
+  return typeof v === 'number' ? v : parseFloat(String(v).replace(',', '.'));
+};
+
+function parseWorkbook(buf, fileName) {
+  const wb = XLSX.read(buf, { type: 'array', cellDates: false });
+  const candidates = [
+    ...wb.SheetNames.filter(n => /brongegevens/i.test(n)),
+    ...wb.SheetNames.filter(n => /bron|blad|sheet/i.test(n)),
+    ...wb.SheetNames,
+  ];
+  for (const name of [...new Set(candidates)]) {
+    const grid = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: true, defval: null });
+    const res = parseGrid(grid);
+    if (res) return { ...res, sheet: name, fileName };
+  }
+  throw new Error('Geen blad gevonden met een kolom "Datum" en kwartierkolommen (00:00 … 23:45).');
+}
+
+function parseGrid(grid) {
+  let hr = -1;
+  for (let r = 0; r < Math.min(grid.length, 40); r++) {
+    const row = grid[r] || [];
+    if (row.some(c => typeof c === 'string' && c.trim().toLowerCase() === 'datum')) { hr = r; break; }
+  }
+  if (hr < 0) return null;
+  const hdr = grid[hr];
+  const iDate = hdr.findIndex(c => typeof c === 'string' && c.trim().toLowerCase() === 'datum');
+  const slotCols = [];
+  hdr.forEach((h, i) => {
+    if (i === iDate) return;
+    const q = headerToSlot(h);
+    if (q != null && !slotCols.some(s => s.q === q)) slotCols.push({ i, q });
+  });
+  if (slotCols.length < 24) return null;
+  const days = new Map();
+  for (let r = hr + 1; r < grid.length; r++) {
+    const row = grid[r]; if (!row) continue;
+    const ds = cellToDate(row[iDate]); if (!ds) continue;
+    const arr = new Float32Array(96).fill(NaN);
+    let any = false;
+    for (const { i, q } of slotCols) { const v = toNum(row[i]); if (!isNaN(v)) { arr[q] = v; any = true; } }
+    if (!any) continue;
+    // Ontbrekende kwartieren (bv. bestand met uurkolommen) opvullen met de vorige waarde.
+    for (let q = 0; q < 96; q++) if (isNaN(arr[q])) arr[q] = q > 0 ? arr[q - 1] : 0;
+    days.set(ds, arr);
+  }
+  if (!days.size) return null;
+  return { days };
+}
+
+function guessStream(fileName) {
+  const n = fileName.toLowerCase().replace(/[\s-]+/g, '_');
+  return STREAM_ORDER.find(id => STREAMS[id].match(n)) || null;
+}
+
+function putStream(id, days, fileName, source) {
+  const sorted = new Map([...days.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)));
+  STORE[id] = { fileName, source, days: sorted };
+  invalidateFrames();
+}
+function streamSummary(id) {
+  const st = STORE[id]; if (!st) return null;
+  const keys = [...st.days.keys()];
+  return { n: keys.length, from: keys[0], to: keys[keys.length - 1] };
+}
+
+/* ── Synthetische voorbeelddata (zelfde vorm als de echte bestanden) ── */
+function mulberry32(a) {
+  return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+}
+function poisson(lambda, rnd) {
+  if (lambda <= 0) return 0;
+  if (lambda > 30) return Math.max(0, Math.round(lambda + Math.sqrt(lambda) * gauss(rnd)));
+  const L = Math.exp(-lambda); let k = 0, p = 1;
+  do { k++; p *= rnd(); } while (p > L);
+  return k - 1;
+}
+function gauss(rnd) { return Math.sqrt(-2 * Math.log(rnd() + 1e-12)) * Math.cos(2 * Math.PI * rnd()); }
+
+function generateStream(id, fromYear = 2022, toYear = 2025) {
+  const p = STREAMS[id].demo;
+  const rnd = mulberry32(STREAM_ORDER.indexOf(id) * 7919 + 17);
+  const days = new Map();
+  let level = p.base; // langzaam bewegend dagniveau → realistische autocorrelatie
+  for (let ds = `${fromYear}-01-01`; ds <= `${toYear}-12-31`; ds = addDays(ds, 1)) {
+    const { y, m } = dateParts(ds);
+    const wd = weekdayOf(ds);
+    const season = 1 + p.season * Math.cos(((m - 1.5) / 12) * 2 * Math.PI);
+    const trend = 1 + p.trend * (y - fromYear);
+    level = 0.8 * level + 0.2 * p.base * (0.75 + 0.5 * rnd());
+    const arr = new Float32Array(96);
+    let cur = poisson(level * p.wkd[wd] * season * trend, rnd);
+    for (let q = 0; q < 96; q++) {
+      const h = q / 4;
+      const diurnal = 1 + p.amp * Math.exp(-((h - p.peak) ** 2) / 18) - 0.25 * p.amp * Math.exp(-((h - 4) ** 2) / 10);
+      const target = Math.max(0, level * p.wkd[wd] * season * trend * diurnal / (1 + p.amp * 0.35));
+      // geboorte-sterfte stap: bezetting verandert kwartier op kwartier geleidelijk
+      if (rnd() < 0.18) cur += (target > cur ? 1 : target < cur ? -1 : 0) + (rnd() < 0.08 ? (rnd() < 0.5 ? 1 : -1) : 0);
+      cur = Math.max(0, Math.min(p.max, cur));
+      arr[q] = cur;
+    }
+    days.set(ds, arr);
+  }
+  return days;
+}
+
+/* ── Frames: bezetting per dag voor een set componenten ─────────────── */
+// Een component is één reeks in de grafieken: in een afdelingstab is dat een
+// stroom, op het tabblad "Alle" is het een hele afdeling (som van stromen).
+let FRAME_CACHE = new Map();
+function invalidateFrames() { FRAME_CACHE = new Map(); }
+
+function buildFrame(comps, filter) {
+  const key = JSON.stringify([comps.map(c => c.id + ':' + c.streams.join('+')), filter]);
+  if (FRAME_CACHE.has(key)) return FRAME_CACHE.get(key);
+  const streamIds = [...new Set(comps.flatMap(c => c.streams))].filter(id => STORE[id]);
+  if (!streamIds.length) return null;
+  // Alleen datums waarop alle gekozen stromen data hebben (anders tel je te laag).
+  let dates = [...STORE[streamIds[0]].days.keys()];
+  for (const id of streamIds.slice(1)) { const d = STORE[id].days; dates = dates.filter(x => d.has(x)); }
+  const all = dates.map(ds => {
+    const parts = comps.map(c => {
+      const a = new Float32Array(96);
+      c.streams.forEach(id => { const s = STORE[id] && STORE[id].days.get(ds); if (s) for (let q = 0; q < 96; q++) a[q] += s[q]; });
+      return a;
+    });
+    const total = new Float32Array(96);
+    parts.forEach(a => { for (let q = 0; q < 96; q++) total[q] += a[q]; });
+    const { y, m } = dateParts(ds);
+    return { ds, y, m, wd: weekdayOf(ds), parts, total };
+  });
+  all.forEach((d, i) => { const n = all[i + 1]; d.next = n && n.ds === addDays(d.ds, 1) ? n : null; });
+  const years = [...new Set(all.map(d => d.y))];
+  const days = all.filter(d =>
+    (filter.year === 'all' || d.y === +filter.year) &&
+    (filter.months === 'all' || MONTH_SETS[filter.months].includes(d.m)) &&
+    (filter.days === 'all' || (filter.days === 'werk' ? d.wd < 5 : d.wd >= 5)));
+  const frame = { comps, days, all, years };
+  FRAME_CACHE.set(key, frame);
+  return frame;
+}
+const MONTH_SETS = {
+  winter: [12, 1, 2], lente: [3, 4, 5], zomer: [6, 7, 8], herfst: [9, 10, 11],
+  q1: [1, 2, 3], q2: [4, 5, 6], q3: [7, 8, 9], q4: [10, 11, 12],
+};
+
+/* ── Diensten ───────────────────────────────────────────────────────── */
+// Kwartieren van een dienst als [dagOffset, kwartier]; de nacht loopt door
+// in de volgende kalenderdag.
+function shiftSlots(k) {
+  const s = SHIFT_INFO[k]; const out = [];
+  const a = s.start / 15, b = s.end / 15;
+  if (a < b) for (let q = a; q < b; q++) out.push([0, q]);
+  else { for (let q = a; q < 96; q++) out.push([0, q]); for (let q = 0; q < b; q++) out.push([1, q]); }
+  return out;
+}
+function shiftHours(k) { const s = SHIFT_INFO[k]; return ((s.end - s.start + 1440) % 1440 || 1440) / 60; }
+function shiftOfSlot(q) {
+  const mins = q * 15;
+  for (const k of SHIFT_KEYS) {
+    const s = SHIFT_INFO[k];
+    if (s.start < s.end ? (mins >= s.start && mins < s.end) : (mins >= s.start || mins < s.end)) return k;
+  }
+  return 'N';
+}
+
+// Verzamelt kwartierwaarden voor dagen × kwartieren. which = 'total' of componentindex.
+function collect(days, slots, which = 'total') {
+  const out = new Float64Array(days.length * slots.length);
+  let n = 0;
+  for (const d of days) {
+    for (const [off, q] of slots) {
+      const src = off ? d.next : d; if (!src) continue;
+      out[n++] = which === 'total' ? src.total[q] : src.parts[which][q];
+    }
+  }
+  return out.subarray(0, n);
+}
+const ALL_SLOTS = Array.from({ length: 96 }, (_, q) => [0, q]);
+
+/* ── Statistiek ─────────────────────────────────────────────────────── */
+function stats(vals) {
+  const n = vals.length; if (!n) return null;
+  let sum = 0, mx = -Infinity, mn = Infinity;
+  for (let i = 0; i < n; i++) { const v = vals[i]; sum += v; if (v > mx) mx = v; if (v < mn) mn = v; }
+  const avg = sum / n;
+  let ss = 0; for (let i = 0; i < n; i++) ss += (vals[i] - avg) ** 2;
+  const sd = n > 1 ? Math.sqrt(ss / (n - 1)) : 0;
+  const s = Float64Array.from(vals).sort();
+  const pct = p => s[Math.max(0, Math.min(n - 1, Math.ceil(n * p) - 1))];
+  return { n, avg, sd, min: mn, max: mx, mu2s: avg + 2 * sd, p10: pct(0.10), p50: pct(0.5), p90: pct(0.90), p95: pct(0.95), p99: pct(0.99), sorted: s };
+}
+// PERCENTILE.INC zoals Excel — gebruikt door het prognosemodel.
+function percentileInc(arr, p) {
+  if (!arr.length) return null;
+  const s = Float64Array.from(arr).sort();
+  const idx = p * (s.length - 1), lo = Math.floor(idx), hi = Math.ceil(idx);
+  return s[lo] + (s[hi] - s[lo]) * (idx - lo);
+}
+const mean = a => { let s = 0; for (const v of a) s += v; return a.length ? s / a.length : 0; };
+
+/* ── Nederlandse feestdagen en schoolvakanties (voor de prognose) ───── */
+function nlHolidays(year) {
+  const a = year % 19, b = Math.floor(year / 100), c = year % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const em = Math.floor((h + l - 7 * m + 114) / 31), ed = ((h + l - 7 * m + 114) % 31) + 1;
+  const easter = ymd(year, em, ed);
+  const kd = weekdayOf(ymd(year, 4, 27)) === 6 ? ymd(year, 4, 26) : ymd(year, 4, 27);
+  return {
+    [ymd(year, 1, 1)]: 'Nieuwjaarsdag', [addDays(easter, -2)]: 'Goede Vrijdag', [easter]: '1e Paasdag', [addDays(easter, 1)]: '2e Paasdag',
+    [kd]: 'Koningsdag', [ymd(year, 5, 5)]: 'Bevrijdingsdag', [addDays(easter, 39)]: 'Hemelvaart', [addDays(easter, 49)]: '1e Pinksterdag',
+    [addDays(easter, 50)]: '2e Pinksterdag', [ymd(year, 12, 25)]: '1e Kerstdag', [ymd(year, 12, 26)]: '2e Kerstdag',
+  };
+}
+const VACATIONS = [
+  { label: 'Voorjaarsvakantie', weeks: [8, 9] }, { label: 'Meivakantie', weeks: [17, 18] },
+  { label: 'Zomervakantie', weeks: [29, 30, 31, 32, 33, 34] }, { label: 'Herfstvakantie', weeks: [43] }, { label: 'Kerstvakantie', weeks: [52, 1] },
+];
+const vacationOf = w => (VACATIONS.find(v => v.weeks.includes(w)) || {}).label || null;
+
+/* ── Prognosemodel (zelfde methode als het Slingeland-rekenmodel) ─────
+   1. Per ISO-week het percentiel (100 − weigeringskans) van de dagmaxima.
+   2. Trend: lineaire regressie op het doorlopende weeknummer.
+   3. Seizoensindex per weeknummer = gemiddelde van (waarde ÷ trend).
+   4. Prognose = trend(week) × seizoensindex(weeknummer).            */
+function forecast(frame, slots, refusalPct, which = 'total') {
+  const p = 1 - refusalPct / 100;
+  const weeks = new Map();
+  for (const d of frame.all) {
+    const { isoYear, week } = isoWeek(d.ds);
+    const k = isoYear * 100 + week;
+    if (!weeks.has(k)) weeks.set(k, { isoYear, week, maxes: [], vals: [] });
+    let mx = -Infinity;
+    for (const [off, q] of slots) {
+      const src = off ? d.next : d; if (!src) continue;
+      const v = which === 'total' ? src.total[q] : src.parts[which][q];
+      if (v > mx) mx = v;
+      weeks.get(k).vals.push(v);
+    }
+    if (mx > -Infinity) weeks.get(k).maxes.push(mx);
+  }
+  const list = [...weeks.values()].filter(w => w.maxes.length >= 4).sort((a, b) => a.isoYear - b.isoYear || a.week - b.week);
+  if (list.length < 30) return null;
+  const y = list.map(w => percentileInc(w.maxes, p));
+  const xs = y.map((_, i) => i + 1);
+  const mx = mean(xs), my = mean(y);
+  let num = 0, den = 0; xs.forEach((x, i) => { num += (x - mx) * (y[i] - my); den += (x - mx) ** 2; });
+  const slope = den ? num / den : 0, intercept = my - slope * mx;
+  const ratios = {};
+  y.forEach((v, i) => { const t = slope * (i + 1) + intercept; if (t > 0) (ratios[list[i].week] = ratios[list[i].week] || []).push(v / t); });
+  const seasonal = w => (ratios[w] && ratios[w].length ? mean(ratios[w]) : 1);
+  const lastYear = list[list.length - 1].isoYear, fcYear = lastYear + 1;
+  const hist = {};
+  list.forEach(w => { (hist[w.week] = hist[w.week] || []).push(...w.vals); });
+  const out = [];
+  for (let w = 1; w <= 52; w++) {
+    const idx = list.length + w;
+    const val = Math.max(0, (slope * idx + intercept) * seasonal(w));
+    const h = hist[w] ? stats(hist[w]) : null;
+    out.push({ week: w, monday: isoWeekMonday(fcYear, w), val, avg: h ? h.avg : null, max: h ? h.max : null, p10: h ? h.p10 : null, vacation: vacationOf(w), season: seasonal(w) });
+  }
+  return { weeks: out, fcYear, slopePerYear: slope * 52, nWeeks: list.length, years: [...new Set(list.map(w => w.isoYear))] };
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   GRAFIEKEN — Chart.js met thema-kleuren uit de CSS-tokens en twee
+   eigen plugins: spreidingsstreepjes (whiskers) en de bedden-lijn.
+   ════════════════════════════════════════════════════════════════════ */
+let CHARTS = [];
+function destroyCharts() { CHARTS.forEach(c => c.destroy()); CHARTS = []; }
+
+function tok(name) { return getComputedStyle(document.documentElement).getPropertyValue('--' + name).trim(); }
+function C() {
+  return {
+    ink: tok('ink'), ink2: tok('ink-2'), muted: tok('muted'), grid: tok('grid'), axis: tok('axis'),
+    surface: tok('surface'), line: tok('line'), accent: tok('accent'),
+    good: tok('good'), warn: tok('warn'), crit: tok('crit'), divPos: tok('div-pos'), divNeg: tok('div-neg'),
+    series: [1, 2, 3, 4, 5, 6, 7, 8].map(i => tok('s' + i)),
+  };
+}
+function alpha(hex, a) {
+  const h = hex.replace('#', ''); const n = parseInt(h.length === 3 ? h.split('').map(x => x + x).join('') : h, 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+const fmt = (v, d = 1) => v == null || isNaN(v) ? '—' : v.toLocaleString('nl-NL', { minimumFractionDigits: d, maximumFractionDigits: d });
+
+function applyChartDefaults() {
+  const c = C();
+  Chart.defaults.font.family = "'IBM Plex Sans', system-ui, sans-serif";
+  Chart.defaults.font.size = 11.5;
+  Chart.defaults.color = c.muted;
+  Chart.defaults.borderColor = c.grid;
+  // Geen animatie: elke instelling hertekent de grafieken direct.
+  Chart.defaults.animation = false;
+  Chart.defaults.maintainAspectRatio = false;
+  Chart.defaults.plugins.legend.display = false;
+  Object.assign(Chart.defaults.plugins.tooltip, {
+    backgroundColor: c.surface, titleColor: c.ink, bodyColor: c.ink2, footerColor: c.muted,
+    borderColor: c.line, borderWidth: 1, padding: 10, cornerRadius: 6, boxPadding: 4,
+    titleFont: { weight: '600', size: 12.5 }, bodyFont: { size: 12 }, footerFont: { size: 11.5, weight: '400' },
+    usePointStyle: true,
+  });
+}
+
+// Spreiding per categorie: verticale streep met dopjes van lo naar hi.
+const whiskerPlugin = {
+  id: 'whiskers',
+  afterDatasetsDraw(chart, _args, opts) {
+    if (!opts || !opts.data) return;
+    const { ctx, scales: { x, y } } = chart;
+    ctx.save(); ctx.strokeStyle = opts.color || C().ink2; ctx.lineWidth = 1.5;
+    opts.data.forEach((w, i) => {
+      if (!w || w.lo == null || w.hi == null) return;
+      const px = x.getPixelForValue(i), y1 = y.getPixelForValue(w.lo), y2 = y.getPixelForValue(w.hi);
+      const cap = Math.min(6, (x.width / opts.data.length) * 0.18);
+      ctx.beginPath(); ctx.moveTo(px, y1); ctx.lineTo(px, y2);
+      ctx.moveTo(px - cap, y1); ctx.lineTo(px + cap, y1); ctx.moveTo(px - cap, y2); ctx.lineTo(px + cap, y2);
+      ctx.stroke();
+    });
+    ctx.restore();
+  },
+};
+// Horizontale gestippelde capaciteitslijn met label ("10 open bedden").
+const capLinePlugin = {
+  id: 'capLine',
+  afterDatasetsDraw(chart, _args, opts) {
+    if (!opts || opts.value == null) return;
+    const { ctx, chartArea: a, scales: { y } } = chart;
+    const py = y.getPixelForValue(opts.value);
+    if (py < a.top - 1 || py > a.bottom + 1) return;
+    const c = C();
+    ctx.save(); ctx.strokeStyle = c.ink; ctx.lineWidth = 1.5; ctx.setLineDash([5, 4]);
+    ctx.beginPath(); ctx.moveTo(a.left, py); ctx.lineTo(a.right, py); ctx.stroke();
+    if (opts.label) {
+      ctx.setLineDash([]); ctx.font = "600 11.5px 'IBM Plex Sans', system-ui, sans-serif";
+      const w = ctx.measureText(opts.label).width;
+      ctx.fillStyle = c.surface; ctx.fillRect(a.right - w - 8, py - 17, w + 8, 14);
+      ctx.fillStyle = c.ink; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom'; ctx.fillText(opts.label, a.right - 2, py - 4);
+    }
+    ctx.restore();
+  },
+};
+// Lichte achtergrondbanden per dag zodat D/A/N-groepen leesbaar blijven.
+const dayBandPlugin = {
+  id: 'dayBands',
+  beforeDatasetsDraw(chart, _args, opts) {
+    if (!opts || !opts.size) return;
+    const { ctx, chartArea: a, scales: { x } } = chart;
+    const n = x.ticks.length; if (!n) return;
+    const step = (x.getPixelForValue(1) - x.getPixelForValue(0)) || (a.width / n);
+    ctx.save(); ctx.fillStyle = alpha(C().ink, 0.025);
+    for (let g = 0; g * opts.size < n; g += 2) {
+      const x0 = x.getPixelForValue(g * opts.size) - step / 2;
+      ctx.fillRect(x0, a.top, step * opts.size, a.bottom - a.top);
+    }
+    ctx.restore();
+  },
+};
+
+function mkChart(el, config) {
+  if (!el) return null;
+  const ch = new Chart(el, config);
+  CHARTS.push(ch);
+  return ch;
+}
+
+// Basis-assen: recessief raster, geen verticale lijnen.
+function baseScales({ yTitle, yMax, stacked = false, xGrid = false, yMin } = {}) {
+  const c = C();
+  return {
+    x: { stacked, grid: { display: xGrid, color: c.grid }, border: { color: c.axis }, ticks: { color: c.muted, maxRotation: 0, autoSkip: false } },
+    y: {
+      stacked, beginAtZero: yMin == null, min: yMin, suggestedMax: yMax, grid: { color: c.grid }, border: { display: false },
+      ticks: { color: c.muted, precision: 0, padding: 6 },
+      title: yTitle ? { display: true, text: yTitle, color: c.muted, font: { size: 11 } } : undefined,
+    },
+  };
+}
+
+// Kleine lijngrafiek (sparkline) in een stroomkaart.
+function sparkline(el, mean, lo, hi, color) {
+  const labels = mean.map((_, i) => i);
+  return mkChart(el, {
+    type: 'line',
+    data: {
+      labels, datasets: [
+        { data: hi, borderWidth: 0, pointRadius: 0, fill: '+1', backgroundColor: alpha(color, 0.16) },
+        { data: lo, borderWidth: 0, pointRadius: 0, fill: false },
+        { data: mean, borderColor: color, borderWidth: 2, pointRadius: 0, tension: 0.35, fill: false },
+      ],
+    },
+    options: {
+      animation: false, plugins: { tooltip: { enabled: false } }, events: [],
+      scales: { x: { display: false }, y: { display: false, beginAtZero: true } },
+      layout: { padding: 2 },
+    },
+  });
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   APP — status, schermen (start → data → dashboard) en interactie.
+   ════════════════════════════════════════════════════════════════════ */
+const S = {
+  screen: 'start',
+  mode: null,
+  unit: null,            // unit-id of 'ALL'
+  view: 'overzicht',
+  filter: { year: 'all', months: 'all', days: 'all' },
+  metric: 'p95',
+  off: {},               // streamId/unitId → true wanneer uitgezet in de filterstrook
+  cfg: {},               // unit-id → { beds, ratio{D,A,N}, plan[7]{D,A,N} }
+  weekMode: 'typical',   // 'typical' | 'week'
+  weekSel: null,         // maandag van de gekozen week (YYYY-MM-DD)
+  focus: {},             // unit-id → focus-stroom in "Stromen"
+  bedTarget: 95,
+  refusal: 1,
+  fteHours: 36,
+  unmatched: [],         // ingelezen bestanden die niet automatisch herkend zijn
+};
+window.S = S;
+
+const $ = (s, p = document) => p.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+const ICON = {
+  check: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5l3 3 6-7"/></svg>',
+  alert: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M8 3.5v5.5M8 12v.5"/></svg>',
+  info: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M8 7v5.5M8 4v.5"/></svg>',
+  up: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3M4 7l4-4 4 4"/></svg>',
+  upload: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4M7 9l5-5 5 5"/><path d="M4 15v4a1 1 0 001 1h14a1 1 0 001-1v-4"/></svg>',
+  file: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a1 1 0 00-1 1v16a1 1 0 001 1h12a1 1 0 001-1V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>',
+  arrow: '<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10M9 4l4 4-4 4"/></svg>',
+  back: '<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 8H3M7 4L3 8l4 4"/></svg>',
+  spark: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M6 18l2.5-2.5M15.5 8.5L18 6"/></svg>',
+};
+
+/* ── Persistente instellingen (alleen gemak; werkt ook zonder) ─────── */
+function saveSettings() {
+  try { localStorage.setItem('acuut-dash-v1', JSON.stringify({ cfg: S.cfg, shifts: SHIFT_INFO, metric: S.metric, fteHours: S.fteHours })); } catch (e) { /* geen opslag beschikbaar */ }
+}
+function loadSettings() {
+  try {
+    const raw = JSON.parse(localStorage.getItem('acuut-dash-v1') || 'null'); if (!raw) return;
+    if (raw.cfg) S.cfg = raw.cfg;
+    if (raw.shifts) SHIFT_KEYS.forEach(k => raw.shifts[k] && Object.assign(SHIFT_INFO[k], { start: raw.shifts[k].start, end: raw.shifts[k].end }));
+    if (raw.metric && METRICS[raw.metric]) S.metric = raw.metric;
+    if (raw.fteHours) S.fteHours = raw.fteHours;
+  } catch (e) { /* negeren */ }
+}
+
+function unitsOf() { return S.mode ? MODES[S.mode].units : []; }
+function unitDef(id) { return unitsOf().find(u => u.id === id); }
+function cfgOf(id) {
+  if (!S.cfg[id]) {
+    const u = unitDef(id);
+    S.cfg[id] = { beds: u.beds, ratio: { ...u.ratio }, plan: WD_SHORT.map(() => ({ ...u.plan })) };
+  }
+  return S.cfg[id];
+}
+function loadedStreams(u) { return u.streams.filter(id => STORE[id]); }
+function streamColorIdx(u, sid) { return u.streams.indexOf(sid); }
+
+/* ── Navigatie ──────────────────────────────────────────────────────── */
+function go(screen) {
+  if (screen === 'dash' && !Object.keys(STORE).length) return;
+  S.screen = screen;
+  if (screen === 'dash' && !S.unit) S.unit = (unitsOf().find(u => loadedStreams(u).length) || unitsOf()[0]).id;
+  render();
+  window.scrollTo({ top: 0 });
+}
+function chooseMode(m) {
+  S.mode = m; S.unit = null; S.off = {};
+  unitsOf().forEach(u => cfgOf(u.id));
+  go(Object.keys(STORE).length ? 'dash' : 'data');
+}
+
+function render() {
+  destroyCharts();
+  renderAppbar();
+  const root = $('#screen');
+  if (S.screen === 'start') root.innerHTML = startScreen();
+  else if (S.screen === 'data') root.innerHTML = dataScreen();
+  else { root.innerHTML = dashScreen(); renderView(); }
+}
+
+function renderAppbar() {
+  const steps = [
+    { id: 'start', n: 1, label: 'Omgeving', done: !!S.mode },
+    { id: 'data', n: 2, label: 'Data inladen', done: Object.keys(STORE).length > 0 },
+    { id: 'dash', n: 3, label: 'Analyse', done: false },
+  ];
+  $('#stepper').innerHTML = steps.map((s, i) => `
+    ${i ? '<span class="step-sep"></span>' : ''}
+    <button class="step ${S.screen === s.id ? 'active' : s.done ? 'done' : ''}" data-act="go" data-arg="${s.id}"
+      ${(s.id === 'data' && !S.mode) || (s.id === 'dash' && (!S.mode || !Object.keys(STORE).length)) ? 'disabled' : ''}>
+      <span class="dot">${s.done && S.screen !== s.id ? ICON.check.replace('<svg', '<svg width="11" height="11"') : s.n}</span><span class="lbl">${s.label}</span>
+    </button>`).join('');
+  $('#brand-title').textContent = S.mode ? `Capaciteit & bezetting · ${MODES[S.mode].label}` : 'Capaciteit & bezetting';
+}
+
+/* ── Scherm 1: omgeving kiezen ──────────────────────────────────────── */
+function startScreen() {
+  const card = m => {
+    const M = MODES[m];
+    return `<button class="mode-card" data-act="mode" data-arg="${m}">
+      <div class="eyebrow">${M.eyebrow}</div>
+      <h2>${M.label}</h2>
+      <p>${M.desc}</p>
+      <div class="mode-units">${M.units.map(u => `<div class="unit-pill"><b>${esc(u.label)}</b><span>${u.streams.length} ${u.streams.length === 1 ? 'stroom' : 'stromen'} · ${u.beds} bedden</span></div>`).join('')}</div>
+      <div class="mode-go">Kies ${M.label.toLowerCase()} ${ICON.arrow}</div>
+    </button>`;
+  };
+  return `<div class="wrap start">
+    <div class="start-head">
+      <div class="eyebrow">Slingeland Ziekenhuis · Acute zorg</div>
+      <h1>Welke situatie wil je doorrekenen?</h1>
+      <p>Het dashboard zet de historische bezetting per kwartier af tegen bedden en verpleegkundige inzet. Kies eerst de omgeving; daarna laad je de bestanden per stroom.</p>
+    </div>
+    <div class="mode-grid">${card('oud')}${card('nieuw')}</div>
+    <div class="start-steps">
+      <div><b>1 · Omgeving</b>Oudbouw toont elke afdeling apart; Nieuwbouw voegt afdelingen samen tot gedeelde units.</div>
+      <div><b>2 · Data inladen</b>Sleep de Excel-exports erin. Elk bestand wordt aan de bestandsnaam herkend en aan een stroom gekoppeld.</div>
+      <div><b>3 · Analyse</b>Kies een afdeling en bekijk stromen, bedden, verpleegkundige inzet en de prognose.</div>
+    </div>
+  </div>`;
+}
+
+/* ── Scherm 2: data inladen ─────────────────────────────────────────── */
+function dataScreen() {
+  const units = unitsOf();
+  const nLoaded = Object.keys(STORE).length;
+  const slot = (u, sid) => {
+    const st = STORE[sid], sum = streamSummary(sid), def = STREAMS[sid];
+    const color = `var(--s${streamColorIdx(u, sid) + 1})`;
+    return `<div class="slot">
+      <span class="sw" style="background:${st ? color : 'var(--line-strong)'}"></span>
+      <div class="slot-body">
+        <div class="slot-name">${esc(def.label)} ${st ? `<span class="tag ${st.source === 'bestand' ? 'ok' : 'demo'}">${st.source}</span>` : ''}</div>
+        <div class="slot-meta ${st ? 'ok' : ''}" title="${st ? esc(st.fileName) : ''}">${st ? `${sum.n.toLocaleString('nl-NL')} dagen · ${fmtDay(sum.from)} ${sum.from.slice(0, 4)} – ${fmtDay(sum.to)} ${sum.to.slice(0, 4)}` : esc(def.long)}</div>
+      </div>
+      <div class="slot-actions">
+        ${st ? `<button class="link-btn danger" data-act="unload" data-arg="${sid}" aria-label="Verwijder ${esc(def.label)}">Verwijder</button>` : `<button class="link-btn" data-act="demo-one" data-arg="${sid}">Voorbeeld</button>`}
+        <label class="link-btn" style="cursor:pointer">${st ? 'Vervang' : 'Kies bestand'}<input type="file" accept=".xlsx,.xlsm,.xls,.csv" hidden data-slot="${sid}" id="file-${sid}"></label>
+      </div>
+    </div>`;
+  };
+  return `<div class="wrap">
+    <div class="page-head">
+      <div>
+        <div class="eyebrow">Stap 2 · ${MODES[S.mode].label}</div>
+        <h1>Data inladen</h1>
+        <p>Eén Excel-bestand per stroom: per dag een rij met de kolom <b>Datum</b> en 96 kwartierkolommen (00:00 … 23:45) met het aantal patiënten. Bestanden worden aan de naam herkend.</p>
+      </div>
+      <div class="btn-row">
+        <button class="btn" data-act="demo-all">${ICON.spark} Laad voorbeelddata</button>
+      </div>
+    </div>
+    <label class="dropzone" id="dropzone">
+      <div class="dz-icon">${ICON.upload}</div>
+      <div class="dz-text"><b>Sleep je bestanden hierheen</b><p>Meerdere tegelijk mag. Bijvoorbeeld <span class="mono">2_1_ICU_…_spoed_excl_AI.xlsx</span> en <span class="mono">2_2_ICU_…_electief….xlsx</span>.</p></div>
+      <span class="btn primary">${ICON.file} Bestanden kiezen</span>
+      <input type="file" id="multi-file" accept=".xlsx,.xlsm,.xls,.csv" multiple hidden>
+    </label>
+    ${S.unmatched.length ? `<div class="unmatched">
+      <b>Niet automatisch herkend — kies de stroom:</b>
+      ${S.unmatched.map((u, i) => `<div class="unmatched-row"><code>${esc(u.fileName)}</code>
+        <select data-assign="${i}" id="assign-${i}" aria-label="Stroom voor ${esc(u.fileName)}"><option value="">Kies stroom…</option>
+        ${STREAM_ORDER.map(id => `<option value="${id}">${esc(STREAMS[id].long)}</option>`).join('')}</select>
+        <button class="link-btn danger" data-act="drop-unmatched" data-arg="${i}">Negeer</button></div>`).join('')}
+    </div>` : ''}
+    <div class="load-grid">
+      ${units.map(u => `<div class="load-unit">
+        <div class="load-unit-head"><h3>${esc(u.label)}</h3><span>${loadedStreams(u).length}/${u.streams.length} geladen · ${esc(u.long)}</span></div>
+        ${u.streams.map(sid => slot(u, sid)).join('')}
+      </div>`).join('')}
+    </div>
+    <div class="load-foot">
+      <p>${nLoaded ? `<b>${nLoaded}</b> ${nLoaded === 1 ? 'stroom' : 'stromen'} geladen. Afdelingen zonder data blijven zichtbaar maar leeg.` : 'Nog geen data. Laad je eigen bestanden of start met de voorbeelddata.'}</p>
+      <div class="btn-row">
+        <button class="btn" data-act="go" data-arg="start">${ICON.back} Andere omgeving</button>
+        <button class="btn primary" data-act="go" data-arg="dash" ${nLoaded ? '' : 'disabled'}>Naar analyse ${ICON.arrow}</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+let toastTimer = null;
+function toast(msg) {
+  let el = $('.toast'); if (!el) { el = document.createElement('div'); el.className = 'toast'; el.setAttribute('role', 'status'); document.body.appendChild(el); }
+  el.textContent = msg; el.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, 3800);
+}
+
+async function readFiles(files, forcedStream) {
+  const list = [...files]; if (!list.length) return;
+  toast(`Bezig met inlezen van ${list.length} ${list.length === 1 ? 'bestand' : 'bestanden'}…`);
+  await new Promise(r => setTimeout(r, 30));
+  const done = [], failed = [];
+  for (const f of list) {
+    try {
+      const buf = new Uint8Array(await f.arrayBuffer());
+      const res = parseWorkbook(buf, f.name);
+      const sid = forcedStream || guessStream(f.name);
+      if (sid) { putStream(sid, res.days, f.name, 'bestand'); done.push(STREAMS[sid].label); }
+      else S.unmatched.push({ fileName: f.name, days: res.days });
+    } catch (e) { failed.push(`${f.name}: ${e.message}`); }
+  }
+  render();
+  if (failed.length) toast(`Niet ingelezen — ${failed.join(' · ')}`);
+  else if (done.length) toast(`Ingelezen: ${done.join(', ')}`);
+  else if (S.unmatched.length) toast('Kies hieronder bij welke stroom het bestand hoort.');
+}
+
+async function loadSamples() {
+  toast('Voorbeelddata wordt geladen…');
+  let fromFile = 0;
+  for (const path of SAMPLE_FILES) {
+    try {
+      const r = await fetch(path); if (!r.ok) throw new Error(r.status);
+      const name = path.split('/').pop();
+      const res = parseWorkbook(new Uint8Array(await r.arrayBuffer()), name);
+      const sid = guessStream(name);
+      if (sid) { putStream(sid, res.days, name, 'voorbeeld'); fromFile++; }
+    } catch (e) { /* bestand niet bereikbaar (bv. geopend via file://) → synthetisch */ }
+  }
+  STREAM_ORDER.forEach(sid => { if (!STORE[sid]) putStream(sid, generateStream(sid), 'Synthetische reeks', 'synthetisch'); });
+  render();
+  toast(fromFile ? `Voorbeeld geladen: ${fromFile} DUMMY-bestanden, overige stromen synthetisch.` : 'Synthetische voorbeelddata geladen voor alle stromen.');
+}
+
+/* ── Gebeurtenissen ─────────────────────────────────────────────────── */
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-act]'); if (!t || t.disabled) return;
+  const a = t.dataset.act, arg = t.dataset.arg;
+  const acts = {
+    go: () => go(arg),
+    mode: () => chooseMode(arg),
+    'demo-all': loadSamples,
+    'demo-one': () => { putStream(arg, generateStream(arg), 'Synthetische reeks', 'synthetisch'); render(); },
+    unload: () => { delete STORE[arg]; invalidateFrames(); render(); },
+    'drop-unmatched': () => { S.unmatched.splice(+arg, 1); render(); },
+    unit: () => { S.unit = arg; render(); },
+    view: () => { S.view = arg; render(); },
+    toggle: () => { S.off[arg] = !S.off[arg]; render(); },
+    metric: () => { S.metric = arg; saveSettings(); render(); },
+    days: () => { S.filter.days = arg; render(); },
+    weekmode: () => { S.weekMode = arg; render(); },
+    weekstep: () => { stepWeek(+arg); },
+    focus: () => { S.focus[S.unit] = arg; render(); },
+    target: () => { S.bedTarget = +arg; render(); },
+    refusal: () => { S.refusal = +arg; render(); },
+    step: () => { stepValue(t.dataset.path, +arg); },
+    theme: toggleTheme,
+    export: exportTables,
+  };
+  if (acts[a]) acts[a]();
+});
+document.addEventListener('change', e => {
+  const t = e.target;
+  if (t.id === 'multi-file') return readFiles(t.files);
+  if (t.dataset.slot) return readFiles(t.files, t.dataset.slot);
+  if (t.dataset.assign != null && t.value) {
+    const u = S.unmatched.splice(+t.dataset.assign, 1)[0];
+    putStream(t.value, u.days, u.fileName, 'bestand'); render(); return;
+  }
+  if (t.dataset.filter) { S.filter[t.dataset.filter] = t.value; render(); return; }
+  if (t.dataset.path) { setValue(t.dataset.path, t.value); return; }
+  if (t.id === 'week-select') { S.weekSel = t.value; render(); }
+});
+document.addEventListener('input', e => {
+  const t = e.target;
+  if (t.type === 'range' && t.dataset.path) {
+    const out = document.getElementById(t.dataset.out); if (out) out.value = t.value;
+  }
+});
+document.addEventListener('dragover', e => { if (S.screen !== 'data') return; e.preventDefault(); const dz = $('#dropzone'); if (dz) dz.classList.add('over'); });
+document.addEventListener('dragleave', e => { if (e.target.id === 'dropzone') e.target.classList.remove('over'); });
+document.addEventListener('drop', e => {
+  if (S.screen !== 'data') return; e.preventDefault();
+  const dz = $('#dropzone'); if (dz) dz.classList.remove('over');
+  readFiles(e.dataTransfer.files);
+});
+
+// Paden als "beds", "ratio.D", "plan.3.N", "shift.D.start", "fteHours".
+function setValue(path, raw) {
+  const parts = path.split('.');
+  if (parts[0] === 'shift') {
+    const [hh, mm] = raw.split(':').map(Number); if (isNaN(hh) || isNaN(mm)) return;
+    SHIFT_INFO[parts[1]][parts[2]] = Math.round((hh * 60 + mm) / 15) * 15 % 1440;
+    invalidateFrames();
+  } else if (parts[0] === 'fteHours') S.fteHours = Math.max(1, +String(raw).replace(',', '.') || 36);
+  else {
+    const c = cfgOf(S.unit);
+    const v = Math.max(parts[0] === 'ratio' ? 0.5 : 0, +String(raw).replace(',', '.') || 0);
+    if (parts[0] === 'beds') c.beds = Math.round(v);
+    else if (parts[0] === 'ratio') c.ratio[parts[1]] = v;
+    else if (parts[0] === 'plan') {
+      if (parts[1] === 'all') c.plan.forEach(p => { p[parts[2]] = Math.round(v); });
+      else c.plan[+parts[1]][parts[2]] = Math.round(v);
+    }
+  }
+  saveSettings();
+  const y = window.scrollY; render(); window.scrollTo({ top: y });
+}
+function stepValue(path, delta) {
+  const parts = path.split('.'); const c = cfgOf(S.unit);
+  let cur;
+  if (parts[0] === 'beds') cur = c.beds;
+  else if (parts[0] === 'ratio') cur = c.ratio[parts[1]];
+  else if (parts[0] === 'plan') cur = parts[1] === 'all' ? c.plan[0][parts[2]] : c.plan[+parts[1]][parts[2]];
+  setValue(path, String((cur || 0) + delta));
+}
+function stepWeek(delta) {
+  const f = currentFrame(); if (!f) return;
+  const mondays = weekList(f);
+  const i = mondays.indexOf(S.weekSel);
+  S.weekSel = mondays[Math.max(0, Math.min(mondays.length - 1, i + delta))];
+  render();
+}
+
+function toggleTheme() {
+  const root = document.documentElement;
+  const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  root.dataset.theme = dark ? 'light' : 'dark';
+  try { localStorage.setItem('acuut-dash-theme', root.dataset.theme); } catch (e) { /* negeren */ }
+}
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { applyChartDefaults(); render(); });
+new MutationObserver(() => { applyChartDefaults(); const y = window.scrollY; render(); window.scrollTo({ top: y }); })
+  .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+function boot() {
+  try { const t = localStorage.getItem('acuut-dash-theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) { /* negeren */ }
+  loadSettings();
+  applyChartDefaults();
+  Chart.register(whiskerPlugin, capLinePlugin, dayBandPlugin);
+  render();
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   DASHBOARD — locatie-tabs, filterstrook en de vijf weergaven.
+   ════════════════════════════════════════════════════════════════════ */
+
+/* ── Componenten & frame voor de huidige tab ────────────────────────── */
+function compsFor(unitId) {
+  if (unitId === 'ALL') {
+    return unitsOf().map((u, i) => ({ id: u.id, label: u.label, streams: loadedStreams(u), ci: i }))
+      .filter(c => c.streams.length && !S.off[c.id]);
+  }
+  const u = unitDef(unitId);
+  return loadedStreams(u).filter(s => !S.off[s]).map(s => ({ id: s, label: STREAMS[s].label, streams: [s], ci: streamColorIdx(u, s) }));
+}
+function currentFrame() { const comps = compsFor(S.unit); return comps.length ? buildFrame(comps, S.filter) : null; }
+const colorOf = c => C().series[c.ci % 8];
+const cssColor = c => `var(--s${(c.ci % 8) + 1})`;
+function bedsOf(unitId) { return unitId === 'ALL' ? unitsOf().reduce((s, u) => s + cfgOf(u.id).beds, 0) : cfgOf(unitId).beds; }
+const mv = st => (st ? st[S.metric] : null);
+const mLabel = () => METRICS[S.metric].short;
+const hhmm = m => `${pad2(Math.floor(m / 60))}:${pad2(m % 60)}`;
+const shiftTimes = k => `${hhmm(SHIFT_INFO[k].start)}–${hhmm(SHIFT_INFO[k].end)}`;
+
+function weekList(frame) {
+  const count = new Map();
+  frame.all.forEach(d => { const { isoYear, week } = isoWeek(d.ds); const m = isoWeekMonday(isoYear, week); count.set(m, (count.get(m) || 0) + 1); });
+  return [...count.entries()].filter(([, n]) => n === 7).map(([m]) => m).sort();
+}
+
+/* ── Rekenblokken die meerdere weergaven delen ──────────────────────── */
+// 21 cellen (7 dagen × D/A/N): gemiddelde per component + statistiek van het totaal.
+function weekCells(frame) {
+  const cells = [];
+  if (S.weekMode === 'typical') {
+    for (let wd = 0; wd < 7; wd++) {
+      const days = frame.days.filter(d => d.wd === wd);
+      for (const k of SHIFT_KEYS) {
+        const slots = shiftSlots(k);
+        const tot = stats(collect(days, slots));
+        cells.push({ wd, k, dayLabel: WD_SHORT[wd], title: `${WD_LONG[wd]} · ${SHIFT_INFO[k].label}`, parts: frame.comps.map((_, ci) => mean(collect(days, slots, ci))), tot, lo: tot && tot.p10, hi: mv(tot) });
+      }
+    }
+  } else {
+    const byDate = new Map(frame.all.map(d => [d.ds, d]));
+    for (let i = 0; i < 7; i++) {
+      const ds = addDays(S.weekSel, i), d = byDate.get(ds);
+      for (const k of SHIFT_KEYS) {
+        const slots = shiftSlots(k);
+        const tot = d ? stats(collect([d], slots)) : null;
+        cells.push({ wd: i, k, ds, dayLabel: fmtDay(ds), title: `${fmtDay(ds)} ${ds.slice(0, 4)} · ${SHIFT_INFO[k].label}`, parts: frame.comps.map((_, ci) => (d ? mean(collect([d], slots, ci)) : null)), tot, lo: tot && tot.min, hi: tot && tot.max });
+      }
+    }
+  }
+  return cells;
+}
+// Per kwartier van de dag: gemiddelde per component + statistiek van het totaal.
+function dayProfile(frame) {
+  const parts = frame.comps.map(() => new Array(96));
+  const tot = new Array(96);
+  for (let q = 0; q < 96; q++) {
+    const sl = [[0, q]];
+    frame.comps.forEach((_, ci) => { parts[ci][q] = mean(collect(frame.days, sl, ci)); });
+    tot[q] = stats(collect(frame.days, sl));
+  }
+  return { parts, tot };
+}
+function monthly(frame) {
+  const g = new Map();
+  frame.days.forEach(d => { const k = `${d.y}-${pad2(d.m)}`; if (!g.has(k)) g.set(k, []); g.get(k).push(d); });
+  return [...g.entries()].map(([k, days]) => ({
+    k, label: `${MONTH_SHORT[+k.slice(5) - 1]} ${k.slice(2, 4)}`,
+    parts: frame.comps.map((_, ci) => mean(collect(days, ALL_SLOTS, ci))), tot: stats(collect(days, ALL_SLOTS)),
+  }));
+}
+const needOf = (v, ratio) => (v == null ? null : Math.ceil(v / ratio - 1e-9));
+
+/* ── Gedeelde bouwstenen ───────────────────────────────────────────── */
+function kpi(label, val, unit, sub, status) {
+  return `<div class="kpi"><div class="kpi-label">${label}</div><div class="kpi-val num">${val}${unit ? `<small>${unit}</small>` : ''}</div>${status || ''}${sub ? `<div class="kpi-sub">${sub}</div>` : ''}</div>`;
+}
+function statusPill(kind, text) {
+  const ic = kind === 'good' ? ICON.check : kind === 'info' ? ICON.info : ICON.alert;
+  return `<span class="status ${kind}">${ic}${text}</span>`;
+}
+function legendHTML(comps, extra = '') {
+  return `<div class="legend">${comps.map(c => `<span><i class="sw" style="background:${cssColor(c)}"></i>${esc(c.label)}</span>`).join('')}${extra}</div>`;
+}
+function stepper(path, val, label) {
+  return `<span class="stepper-input"><button data-act="step" data-path="${path}" data-arg="-1" aria-label="${label} min één">−</button><input type="number" id="in-${path.replace(/\./g, '-')}" data-path="${path}" value="${val}" aria-label="${label}"><button data-act="step" data-path="${path}" data-arg="1" aria-label="${label} plus één">+</button></span>`;
+}
+function weekModeControl(frame) {
+  const weeks = weekList(frame);
+  if (!S.weekSel || !weeks.includes(S.weekSel)) S.weekSel = weeks[weeks.length - 1];
+  return `<div class="set-row">
+    <div class="seg small" role="group" aria-label="Weekweergave">
+      <button class="${S.weekMode === 'typical' ? 'on' : ''}" data-act="weekmode" data-arg="typical">Typische week</button>
+      <button class="${S.weekMode === 'week' ? 'on' : ''}" data-act="weekmode" data-arg="week" ${weeks.length ? '' : 'disabled'}>Specifieke week</button>
+    </div>
+    ${S.weekMode === 'week' ? `<span class="set-row">
+      <button class="icon-btn" data-act="weekstep" data-arg="-1" aria-label="Vorige week">‹</button>
+      <select id="week-select" aria-label="Kies week">${weeks.slice().reverse().map(m => { const w = isoWeek(m); return `<option value="${m}" ${m === S.weekSel ? 'selected' : ''}>Week ${w.week} · ${w.isoYear} (${fmtDay(m)})</option>`; }).join('')}</select>
+      <button class="icon-btn" data-act="weekstep" data-arg="1" aria-label="Volgende week">›</button></span>` : ''}
+  </div>`;
+}
+const narrow = () => window.innerWidth < 640;
+function tickEveryTwoHours(v) { return v % (narrow() ? 24 : 8) === 0 ? slotLabel(v) : ''; }
+// D/A/N-labels; op een smal scherm alleen de dag onder de avonddienst.
+const shiftTick = x => (narrow() ? (x.k === 'A' ? x.dayLabel.split(' ')[0] : '') : x.k === 'A' ? ['A', x.dayLabel] : [x.k, '']);
+
+/* ── Dashboard-scherm ───────────────────────────────────────────────── */
+function dashScreen() {
+  const units = unitsOf();
+  const isAll = S.unit === 'ALL';
+  const u = isAll ? null : unitDef(S.unit);
+  const frame = currentFrame();
+  const span = frame && frame.all.length ? `${fmtDay(frame.all[0].ds)} ${frame.all[0].y} – ${fmtDay(frame.all[frame.all.length - 1].ds)} ${frame.all[frame.all.length - 1].y}` : 'geen data';
+  const chipsFor = isAll
+    ? units.map((x, i) => ({ id: x.id, label: x.label, ci: i, ok: loadedStreams(x).length > 0 }))
+    : u.streams.map(sid => ({ id: sid, label: STREAMS[sid].label, ci: streamColorIdx(u, sid), ok: !!STORE[sid] }));
+  const years = frame ? frame.years : [];
+  if (S.filter.year !== 'all' && !years.includes(+S.filter.year)) S.filter.year = 'all';
+  return `<div class="wrap">
+    <div class="dash-head">
+      <div>
+        <div class="eyebrow">${MODES[S.mode].label}</div>
+        <h1>${isAll ? 'Alle afdelingen' : esc(u.long)}</h1>
+        <div class="sub">${frame ? `${frame.days.length.toLocaleString('nl-NL')} dagen in selectie · ${span}` : 'Nog geen data voor deze afdeling'}</div>
+      </div>
+      <div class="btn-row">
+        <button class="btn" data-act="go" data-arg="data">${ICON.file} Data beheren</button>
+        <button class="btn" data-act="export">${ICON.upload.replace('M12 15V4M7 9l5-5 5 5', 'M12 4v11M7 10l5 5 5-5')} Exporteer tabellen</button>
+      </div>
+    </div>
+    <div class="loc-row">
+      <span class="loc-label">Locatie</span>
+      <div class="seg" role="tablist" aria-label="Locatie">
+        ${units.map(x => `<button role="tab" aria-selected="${S.unit === x.id}" class="${S.unit === x.id ? 'on' : ''} ${loadedStreams(x).length ? '' : 'empty'}" data-act="unit" data-arg="${x.id}">${esc(x.label)}</button>`).join('')}
+        <button role="tab" aria-selected="${isAll}" class="${isAll ? 'on' : ''}" data-act="unit" data-arg="ALL">Alle</button>
+      </div>
+    </div>
+    <nav class="tabs" role="tablist" aria-label="Weergave">
+      ${VIEWS.map(v => `<button role="tab" aria-selected="${S.view === v.id}" class="${S.view === v.id ? 'on' : ''}" data-act="view" data-arg="${v.id}">${v.label}</button>`).join('')}
+    </nav>
+    <div class="filters">
+      <div class="f-group"><span class="f-label">${isAll ? 'Afdelingen' : 'Stromen'}</span>
+        ${chipsFor.map(c => `<button class="chip ${!c.ok || S.off[c.id] ? 'off' : ''}" data-act="toggle" data-arg="${c.id}" ${c.ok ? '' : 'disabled title="Nog geen data geladen"'} aria-pressed="${c.ok && !S.off[c.id]}"><i class="sw" style="background:var(--s${(c.ci % 8) + 1})"></i>${esc(c.label)}</button>`).join('')}
+      </div>
+      <div class="f-group"><span class="f-label">Periode</span>
+        <select data-filter="year" id="f-year" aria-label="Jaar"><option value="all">Alle jaren</option>${years.map(y => `<option value="${y}" ${String(y) === String(S.filter.year) ? 'selected' : ''}>${y}</option>`).join('')}</select>
+        <select data-filter="months" id="f-months" aria-label="Seizoen of kwartaal">
+          ${[['all', 'Heel jaar'], ['winter', 'Winter'], ['lente', 'Lente'], ['zomer', 'Zomer'], ['herfst', 'Herfst'], ['q1', 'Q1'], ['q2', 'Q2'], ['q3', 'Q3'], ['q4', 'Q4']].map(([v, l]) => `<option value="${v}" ${S.filter.months === v ? 'selected' : ''}>${l}</option>`).join('')}
+        </select>
+        <div class="seg small" role="group" aria-label="Dagen">${[['all', 'Alle dagen'], ['werk', 'Werkdagen'], ['weekend', 'Weekend']].map(([v, l]) => `<button class="${S.filter.days === v ? 'on' : ''}" data-act="days" data-arg="${v}">${l}</button>`).join('')}</div>
+      </div>
+      <div class="f-group"><span class="f-label">Norm</span>
+        <div class="seg small" role="group" aria-label="Norm">${Object.entries(METRICS).map(([k, m]) => `<button class="${S.metric === k ? 'on' : ''}" data-act="metric" data-arg="${k}" title="${m.desc}">${m.short}</button>`).join('')}</div>
+      </div>
+    </div>
+    <div id="view"></div>
+  </div>`;
+}
+
+function renderView() {
+  const el = $('#view');
+  const frame = currentFrame();
+  if (!frame || !frame.days.length) {
+    const noData = !frame;
+    el.innerHTML = `<div class="empty-state">
+      <h2>${noData ? 'Nog geen data voor deze afdeling' : 'Geen dagen in deze selectie'}</h2>
+      <p>${noData ? 'Laad de Excel-bestanden van de stromen van deze afdeling, of start met de voorbeelddata.' : 'Verruim de periode- of dagfilter in de strook hierboven.'}</p>
+      ${noData ? `<button class="btn primary" data-act="go" data-arg="data">${ICON.file} Naar data inladen</button>` : ''}
+    </div>`;
+    return;
+  }
+  const v = { overzicht: viewOverview, stromen: viewStreams, bedden: viewBeds, vpk: viewStaff, prognose: viewForecast }[S.view];
+  v(el, frame);
+}
+
+/* ═════════════ 1. OVERZICHT ═════════════ */
+function viewOverview(el, frame) {
+  const beds = bedsOf(S.unit);
+  const all = stats(collect(frame.days, ALL_SLOTS));
+  const full = pctAtOrAbove(all.sorted, beds);
+  const cells = weekCells(frame);
+  const prof = dayProfile(frame);
+  // piekmoment: hoogste gemiddelde per weekdag × uur
+  let peak = { v: -1 };
+  for (let wd = 0; wd < 7; wd++) {
+    const days = frame.days.filter(d => d.wd === wd);
+    for (let h = 0; h < 24; h++) { const v = mean(collect(days, [[0, h * 4], [0, h * 4 + 1], [0, h * 4 + 2], [0, h * 4 + 3]])); if (v > peak.v) peak = { v, wd, h }; }
+  }
+  const staff = S.unit === 'ALL' ? null : staffSummary(frame, S.unit);
+  const fullKind = full < 2 ? 'good' : full < 8 ? 'warn' : 'crit';
+
+  el.innerHTML = `
+    <div class="kpis">
+      ${kpi('Gemiddelde bezetting', fmt(all.avg), 'patiënten', `${fmt(all.avg / beds * 100, 0)}% van ${beds} bedden`)}
+      ${kpi(`Bezetting (${mLabel()})`, fmt(mv(all)), 'patiënten', METRICS[S.metric].desc)}
+      ${kpi('Tijd volledig bezet', fmt(full, 1), '%', `kwartieren met ≥ ${beds} patiënten`, statusPill(fullKind, fullKind === 'good' ? 'Ruim voldoende' : fullKind === 'warn' ? 'Let op' : 'Vaak vol'))}
+      ${kpi('Drukste moment', `${WD_SHORT[peak.wd]} ${pad2(peak.h)}:00`, '', `gemiddeld ${fmt(peak.v)} patiënten`)}
+      ${staff ? kpi('Diensten per week', `${staff.need}`, `nodig · ${staff.plan} ingepland`, `o.b.v. ${mLabel()} en ratio per dienst`, statusPill(staff.need > staff.plan ? 'crit' : 'good', staff.need > staff.plan ? `${staff.need - staff.plan} tekort` : staff.need === staff.plan ? 'Sluitend' : `${staff.plan - staff.need} ruimte`)) : kpi('Afdelingen', frame.comps.length, '', frame.comps.map(c => c.label).join(' · '))}
+    </div>
+    <div class="grid g-3-1">
+      <section class="panel">
+        <div class="panel-head">
+          <div><h2>Bezetting per dienst</h2><div class="desc">${S.weekMode === 'typical' ? `Gemiddelde per stroom; streepje loopt van P10 tot ${mLabel()} van het totaal.` : 'Gemiddelde per stroom in deze dienst; streepje loopt van laagste tot hoogste bezetting.'}</div></div>
+          ${weekModeControl(frame)}
+        </div>
+        <div class="chart-box tall"><canvas id="ch-week" role="img" aria-label="Bezetting per dag en dienst"></canvas></div>
+        ${legendHTML(frame.comps, `<span class="sep"></span><span><i class="wh"></i>Spreiding</span><span><i class="ln"></i>Open bedden</span><span class="sep"></span><span class="key"><b>D</b> Dag <b>A</b> Avond <b>N</b> Nacht</span>`)}
+      </section>
+      <section class="panel">
+        <div class="panel-head"><div><h2>Signalen</h2><div class="desc">Automatisch afgeleid uit de selectie.</div></div></div>
+        <ul class="insights">${insights(frame, cells, all, beds).map(i => `<li><span class="ic ${i.kind}">${i.kind === 'good' ? ICON.check : i.kind === 'info' ? ICON.info : ICON.alert}</span><span>${i.text}</span></li>`).join('')}</ul>
+      </section>
+    </div>
+    <div class="grid g-2" style="margin-top:16px">
+      <section class="panel">
+        <div class="panel-head"><div><h2>Dagverloop (24 uur)</h2><div class="desc">Gemiddelde bezetting per kwartier, gestapeld per ${S.unit === 'ALL' ? 'afdeling' : 'stroom'}; de lijn is ${mLabel()} van het totaal.</div></div></div>
+        <div class="chart-box"><canvas id="ch-day" role="img" aria-label="Dagverloop"></canvas></div>
+        ${legendHTML(frame.comps, `<span class="sep"></span><span><i class="ln solid"></i>${mLabel()} totaal</span><span><i class="ln"></i>Open bedden</span>`)}
+      </section>
+      <section class="panel">
+        <div class="panel-head"><div><h2>Bezetting per maand</h2><div class="desc">Gemiddelde per stroom; streepje van P10 tot ${mLabel()}.</div></div></div>
+        <div class="chart-box"><canvas id="ch-month" role="img" aria-label="Bezetting per maand"></canvas></div>
+        ${legendHTML(frame.comps, `<span class="sep"></span><span><i class="wh"></i>Spreiding</span><span><i class="ln"></i>Open bedden</span>`)}
+      </section>
+    </div>`;
+
+  weekChart($('#ch-week'), frame, cells, beds);
+  dayChart($('#ch-day'), frame, prof, beds);
+  monthChart($('#ch-month'), frame, monthly(frame), beds);
+}
+
+function pctAtOrAbove(sorted, x) {
+  let lo = 0, hi = sorted.length;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (sorted[m] < x) lo = m + 1; else hi = m; }
+  return sorted.length ? (sorted.length - lo) / sorted.length * 100 : 0;
+}
+
+function weekChart(canvas, frame, cells, beds) {
+  const c = C();
+  const hiMax = Math.max(beds, ...cells.map(x => x.hi || 0));
+  mkChart(canvas, {
+    type: 'bar',
+    data: {
+      labels: cells.map(shiftTick),
+      datasets: frame.comps.map((comp, ci) => ({
+        label: comp.label, data: cells.map(x => x.parts[ci]), backgroundColor: colorOf(comp),
+        borderColor: c.surface, borderWidth: { top: ci ? 1.5 : 0 }, borderSkipped: 'bottom', borderRadius: ci === frame.comps.length - 1 ? { topLeft: 3, topRight: 3 } : 0,
+        stack: 's', barPercentage: 0.82, categoryPercentage: 0.88,
+      })),
+    },
+    options: {
+      interaction: { mode: 'index', intersect: false },
+      scales: { ...baseScales({ stacked: true, yMax: Math.ceil(hiMax + 1), yTitle: 'Patiënten' }) },
+      plugins: {
+        whiskers: { data: cells.map(x => ({ lo: x.lo, hi: x.hi })) },
+        capLine: { value: beds, label: `${beds} open bedden` },
+        dayBands: { size: 3 },
+        tooltip: {
+          callbacks: {
+            title: items => `${cells[items[0].dataIndex].title} (${shiftTimes(cells[items[0].dataIndex].k)})`,
+            label: it => ` ${it.dataset.label}: ${fmt(it.raw)} gem.`,
+            footer: items => {
+              const x = cells[items[0].dataIndex]; if (!x.tot) return 'Geen data';
+              const over = x.hi - beds;
+              return [`Totaal gem. ${fmt(x.tot.avg)} · ${S.weekMode === 'typical' ? mLabel() : 'max'} ${fmt(x.hi)}`, over > 0 ? `${fmt(over)} boven de ${beds} bedden` : `${fmt(-over)} bedden marge`];
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
+function dayChart(canvas, frame, prof, beds) {
+  const c = C();
+  const metricLine = prof.tot.map(s => mv(s));
+  mkChart(canvas, {
+    type: 'line',
+    data: {
+      labels: Array.from({ length: 96 }, (_, q) => q),
+      datasets: [
+        ...frame.comps.map((comp, ci) => ({
+          label: comp.label, data: prof.parts[ci], borderColor: colorOf(comp), backgroundColor: alpha(colorOf(comp), 0.55),
+          fill: ci ? '-1' : 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.3, stack: 'areas',
+        })),
+        { label: `${mLabel()} totaal`, data: metricLine, borderColor: c.ink, borderWidth: 2, pointRadius: 0, tension: 0.3, fill: false, stack: 'metric' },
+      ],
+    },
+    options: {
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        x: { grid: { display: false }, border: { color: c.axis }, ticks: { color: c.muted, autoSkip: false, maxRotation: 0, callback: tickEveryTwoHours } },
+        y: { stacked: true, beginAtZero: true, suggestedMax: Math.ceil(Math.max(beds, ...metricLine) + 1), grid: { color: c.grid }, border: { display: false }, ticks: { precision: 0 } },
+      },
+      plugins: {
+        capLine: { value: beds, label: `${beds} open bedden` },
+        tooltip: { callbacks: { title: it => `${slotLabel(it[0].dataIndex)} · dienst ${SHIFT_INFO[shiftOfSlot(it[0].dataIndex)].label.toLowerCase()}`, label: it => ` ${it.dataset.label}: ${fmt(it.raw)}` } },
+      },
+    },
+  });
+}
+
+function monthChart(canvas, frame, months, beds) {
+  const c = C();
+  mkChart(canvas, {
+    type: 'bar',
+    data: {
+      labels: months.map(m => m.label),
+      datasets: frame.comps.map((comp, ci) => ({
+        label: comp.label, data: months.map(m => m.parts[ci]), backgroundColor: colorOf(comp), stack: 's',
+        borderColor: c.surface, borderWidth: { top: ci ? 1 : 0 }, borderSkipped: 'bottom',
+        borderRadius: ci === frame.comps.length - 1 ? { topLeft: 2, topRight: 2 } : 0, barPercentage: 0.8, categoryPercentage: 0.9,
+      })),
+    },
+    options: {
+      interaction: { mode: 'index', intersect: false },
+      scales: { ...baseScales({ stacked: true, yMax: Math.ceil(Math.max(beds, ...months.map(m => mv(m.tot))) + 1) }), x: { stacked: true, grid: { display: false }, ticks: { color: c.muted, maxRotation: 0, autoSkip: true, autoSkipPadding: 8 } } },
+      plugins: {
+        whiskers: { data: months.map(m => ({ lo: m.tot.p10, hi: mv(m.tot) })) },
+        capLine: { value: beds, label: `${beds} bedden` },
+        tooltip: { callbacks: { label: it => ` ${it.dataset.label}: ${fmt(it.raw)} gem.`, footer: it => { const m = months[it[0].dataIndex]; return `Totaal gem. ${fmt(m.tot.avg)} · ${mLabel()} ${fmt(mv(m.tot))} · max ${fmt(m.tot.max, 0)}`; } } },
+      },
+    },
+  });
+}
+
+function insights(frame, cells, all, beds) {
+  const out = [];
+  const over = cells.filter(x => x.hi != null && x.hi > beds);
+  if (over.length) {
+    const worst = over.reduce((a, b) => (b.hi > a.hi ? b : a));
+    out.push({ kind: 'crit', text: `In <b>${over.length} van 21</b> diensten komt ${S.weekMode === 'typical' ? mLabel() : 'het maximum'} boven de ${beds} bedden. Het krapst: <b>${worst.title.toLowerCase()}</b> met ${fmt(worst.hi)}.` });
+  } else out.push({ kind: 'good', text: `Alle diensten blijven op ${S.weekMode === 'typical' ? mLabel() : 'het maximum'} binnen de <b>${beds} bedden</b>.` });
+  if (frame.comps.length > 1) {
+    const sums = frame.comps.map((_, ci) => mean(collect(frame.days, ALL_SLOTS, ci)));
+    const tot = sums.reduce((a, b) => a + b, 0);
+    const top = sums.indexOf(Math.max(...sums));
+    out.push({ kind: 'info', text: `<b>${esc(frame.comps[top].label)}</b> levert ${fmt(sums[top] / tot * 100, 0)}% van de bezetting (gem. ${fmt(sums[top])} patiënten).` });
+  }
+  const wk = mean(collect(frame.days.filter(d => d.wd < 5), ALL_SLOTS)), we = mean(collect(frame.days.filter(d => d.wd >= 5), ALL_SLOTS));
+  if (wk && we) {
+    const d = (we / wk - 1) * 100;
+    out.push({ kind: 'info', text: `In het weekend is de bezetting gemiddeld <b>${fmt(Math.abs(d), 0)}% ${d < 0 ? 'lager' : 'hoger'}</b> dan doordeweeks.` });
+  }
+  const ys = frame.years;
+  if (ys.length > 1) {
+    const a = mean(collect(frame.all.filter(d => d.y === ys[0]), ALL_SLOTS)), b = mean(collect(frame.all.filter(d => d.y === ys[ys.length - 1]), ALL_SLOTS));
+    const d = (b / a - 1) * 100;
+    out.push({ kind: Math.abs(d) < 3 ? 'good' : d > 0 ? 'warn' : 'info', text: `Van ${ys[0]} naar ${ys[ys.length - 1]} ${Math.abs(d) < 1 ? 'bleef de gemiddelde bezetting gelijk' : `${d > 0 ? 'steeg' : 'daalde'} de gemiddelde bezetting met <b>${fmt(Math.abs(d), 0)}%</b>`}.` });
+  }
+  const nightAvg = mean(collect(frame.days, shiftSlots('N'))), dayAvg = mean(collect(frame.days, shiftSlots('D')));
+  out.push({ kind: 'info', text: `Nachtdienst gemiddeld <b>${fmt(nightAvg)}</b> patiënten tegen <b>${fmt(dayAvg)}</b> overdag.` });
+  return out;
+}
+
+/* ═════════════ 2. STROMEN ═════════════ */
+function viewStreams(el, frame) {
+  const comps = frame.comps;
+  if (!S.focus[S.unit] || !comps.some(c => c.id === S.focus[S.unit])) S.focus[S.unit] = comps[0].id;
+  const fi = comps.findIndex(c => c.id === S.focus[S.unit]);
+  const per = comps.map((_, ci) => stats(collect(frame.days, ALL_SLOTS, ci)));
+  const totAvg = per.reduce((s, p) => s + p.avg, 0) || 1;
+  const kindWord = S.unit === 'ALL' ? 'afdeling' : 'stroom';
+
+  el.innerHTML = `
+    <div class="stream-cards">
+      ${comps.map((c, ci) => `<button class="s-card ${ci === fi ? 'on' : ''}" data-act="focus" data-arg="${c.id}" aria-pressed="${ci === fi}">
+        <div class="s-card-head"><span class="s-card-name"><i class="sw" style="background:${cssColor(c)}"></i>${esc(c.label)}</span>${S.unit === 'ALL' ? `<span class="tag">${c.streams.length} ${c.streams.length === 1 ? 'stroom' : 'stromen'}</span>` : `<span class="tag ${STORE[c.id].source === 'bestand' ? 'ok' : 'demo'}">${STORE[c.id].source}</span>`}</div>
+        <div class="s-card-nums"><div><span>Gemiddeld</span><b>${fmt(per[ci].avg)}</b></div><div><span>${mLabel()}</span><b>${fmt(mv(per[ci]))}</b></div><div><span>Max</span><b>${fmt(per[ci].max, 0)}</b></div></div>
+        <div class="spark"><canvas id="sp-${ci}" aria-hidden="true"></canvas></div>
+        <div class="share"><span>${fmt(per[ci].avg / totAvg * 100, 0)}% van totaal</span><span class="share-bar"><i style="width:${per[ci].avg / totAvg * 100}%;background:${cssColor(c)}"></i></span></div>
+      </button>`).join('')}
+    </div>
+    <div class="grid g-2">
+      <section class="panel">
+        <div class="panel-head"><div><h2>Dagverloop per ${kindWord}</h2><div class="desc">Gemiddelde bezetting per kwartier, niet gestapeld — zo vergelijk je de vorm van elke ${kindWord}.</div></div></div>
+        <div class="chart-box"><canvas id="ch-sday" role="img" aria-label="Dagverloop per ${kindWord}"></canvas></div>
+        ${legendHTML(comps)}
+      </section>
+      <section class="panel">
+        <div class="panel-head"><div><h2>Weekpatroon · ${esc(comps[fi].label)}</h2><div class="desc">Gemiddelde bezetting per weekdag en uur. Klik een kaart hierboven om een andere ${kindWord} te kiezen.</div></div></div>
+        <div class="table-wrap">${heatmapHTML(frame, fi)}</div>
+      </section>
+    </div>
+    <section class="panel" style="margin-top:16px">
+      <div class="panel-head"><div><h2>Trend per maand</h2><div class="desc">Gemiddelde bezetting per maand per ${kindWord}.</div></div></div>
+      <div class="chart-box short"><canvas id="ch-strend" role="img" aria-label="Trend per maand"></canvas></div>
+      ${legendHTML(comps)}
+    </section>
+    <section class="panel" style="margin-top:16px">
+      <div class="panel-head"><div><h2>Kerncijfers per ${kindWord} en dienst</h2><div class="desc">Aantal gelijktijdig aanwezige patiënten, berekend over alle kwartieren in de selectie.</div></div></div>
+      <div class="table-wrap">${streamTable(frame)}</div>
+    </section>`;
+
+  // sparklines
+  comps.forEach((c, ci) => {
+    const m = [], lo = [], hi = [];
+    for (let h = 0; h < 24; h++) { const s = stats(collect(frame.days, [[0, h * 4], [0, h * 4 + 1], [0, h * 4 + 2], [0, h * 4 + 3]], ci)); m.push(s.avg); lo.push(s.p10); hi.push(s.p90); }
+    sparkline($('#sp-' + ci), m, lo, hi, colorOf(c));
+  });
+  const prof = dayProfile(frame);
+  const cc = C();
+  mkChart($('#ch-sday'), {
+    type: 'line',
+    data: { labels: Array.from({ length: 96 }, (_, q) => q), datasets: comps.map((c, ci) => ({ label: c.label, data: prof.parts[ci], borderColor: colorOf(c), borderWidth: ci === fi ? 2.5 : 2, pointRadius: 0, tension: 0.3 })) },
+    options: {
+      interaction: { mode: 'index', intersect: false },
+      scales: { x: { grid: { display: false }, border: { color: cc.axis }, ticks: { autoSkip: false, maxRotation: 0, callback: tickEveryTwoHours } }, y: { beginAtZero: true, grid: { color: cc.grid }, border: { display: false } } },
+      plugins: { tooltip: { callbacks: { title: it => slotLabel(it[0].dataIndex), label: it => ` ${it.dataset.label}: ${fmt(it.raw)}` } } },
+    },
+  });
+  const months = monthly(frame);
+  mkChart($('#ch-strend'), {
+    type: 'line',
+    data: { labels: months.map(m => m.label), datasets: comps.map((c, ci) => ({ label: c.label, data: months.map(m => m.parts[ci]), borderColor: colorOf(c), backgroundColor: colorOf(c), borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, tension: 0.25 })) },
+    options: {
+      interaction: { mode: 'index', intersect: false },
+      scales: { x: { grid: { display: false }, border: { color: cc.axis }, ticks: { maxRotation: 0, autoSkipPadding: 10 } }, y: { beginAtZero: true, grid: { color: cc.grid }, border: { display: false } } },
+      plugins: { tooltip: { callbacks: { label: it => ` ${it.dataset.label}: ${fmt(it.raw)} gem.` } } },
+    },
+  });
+}
+
+function heatmapHTML(frame, ci) {
+  const grid = [];
+  let max = 0;
+  for (let wd = 0; wd < 7; wd++) {
+    const days = frame.days.filter(d => d.wd === wd);
+    const row = [];
+    for (let h = 0; h < 24; h++) { const v = mean(collect(days, [[0, h * 4], [0, h * 4 + 1], [0, h * 4 + 2], [0, h * 4 + 3]], ci)); row.push(v); if (v > max) max = v; }
+    grid.push(row);
+  }
+  const steps = 8;
+  const cls = v => Math.min(steps - 1, Math.floor((v / (max || 1)) * steps));
+  return `<div class="heat" role="table" aria-label="Weekpatroon">
+    <div></div>${Array.from({ length: 24 }, (_, h) => `<div class="hh">${h % 3 === 0 ? pad2(h) : ''}</div>`).join('')}
+    ${grid.map((row, wd) => `<div class="hl">${WD_SHORT[wd]}</div>${row.map((v, h) => { const s = cls(v); return `<div class="c" style="background:var(--seq-${s});color:${s >= 5 ? 'var(--surface)' : 'var(--ink-2)'}" title="${WD_LONG[wd]} ${pad2(h)}:00–${pad2(h + 1)}:00 · gem. ${fmt(v)} patiënten">${v >= 10 ? Math.round(v) : fmt(v, 1)}</div>`; }).join('')}`).join('')}
+  </div>
+  <div class="heat-scale"><span>0</span><span class="ramp">${Array.from({ length: steps }, (_, i) => `<i style="background:var(--seq-${i})"></i>`).join('')}</span><span>${fmt(max)} patiënten (gem.)</span></div>`;
+}
+
+function streamTable(frame) {
+  const rowsFor = (which, name, sw, cls = '') => {
+    const cells = ['all', ...SHIFT_KEYS].map(k => stats(collect(frame.days, k === 'all' ? ALL_SLOTS : shiftSlots(k), which)));
+    return cells.map((s, i) => `<tr class="${i ? 'sub' : cls}">
+      <td>${i ? `<span style="padding-left:18px">${SHIFT_INFO[SHIFT_KEYS[i - 1]].label} <span class="mono" style="color:var(--muted);font-size:11.5px">${shiftTimes(SHIFT_KEYS[i - 1])}</span></span>` : `<span class="cell-name">${sw ? `<i class="sw" style="background:${sw}"></i>` : ''}${esc(name)}</span>`}</td>
+      <td class="num">${fmt(s.avg)}</td><td class="num">${fmt(s.p50, 0)}</td><td class="num">${fmt(s.p95, 0)}</td><td class="num">${fmt(s.mu2s)}</td><td class="num">${fmt(s.max, 0)}</td>
+    </tr>`).join('');
+  };
+  return `<table class="data" data-name="Stromen"><thead><tr><th>${S.unit === 'ALL' ? 'Afdeling' : 'Stroom'} / dienst</th><th class="num">Gemiddeld</th><th class="num">Mediaan</th><th class="num">P95</th><th class="num">µ+2σ</th><th class="num">Max</th></tr></thead>
+    <tbody>${frame.comps.map((c, ci) => rowsFor(ci, c.label, cssColor(c))).join('')}${frame.comps.length > 1 ? rowsFor('total', 'Totaal', null, 'total') : ''}</tbody></table>`;
+}
+
+/* ═════════════ 3. BEDDEN ═════════════ */
+function viewBeds(el, frame) {
+  const beds = bedsOf(S.unit);
+  const all = stats(collect(frame.days, ALL_SLOTS));
+  const full = pctAtOrAbove(all.sorted, beds);
+  const overflow = pctAtOrAbove(all.sorted, beds + 1);
+  let free = 0; for (const v of all.sorted) free += Math.max(0, beds - v); free /= all.n;
+  const target = S.bedTarget / 100;
+  const advise = Math.ceil(all.sorted[Math.max(0, Math.ceil(all.n * target) - 1)]);
+  const isAll = S.unit === 'ALL';
+  const maxV = Math.ceil(all.max);
+  const hist = new Array(maxV + 1).fill(0);
+  all.sorted.forEach(v => { hist[Math.min(maxV, Math.max(0, Math.round(v)))]++; });
+
+  el.innerHTML = `
+    <div class="grid g-3-1" style="margin-bottom:16px">
+      <section class="panel">
+        <div class="panel-head"><div><h2>Beddencapaciteit</h2><div class="desc">${isAll ? 'Som van de bedden van alle afdelingen. Pas de bedden per afdeling aan in hun eigen tabblad.' : 'Stel het aantal open bedden in; alle grafieken en de verpleegkundige inzet rekenen direct mee.'}</div></div></div>
+        <div class="settings">
+          <div class="set"><label for="in-beds">Open bedden</label>${isAll ? `<div class="kpi-val num">${beds}</div>` : `<div class="set-row">${stepper('beds', beds, 'Open bedden')}<input type="range" min="1" max="${Math.max(40, maxV + 5)}" value="${beds}" data-path="beds" data-out="in-beds" aria-label="Open bedden schuif"></div>`}</div>
+          <div class="set"><label>Gewenste dekking</label><div class="seg small" role="group" aria-label="Gewenste dekking">${[90, 95, 99].map(t => `<button class="${S.bedTarget === t ? 'on' : ''}" data-act="target" data-arg="${t}">${t}%</button>`).join('')}</div><span class="hint">Deel van de tijd dat iedereen een bed moet hebben.</span></div>
+        </div>
+      </section>
+      <section class="panel">
+        <div class="panel-head"><div><h2>Advies</h2></div></div>
+        <div class="kpi-val num">${advise}<small>bedden</small></div>
+        <div class="kpi-sub" style="margin:4px 0 8px">nodig om ${S.bedTarget}% van de tijd iedereen op te vangen</div>
+        ${advise > beds ? statusPill('crit', `${advise - beds} bedden tekort t.o.v. ${beds}`) : advise === beds ? statusPill('good', 'Precies passend') : statusPill('good', `${beds - advise} bedden ruimte`)}
+      </section>
+    </div>
+    <div class="kpis">
+      ${kpi('Tijd volledig bezet', fmt(full), '%', `≥ ${beds} patiënten tegelijk`)}
+      ${kpi('Tijd boven capaciteit', fmt(overflow), '%', `meer patiënten dan bedden`, statusPill(overflow < 1 ? 'good' : overflow < 5 ? 'warn' : 'crit', overflow < 1 ? 'Zelden' : overflow < 5 ? 'Regelmatig' : 'Vaak'))}
+      ${kpi('Gemiddeld vrije bedden', fmt(free), 'bedden', `bij ${beds} open bedden`)}
+      ${kpi('Gemiddelde benutting', fmt(all.avg / beds * 100, 0), '%', `gem. ${fmt(all.avg)} van ${beds} bedden`)}
+    </div>
+    <div class="grid g-2">
+      <section class="panel">
+        <div class="panel-head"><div><h2>Hoe vaak liggen er N patiënten?</h2><div class="desc">Aandeel van alle kwartieren per aantal gelijktijdige patiënten. Rood = meer patiënten dan open bedden.</div></div></div>
+        <div class="chart-box"><canvas id="ch-hist" role="img" aria-label="Verdeling van de bezetting"></canvas></div>
+        <div class="legend"><span><i class="sw" style="background:var(--s1)"></i>Past binnen ${beds} bedden</span><span><i class="sw" style="background:var(--crit)"></i>Boven capaciteit</span></div>
+      </section>
+      <section class="panel">
+        <div class="panel-head"><div><h2>Bedden nodig per uur</h2><div class="desc">Gemiddelde, ${mLabel()} en maximum per uur van de dag, tegen de open bedden.</div></div></div>
+        <div class="chart-box"><canvas id="ch-bedhour" role="img" aria-label="Bedden nodig per uur"></canvas></div>
+        <div class="legend"><span><i class="ln solid" style="border-color:var(--s1)"></i>Gemiddeld</span><span><i class="ln solid" style="border-color:var(--ink)"></i>${mLabel()}</span><span><i class="ln solid" style="border-color:var(--muted)"></i>Maximum</span><span><i class="ln"></i>Open bedden</span></div>
+      </section>
+    </div>
+    <div class="grid g-2" style="margin-top:16px">
+      <section class="panel">
+        <div class="panel-head"><div><h2>Kans op een volle afdeling</h2><div class="desc">Percentage van de kwartieren met ≥ ${beds} patiënten, per weekdag en uur.</div></div></div>
+        <div class="table-wrap">${fullHeatHTML(frame, beds)}</div>
+      </section>
+      <section class="panel">
+        <div class="panel-head"><div><h2>Bedden per weekdag</h2><div class="desc">Advies = bedden die nodig zijn voor ${S.bedTarget}% dekking op die dag.</div></div></div>
+        <div class="table-wrap">${bedTable(frame, beds)}</div>
+      </section>
+    </div>`;
+
+  const c = C();
+  mkChart($('#ch-hist'), {
+    type: 'bar',
+    data: { labels: hist.map((_, i) => i), datasets: [{ data: hist.map(n => n / all.n * 100), backgroundColor: hist.map((_, i) => (i > beds ? c.crit : c.series[0])), borderRadius: { topLeft: 3, topRight: 3 }, borderSkipped: 'bottom', barPercentage: 0.86, categoryPercentage: 0.92 }] },
+    options: {
+      scales: { x: { grid: { display: false }, border: { color: c.axis }, title: { display: true, text: 'Aantal patiënten tegelijk', color: c.muted, font: { size: 11 } } }, y: { beginAtZero: true, grid: { color: c.grid }, border: { display: false }, ticks: { callback: v => v + '%' } } },
+      plugins: { tooltip: { callbacks: { title: it => `${it[0].label} patiënten`, label: it => ` ${fmt(it.raw)}% van de tijd`, footer: it => (+it[0].label > beds ? 'Boven capaciteit' : `${beds - it[0].label} bedden vrij`) } } },
+    },
+  });
+  const hrs = Array.from({ length: 24 }, (_, h) => stats(collect(frame.days, [[0, h * 4], [0, h * 4 + 1], [0, h * 4 + 2], [0, h * 4 + 3]])));
+  mkChart($('#ch-bedhour'), {
+    type: 'line',
+    data: {
+      labels: hrs.map((_, h) => `${pad2(h)}:00`),
+      datasets: [
+        { label: 'Gemiddeld', data: hrs.map(s => s.avg), borderColor: c.series[0], backgroundColor: alpha(c.series[0], 0.12), fill: 'origin', borderWidth: 2, pointRadius: 0, tension: 0.3 },
+        { label: mLabel(), data: hrs.map(s => mv(s)), borderColor: c.ink, borderWidth: 2, pointRadius: 0, tension: 0.3 },
+        { label: 'Maximum', data: hrs.map(s => s.max), borderColor: c.muted, borderWidth: 1.5, pointRadius: 0, stepped: 'middle' },
+      ],
+    },
+    options: {
+      interaction: { mode: 'index', intersect: false },
+      scales: { x: { grid: { display: false }, border: { color: c.axis }, ticks: { maxRotation: 0, autoSkip: true, autoSkipPadding: 12 } }, y: { beginAtZero: true, suggestedMax: Math.max(beds, all.max) + 1, grid: { color: c.grid }, border: { display: false }, ticks: { precision: 0 } } },
+      plugins: { capLine: { value: beds, label: `${beds} open bedden` }, tooltip: { callbacks: { label: it => ` ${it.dataset.label}: ${fmt(it.raw)}` } } },
+    },
+  });
+}
+
+function fullHeatHTML(frame, beds) {
+  const steps = 6;
+  return `<div class="heat" role="table" aria-label="Kans op volle afdeling">
+    <div></div>${Array.from({ length: 24 }, (_, h) => `<div class="hh">${h % 3 === 0 ? pad2(h) : ''}</div>`).join('')}
+    ${WD_SHORT.map((wl, wd) => { const days = frame.days.filter(d => d.wd === wd); return `<div class="hl">${wl}</div>` + Array.from({ length: 24 }, (_, h) => {
+      const v = collect(days, [[0, h * 4], [0, h * 4 + 1], [0, h * 4 + 2], [0, h * 4 + 3]]);
+      let n = 0; for (const x of v) if (x >= beds) n++;
+      const p = v.length ? n / v.length * 100 : 0;
+      const s = p === 0 ? 0 : Math.min(steps - 1, 1 + Math.floor(p / 10));
+      return `<div class="c" style="background:var(--heat-${s});color:${s >= 4 ? 'var(--surface)' : 'var(--ink-2)'}" title="${WD_LONG[wd]} ${pad2(h)}:00 · ${fmt(p)}% vol">${p >= 0.5 ? Math.round(p) : ''}</div>`;
+    }).join(''); }).join('')}
+  </div>
+  <div class="heat-scale"><span>0%</span><span class="ramp">${Array.from({ length: steps }, (_, i) => `<i style="background:var(--heat-${i})"></i>`).join('')}</span><span>≥ 40% van de tijd vol</span></div>`;
+}
+
+function bedTable(frame, beds) {
+  const t = S.bedTarget / 100;
+  const rows = WD_LONG.map((name, wd) => {
+    const s = stats(collect(frame.days.filter(d => d.wd === wd), ALL_SLOTS)); if (!s) return '';
+    const adv = Math.ceil(s.sorted[Math.max(0, Math.ceil(s.n * t) - 1)]);
+    const full = pctAtOrAbove(s.sorted, beds);
+    const d = adv - beds;
+    return `<tr><td>${name}</td><td class="num">${fmt(s.avg)}</td><td class="num">${fmt(s.p95, 0)}</td><td class="num">${fmt(s.max, 0)}</td><td class="num">${fmt(full)}%</td><td class="num"><b>${adv}</b> <span class="diff ${d > 0 ? 'pos' : d < 0 ? 'neg' : 'zero'}">${d > 0 ? '+' : ''}${d}</span></td></tr>`;
+  }).join('');
+  return `<table class="data" data-name="Bedden"><thead><tr><th>Weekdag</th><th class="num">Gemiddeld</th><th class="num">P95</th><th class="num">Max</th><th class="num">Tijd vol</th><th class="num">Advies (${S.bedTarget}%)</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+/* ═════════════ 4. VERPLEEGKUNDIGE INZET ═════════════ */
+// Benodigde diensten per weekdag en dienst = ⌈ bezetting (norm) ÷ ratio ⌉.
+function staffCells(frame, unitId) {
+  const cfg = cfgOf(unitId);
+  const saved = S.weekMode; if (frame.__forceTypical) S.weekMode = 'typical';
+  const cells = weekCells(frame);
+  S.weekMode = saved;
+  return cells.map(x => {
+    const r = cfg.ratio[x.k], plan = cfg.plan[x.wd][x.k];
+    const need = needOf(x.hi, r);
+    return { ...x, ratio: r, plan, need, needLo: needOf(x.tot && x.tot.avg, r), needHi: needOf(x.tot && x.tot.max, r) };
+  });
+}
+function staffSummary(frame, unitId) {
+  const f = { ...frame, __forceTypical: true };
+  const cells = staffCells(f, unitId);
+  const need = cells.reduce((s, x) => s + (x.need || 0), 0), plan = cells.reduce((s, x) => s + x.plan, 0);
+  const hrs = k => shiftHours(k);
+  const needH = cells.reduce((s, x) => s + (x.need || 0) * hrs(x.k), 0), planH = cells.reduce((s, x) => s + x.plan * hrs(x.k), 0);
+  return { cells, need, plan, fteNeed: needH / S.fteHours, ftePlan: planH / S.fteHours };
+}
+
+function viewStaff(el, frame) {
+  if (S.unit === 'ALL') return viewStaffAll(el);
+  const cfg = cfgOf(S.unit);
+  const cells = staffCells(frame, S.unit);
+  const sum = staffSummary(frame, S.unit);
+  const short = cells.filter(x => x.need != null && x.need > x.plan);
+  const c = C();
+
+  el.innerHTML = `
+    <section class="panel" style="margin-bottom:16px">
+      <div class="panel-head"><div><h2>Diensten en normen</h2><div class="desc">Benodigd = bezetting (${mLabel()}) gedeeld door het aantal patiënten per verpleegkundige, naar boven afgerond.</div></div></div>
+      <div class="settings">
+        ${SHIFT_KEYS.map(k => `<div class="set">
+          <label>${SHIFT_INFO[k].label}dienst (${k})</label>
+          <div class="set-row"><input type="time" step="900" id="in-shift-${k}-start" data-path="shift.${k}.start" value="${hhmm(SHIFT_INFO[k].start)}" aria-label="Start ${SHIFT_INFO[k].label}"> – <input type="time" step="900" id="in-shift-${k}-end" data-path="shift.${k}.end" value="${hhmm(SHIFT_INFO[k].end)}" aria-label="Einde ${SHIFT_INFO[k].label}"></div>
+          <div class="set-row"><span class="hint">Patiënten per vpk</span>${stepper(`ratio.${k}`, cfg.ratio[k], `Ratio ${SHIFT_INFO[k].label}`)}</div>
+        </div>`).join('')}
+        <div class="set"><label for="in-fte">Contracturen per FTE</label><input type="number" id="in-fte" data-path="fteHours" value="${S.fteHours}" min="1" style="width:90px"><span class="hint">Voor de omrekening naar FTE.</span></div>
+      </div>
+    </section>
+    <div class="kpis">
+      ${kpi('Diensten per week nodig', sum.need, '', `typische week, norm ${mLabel()}`)}
+      ${kpi('Diensten per week ingepland', sum.plan, '', 'volgens het rooster hieronder', statusPill(sum.need > sum.plan ? 'crit' : 'good', sum.need > sum.plan ? `${sum.need - sum.plan} tekort` : sum.need === sum.plan ? 'Sluitend' : `${sum.plan - sum.need} overschot`))}
+      ${kpi('FTE nodig', fmt(sum.fteNeed), 'FTE', `bij ${S.fteHours} uur per FTE`)}
+      ${kpi('FTE ingepland', fmt(sum.ftePlan), 'FTE', `verschil ${sum.ftePlan - sum.fteNeed >= 0 ? '+' : ''}${fmt(sum.ftePlan - sum.fteNeed)} FTE`)}
+    </div>
+    <div class="grid g-2">
+      <section class="panel">
+        <div class="panel-head">
+          <div><h2>Verpleegkundigen (nodig − ingepland)</h2><div class="desc">Boven de nul: tekort. Onder de nul: meer ingepland dan nodig. Streepje: van nodig bij gemiddelde tot nodig bij maximum.</div></div>
+          ${weekModeControl(frame)}
+        </div>
+        <div class="chart-box"><canvas id="ch-staffdiff" role="img" aria-label="Verschil nodig en ingepland"></canvas></div>
+        <div class="legend"><span><i class="sw" style="background:var(--div-pos)"></i>Tekort</span><span><i class="sw" style="background:var(--div-neg)"></i>Overschot</span><span class="sep"></span><span><i class="wh"></i>Bandbreedte</span><span class="sep"></span><span class="key"><b>D</b> Dag <b>A</b> Avond <b>N</b> Nacht</span></div>
+      </section>
+      <section class="panel">
+        <div class="panel-head"><div><h2>Nodig en ingepland per dienst</h2><div class="desc">Benodigde verpleegkundigen (staaf) tegen het rooster (lijn).</div></div></div>
+        <div class="chart-box"><canvas id="ch-staffabs" role="img" aria-label="Nodig en ingepland"></canvas></div>
+        <div class="legend"><span><i class="sw" style="background:var(--s1)"></i>Nodig (${mLabel()})</span><span><i class="ln solid" style="border-color:var(--ink)"></i>Ingepland</span></div>
+      </section>
+    </div>
+    <section class="panel" style="margin-top:16px">
+      <div class="panel-head"><div><h2>Rooster</h2><div class="desc">Pas het aantal ingeplande verpleegkundigen per dag en dienst aan. ${short.length ? `<b style="color:var(--crit)">${short.length} diensten</b> komen tekort.` : 'Geen tekorten in de huidige selectie.'}</div></div></div>
+      <div class="table-wrap">${rosterTable(cells, cfg)}</div>
+    </section>`;
+
+  const labels = cells.map(shiftTick);
+  const diffs = cells.map(x => (x.need == null ? null : x.need - x.plan));
+  const lim = Math.max(2, ...cells.map(x => Math.abs((x.needHi || 0) - x.plan)), ...cells.map(x => Math.abs((x.needLo || 0) - x.plan)));
+  mkChart($('#ch-staffdiff'), {
+    type: 'bar',
+    data: { labels, datasets: [{ label: 'Nodig − ingepland', data: diffs.map(d => (d === 0 ? 0.08 : d)), backgroundColor: diffs.map(d => (d > 0 ? c.divPos : d < 0 ? c.divNeg : c.axis)), borderRadius: 3, borderSkipped: false, barPercentage: 0.6, categoryPercentage: 0.9 }] },
+    options: {
+      scales: { x: { grid: { display: false }, border: { display: false }, ticks: { maxRotation: 0, autoSkip: false } }, y: { min: -lim - 1, max: lim + 1, grid: { color: ctx => (ctx.tick.value === 0 ? c.axis : c.grid), lineWidth: ctx => (ctx.tick.value === 0 ? 1.5 : 1) }, border: { display: false }, ticks: { precision: 0 } } },
+      plugins: {
+        whiskers: { data: cells.map(x => (x.needLo == null ? null : { lo: x.needLo - x.plan, hi: x.needHi - x.plan })) },
+        dayBands: { size: 3 },
+        tooltip: { callbacks: { title: it => `${cells[it[0].dataIndex].title} (${shiftTimes(cells[it[0].dataIndex].k)})`, label: it => { const x = cells[it.dataIndex]; return [` Nodig ${x.need} · ingepland ${x.plan}`, ` ${x.need > x.plan ? `${x.need - x.plan} tekort` : x.need < x.plan ? `${x.plan - x.need} overschot` : 'sluitend'}`, ` Patiënten ${mLabel()}: ${fmt(x.hi)} (ratio 1:${fmt(x.ratio, 1)})`]; } } },
+      },
+    },
+  });
+  mkChart($('#ch-staffabs'), {
+    data: {
+      labels,
+      datasets: [
+        { type: 'bar', label: 'Nodig', data: cells.map(x => x.need), backgroundColor: c.series[0], borderRadius: { topLeft: 3, topRight: 3 }, borderSkipped: 'bottom', barPercentage: 0.7, categoryPercentage: 0.9, order: 2 },
+        { type: 'line', label: 'Ingepland', data: cells.map(x => x.plan), borderColor: c.ink, backgroundColor: c.ink, borderWidth: 2, pointRadius: 3, pointHoverRadius: 5, stepped: 'middle', order: 1 },
+      ],
+    },
+    options: {
+      interaction: { mode: 'index', intersect: false },
+      scales: { ...baseScales({ yTitle: 'Verpleegkundigen' }) },
+      plugins: { dayBands: { size: 3 }, tooltip: { callbacks: { title: it => cells[it[0].dataIndex].title, label: it => ` ${it.dataset.label}: ${it.raw}` } } },
+    },
+  });
+}
+
+function rosterTable(cells, cfg) {
+  const get = (wd, k) => cells.find(x => x.wd === wd && x.k === k);
+  const dayHead = cells.filter(x => x.k === 'D').map(x => x.dayLabel);
+  return `<table class="data" data-name="Rooster"><thead><tr><th>Dienst</th><th></th>${dayHead.map(d => `<th class="num">${d}</th>`).join('')}<th class="num">Alle dagen</th></tr></thead><tbody>
+    ${SHIFT_KEYS.map(k => `
+      <tr><td rowspan="3"><span class="cell-name">${SHIFT_INFO[k].label}</span><span class="mono" style="color:var(--muted);font-size:11.5px">${shiftTimes(k)} · 1:${fmt(cfg.ratio[k], 1)}</span></td>
+        <td style="color:var(--muted);font-size:12px">Patiënten (${mLabel()})</td>${WD_SHORT.map((_, wd) => `<td class="num">${fmt(get(wd, k).hi)}</td>`).join('')}<td></td></tr>
+      <tr><td style="color:var(--muted);font-size:12px">Ingepland</td>${WD_SHORT.map((_, wd) => `<td class="num">${stepper(`plan.${wd}.${k}`, cfg.plan[wd][k], `Ingepland ${WD_LONG[wd]} ${SHIFT_INFO[k].label}`)}</td>`).join('')}<td class="num">${stepper(`plan.all.${k}`, cfg.plan[0][k], `Ingepland alle dagen ${SHIFT_INFO[k].label}`)}</td></tr>
+      <tr><td style="color:var(--muted);font-size:12px">Nodig</td>${WD_SHORT.map((_, wd) => { const x = get(wd, k); const d = x.need - x.plan; return `<td class="num"><b>${x.need ?? '—'}</b> ${x.need == null ? '' : `<span class="diff ${d > 0 ? 'pos' : d < 0 ? 'neg' : 'zero'}">${d > 0 ? '+' : ''}${d}</span>`}</td>`; }).join('')}<td></td></tr>`).join('')}
+  </tbody></table>`;
+}
+
+function viewStaffAll(el) {
+  const rows = unitsOf().map((u, i) => {
+    const comps = compsFor(u.id); if (!comps.length) return { u, i, empty: true };
+    const fr = buildFrame(comps, S.filter); if (!fr || !fr.days.length) return { u, i, empty: true };
+    const sum = staffSummary(fr, u.id);
+    const per = SHIFT_KEYS.map(k => ({ need: sum.cells.filter(x => x.k === k).reduce((s, x) => s + x.need, 0), plan: sum.cells.filter(x => x.k === k).reduce((s, x) => s + x.plan, 0) }));
+    return { u, i, sum, per };
+  });
+  const ok = rows.filter(r => !r.empty);
+  const tot = ok.reduce((a, r) => ({ need: a.need + r.sum.need, plan: a.plan + r.sum.plan, fn: a.fn + r.sum.fteNeed, fp: a.fp + r.sum.ftePlan }), { need: 0, plan: 0, fn: 0, fp: 0 });
+  el.innerHTML = `
+    <div class="kpis">
+      ${kpi('Diensten per week nodig', tot.need, '', `alle afdelingen, norm ${mLabel()}`)}
+      ${kpi('Diensten per week ingepland', tot.plan, '', '', statusPill(tot.need > tot.plan ? 'crit' : 'good', tot.need > tot.plan ? `${tot.need - tot.plan} tekort` : 'Sluitend of ruimte'))}
+      ${kpi('FTE nodig', fmt(tot.fn), 'FTE', `bij ${S.fteHours} uur per FTE`)}
+      ${kpi('FTE ingepland', fmt(tot.fp), 'FTE', `verschil ${tot.fp - tot.fn >= 0 ? '+' : ''}${fmt(tot.fp - tot.fn)} FTE`)}
+    </div>
+    <section class="panel">
+      <div class="panel-head"><div><h2>Diensten per week, per afdeling</h2><div class="desc">Elke afdeling rekent met haar eigen ratio's en rooster (instellen in het tabblad van de afdeling).</div></div></div>
+      <div class="chart-box short"><canvas id="ch-staffall" role="img" aria-label="Diensten per afdeling"></canvas></div>
+      <div class="legend"><span><i class="sw" style="background:var(--s1)"></i>Nodig</span><span><i class="sw" style="background:var(--axis)"></i>Ingepland</span></div>
+      <div class="table-wrap" style="margin-top:12px"><table class="data" data-name="Inzet per afdeling"><thead><tr><th>Afdeling</th>${SHIFT_KEYS.map(k => `<th class="num">${SHIFT_INFO[k].label} nodig / ingepland</th>`).join('')}<th class="num">Totaal</th><th class="num">FTE nodig</th><th class="num">FTE ingepland</th></tr></thead><tbody>
+        ${rows.map(r => r.empty ? `<tr><td><span class="cell-name"><i class="sw" style="background:var(--s${r.i + 1})"></i>${esc(r.u.label)}</span></td><td colspan="6" style="color:var(--muted)">Geen data geladen</td></tr>` : `<tr><td><span class="cell-name"><i class="sw" style="background:var(--s${r.i + 1})"></i>${esc(r.u.label)}</span></td>
+          ${r.per.map(p => { const d = p.need - p.plan; return `<td class="num">${p.need} / ${p.plan} <span class="diff ${d > 0 ? 'pos' : d < 0 ? 'neg' : 'zero'}">${d > 0 ? '+' : ''}${d}</span></td>`; }).join('')}
+          <td class="num"><b>${r.sum.need}</b> / ${r.sum.plan}</td><td class="num">${fmt(r.sum.fteNeed)}</td><td class="num">${fmt(r.sum.ftePlan)}</td></tr>`).join('')}
+      </tbody></table></div>
+    </section>`;
+  const c = C();
+  mkChart($('#ch-staffall'), {
+    type: 'bar',
+    data: {
+      labels: ok.map(r => r.u.label),
+      datasets: [
+        { label: 'Nodig', data: ok.map(r => r.sum.need), backgroundColor: c.series[0], borderRadius: 3, barPercentage: 0.7, categoryPercentage: 0.6 },
+        { label: 'Ingepland', data: ok.map(r => r.sum.plan), backgroundColor: c.axis, borderRadius: 3, barPercentage: 0.7, categoryPercentage: 0.6 },
+      ],
+    },
+    options: { indexAxis: 'y', scales: { x: { beginAtZero: true, grid: { color: c.grid }, border: { display: false } }, y: { grid: { display: false }, border: { color: c.axis } } }, plugins: { tooltip: { callbacks: { label: it => ` ${it.dataset.label}: ${it.raw} diensten per week` } } } },
+  });
+}
+
+/* ═════════════ 5. PROGNOSE ═════════════ */
+function viewForecast(el, frame) {
+  const beds = bedsOf(S.unit);
+  const fc = forecast(frame, ALL_SLOTS, S.refusal);
+  if (!fc) {
+    el.innerHTML = `<div class="empty-state"><h2>Te weinig historie voor een prognose</h2><p>Het model heeft minstens 30 volledige weken data nodig. Laad een langere reeks.</p></div>`;
+    return;
+  }
+  const isAll = S.unit === 'ALL';
+  const cfg = isAll ? null : cfgOf(S.unit);
+  const shiftFc = isAll ? null : Object.fromEntries(SHIFT_KEYS.map(k => [k, forecast(frame, shiftSlots(k), S.refusal)]));
+  const peak = fc.weeks.reduce((a, b) => (b.val > a.val ? b : a));
+  const overWeeks = fc.weeks.filter(w => w.val > beds).length;
+  const vac = fc.weeks.filter(w => w.vacation), nonVac = fc.weeks.filter(w => !w.vacation);
+  const vacDiff = (mean(vac.map(w => w.season)) / mean(nonVac.map(w => w.season)) - 1) * 100;
+  const pct = 100 - S.refusal;
+  const holidays = nlHolidays(fc.fcYear);
+  const holInWeek = w => Object.entries(holidays).filter(([ds]) => ds >= w.monday && ds <= addDays(w.monday, 6)).map(([, n]) => n);
+  const c = C();
+
+  el.innerHTML = `
+    <section class="panel" style="margin-bottom:16px">
+      <div class="panel-head">
+        <div><h2>Prognose ${fc.fcYear}</h2><div class="desc">Per week de P${fmt(pct, pct % 1 ? 1 : 0)} van de dagmaxima, met lineaire trend × seizoensindex per weeknummer. Gebaseerd op ${fc.nWeeks} weken historie (${fc.years[0]}–${fc.years[fc.years.length - 1]}). Periode- en dagfilters gelden hier niet; de prognose gebruikt alle historie.</div></div>
+        <div class="set"><label>Weigeringskans</label><div class="seg small" role="group" aria-label="Weigeringskans">${[1, 2.5, 5, 10].map(r => `<button class="${S.refusal === r ? 'on' : ''}" data-act="refusal" data-arg="${r}">${fmt(r, r % 1 ? 1 : 0)}%</button>`).join('')}</div></div>
+      </div>
+    </section>
+    <div class="kpis">
+      ${kpi('Drukste week', `wk ${peak.week}`, '', `${fmt(peak.val)} patiënten · ${fmtDay(peak.monday)}${peak.vacation ? ' · ' + peak.vacation.toLowerCase() : ''}`)}
+      ${kpi('Weken boven bedden', overWeeks, `van 52`, `prognose > ${beds} bedden`, statusPill(overWeeks === 0 ? 'good' : overWeeks < 8 ? 'warn' : 'crit', overWeeks === 0 ? 'Past het hele jaar' : `${overWeeks} weken krap`))}
+      ${kpi('Trend', `${fc.slopePerYear >= 0 ? '+' : ''}${fmt(fc.slopePerYear)}`, 'pat./jaar', 'lineaire trend in de wekelijkse piek')}
+      ${kpi('Effect schoolvakanties', `${vacDiff >= 0 ? '+' : ''}${fmt(vacDiff, 0)}`, '%', 'seizoensindex vakantieweken t.o.v. overige weken')}
+    </div>
+    <section class="panel">
+      <div class="panel-head"><div><h2>Verwachte piekbezetting per week</h2><div class="desc">Staaf = prognose; streepje = historisch gemiddelde tot maximum in dat weeknummer. Rood = boven de ${beds} bedden.</div></div></div>
+      <div class="chart-box tall"><canvas id="ch-fc" role="img" aria-label="Prognose per week"></canvas></div>
+      <div class="legend"><span><i class="sw" style="background:var(--s1)"></i>Prognose binnen capaciteit</span><span><i class="sw" style="background:var(--crit)"></i>Boven capaciteit</span><span class="sep"></span><span><i class="wh"></i>Historie gem.–max</span><span><i class="ln"></i>Open bedden</span></div>
+    </section>
+    ${isAll ? `<p class="note">Per afdeling zie je in hun eigen tabblad ook de benodigde verpleegkundigen per week.</p>` : `
+    <section class="panel" style="margin-top:16px">
+      <div class="panel-head"><div><h2>Verpleegkundigen nodig per week</h2><div class="desc">⌈ prognose per dienst ÷ ratio ⌉, vergeleken met het gemiddelde rooster van die dienst. Klik of beweeg over een week voor details.</div></div></div>
+      <div class="table-wrap">${forecastStrip(shiftFc, cfg)}</div>
+      <div class="heat-scale"><span class="diff neg">−1</span> overschot <span class="diff zero">0</span> sluitend <span class="diff pos">+1</span> tekort t.o.v. rooster</div>
+    </section>`}`;
+
+  mkChart($('#ch-fc'), {
+    type: 'bar',
+    data: { labels: fc.weeks.map(w => w.week), datasets: [{ label: 'Prognose', data: fc.weeks.map(w => w.val), backgroundColor: fc.weeks.map(w => (w.val > beds ? c.crit : c.series[0])), borderRadius: { topLeft: 2, topRight: 2 }, borderSkipped: 'bottom', barPercentage: 0.8, categoryPercentage: 0.92 }] },
+    options: {
+      scales: { ...baseScales({ yMax: Math.ceil(Math.max(beds, ...fc.weeks.map(w => w.max || 0)) + 1), yTitle: 'Patiënten' }), x: { grid: { display: false }, border: { color: c.axis }, ticks: { maxRotation: 0, autoSkip: false, callback: (v, i) => (i % 4 === 0 ? `wk ${fc.weeks[i].week}` : '') } } },
+      plugins: {
+        whiskers: { data: fc.weeks.map(w => ({ lo: w.avg, hi: w.max })) },
+        capLine: { value: beds, label: `${beds} open bedden` },
+        tooltip: { callbacks: {
+          title: it => { const w = fc.weeks[it[0].dataIndex]; return `Week ${w.week} · vanaf ${fmtDay(w.monday)}`; },
+          label: it => ` Prognose: ${fmt(it.raw)} patiënten`,
+          footer: it => { const w = fc.weeks[it[0].dataIndex]; const h = holInWeek(w); return [`Historie gem. ${fmt(w.avg)} · max ${fmt(w.max, 0)}`, `Seizoensindex ${fmt(w.season, 2)}`, ...(w.vacation ? [w.vacation] : []), ...(h.length ? [h.join(', ')] : [])]; },
+        } },
+      },
+    },
+  });
+}
+
+function forecastStrip(shiftFc, cfg) {
+  const planOf = k => Math.round(mean(cfg.plan.map(p => p[k])));
+  return `<div class="strip" role="table" aria-label="Verpleegkundigen per week">
+    <div></div>${Array.from({ length: 52 }, (_, i) => `<div class="sh">${(i + 1) % 4 === 1 ? i + 1 : ''}</div>`).join('')}
+    ${SHIFT_KEYS.map(k => {
+      const f = shiftFc[k]; const plan = planOf(k);
+      return `<div class="sl">${SHIFT_INFO[k].label}</div>` + (f ? f.weeks.map(w => {
+        const need = needOf(w.val, cfg.ratio[k]); const d = need - plan;
+        const bg = d > 0 ? `color-mix(in srgb, var(--div-pos) ${Math.min(100, 35 + d * 25)}%, var(--surface))` : d < 0 ? `color-mix(in srgb, var(--div-neg) ${Math.min(80, 20 + -d * 18)}%, var(--surface))` : 'var(--surface-2)';
+        const fg = d > 0 && d >= 2 ? '#fff' : 'var(--ink)';
+        return `<div class="sc" style="background:${bg};color:${fg}" title="Week ${w.week} · ${SHIFT_INFO[k].label}: ${need} nodig, ${plan} ingepland (prognose ${fmt(w.val)} pat.)">${need}</div>`;
+      }).join('') : Array.from({ length: 52 }, () => '<div class="sc">—</div>').join(''));
+    }).join('')}
+  </div>`;
+}
+
+/* ── Export: alle tabellen van de huidige weergave naar één Excel ───── */
+function exportTables() {
+  const tables = [...document.querySelectorAll('#view table.data')];
+  if (!tables.length) { toast('Deze weergave heeft geen tabellen om te exporteren.'); return; }
+  try {
+    const wb = XLSX.utils.book_new();
+    tables.forEach((t, i) => {
+      const clone = t.cloneNode(true);
+      clone.querySelectorAll('.stepper-input').forEach(s => { s.replaceWith(document.createTextNode(s.querySelector('input').value)); });
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.table_to_sheet(clone), (t.dataset.name || 'Tabel ' + (i + 1)).slice(0, 31));
+    });
+    const name = `${S.unit === 'ALL' ? 'Alle' : unitDef(S.unit).label}_${S.view}.xlsx`.replace(/\s+/g, '_');
+    XLSX.writeFile(wb, name);
+    toast(`Geëxporteerd: ${name}`);
+  } catch (e) { toast('Exporteren lukt hier niet; open het dashboard lokaal in de browser.'); }
+}
+
+boot();
+</script>
+</body>
+</html>
