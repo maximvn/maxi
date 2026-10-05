@@ -26,11 +26,12 @@ die terug op synthetische reeksen.
 3. **Analyse** — locatie-tabs (zoals het huidige dashboard). Per afdeling kies je met
    **Stromen kiezen** welke bestanden meetellen (basisstromen, totalen, scenario's, triage,
    losse analyses); het dashboard waarschuwt als een keuze dubbel telt. Weergaven:
-   - **Overzicht** — nagebouwd naar het Slingeland-dashboard: bezetting 08:00 → 08:00 met een
-     "Nu"-markering (vóór Nu werkelijk: nog aanwezig / reeds vertrokken; na Nu huidige patiënten
-     die blijven + verwachte nieuwe patiënten, bandbreedte P10–P95, open bedden, werkelijk achteraf),
-     peilmoment kiezen en uur voor uur afspelen; verpleegkundigen (nodig − ingepland) of
-     patiëntcapaciteit per dag × dienst; bezetting per dienst rond Nu of in een typische week.
+   - **Overzicht** — in de vorm van het Slingeland-dashboard, strikt op basis van de bestanden
+     (aantal aanwezige patiënten per kwartier per stroom; geen live koppeling, geen patiëntniveau):
+     gemeten bezetting per uur op een gekozen dag, gestapeld per stroom, tegen het normale bereik
+     van die weekdag (P10–P95), de norm en de open bedden; dag voor dag afspelen door de historie;
+     verpleegkundigen (nodig − ingepland) of patiëntcapaciteit per dag × dienst; bezetting per
+     dienst rond de gekozen dag of in een typische week.
    - **Stromen** — elke stroom in een eigen bandbreedte-grafiek (min–max, P95, gemiddeld) per
      uur, weekdag of maand, plus alle stromen samen als één stroom; weekpatroon-heatmap,
      maandtrend per stroom / samen / beide, en kerncijfers per dienst.

@@ -1503,7 +1503,7 @@ const S = {
   bandGran: 'hour',      // bandbreedte per uur / weekdag / maand
   trendMode: 'both',     // trend per maand: per stroom, samen of beide
   playing: false,        // peilmoment afspelen in Overzicht
-  peil: null,            // { ds, h } — het "Nu" in de historie
+  peil: null,            // { ds } — de gekozen dag in de historie
   nurseTab: 'vpk',       // Overzicht: verpleegkundigen of patiëntcapaciteit
   rangeMode: 'peil',     // Overzicht: rond Nu of typische week
   fcRange: 'next',       // prognose: komende 13 weken of heel jaar
@@ -1934,9 +1934,7 @@ document.addEventListener('change', e => {
   if (t.dataset.filter) { S.filter[t.dataset.filter] = t.value; render(); return; }
   if (t.dataset.path) { setValue(t.dataset.path, t.value); return; }
   if (t.id === 'week-select') { S.weekSel = t.value; render(); }
-  if (t.id === 'peil-date' && t.value) { stopPlay(); S.peil = { ds: t.value, h: S.peil ? S.peil.h : 12 }; render(); }
-  if (t.id === 'peil-hour') { stopPlay(); S.peil = { ...S.peil, h: +t.value }; render(); }
-  if (t.id === 'los-in') { cfgOf(S.unit).los = Math.max(0.5, +String(t.value).replace(',', '.') || 1); saveSettings(); render(); }
+  if (t.id === 'peil-date' && t.value) { stopPlay(); S.peil = { ds: t.value }; render(); }
 });
 document.addEventListener('input', e => {
   const t = e.target;
@@ -2031,7 +2029,7 @@ function applyAdvice() {
 /* ── Tijdlijn afspelen: week na week door de historie ─────────────── */
 let PLAY_T = null;
 function togglePlay() { if (S.playing) { stopPlay(); render(); } else startPlay(); }
-// Afspelen: het peilmoment ("Nu") loopt uur voor uur door de historie.
+// Afspelen: de gekozen dag loopt dag voor dag door de historie.
 function startPlay() {
   const f = currentFrame(); if (!f) return;
   peilOf(f);
@@ -2040,7 +2038,7 @@ function startPlay() {
     const fr = currentFrame();
     if (S.screen !== 'dash' || S.view !== 'overzicht' || !fr || !movePeil(1, fr)) { stopPlay(); render(); return; }
     const y = window.scrollY; render(); window.scrollTo({ top: y });
-  }, 900);
+  }, 1100);
 }
 function stopPlay() { S.playing = false; clearInterval(PLAY_T); PLAY_T = null; }
 function stepWeek(delta) {
@@ -2870,20 +2868,16 @@ function viewJDT(el) {
 }
 
 /* ════════════════════════════════════════════════════════════════════
-   OVERZICHT — nagebouwd naar het Slingeland-dashboard:
-   · Bezetting 08:00 vandaag → 08:00 morgen met een "Nu"-markering:
-     vóór Nu de werkelijke bezetting (nog aanwezig / reeds vertrokken),
-     na Nu de huidige patiënten die blijven + verwachte nieuwe patiënten,
-     met de bandbreedte uit de historie en het aantal open bedden.
+   OVERZICHT — in de vorm van het Slingeland-dashboard, maar strikt op
+   basis van wat de bestanden bevatten: het aantal aanwezige patiënten per
+   kwartier, per stroom. Er is geen live koppeling en geen patiëntniveau,
+   dus geen onderscheid tussen "nieuwe" en "bestaande" patiënten.
+   · Bezetting per uur op een gekozen dag uit de historie, gestapeld per
+     stroom, tegen het normale bereik van die weekdag (P10–P95) en de bedden.
    · Verpleegkundigen (nodig − ingepland) per dag en dienst.
-   · Bezetting per dienst (D/A/N), gestapeld per stroom, met spreiding.
-   Het peilmoment ("Nu") is een moment in de geladen historie; met
-   Afspelen loopt het uur voor uur door.
+   · Bezetting per dienst (D/A/N) rond de gekozen dag.
+   Afspelen loopt dag voor dag door de historie.
    ════════════════════════════════════════════════════════════════════ */
-
-// Standaard gemiddelde verblijfsduur (uur) — bepaalt hoe snel huidige patiënten vertrekken.
-const LOS_DEFAULT = { IC: 72, CCU: 48, SEH: 3.5, EHH: 8, AP: 4, HF: 60, ALL: 24 };
-function losOf(unitId) { if (unitId === 'ALL') return LOS_DEFAULT.ALL; const c = cfgOf(unitId); return c.los || LOS_DEFAULT[unitId] || 24; }
 function bedsAtHour(unitId, h) {
   if (unitId === 'ALL') return unitsOf().reduce((t, u) => t + bedsAtHour(u.id, h), 0);
   const c = cfgOf(unitId); const k = shiftOfSlot(h * 4);
@@ -2899,60 +2893,47 @@ function weekdayHourProfile(frame) {
   if (!p) { p = WD_SHORT.map((_, wd) => { const days = frame.days.filter(d => d.wd === wd); return HOUR_SLOTS.map(sl => stats(collect(days, sl))); }); whCache.set(frame, p); }
   return p;
 }
+// Gekozen dag (standaard de laatste dag in de data).
 function peilOf(frame) {
-  const first = frame.all[0].ds, last = frame.all[frame.all.length - 1].ds;
-  if (!S.peil || S.peil.ds < first || S.peil.ds > last) S.peil = { ds: last, h: Math.min(22, Math.max(9, new Date().getHours())) };
+  const map = dayByDate(frame);
+  // standaard twee dagen vóór het einde van de data, zodat de dagen eromheen gemeten zijn
+  if (!S.peil || !map.has(S.peil.ds)) S.peil = { ds: frame.all[Math.max(0, frame.all.length - 3)].ds };
   return S.peil;
 }
-function movePeil(hours, frame) {
-  let { ds, h } = S.peil; h += hours;
-  while (h >= 24) { h -= 24; ds = addDays(ds, 1); }
-  while (h < 0) { h += 24; ds = addDays(ds, -1); }
-  const first = frame.all[0].ds, last = frame.all[frame.all.length - 1].ds;
-  if (ds < first || ds > last) return false;
-  S.peil = { ds, h }; return true;
-}
-const hourMean = (d, h) => (d ? (d.total[h * 4] + d.total[h * 4 + 1] + d.total[h * 4 + 2] + d.total[h * 4 + 3]) / 4 : null);
-
-// 25 uren: 08:00 van de peildag (of de dag ervoor als Nu vóór 08:00 valt) t/m 08:00 de dag erna.
-function next24(frame, unitId) {
-  const peil = peilOf(frame);
-  const startDs = peil.h >= 8 ? peil.ds : addDays(peil.ds, -1);
-  const nowIdx = (peil.h - 8 + 24) % 24;
-  const map = dayByDate(frame), prof = weekdayHourProfile(frame);
-  const occNow = hourMean(map.get(peil.ds), peil.h);
-  const los = losOf(unitId);
-  const pts = [];
-  for (let t = 0; t <= 24; t++) {
-    const h = (8 + t) % 24, ds = t + 8 >= 24 ? addDays(startDs, 1) : startDs;
-    const st = prof[weekdayOf(ds)][h];
-    const exp = st ? mv(st) : 0;
-    const act = hourMean(map.get(ds), h);
-    const p = { t, ds, h, beds: bedsAtHour(unitId, h), lo: st ? st.p10 : null, hi: st ? st.p95 : null, exp, act };
-    if (t < nowIdx) { const a = act ?? exp; p.cur = Math.min(a, occNow ?? a); p.gone = Math.max(0, a - p.cur); p.nieuw = 0; p.kind = 'past'; }
-    else if (t === nowIdx) { p.cur = occNow ?? exp; p.gone = 0; p.nieuw = 0; p.kind = 'now'; }
-    else { const remain = (occNow ?? 0) * Math.exp(-(t - nowIdx) / los); p.cur = Math.min(remain, Math.max(exp, remain)); p.nieuw = Math.max(0, exp - remain); p.gone = 0; p.kind = 'future'; }
-    pts.push(p);
-  }
-  return { pts, nowIdx, occNow, startDs, peil, los };
+function movePeil(days, frame) {
+  const ds = addDays(S.peil.ds, days);
+  if (!dayByDate(frame).has(ds)) return false;
+  S.peil = { ds }; return true;
 }
 
-// Dagen rond het peilmoment (gisteren t/m over 3 dagen), zoals in het voorbeeld.
-function rangeDays(frame) { const p = peilOf(frame); return [-1, 0, 1, 2, 3].map(i => addDays(p.ds, i)); }
-function shiftEndsBeforePeil(ds, sh, peil) {
-  const endDs = sh.end <= sh.start ? addDays(ds, 1) : ds;
-  return endDs < peil.ds || (endDs === peil.ds && sh.end <= peil.h * 60);
+// Per uur van de gekozen dag: gemeten bezetting per stroom (gemiddelde van de 4 kwartieren)
+// en het normale bereik voor deze weekdag uit de historie.
+function dayHours(frame, unitId) {
+  const peil = peilOf(frame), d = dayByDate(frame).get(peil.ds), wd = weekdayOf(peil.ds);
+  const prof = weekdayHourProfile(frame)[wd];
+  return {
+    ds: peil.ds, wd,
+    hours: Array.from({ length: 24 }, (_, h) => {
+      const parts = frame.comps.map((_, ci) => (d.parts[ci][h * 4] + d.parts[ci][h * 4 + 1] + d.parts[ci][h * 4 + 2] + d.parts[ci][h * 4 + 3]) / 4);
+      const peak = Math.max(d.total[h * 4], d.total[h * 4 + 1], d.total[h * 4 + 2], d.total[h * 4 + 3]);
+      const st = prof[h];
+      return { h, parts, total: parts.reduce((a, b) => a + b, 0), peak, lo: st ? st.p10 : null, hi: st ? st.p95 : null, norm: st ? mv(st) : null, beds: bedsAtHour(unitId, h) };
+    }),
+  };
 }
+
+// Dagen rond de gekozen dag (twee ervoor t/m twee erna).
+function rangeDays(frame) { const p = peilOf(frame); return [-2, -1, 0, 1, 2].map(i => addDays(p.ds, i)); }
 function rangeCells(frame) {
-  const peil = peilOf(frame), map = dayByDate(frame);
+  const map = dayByDate(frame);
   const cells = [];
   rangeDays(frame).forEach(ds => {
     const wd = weekdayOf(ds), d = map.get(ds);
     SHIFT_KEYS.forEach(k => {
-      const sh = SHIFT_INFO[k];
-      const known = d && (k !== 'N' || d.next) && shiftEndsBeforePeil(ds, sh, peil);
+      const known = !!d && (k !== 'N' || !!d.next);
+      // gemeten op die dag; ontbreekt de dag in de data, dan het normale beeld van die weekdag
       const sp = known ? splitByMetric([d], shiftSlots(k), frame.comps.length) : splitByMetric(frame.days.filter(x => x.wd === wd), shiftSlots(k), frame.comps.length);
-      cells.push({ ds, wd, k, known, dayLabel: fmtDay(ds), title: `${fmtDay(ds)} ${ds.slice(0, 4)} · ${SHIFT_INFO[k].label}${known ? '' : ' (verwachting)'}`, ...sp, lo: sp.tot && (known ? sp.tot.min : sp.tot.p10), hi: sp.tot && sp.tot.max });
+      cells.push({ ds, wd, k, known, dayLabel: fmtDay(ds), title: `${fmtDay(ds)} ${ds.slice(0, 4)} · ${SHIFT_INFO[k].label}${known ? '' : ' (geen data — normaal voor deze weekdag)'}`, ...sp, lo: sp.tot && (known ? sp.tot.min : sp.tot.p10), hi: sp.tot && sp.tot.max });
     });
   });
   return cells;
@@ -2963,41 +2944,37 @@ function viewOverview(el, frame) {
   const beds = bedsOf(unitId);
   const all = stats(collect(frame.days, ALL_SLOTS));
   const full = pctAtOrAbove(all.sorted, beds);
-  const nx = next24(frame, unitId);
-  const fut = nx.pts.filter(p => p.kind === 'future');
-  const peakF = fut.reduce((a, b) => (b.cur + b.nieuw > a.cur + a.nieuw ? b : a), fut[0]);
+  const day = dayHours(frame, unitId);
+  const peakH = day.hours.reduce((a, b) => (b.peak > a.peak ? b : a));
+  const overBeds = day.hours.filter(x => x.peak > x.beds).length;
+  const aboveNormal = day.hours.filter(x => x.hi != null && x.total > x.hi).length;
+  const dayAvg = mean(day.hours.map(x => x.total)), normAvg = mean(day.hours.map(x => (x.lo + x.hi) / 2));
   const typical = S.rangeMode === 'typical';
   const cells = typical ? weekCells(frame) : rangeCells(frame);
   const staff = unitId === 'ALL' ? null : staffSummary(frame, unitId);
-  const peil = nx.peil;
   const fullKind = full < 2 ? 'good' : full < 8 ? 'warn' : 'crit';
-  const nowBeds = bedsAtHour(unitId, peil.h);
+  const dayName = `${WD_LONG[day.wd].toLowerCase()} ${fmtDay(day.ds).split(' ').slice(1).join(' ')} ${day.ds.slice(0, 4)}`;
 
   el.innerHTML = `
     <div class="kpis">
-      ${kpi(`Bezetting nu · ${fmtDay(peil.ds)} ${pad2(peil.h)}:00`, kn(nx.occNow ?? 0), `van ${nowBeds} bedden`, `${fmt(Math.max(0, nowBeds - (nx.occNow ?? 0)))} bedden vrij`, statusPill((nx.occNow ?? 0) >= nowBeds ? 'crit' : (nx.occNow ?? 0) >= nowBeds - 1 ? 'warn' : 'good', (nx.occNow ?? 0) >= nowBeds ? 'Vol' : (nx.occNow ?? 0) >= nowBeds - 1 ? 'Bijna vol' : 'Ruimte'))}
-      ${kpi('Verwachte piek komende 24 uur', kn(peakF ? peakF.cur + peakF.nieuw : 0), 'patiënten', peakF ? `om ${pad2(peakF.h)}:00 · ${mLabel()} uit de historie` : '', peakF && peakF.cur + peakF.nieuw > peakF.beds ? statusPill('crit', `${fmt(peakF.cur + peakF.nieuw - peakF.beds)} boven de bedden`) : statusPill('good', 'Past binnen de bedden'))}
-      ${kpi('Tijd volledig bezet', kn(full), '%', `kwartieren met ≥ ${beds} patiënten (historie)`, statusPill(fullKind, fullKind === 'good' ? 'Zelden' : fullKind === 'warn' ? 'Regelmatig' : 'Vaak'))}
+      ${kpi(`Hoogste bezetting · ${fmtDay(day.ds)}`, kn(peakH.peak, 0), `van ${peakH.beds} bedden`, `gemeten om ${pad2(peakH.h)}:00`, statusPill(peakH.peak > peakH.beds ? 'crit' : peakH.peak >= peakH.beds ? 'warn' : 'good', peakH.peak > peakH.beds ? 'Boven de bedden' : peakH.peak >= peakH.beds ? 'Vol' : 'Binnen de bedden'))}
+      ${kpi('Uren boven de bedden', kn(overBeds, 0), 'van 24', `op ${fmtDay(day.ds)} · ${aboveNormal} uur boven het normale bereik`, statusPill(overBeds ? 'crit' : 'good', overBeds ? 'Te weinig bedden' : 'Gedekt'))}
+      ${kpi('Tijd volledig bezet', kn(full), '%', `kwartieren met ≥ ${beds} patiënten (hele selectie)`, statusPill(fullKind, fullKind === 'good' ? 'Zelden' : fullKind === 'warn' ? 'Regelmatig' : 'Vaak'))}
       ${staff ? kpi('Verpleegkundigen per week', kn(staff.need, 0), `diensten advies · ${staff.plan} ingepland`, `norm ${mLabel()}`, statusPill(staff.need > staff.plan ? 'crit' : 'good', staff.need > staff.plan ? `${staff.need - staff.plan} tekort` : staff.need === staff.plan ? 'Sluitend' : `${staff.plan - staff.need} ruimte`)) : kpi('Afdelingen', kn(frame.comps.length, 0), '', frame.comps.map(c => c.label).join(' · '))}
     </div>
 
     <section class="panel stagger">
       <div class="panel-head">
-        <div><h2>Bezetting</h2><div class="desc">Vóór <b>Nu</b> de werkelijke bezetting; daarna de huidige patiënten die nog blijven (gem. verblijfsduur ${fmt(nx.los, nx.los % 1 ? 1 : 0)} uur) plus de verwachte nieuwe patiënten (${mLabel()} uit de historie van deze weekdag).</div></div>
+        <div><h2>Bezetting op ${dayName}</h2><div class="desc">Gemeten aantal patiënten per uur, per ${unitId === 'ALL' ? 'afdeling' : 'stroom'}, tegen het normale bereik voor een ${WD_LONG[day.wd].toLowerCase()} uit de historie (P10–P95). Gemiddeld ${fmt(dayAvg)} patiënten deze dag; normaal rond ${fmt(normAvg)}.</div></div>
         <div class="set-row">
-          ${S.unit === 'ALL' ? '' : `<label class="los" for="los-in">Verblijfsduur <input type="number" id="los-in" min="0.5" step="0.5" value="${losOf(S.unit)}"> uur</label>`}
-          <button class="icon-btn" data-act="peil" data-arg="-1" aria-label="Een uur terug">‹</button>
-          <input type="date" id="peil-date" value="${peil.ds}" min="${frame.all[0].ds}" max="${frame.all[frame.all.length - 1].ds}" aria-label="Peildatum">
-          <select id="peil-hour" aria-label="Peiluur">${Array.from({ length: 24 }, (_, h) => `<option value="${h}" ${h === peil.h ? 'selected' : ''}>${pad2(h)}:00</option>`).join('')}</select>
-          <button class="icon-btn" data-act="peil" data-arg="1" aria-label="Een uur verder">›</button>
+          <button class="icon-btn" data-act="peil" data-arg="-1" aria-label="Vorige dag">‹</button>
+          <input type="date" id="peil-date" value="${day.ds}" min="${frame.all[0].ds}" max="${frame.all[frame.all.length - 1].ds}" aria-label="Dag">
+          <button class="icon-btn" data-act="peil" data-arg="1" aria-label="Volgende dag">›</button>
           <button class="btn small play ${S.playing ? 'on' : ''}" data-act="play" aria-pressed="${S.playing}">${S.playing ? '<svg viewBox="0 0 16 16" width="12" height="12"><rect x="3" y="2.5" width="3.5" height="11" fill="currentColor"/><rect x="9.5" y="2.5" width="3.5" height="11" fill="currentColor"/></svg> Pauze' : '<svg viewBox="0 0 16 16" width="12" height="12"><path d="M4 2.5v11l9.5-5.5z" fill="currentColor"/></svg> Afspelen'}</button>
         </div>
       </div>
-      <div class="chart-box tall"><canvas id="ch-24" role="img" aria-label="Bezetting komende 24 uur"></canvas></div>
-      <div class="legend">
-        <span><i class="sw" style="background:var(--s1)"></i>Huidige patiënten</span><span><i class="sw" style="background:var(--s2)"></i>Nieuwe patiënten</span><span><i class="sw" style="background:var(--gone)"></i>Reeds vertrokken</span>
-        <span><i class="sw band-sw"></i>Bandbreedte P10–P95</span><span><i class="dot-k"></i>Werkelijk (achteraf)</span><span><i class="ln"></i>Aantal open bedden</span>
-      </div>
+      <div class="chart-box tall"><canvas id="ch-24" role="img" aria-label="Bezetting per uur op de gekozen dag"></canvas></div>
+      ${legendHTML(frame.comps, `<span><i class="sw band-sw"></i>Normaal bereik P10–P95 (${WD_SHORT[day.wd].toLowerCase()})</span><span><i class="ln" style="border-color:var(--s2)"></i>${mLabel()} voor deze weekdag</span><span><i class="ln"></i>Open bedden</span>`)}
     </section>
 
     <div class="grid g-2" style="margin-top:16px">
@@ -3007,12 +2984,12 @@ function viewOverview(el, frame) {
           <div class="seg small" role="tablist" aria-label="Personeel" data-ind="nursetab">${[['vpk', 'Verpleegkundigen'], ['cap', 'Patiëntcapaciteit']].map(([v, l]) => `<button class="${S.nurseTab === v ? 'on' : ''}" data-act="nursetab" data-arg="${v}">${l}</button>`).join('')}</div>
         </div>
         <div class="chart-box"><canvas id="ch-nurse" role="img" aria-label="Verpleegkundigen nodig min ingepland"></canvas></div>
-        <div class="legend"><span><i class="sw" style="background:var(--nurse)"></i>${S.nurseTab === 'cap' ? 'Capaciteit − patiënten (ruimte in patiënten)' : 'Verpleegkundigen (nodig − ingepland)'}</span><span class="sep"></span><span class="key">${cfgOf(unitId).shifts.map(s => `<b>${esc(shiftShort(s))}</b> ${esc(s.label)}`).join(' ')}</span></div>
+        <div class="legend"><span><i class="sw" style="background:var(--nurse)"></i>${S.nurseTab === 'cap' ? 'Capaciteit − hoogste bezetting in de dienst (patiënten)' : 'Verpleegkundigen (nodig − ingepland)'}</span><span class="sep"></span><span class="key">${cfgOf(unitId).shifts.map(s => `<b>${esc(shiftShort(s))}</b> ${esc(s.label)}`).join(' ')}</span></div>
       </section>`}
       <section class="panel stagger">
         <div class="panel-head">
-          <div><h2>Bezetting per dienst</h2><div class="desc">${typical ? `Typische week. Hoogte = ${mLabel()}; streepje van P10 tot maximum.` : `Rond het peilmoment. Hoogte = ${mLabel()}; gevuld = gemeten, open = verwachting.`}</div></div>
-          <div class="seg small" role="group" aria-label="Periode" data-ind="rangemode">${[['peil', 'Rond Nu'], ['typical', 'Typische week']].map(([v, l]) => `<button class="${(S.rangeMode || 'peil') === v ? 'on' : ''}" data-act="rangemode" data-arg="${v}">${l}</button>`).join('')}</div>
+          <div><h2>Bezetting per dienst</h2><div class="desc">${typical ? `Typische week. Hoogte = ${mLabel()}; streepje van P10 tot maximum.` : `Gemeten rond de gekozen dag. Hoogte = ${mLabel()} binnen de dienst; streepje van laagste tot hoogste kwartier.`}</div></div>
+          <div class="seg small" role="group" aria-label="Periode" data-ind="rangemode">${[['peil', 'Rond gekozen dag'], ['typical', 'Typische week']].map(([v, l]) => `<button class="${(S.rangeMode || 'peil') === v ? 'on' : ''}" data-act="rangemode" data-arg="${v}">${l}</button>`).join('')}</div>
         </div>
         <div class="chart-box"><canvas id="ch-week" role="img" aria-label="Bezetting per dag en dienst"></canvas></div>
         ${legendHTML(frame.comps, `<span><i class="ln"></i>Open bedden</span><span class="sep"></span><span class="key"><b>D</b> Dag <b>A</b> Avond <b>N</b> Nacht</span>`)}
@@ -3021,7 +2998,7 @@ function viewOverview(el, frame) {
 
     <div class="grid g-2" style="margin-top:16px">
       <section class="panel stagger">
-        <div class="panel-head"><div><h2>Dagverloop (24 uur)</h2><div class="desc">Bezetting per kwartier (${mLabel()}), gestapeld per ${unitId === 'ALL' ? 'afdeling' : 'stroom'}; het vlak erachter is de bandbreedte P10–max.</div></div></div>
+        <div class="panel-head"><div><h2>Dagverloop (24 uur)</h2><div class="desc">Bezetting per kwartier (${mLabel()} over alle dagen in de selectie), gestapeld per ${unitId === 'ALL' ? 'afdeling' : 'stroom'}; het vlak erachter is de bandbreedte P10–max.</div></div></div>
         <div class="chart-box"><canvas id="ch-day" role="img" aria-label="Dagverloop"></canvas></div>
         ${legendHTML(frame.comps, `<span><i class="sw band-sw"></i>P10–max</span><span><i class="ln"></i>Open bedden</span>`)}
       </section>
@@ -3036,14 +3013,14 @@ function viewOverview(el, frame) {
       ${legendHTML(frame.comps, `<span><i class="wh"></i>P10 – max</span><span><i class="ln"></i>Open bedden</span>`)}
     </section>`;
 
-  chart24($('#ch-24'), nx);
+  chartDay($('#ch-24'), frame, day);
   if (unitId !== 'ALL') nurseChart($('#ch-nurse'), frame, unitId);
   shiftChart($('#ch-week'), frame, cells, beds, typical);
   dayChart($('#ch-day'), frame, dayProfile(frame), beds);
   monthChart($('#ch-month'), frame, monthly(frame), beds);
 }
 
-/* ── "Nu"-markering: kolom + label, schuift zacht mee bij afspelen ──── */
+/* ── "Nu"-markering (prognose: de huidige week) — schuift zacht mee ── */
 const nowMarkerPlugin = {
   id: 'nowMarker',
   beforeDatasetsDraw(chart, _a, opts) {
@@ -3063,50 +3040,36 @@ const nowMarkerPlugin = {
     ctx.fillStyle = c.series[0];
     ctx.fillRect(st.x - step / 2, a.top - 16, step, 14);
     ctx.fillStyle = '#fff'; ctx.font = "600 10.5px 'IBM Plex Sans', system-ui, sans-serif"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('Nu', st.x, a.top - 9);
+    ctx.fillText(opts.label || 'Nu', st.x, a.top - 9);
     ctx.restore();
   },
 };
 
-function tip24(P, it) {
-  const p = P[it.dataIndex], L = it.dataset.label;
-  if (L === 'Huidige patiënten') return ` Huidige patiënten: ${fmt(p.cur)}`;
-  if (L === 'Nieuwe patiënten') return p.nieuw ? ` Nieuwe patiënten: ${fmt(p.nieuw)}` : null;
-  if (L === 'Reeds vertrokken') return p.gone ? ` Reeds vertrokken: ${fmt(p.gone)}` : null;
-  if (L === 'P95') return p.hi != null ? ` Bandbreedte: ${fmt(p.lo, 0)}–${fmt(p.hi, 0)}` : null;
-  if (L === 'Open bedden') return ` Open bedden: ${p.beds}`;
-  if (L === 'Werkelijk') return p.act != null && p.kind === 'future' ? ` Werkelijk: ${fmt(p.act)}` : null;
-  return null;
-}
-function chart24(canvas, nx) {
-  const c = C(), P = nx.pts;
-  const lbl = p => (p.h % 2 === 0 ? [`${pad2(p.h)}:00`, p.t === 0 ? fmtDay(p.ds) : p.h === 0 ? fmtDay(p.ds) : ''] : ['', '']);
-  const maxY = Math.ceil(Math.max(...P.map(p => Math.max(p.beds, p.hi || 0, p.cur + p.nieuw + p.gone, p.act || 0))) + 1);
+// Gemeten bezetting per uur, gestapeld per stroom, met het normale bereik van die weekdag.
+function chartDay(canvas, frame, day) {
+  const c = C(), H = day.hours;
+  const maxY = Math.ceil(Math.max(...H.map(x => Math.max(x.beds, x.hi || 0, x.total, x.norm || 0))) + 1);
   mkChart(canvas, {
     data: {
-      labels: P.map(lbl),
+      labels: H.map(x => `${pad2(x.h)}:00`),
       datasets: [
-        { type: 'bar', label: 'Reeds vertrokken', data: P.map(p => p.cur + p.gone), backgroundColor: c.gone, grouped: false, order: 5, barPercentage: 0.82, categoryPercentage: 1 },
-        { type: 'bar', label: 'Nieuwe patiënten', data: P.map(p => p.cur + p.nieuw), backgroundColor: c.series[1], grouped: false, order: 4, barPercentage: 0.82, categoryPercentage: 1 },
-        { type: 'bar', label: 'Huidige patiënten', data: P.map(p => p.cur), backgroundColor: c.series[0], grouped: false, order: 3, barPercentage: 0.82, categoryPercentage: 1 },
-        { type: 'line', label: 'P95', data: P.map(p => p.hi), borderColor: alpha(c.series[1], 0.9), borderWidth: 1.5, pointRadius: 0, tension: 0.4, fill: '+1', backgroundColor: alpha(c.series[1], 0.22), order: 6 },
-        { type: 'line', label: 'P10', data: P.map(p => p.lo), borderColor: alpha(c.series[1], 0.9), borderWidth: 1.5, pointRadius: 0, tension: 0.4, fill: false, order: 7 },
-        { type: 'line', label: 'Open bedden', data: P.map(p => p.beds), borderColor: c.ink, borderWidth: 1.5, borderDash: [5, 4], pointRadius: 0, stepped: 'middle', fill: false, order: 1 },
-        { type: 'line', label: 'Werkelijk', data: P.map(p => (p.kind === 'future' ? p.act : null)), showLine: false, pointRadius: 3, pointHoverRadius: 5, pointBackgroundColor: c.ink, pointBorderColor: c.surface, pointBorderWidth: 1, order: 0 },
+        ...frame.comps.map((comp, ci) => ({ type: 'bar', label: comp.label, data: H.map(x => x.parts[ci]), backgroundColor: colorOf(comp), stack: 's', barPercentage: 0.84, categoryPercentage: 0.96, order: 3 })),
+        { type: 'line', label: 'P95', data: H.map(x => x.hi), borderColor: alpha(c.series[1], 0.9), borderWidth: 1.5, pointRadius: 0, tension: 0.4, fill: '+1', backgroundColor: alpha(c.series[1], 0.2), stack: 'b1', order: 6 },
+        { type: 'line', label: 'P10', data: H.map(x => x.lo), borderColor: alpha(c.series[1], 0.9), borderWidth: 1.5, pointRadius: 0, tension: 0.4, fill: false, stack: 'b2', order: 7 },
+        { type: 'line', label: `${mLabel()} weekdag`, data: H.map(x => x.norm), borderColor: c.series[1], borderWidth: 2, borderDash: [2, 3], pointRadius: 0, tension: 0.4, fill: false, stack: 'b3', order: 2 },
+        { type: 'line', label: 'Open bedden', data: H.map(x => x.beds), borderColor: c.ink, borderWidth: 1.5, borderDash: [5, 4], pointRadius: 0, stepped: 'middle', fill: false, stack: 'b4', order: 1 },
       ],
     },
     options: {
       interaction: { mode: 'index', intersect: false },
-      layout: { padding: { top: 18 } },
-      scales: { x: { grid: { display: false }, border: { color: c.axis }, ticks: { maxRotation: 0, autoSkip: false, color: c.muted } }, y: { beginAtZero: true, max: maxY, grid: { color: c.grid }, border: { display: false }, ticks: { precision: 0 } } },
-      plugins: {
-        nowMarker: { index: nx.nowIdx },
-        tooltip: { filter: it => tip24(P, it) != null,
-          callbacks: {
-            title: it => { const p = P[it[0].dataIndex]; return `${fmtDay(p.ds)} ${pad2(p.h)}:00 · ${p.kind === 'past' ? 'verleden' : p.kind === 'now' ? 'nu' : 'verwachting'}`; },
-            label: it => tip24(P, it),
-          } },
-      },
+      scales: { x: { stacked: true, grid: { display: false }, border: { color: c.axis }, ticks: { maxRotation: 0, autoSkip: true, autoSkipPadding: 10 } }, y: { stacked: true, beginAtZero: true, max: maxY, grid: { color: c.grid }, border: { display: false }, ticks: { precision: 0 } } },
+      plugins: { tooltip: {
+        filter: it => it.dataset.label !== 'P10',
+        callbacks: {
+          title: it => `${WD_LONG[day.wd]} ${fmtDay(day.ds).split(' ').slice(1).join(' ')} · ${H[it[0].dataIndex].h}:00–${H[it[0].dataIndex].h + 1}:00`,
+          label: it => { const x = H[it.dataIndex]; if (it.dataset.label === 'P95') return ` Normaal bereik: ${fmt(x.lo, 0)}–${fmt(x.hi, 0)}`; return ` ${it.dataset.label}: ${fmt(it.raw)}`; },
+          footer: it => { const x = H[it[0].dataIndex]; return [`Gemeten totaal ${fmt(x.total)} (hoogste kwartier ${fmt(x.peak, 0)})`, x.hi != null && x.total > x.hi ? 'Drukker dan normaal voor deze weekdag' : x.lo != null && x.total < x.lo ? 'Rustiger dan normaal voor deze weekdag' : 'Binnen het normale bereik']; },
+        } } },
     },
   });
 }
@@ -3120,7 +3083,7 @@ function nurseChart(canvas, frame, unitId) {
   const cells = [];
   (typical ? WD_SHORT.map((_, wd) => ({ wd, label: WD_SHORT[wd] })) : dates.map(ds => ({ ds, wd: weekdayOf(ds), label: fmtDay(ds) }))).forEach(day => {
     const d = day.ds && map.get(day.ds);
-    const known = d && day.ds < peil.ds;
+    const known = !!d;
     const dem = known ? Array.from(d.total) : profM[day.wd];
     const adv = adviseDay(shifts, dem, day.wd, cfg.minStaff).plan;
     const lo = adviseDay(shifts, profAvg[day.wd], day.wd, cfg.minStaff).plan, hi = adviseDay(shifts, profMax[day.wd], day.wd, cfg.minStaff).plan;

@@ -27,7 +27,7 @@ const S = {
   bandGran: 'hour',      // bandbreedte per uur / weekdag / maand
   trendMode: 'both',     // trend per maand: per stroom, samen of beide
   playing: false,        // peilmoment afspelen in Overzicht
-  peil: null,            // { ds, h } — het "Nu" in de historie
+  peil: null,            // { ds } — de gekozen dag in de historie
   nurseTab: 'vpk',       // Overzicht: verpleegkundigen of patiëntcapaciteit
   rangeMode: 'peil',     // Overzicht: rond Nu of typische week
   fcRange: 'next',       // prognose: komende 13 weken of heel jaar
@@ -458,9 +458,7 @@ document.addEventListener('change', e => {
   if (t.dataset.filter) { S.filter[t.dataset.filter] = t.value; render(); return; }
   if (t.dataset.path) { setValue(t.dataset.path, t.value); return; }
   if (t.id === 'week-select') { S.weekSel = t.value; render(); }
-  if (t.id === 'peil-date' && t.value) { stopPlay(); S.peil = { ds: t.value, h: S.peil ? S.peil.h : 12 }; render(); }
-  if (t.id === 'peil-hour') { stopPlay(); S.peil = { ...S.peil, h: +t.value }; render(); }
-  if (t.id === 'los-in') { cfgOf(S.unit).los = Math.max(0.5, +String(t.value).replace(',', '.') || 1); saveSettings(); render(); }
+  if (t.id === 'peil-date' && t.value) { stopPlay(); S.peil = { ds: t.value }; render(); }
 });
 document.addEventListener('input', e => {
   const t = e.target;
@@ -555,7 +553,7 @@ function applyAdvice() {
 /* ── Tijdlijn afspelen: week na week door de historie ─────────────── */
 let PLAY_T = null;
 function togglePlay() { if (S.playing) { stopPlay(); render(); } else startPlay(); }
-// Afspelen: het peilmoment ("Nu") loopt uur voor uur door de historie.
+// Afspelen: de gekozen dag loopt dag voor dag door de historie.
 function startPlay() {
   const f = currentFrame(); if (!f) return;
   peilOf(f);
@@ -564,7 +562,7 @@ function startPlay() {
     const fr = currentFrame();
     if (S.screen !== 'dash' || S.view !== 'overzicht' || !fr || !movePeil(1, fr)) { stopPlay(); render(); return; }
     const y = window.scrollY; render(); window.scrollTo({ top: y });
-  }, 900);
+  }, 1100);
 }
 function stopPlay() { S.playing = false; clearInterval(PLAY_T); PLAY_T = null; }
 function stepWeek(delta) {
