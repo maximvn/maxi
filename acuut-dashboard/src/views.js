@@ -96,19 +96,22 @@ function legendHTML(comps, extra = '') {
 function stepper(path, val, label) {
   return `<span class="stepper-input"><button data-act="step" data-path="${path}" data-arg="-1" aria-label="${label} min één">−</button><input type="number" id="in-${path.replace(/\./g, '-')}" data-path="${path}" value="${val}" aria-label="${label}"><button data-act="step" data-path="${path}" data-arg="1" aria-label="${label} plus één">+</button></span>`;
 }
-function weekModeControl(frame) {
+function weekModeControl(frame, { play = false } = {}) {
   const weeks = weekList(frame);
   if (!S.weekSel || !weeks.includes(S.weekSel)) S.weekSel = weeks[weeks.length - 1];
+  const idx = weeks.indexOf(S.weekSel);
   return `<div class="set-row">
     <div class="seg small" role="group" aria-label="Weekweergave" data-ind="weekmode">
       <button class="${S.weekMode === 'typical' ? 'on' : ''}" data-act="weekmode" data-arg="typical">Typische week</button>
       <button class="${S.weekMode === 'week' ? 'on' : ''}" data-act="weekmode" data-arg="week" ${weeks.length ? '' : 'disabled'}>Specifieke week</button>
     </div>
+    ${play && weeks.length ? `<button class="btn small play ${S.playing ? 'on' : ''}" data-act="play" aria-pressed="${S.playing}">${S.playing ? '<svg viewBox="0 0 16 16" width="12" height="12"><rect x="3" y="2.5" width="3.5" height="11" rx="1" fill="currentColor"/><rect x="9.5" y="2.5" width="3.5" height="11" rx="1" fill="currentColor"/></svg> Pauze' : '<svg viewBox="0 0 16 16" width="12" height="12"><path d="M4 2.5v11l9.5-5.5z" fill="currentColor"/></svg> Afspelen'}</button>` : ''}
     ${S.weekMode === 'week' ? `<span class="set-row">
       <button class="icon-btn" data-act="weekstep" data-arg="-1" aria-label="Vorige week">‹</button>
       <select id="week-select" aria-label="Kies week">${weeks.slice().reverse().map(m => { const w = isoWeek(m); return `<option value="${m}" ${m === S.weekSel ? 'selected' : ''}>Week ${w.week} · ${w.isoYear} (${fmtDay(m)})</option>`; }).join('')}</select>
       <button class="icon-btn" data-act="weekstep" data-arg="1" aria-label="Volgende week">›</button></span>` : ''}
-  </div>`;
+  </div>
+  ${S.weekMode === 'week' && play ? `<div class="scrub"><span class="mono">${fmtDay(weeks[0])} ${weeks[0].slice(0, 4)}</span><input type="range" id="week-range" min="0" max="${weeks.length - 1}" value="${idx}" aria-label="Tijdlijn van week ${isoWeek(S.weekSel).week}, ${isoWeek(S.weekSel).isoYear}"><span class="mono">${fmtDay(weeks[weeks.length - 1])} ${weeks[weeks.length - 1].slice(0, 4)}</span></div>` : ''}`;
 }
 const narrow = () => window.innerWidth < 640;
 function tickEveryTwoHours(v) { return v % (narrow() ? 24 : 8) === 0 ? slotLabel(v) : ''; }
@@ -226,7 +229,7 @@ function viewOverview(el, frame) {
       <section class="panel stagger">
         <div class="panel-head">
           <div><h2>Bezetting per dienst</h2><div class="desc">${S.weekMode === 'typical' ? `Gemiddelde per stroom; streepje loopt van P10 tot ${mLabel()} van het totaal.` : 'Gemiddelde per stroom in deze dienst; streepje loopt van laagste tot hoogste bezetting.'}</div></div>
-          ${weekModeControl(frame)}
+          ${weekModeControl(frame, { play: true })}
         </div>
         <div class="chart-box tall"><canvas id="ch-week" role="img" aria-label="Bezetting per dag en dienst"></canvas></div>
         ${legendHTML(frame.comps, `<span class="sep"></span><span><i class="wh"></i>Spreiding</span><span><i class="ln"></i>Open bedden</span><span class="sep"></span><span class="key"><b>D</b> Dag <b>A</b> Avond <b>N</b> Nacht</span>`)}
@@ -379,69 +382,117 @@ function insights(frame, cells, all, beds) {
 }
 
 /* ═════════════ 2. STROMEN ═════════════ */
+// Bandbreedte van één reeks (component-index of 'total') per uur / weekdag / maand.
+function bandSeries(frame, which, gran) {
+  let groups;
+  if (gran === 'hour') groups = Array.from({ length: 24 }, (_, h) => ({ label: `${pad2(h)}:00`, days: frame.days, slots: [[0, h * 4], [0, h * 4 + 1], [0, h * 4 + 2], [0, h * 4 + 3]] }));
+  else if (gran === 'weekday') groups = WD_SHORT.map((d, wd) => ({ label: d, days: frame.days.filter(x => x.wd === wd), slots: ALL_SLOTS }));
+  else {
+    const keys = [...new Set(frame.days.map(d => `${d.y}-${pad2(d.m)}`))];
+    groups = keys.map(k => ({ label: `${MONTH_SHORT[+k.slice(5) - 1]} ${k.slice(2, 4)}`, days: frame.days.filter(d => `${d.y}-${pad2(d.m)}` === k), slots: ALL_SLOTS }));
+  }
+  const st = groups.map(g => stats(collect(g.days, g.slots, which)) || { min: 0, max: 0, p95: 0, avg: 0 });
+  return { labels: groups.map(g => g.label), min: st.map(x => x.min), max: st.map(x => x.max), p95: st.map(x => x.p95), avg: st.map(x => x.avg) };
+}
+function bandChart(canvas, ser, color, { big = false } = {}) {
+  const c = C();
+  const smooth = S.bandGran === 'month' ? 0.25 : 0.35;
+  return mkChart(canvas, {
+    type: 'line',
+    data: {
+      labels: ser.labels,
+      datasets: [
+        { label: 'Maximum', data: ser.max, borderColor: alpha(color, 0.55), borderWidth: 1, pointRadius: 0, stepped: S.bandGran === 'month' ? false : 'middle', fill: false },
+        { label: 'Minimum', data: ser.min, borderColor: alpha(color, 0.55), borderWidth: 1, pointRadius: 0, stepped: S.bandGran === 'month' ? false : 'middle', fill: { target: 0 }, backgroundColor: alpha(color, 0.14) },
+        { label: 'P95', data: ser.p95, borderColor: color, borderWidth: 1.5, borderDash: [5, 4], pointRadius: 0, stepped: S.bandGran === 'month' ? false : 'middle', fill: false },
+        { label: 'Gemiddeld', data: ser.avg, borderColor: color, borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 4, pointBackgroundColor: color, tension: smooth, fill: false },
+      ],
+    },
+    options: {
+      interaction: { mode: 'index', intersect: false },
+      layout: { padding: { top: 4 } },
+      scales: {
+        x: { grid: { display: false }, border: { color: c.axis }, ticks: { maxRotation: 0, autoSkip: true, autoSkipPadding: big ? 14 : 10, font: { size: 10.5 } } },
+        y: { beginAtZero: true, grid: { color: c.grid }, border: { display: false }, ticks: { precision: 0, maxTicksLimit: big ? 6 : 4, font: { size: 10.5 } } },
+      },
+      plugins: { tooltip: { itemSort: (a, b) => b.datasetIndex - a.datasetIndex, callbacks: { label: it => ` ${it.dataset.label}: ${fmt(it.raw, it.datasetIndex === 3 ? 1 : 0)}` } } },
+    },
+  });
+}
+
 function viewStreams(el, frame) {
   const comps = frame.comps;
   if (!S.focus[S.unit] || !comps.some(c => c.id === S.focus[S.unit])) S.focus[S.unit] = comps[0].id;
   const fi = comps.findIndex(c => c.id === S.focus[S.unit]);
   const per = comps.map((_, ci) => stats(collect(frame.days, ALL_SLOTS, ci)));
+  const tot = stats(collect(frame.days, ALL_SLOTS));
   const totAvg = per.reduce((s, p) => s + p.avg, 0) || 1;
   const kindWord = S.unit === 'ALL' ? 'afdeling' : 'stroom';
+  const multi = comps.length > 1;
+  const gran = S.bandGran;
+  const granLbl = { hour: 'per uur van de dag', weekday: 'per weekdag', month: 'per maand' }[gran];
+  const nums = st => `<div class="s-card-nums"><div><span>Gemiddeld</span><b>${fmt(st.avg)}</b></div><div><span>P95</span><b>${fmt(st.p95, 0)}</b></div><div><span>Min</span><b>${fmt(st.min, 0)}</b></div><div><span>Max</span><b>${fmt(st.max, 0)}</b></div></div>`;
+  const tag = c => (S.unit === 'ALL' ? `<span class="tag">${c.streams.length} ${c.streams.length === 1 ? 'stroom' : 'stromen'}</span>` : `<span class="tag ${STORE[c.id].source === 'bestand' ? 'ok' : 'demo'}">${DS[c.id].role === 'basis' ? STORE[c.id].source : DS[c.id].role}</span>`);
 
   el.innerHTML = `
+    <section class="panel band-head stagger">
+      <div class="panel-head" style="margin:0">
+        <div><h2>Bandbreedte per ${kindWord}</h2><div class="desc">Elke ${kindWord} in een eigen grafiek ${granLbl}: het vlak loopt van minimum tot maximum, de stippellijn is P95, de dikke lijn het gemiddelde.${multi ? ` Bovenaan alle ${kindWord === 'stroom' ? 'stromen' : 'afdelingen'} samen als één stroom.` : ''}</div></div>
+        <div class="seg small" role="group" aria-label="Indeling" data-ind="bandgran">${[['hour', 'Per uur'], ['weekday', 'Per weekdag'], ['month', 'Per maand']].map(([v, l]) => `<button class="${gran === v ? 'on' : ''}" data-act="bandgran" data-arg="${v}">${l}</button>`).join('')}</div>
+      </div>
+      <div class="legend" style="margin-top:8px"><span><i class="sw band-sw"></i>Min – max</span><span><i class="ln" style="border-color:var(--ink-2)"></i>P95</span><span><i class="ln solid" style="border-color:var(--ink);border-top-width:3px"></i>Gemiddeld</span></div>
+    </section>
     <div class="stream-cards">
+      ${multi ? `<div class="s-card total stagger">
+        <div class="s-card-head"><span class="s-card-name"><i class="sw" style="background:var(--ink)"></i>Alle ${kindWord === 'stroom' ? 'stromen' : 'afdelingen'} samen</span><span class="tag">${comps.length} ${kindWord === 'stroom' ? 'stromen' : 'afdelingen'}</span></div>
+        ${nums(tot)}
+        <div class="band-box big"><canvas id="band-total" role="img" aria-label="Bandbreedte alle stromen samen"></canvas></div>
+      </div>` : ''}
       ${comps.map((c, ci) => `<button class="s-card stagger ${ci === fi ? 'on' : ''}" data-act="focus" data-arg="${c.id}" aria-pressed="${ci === fi}">
-        <div class="s-card-head"><span class="s-card-name"><i class="sw" style="background:${cssColor(c)}"></i>${esc(c.label)}</span>${S.unit === 'ALL' ? `<span class="tag">${c.streams.length} ${c.streams.length === 1 ? 'stroom' : 'stromen'}</span>` : `<span class="tag ${STORE[c.id].source === 'bestand' ? 'ok' : 'demo'}">${DS[c.id].role === 'basis' ? STORE[c.id].source : DS[c.id].role}</span>`}</div>
-        <div class="s-card-nums"><div><span>Gemiddeld</span><b>${fmt(per[ci].avg)}</b></div><div><span>${mLabel()}</span><b>${fmt(mv(per[ci]))}</b></div><div><span>Max</span><b>${fmt(per[ci].max, 0)}</b></div></div>
-        <div class="spark"><canvas id="sp-${ci}" aria-hidden="true"></canvas></div>
+        <div class="s-card-head"><span class="s-card-name"><i class="sw" style="background:${cssColor(c)}"></i>${esc(c.label)}</span>${tag(c)}</div>
+        ${nums(per[ci])}
+        <div class="band-box"><canvas id="band-${ci}" role="img" aria-label="Bandbreedte ${esc(c.label)}"></canvas></div>
         <div class="share"><span>${fmt(per[ci].avg / totAvg * 100, 0)}% van totaal</span><span class="share-bar"><i style="width:${per[ci].avg / totAvg * 100}%;background:${cssColor(c)}"></i></span></div>
       </button>`).join('')}
     </div>
     <div class="grid g-2">
       <section class="panel stagger">
-        <div class="panel-head"><div><h2>Dagverloop per ${kindWord}</h2><div class="desc">Gemiddelde bezetting per kwartier, niet gestapeld — zo vergelijk je de vorm van elke ${kindWord}.</div></div></div>
-        <div class="chart-box"><canvas id="ch-sday" role="img" aria-label="Dagverloop per ${kindWord}"></canvas></div>
-        ${legendHTML(comps)}
-      </section>
-      <section class="panel stagger">
         <div class="panel-head"><div><h2>Weekpatroon · ${esc(comps[fi].label)}</h2><div class="desc">Gemiddelde bezetting per weekdag en uur. Klik een kaart hierboven om een andere ${kindWord} te kiezen.</div></div></div>
         <div class="table-wrap">${heatmapHTML(frame, fi)}</div>
       </section>
+      <section class="panel stagger">
+        <div class="panel-head">
+          <div><h2>Trend per maand</h2><div class="desc">Gemiddelde bezetting per maand${S.trendMode !== 'stroom' ? '; de zwarte lijn is alles samen, het vlak eronder de bandbreedte P10–P95 van het totaal' : ''}.</div></div>
+          <div class="seg small" role="group" aria-label="Trendweergave" data-ind="trendmode">${[['stroom', 'Per ' + kindWord], ['samen', 'Samen'], ['both', 'Beide']].map(([v, l]) => `<button class="${S.trendMode === v ? 'on' : ''}" data-act="trendmode" data-arg="${v}">${l}</button>`).join('')}</div>
+        </div>
+        <div class="chart-box"><canvas id="ch-strend" role="img" aria-label="Trend per maand"></canvas></div>
+        ${legendHTML(S.trendMode === 'samen' ? [] : comps, S.trendMode === 'stroom' ? '' : `<span><i class="ln solid" style="border-color:var(--ink);border-top-width:3px"></i>Alles samen</span><span><i class="sw band-sw" style="background:color-mix(in srgb, var(--ink) 12%, transparent)"></i>P10–P95 totaal</span>`)}
+      </section>
     </div>
-    <section class="panel stagger" style="margin-top:16px">
-      <div class="panel-head"><div><h2>Trend per maand</h2><div class="desc">Gemiddelde bezetting per maand per ${kindWord}.</div></div></div>
-      <div class="chart-box short"><canvas id="ch-strend" role="img" aria-label="Trend per maand"></canvas></div>
-      ${legendHTML(comps)}
-    </section>
     <section class="panel stagger" style="margin-top:16px">
       <div class="panel-head"><div><h2>Kerncijfers per ${kindWord} en dienst</h2><div class="desc">Aantal gelijktijdig aanwezige patiënten, berekend over alle kwartieren in de selectie.</div></div></div>
       <div class="table-wrap">${streamTable(frame)}</div>
     </section>`;
 
-  // sparklines
-  comps.forEach((c, ci) => {
-    const m = [], lo = [], hi = [];
-    for (let h = 0; h < 24; h++) { const s = stats(collect(frame.days, [[0, h * 4], [0, h * 4 + 1], [0, h * 4 + 2], [0, h * 4 + 3]], ci)); m.push(s.avg); lo.push(s.p10); hi.push(s.p90); }
-    sparkline($('#sp-' + ci), m, lo, hi, colorOf(c));
-  });
-  const prof = dayProfile(frame);
+  if (multi) bandChart($('#band-total'), bandSeries(frame, 'total', gran), C().ink, { big: true });
+  comps.forEach((c, ci) => bandChart($('#band-' + ci), bandSeries(frame, ci, gran), colorOf(c)));
+
   const cc = C();
-  mkChart($('#ch-sday'), {
-    type: 'line',
-    data: { labels: Array.from({ length: 96 }, (_, q) => q), datasets: comps.map((c, ci) => ({ label: c.label, data: prof.parts[ci], borderColor: colorOf(c), borderWidth: ci === fi ? 2.5 : 2, pointRadius: 0, tension: 0.3 })) },
-    options: {
-      interaction: { mode: 'index', intersect: false },
-      scales: { x: { grid: { display: false }, border: { color: cc.axis }, ticks: { autoSkip: false, maxRotation: 0, callback: tickEveryTwoHours } }, y: { beginAtZero: true, grid: { color: cc.grid }, border: { display: false } } },
-      plugins: { tooltip: { callbacks: { title: it => slotLabel(it[0].dataIndex), label: it => ` ${it.dataset.label}: ${fmt(it.raw)}` } } },
-    },
-  });
   const months = monthly(frame);
+  const ds = [];
+  if (S.trendMode !== 'samen') comps.forEach((c, ci) => ds.push({ label: c.label, data: months.map(m => m.parts[ci]), borderColor: colorOf(c), backgroundColor: colorOf(c), borderWidth: S.trendMode === 'both' ? 1.5 : 2, pointRadius: 0, pointHoverRadius: 4, tension: 0.25, fill: false }));
+  if (S.trendMode !== 'stroom') {
+    ds.push({ label: 'P95 totaal', data: months.map(m => m.tot.p95), borderWidth: 0, pointRadius: 0, fill: false, tension: 0.25 });
+    ds.push({ label: 'P10 totaal', data: months.map(m => m.tot.p10), borderWidth: 0, pointRadius: 0, fill: { target: '-1' }, backgroundColor: alpha(cc.ink, 0.10), tension: 0.25 });
+    ds.push({ label: 'Alles samen', data: months.map(m => m.tot.avg), borderColor: cc.ink, backgroundColor: cc.ink, borderWidth: 3, pointRadius: 0, pointHoverRadius: 4, tension: 0.25, fill: false });
+  }
   mkChart($('#ch-strend'), {
     type: 'line',
-    data: { labels: months.map(m => m.label), datasets: comps.map((c, ci) => ({ label: c.label, data: months.map(m => m.parts[ci]), borderColor: colorOf(c), backgroundColor: colorOf(c), borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, tension: 0.25 })) },
+    data: { labels: months.map(m => m.label), datasets: ds },
     options: {
       interaction: { mode: 'index', intersect: false },
       scales: { x: { grid: { display: false }, border: { color: cc.axis }, ticks: { maxRotation: 0, autoSkipPadding: 10 } }, y: { beginAtZero: true, grid: { color: cc.grid }, border: { display: false } } },
-      plugins: { tooltip: { callbacks: { label: it => ` ${it.dataset.label}: ${fmt(it.raw)} gem.` } } },
+      plugins: { tooltip: { callbacks: { label: it => ` ${it.dataset.label}: ${fmt(it.raw)}` } } },
     },
   });
 }
@@ -590,157 +641,7 @@ function bedTable(frame, beds) {
   return `<table class="data" data-name="Bedden"><thead><tr><th>Weekdag</th><th class="num">Gemiddeld</th><th class="num">P95</th><th class="num">Max</th><th class="num">Tijd vol</th><th class="num">Advies (${S.bedTarget}%)</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
-/* ═════════════ 4. VERPLEEGKUNDIGE INZET ═════════════ */
-// Benodigde diensten per weekdag en dienst = ⌈ bezetting (norm) ÷ ratio ⌉.
-function staffCells(frame, unitId) {
-  const cfg = cfgOf(unitId);
-  const saved = S.weekMode; if (frame.__forceTypical) S.weekMode = 'typical';
-  const cells = weekCells(frame);
-  S.weekMode = saved;
-  return cells.map(x => {
-    const r = cfg.ratio[x.k], plan = cfg.plan[x.wd][x.k];
-    const need = needOf(x.hi, r);
-    return { ...x, ratio: r, plan, need, needLo: needOf(x.tot && x.tot.avg, r), needHi: needOf(x.tot && x.tot.max, r) };
-  });
-}
-function staffSummary(frame, unitId) {
-  const f = { ...frame, __forceTypical: true };
-  const cells = staffCells(f, unitId);
-  const need = cells.reduce((s, x) => s + (x.need || 0), 0), plan = cells.reduce((s, x) => s + x.plan, 0);
-  const hrs = k => shiftHours(k);
-  const needH = cells.reduce((s, x) => s + (x.need || 0) * hrs(x.k), 0), planH = cells.reduce((s, x) => s + x.plan * hrs(x.k), 0);
-  return { cells, need, plan, fteNeed: needH / S.fteHours, ftePlan: planH / S.fteHours };
-}
-
-function viewStaff(el, frame) {
-  if (S.unit === 'ALL') return viewStaffAll(el);
-  const cfg = cfgOf(S.unit);
-  const cells = staffCells(frame, S.unit);
-  const sum = staffSummary(frame, S.unit);
-  const short = cells.filter(x => x.need != null && x.need > x.plan);
-  const c = C();
-
-  el.innerHTML = `
-    <section class="panel stagger" style="margin-bottom:16px">
-      <div class="panel-head"><div><h2>Diensten en normen</h2><div class="desc">Benodigd = bezetting (${mLabel()}) gedeeld door het aantal patiënten per verpleegkundige, naar boven afgerond.</div></div></div>
-      <div class="settings">
-        ${SHIFT_KEYS.map(k => `<div class="set">
-          <label>${SHIFT_INFO[k].label}dienst (${k})</label>
-          <div class="set-row"><input type="time" step="900" id="in-shift-${k}-start" data-path="shift.${k}.start" value="${hhmm(SHIFT_INFO[k].start)}" aria-label="Start ${SHIFT_INFO[k].label}"> – <input type="time" step="900" id="in-shift-${k}-end" data-path="shift.${k}.end" value="${hhmm(SHIFT_INFO[k].end)}" aria-label="Einde ${SHIFT_INFO[k].label}"></div>
-          <div class="set-row"><span class="hint">Patiënten per vpk</span>${stepper(`ratio.${k}`, cfg.ratio[k], `Ratio ${SHIFT_INFO[k].label}`)}</div>
-        </div>`).join('')}
-        <div class="set"><label for="in-fte">Contracturen per FTE</label><input type="number" id="in-fte" data-path="fteHours" value="${S.fteHours}" min="1" style="width:90px"><span class="hint">Voor de omrekening naar FTE.</span></div>
-      </div>
-    </section>
-    <div class="kpis">
-      ${kpi('Diensten per week nodig', kn(sum.need, 0), '', `typische week, norm ${mLabel()}`)}
-      ${kpi('Diensten per week ingepland', kn(sum.plan, 0), '', 'volgens het rooster hieronder', statusPill(sum.need > sum.plan ? 'crit' : 'good', sum.need > sum.plan ? `${sum.need - sum.plan} tekort` : sum.need === sum.plan ? 'Sluitend' : `${sum.plan - sum.need} overschot`))}
-      ${kpi('FTE nodig', kn(sum.fteNeed), 'FTE', `bij ${S.fteHours} uur per FTE`)}
-      ${kpi('FTE ingepland', kn(sum.ftePlan), 'FTE', `verschil ${sum.ftePlan - sum.fteNeed >= 0 ? '+' : ''}${fmt(sum.ftePlan - sum.fteNeed)} FTE`)}
-    </div>
-    <div class="grid g-2">
-      <section class="panel stagger">
-        <div class="panel-head">
-          <div><h2>Verpleegkundigen (nodig − ingepland)</h2><div class="desc">Boven de nul: tekort. Onder de nul: meer ingepland dan nodig. Streepje: van nodig bij gemiddelde tot nodig bij maximum.</div></div>
-          ${weekModeControl(frame)}
-        </div>
-        <div class="chart-box"><canvas id="ch-staffdiff" role="img" aria-label="Verschil nodig en ingepland"></canvas></div>
-        <div class="legend"><span><i class="sw" style="background:var(--div-pos)"></i>Tekort</span><span><i class="sw" style="background:var(--div-neg)"></i>Overschot</span><span class="sep"></span><span><i class="wh"></i>Bandbreedte</span><span class="sep"></span><span class="key"><b>D</b> Dag <b>A</b> Avond <b>N</b> Nacht</span></div>
-      </section>
-      <section class="panel stagger">
-        <div class="panel-head"><div><h2>Nodig en ingepland per dienst</h2><div class="desc">Benodigde verpleegkundigen (staaf) tegen het rooster (lijn).</div></div></div>
-        <div class="chart-box"><canvas id="ch-staffabs" role="img" aria-label="Nodig en ingepland"></canvas></div>
-        <div class="legend"><span><i class="sw" style="background:var(--s1)"></i>Nodig (${mLabel()})</span><span><i class="ln solid" style="border-color:var(--ink)"></i>Ingepland</span></div>
-      </section>
-    </div>
-    <section class="panel stagger" style="margin-top:16px">
-      <div class="panel-head"><div><h2>Rooster</h2><div class="desc">Pas het aantal ingeplande verpleegkundigen per dag en dienst aan. ${short.length ? `<b style="color:var(--crit)">${short.length} diensten</b> komen tekort.` : 'Geen tekorten in de huidige selectie.'}</div></div></div>
-      <div class="table-wrap">${rosterTable(cells, cfg)}</div>
-    </section>`;
-
-  const labels = cells.map(shiftTick);
-  const diffs = cells.map(x => (x.need == null ? null : x.need - x.plan));
-  const lim = Math.max(2, ...cells.map(x => Math.abs((x.needHi || 0) - x.plan)), ...cells.map(x => Math.abs((x.needLo || 0) - x.plan)));
-  mkChart($('#ch-staffdiff'), {
-    type: 'bar',
-    data: { labels, datasets: [{ label: 'Nodig − ingepland', data: diffs.map(d => (d === 0 ? 0.08 : d)), backgroundColor: diffs.map(d => (d > 0 ? c.divPos : d < 0 ? c.divNeg : c.axis)), borderRadius: 3, borderSkipped: false, barPercentage: 0.6, categoryPercentage: 0.9 }] },
-    options: {
-      scales: { x: { grid: { display: false }, border: { display: false }, ticks: { maxRotation: 0, autoSkip: false } }, y: { min: -lim - 1, max: lim + 1, grid: { color: ctx => (ctx.tick.value === 0 ? c.axis : c.grid), lineWidth: ctx => (ctx.tick.value === 0 ? 1.5 : 1) }, border: { display: false }, ticks: { precision: 0 } } },
-      plugins: {
-        whiskers: { data: cells.map(x => (x.needLo == null ? null : { lo: x.needLo - x.plan, hi: x.needHi - x.plan })) },
-        dayBands: { size: 3 },
-        tooltip: { callbacks: { title: it => `${cells[it[0].dataIndex].title} (${shiftTimes(cells[it[0].dataIndex].k)})`, label: it => { const x = cells[it.dataIndex]; return [` Nodig ${x.need} · ingepland ${x.plan}`, ` ${x.need > x.plan ? `${x.need - x.plan} tekort` : x.need < x.plan ? `${x.plan - x.need} overschot` : 'sluitend'}`, ` Patiënten ${mLabel()}: ${fmt(x.hi)} (ratio 1:${fmt(x.ratio, 1)})`]; } } },
-      },
-    },
-  });
-  mkChart($('#ch-staffabs'), {
-    data: {
-      labels,
-      datasets: [
-        { type: 'bar', label: 'Nodig', data: cells.map(x => x.need), backgroundColor: c.series[0], borderRadius: { topLeft: 3, topRight: 3 }, borderSkipped: 'bottom', barPercentage: 0.7, categoryPercentage: 0.9, order: 2 },
-        { type: 'line', label: 'Ingepland', data: cells.map(x => x.plan), borderColor: c.ink, backgroundColor: c.ink, borderWidth: 2, pointRadius: 3, pointHoverRadius: 5, stepped: 'middle', order: 1 },
-      ],
-    },
-    options: {
-      interaction: { mode: 'index', intersect: false },
-      scales: { ...baseScales({ yTitle: 'Verpleegkundigen' }) },
-      plugins: { dayBands: { size: 3 }, tooltip: { callbacks: { title: it => cells[it[0].dataIndex].title, label: it => ` ${it.dataset.label}: ${it.raw}` } } },
-    },
-  });
-}
-
-function rosterTable(cells, cfg) {
-  const get = (wd, k) => cells.find(x => x.wd === wd && x.k === k);
-  const dayHead = cells.filter(x => x.k === 'D').map(x => x.dayLabel);
-  return `<table class="data" data-name="Rooster"><thead><tr><th>Dienst</th><th></th>${dayHead.map(d => `<th class="num">${d}</th>`).join('')}<th class="num">Alle dagen</th></tr></thead><tbody>
-    ${SHIFT_KEYS.map(k => `
-      <tr><td rowspan="3"><span class="cell-name">${SHIFT_INFO[k].label}</span><span class="mono" style="color:var(--muted);font-size:11.5px">${shiftTimes(k)} · 1:${fmt(cfg.ratio[k], 1)}</span></td>
-        <td style="color:var(--muted);font-size:12px">Patiënten (${mLabel()})</td>${WD_SHORT.map((_, wd) => `<td class="num">${fmt(get(wd, k).hi)}</td>`).join('')}<td></td></tr>
-      <tr><td style="color:var(--muted);font-size:12px">Ingepland</td>${WD_SHORT.map((_, wd) => `<td class="num">${stepper(`plan.${wd}.${k}`, cfg.plan[wd][k], `Ingepland ${WD_LONG[wd]} ${SHIFT_INFO[k].label}`)}</td>`).join('')}<td class="num">${stepper(`plan.all.${k}`, cfg.plan[0][k], `Ingepland alle dagen ${SHIFT_INFO[k].label}`)}</td></tr>
-      <tr><td style="color:var(--muted);font-size:12px">Nodig</td>${WD_SHORT.map((_, wd) => { const x = get(wd, k); const d = x.need - x.plan; return `<td class="num"><b>${x.need ?? '—'}</b> ${x.need == null ? '' : `<span class="diff ${d > 0 ? 'pos' : d < 0 ? 'neg' : 'zero'}">${d > 0 ? '+' : ''}${d}</span>`}</td>`; }).join('')}<td></td></tr>`).join('')}
-  </tbody></table>`;
-}
-
-function viewStaffAll(el) {
-  const rows = unitsOf().map((u, i) => {
-    const comps = compsFor(u.id); if (!comps.length) return { u, i, empty: true };
-    const fr = buildFrame(comps, S.filter); if (!fr || !fr.days.length) return { u, i, empty: true };
-    const sum = staffSummary(fr, u.id);
-    const per = SHIFT_KEYS.map(k => ({ need: sum.cells.filter(x => x.k === k).reduce((s, x) => s + x.need, 0), plan: sum.cells.filter(x => x.k === k).reduce((s, x) => s + x.plan, 0) }));
-    return { u, i, sum, per };
-  });
-  const ok = rows.filter(r => !r.empty);
-  const tot = ok.reduce((a, r) => ({ need: a.need + r.sum.need, plan: a.plan + r.sum.plan, fn: a.fn + r.sum.fteNeed, fp: a.fp + r.sum.ftePlan }), { need: 0, plan: 0, fn: 0, fp: 0 });
-  el.innerHTML = `
-    <div class="kpis">
-      ${kpi('Diensten per week nodig', kn(tot.need, 0), '', `alle afdelingen, norm ${mLabel()}`)}
-      ${kpi('Diensten per week ingepland', kn(tot.plan, 0), '', '', statusPill(tot.need > tot.plan ? 'crit' : 'good', tot.need > tot.plan ? `${tot.need - tot.plan} tekort` : 'Sluitend of ruimte'))}
-      ${kpi('FTE nodig', kn(tot.fn), 'FTE', `bij ${S.fteHours} uur per FTE`)}
-      ${kpi('FTE ingepland', kn(tot.fp), 'FTE', `verschil ${tot.fp - tot.fn >= 0 ? '+' : ''}${fmt(tot.fp - tot.fn)} FTE`)}
-    </div>
-    <section class="panel stagger">
-      <div class="panel-head"><div><h2>Diensten per week, per afdeling</h2><div class="desc">Elke afdeling rekent met haar eigen ratio's en rooster (instellen in het tabblad van de afdeling).</div></div></div>
-      <div class="chart-box short"><canvas id="ch-staffall" role="img" aria-label="Diensten per afdeling"></canvas></div>
-      <div class="legend"><span><i class="sw" style="background:var(--s1)"></i>Nodig</span><span><i class="sw" style="background:var(--axis)"></i>Ingepland</span></div>
-      <div class="table-wrap" style="margin-top:12px"><table class="data" data-name="Inzet per afdeling"><thead><tr><th>Afdeling</th>${SHIFT_KEYS.map(k => `<th class="num">${SHIFT_INFO[k].label} nodig / ingepland</th>`).join('')}<th class="num">Totaal</th><th class="num">FTE nodig</th><th class="num">FTE ingepland</th></tr></thead><tbody>
-        ${rows.map(r => r.empty ? `<tr><td><span class="cell-name"><i class="sw" style="background:var(--s${r.i + 1})"></i>${esc(r.u.label)}</span></td><td colspan="6" style="color:var(--muted)">Geen data geladen</td></tr>` : `<tr><td><span class="cell-name"><i class="sw" style="background:var(--s${r.i + 1})"></i>${esc(r.u.label)}</span></td>
-          ${r.per.map(p => { const d = p.need - p.plan; return `<td class="num">${p.need} / ${p.plan} <span class="diff ${d > 0 ? 'pos' : d < 0 ? 'neg' : 'zero'}">${d > 0 ? '+' : ''}${d}</span></td>`; }).join('')}
-          <td class="num"><b>${r.sum.need}</b> / ${r.sum.plan}</td><td class="num">${fmt(r.sum.fteNeed)}</td><td class="num">${fmt(r.sum.ftePlan)}</td></tr>`).join('')}
-      </tbody></table></div>
-    </section>`;
-  const c = C();
-  mkChart($('#ch-staffall'), {
-    type: 'bar',
-    data: {
-      labels: ok.map(r => r.u.label),
-      datasets: [
-        { label: 'Nodig', data: ok.map(r => r.sum.need), backgroundColor: c.series[0], borderRadius: 3, barPercentage: 0.7, categoryPercentage: 0.6 },
-        { label: 'Ingepland', data: ok.map(r => r.sum.plan), backgroundColor: c.axis, borderRadius: 3, barPercentage: 0.7, categoryPercentage: 0.6 },
-      ],
-    },
-    options: { indexAxis: 'y', scales: { x: { beginAtZero: true, grid: { color: c.grid }, border: { display: false } }, y: { grid: { display: false }, border: { color: c.axis } } }, plugins: { tooltip: { callbacks: { label: it => ` ${it.dataset.label}: ${it.raw} diensten per week` } } } },
-  });
-}
+/* 4. VERPLEEGKUNDIGE INZET: zie staff.js */
 
 /* ═════════════ 5. PROGNOSE ═════════════ */
 function viewForecast(el, frame) {
@@ -752,7 +653,7 @@ function viewForecast(el, frame) {
   }
   const isAll = S.unit === 'ALL';
   const cfg = isAll ? null : cfgOf(S.unit);
-  const shiftFc = isAll ? null : Object.fromEntries(SHIFT_KEYS.map(k => [k, forecast(frame, shiftSlots(k), S.refusal)]));
+  const shiftFc = isAll ? null : cfg.shifts.map(sh => forecast(frame, slotsOfShift(sh), S.refusal));
   const peak = fc.weeks.reduce((a, b) => (b.val > a.val ? b : a));
   const overWeeks = fc.weeks.filter(w => w.val > beds).length;
   const vac = fc.weeks.filter(w => w.vacation), nonVac = fc.weeks.filter(w => !w.vacation);
@@ -806,16 +707,15 @@ function viewForecast(el, frame) {
 }
 
 function forecastStrip(shiftFc, cfg) {
-  const planOf = k => Math.round(mean(cfg.plan.map(p => p[k])));
   return `<div class="strip" role="table" aria-label="Verpleegkundigen per week">
     <div></div>${Array.from({ length: 52 }, (_, i) => `<div class="sh">${(i + 1) % 4 === 1 ? i + 1 : ''}</div>`).join('')}
-    ${SHIFT_KEYS.map(k => {
-      const f = shiftFc[k]; const plan = planOf(k);
-      return `<div class="sl">${SHIFT_INFO[k].label}</div>` + (f ? f.weeks.map(w => {
-        const need = needOf(w.val, cfg.ratio[k]); const d = need - plan;
+    ${cfg.shifts.map((sh, si) => {
+      const f = shiftFc[si]; const plan = Math.round(mean(sh.plan));
+      return `<div class="sl" title="${esc(sh.label)} ${shiftSpan(sh)} · ${fmtRatio(sh.ratio)}">${esc(sh.label)}</div>` + (f ? f.weeks.map(w => {
+        const need = Math.max(cfg.minStaff, needOf(w.val, sh.ratio)); const d = need - plan;
         const bg = d > 0 ? `color-mix(in srgb, var(--div-pos) ${Math.min(100, 35 + d * 25)}%, var(--surface))` : d < 0 ? `color-mix(in srgb, var(--div-neg) ${Math.min(80, 20 + -d * 18)}%, var(--surface))` : 'var(--surface-2)';
-        const fg = d > 0 && d >= 2 ? '#fff' : 'var(--ink)';
-        return `<div class="sc" style="background:${bg};color:${fg}" title="Week ${w.week} · ${SHIFT_INFO[k].label}: ${need} nodig, ${plan} ingepland (prognose ${fmt(w.val)} pat.)">${need}</div>`;
+        const fg = d >= 2 ? '#fff' : 'var(--ink)';
+        return `<div class="sc" style="background:${bg};color:${fg}" title="Week ${w.week} · ${esc(sh.label)}: ${need} nodig, ${plan} ingepland (prognose ${fmt(w.val)} pat., norm ${fmtRatio(sh.ratio)})">${need}</div>`;
       }).join('') : Array.from({ length: 52 }, () => '<div class="sc">—</div>').join(''));
     }).join('')}
   </div>`;

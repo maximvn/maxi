@@ -28,12 +28,17 @@ die terug op synthetische reeksen.
    losse analyses); het dashboard waarschuwt als een keuze dubbel telt. Weergaven:
    - **Overzicht** — KPI's, bezetting per dienst (D/A/N) gestapeld per stroom met spreiding
      en open-beddenlijn (typische week of een specifieke week), dagverloop, maandverloop, signalen.
-   - **Stromen** — elke stroom apart: kaarten met sparkline, dagverloop per stroom,
-     weekpatroon-heatmap, maandtrend en kerncijfers per dienst.
+   - **Stromen** — elke stroom in een eigen bandbreedte-grafiek (min–max, P95, gemiddeld) per
+     uur, weekdag of maand, plus alle stromen samen als één stroom; weekpatroon-heatmap,
+     maandtrend per stroom / samen / beide, en kerncijfers per dienst.
    - **Bedden** — bedden instellen, advies voor 90/95/99% dekking, verdeling van de
      bezetting, kans op een volle afdeling per weekdag × uur.
-   - **Verpleegkundige inzet** — diensttijden en ratio per dienst, bewerkbaar rooster per
-     dag en dienst, nodig − ingepland (zoals de bestaande grafiek), FTE-omrekening.
+   - **Verpleegkundige inzet** — diensten zelf beheren (vroeg/laat/nacht plus tussendiensten
+     toevoegen of verwijderen), per dienst tijden en norm (1 vpk op 1, 1,5, 2, 2,5, 3, 4 of
+     eigen waarde), minimum per dienst en rooster per weekdag. Het advies toetst per kwartier
+     vraag (bezetting volgens de norm) tegen capaciteit (vpk × norm) en stelt per dienst en
+     dag bij; met één klik over te nemen. Dekkingsgrafiek met dienstbalken, advies − ingepland
+     en FTE.
    - **Prognose** — volgend jaar per week (percentiel van dagmaxima, trend × seizoensindex,
      zelfde methode als het rekenmodel), plus benodigde verpleegkundigen per week.
    - **Instroom** en **JDT werkdruk** (SEH en Acute Poort) — aankomsten per uur/weekdag/dienst
@@ -42,7 +47,8 @@ die terug op synthetische reeksen.
 Filters (stromen aan/uit, jaar, seizoen/kwartaal, werkdagen/weekend, norm: Gem./P95/µ+2σ/Max)
 gelden voor alle weergaven. Instellingen (bedden, ratio's, rooster, diensttijden, stroomkeuze) worden in de browser onthouden.
 
-Beweging is functioneel en kort: grafieken morphen naar de nieuwe stand bij een filter,
+Beweging: lijnen tekenen zichzelf bij binnenkomen, staven groeien gestaffeld, "Afspelen"
+loopt week na week door de historie (met tijdlijn-schuif), grafieken morphen naar de nieuwe stand bij een filter,
 een indicator schuift onder tabs en knoppen, KPI-getallen tellen naar hun nieuwe waarde en
 panelen komen gestaffeld binnen bij een andere weergave. Bij `prefers-reduced-motion` blijft
 alleen een korte fade over.

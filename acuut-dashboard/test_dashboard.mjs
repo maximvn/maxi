@@ -68,7 +68,7 @@ async function run(theme, width) {
     await page.waitForTimeout(1200)
     await page.screenshot({ path: `${out}/04-IC-week-${tag}.png`, fullPage: true })
     await page.click('[data-act="view"][data-arg="vpk"]')
-    await page.click('[data-act="step"][data-path="plan.all.D"][data-arg="1"]')
+    await page.click('[data-act="step"][data-path="sh.0.plan.all"][data-arg="1"]')
     await page.waitForTimeout(300)
     // stromenkiezer: triage erbij → waarschuwing dubbel tellen
     await page.click('[data-act="unit"][data-arg="SEH"]')
@@ -84,6 +84,26 @@ async function run(theme, width) {
     await page.screenshot({ path: `${out}/04c-midmorph-${tag}.png` })
     await page.waitForTimeout(900)
     await page.screenshot({ path: `${out}/04d-SEH-triage-${tag}.png`, fullPage: true })
+    // verpleegkundige inzet: tussendienst toevoegen, norm 1:2 voor de avond, advies overnemen
+    await page.click('[data-act="unit"][data-arg="IC"]')
+    await page.click('[data-act="view"][data-arg="vpk"]')
+    await page.click('[data-act="shift-add"][data-arg="tussen"]')
+    await page.click('[data-act="ratio"][data-path="sh.1.ratio"][data-arg="2"]')
+    await page.waitForTimeout(1200)
+    await page.screenshot({ path: `${out}/06-vpk-tussendienst-${tag}.png`, fullPage: true })
+    if (await page.$('[data-act="advice-apply"]')) await page.click('[data-act="advice-apply"]')
+    // stromen: bandbreedte per weekdag + trend samen
+    await page.click('[data-act="view"][data-arg="stromen"]')
+    await page.click('[data-act="bandgran"][data-arg="weekday"]')
+    await page.click('[data-act="trendmode"][data-arg="samen"]')
+    await page.waitForTimeout(1200)
+    await page.screenshot({ path: `${out}/07-stromen-weekdag-${tag}.png`, fullPage: true })
+    // afspelen
+    await page.click('[data-act="view"][data-arg="overzicht"]')
+    await page.click('[data-act="play"]')
+    await page.waitForTimeout(2600)
+    await page.screenshot({ path: `${out}/08-afspelen-${tag}.png` })
+    await page.click('[data-act="play"]')
     // Nieuwbouw
     await page.click('[data-act="go"][data-arg="start"]')
     await page.click('[data-act="mode"][data-arg="nieuw"]')

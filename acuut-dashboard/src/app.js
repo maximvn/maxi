@@ -23,6 +23,10 @@ const S = {
   inSel: null,           // gekozen instroom-sets
   jdtVpk: null,          // vpk per uur (aanpasbaar)
   jdtYear: 'all',
+  staffDay: 0,           // weekdag in de dekkingsgrafiek
+  bandGran: 'hour',      // bandbreedte per uur / weekdag / maand
+  trendMode: 'both',     // trend per maand: per stroom, samen of beide
+  playing: false,        // tijdlijn afspelen in Overzicht
   pickerOpen: false,
 };
 window.S = S;
@@ -63,11 +67,17 @@ function loadSettings() {
 function unitsOf() { return S.mode ? MODES[S.mode].units : []; }
 function unitDef(id) { return unitsOf().find(u => u.id === id); }
 function cfgOf(id) {
-  if (!S.cfg[id]) {
-    const u = unitDef(id);
-    S.cfg[id] = { beds: u.beds, ratio: { ...u.ratio }, plan: WD_SHORT.map(() => ({ ...u.plan })) };
+  const u = unitDef(id);
+  if (!S.cfg[id]) S.cfg[id] = { beds: u.beds };
+  const c = S.cfg[id];
+  // Diensten per afdeling: elk met tijden, norm (patiënten per vpk) en rooster per weekdag.
+  if (!c.shifts) {
+    const ratio = c.ratio || u.ratio, plan = c.plan || WD_SHORT.map(() => u.plan);
+    c.shifts = SHIFT_KEYS.map(k => ({ id: k, label: SHIFT_INFO[k].label, start: SHIFT_INFO[k].start, end: SHIFT_INFO[k].end, ratio: ratio[k], plan: plan.map(p => p[k]) }));
+    delete c.ratio; delete c.plan;
   }
-  return S.cfg[id];
+  if (c.minStaff == null) c.minStaff = 1;
+  return c;
 }
 // Alle bezettingsbestanden die in deze afdeling als stroom te kiezen zijn.
 function poolOf(u) {
@@ -394,8 +404,8 @@ document.addEventListener('click', e => {
     },
     unload: () => { removeDataset(arg); render(); },
     'drop-unmatched': () => { S.unmatched.splice(+arg, 1); render(); },
-    unit: () => { S.unit = arg; S.pickerOpen = false; if (!availableViews().some(v => v.id === S.view)) S.view = 'overzicht'; render(); },
-    view: () => { S.view = arg; render(); },
+    unit: () => { S.unit = arg; S.pickerOpen = false; stopPlay(); if (!availableViews().some(v => v.id === S.view)) S.view = 'overzicht'; render(); },
+    view: () => { S.view = arg; stopPlay(); render(); },
     toggle: () => { S.off[arg] = !S.off[arg]; render(); },
     unsel: () => togglePick(arg, false),
     picker: () => { S.pickerOpen = !S.pickerOpen; renderPicker(); },
@@ -403,7 +413,7 @@ document.addEventListener('click', e => {
     'pick-default': () => { delete S.sel[S.unit]; saveSettings(); render(); },
     metric: () => { S.metric = arg; saveSettings(); render(); },
     days: () => { S.filter.days = arg; render(); },
-    weekmode: () => { S.weekMode = arg; render(); },
+    weekmode: () => { S.weekMode = arg; if (arg === 'typical') stopPlay(); render(); },
     weekstep: () => { stepWeek(+arg); },
     focus: () => { S.focus[S.unit] = arg; render(); },
     target: () => { S.bedTarget = +arg; render(); },
@@ -411,6 +421,14 @@ document.addEventListener('click', e => {
     insel: () => { const cur = new Set(S.inSel || []); cur.has(arg) ? cur.delete(arg) : cur.add(arg); if (cur.size) S.inSel = [...cur]; render(); },
     jdtyear: () => { S.jdtYear = arg; render(); },
     step: () => { stepValue(t.dataset.path, +arg); },
+    ratio: () => setValue(t.dataset.path, arg),
+    'shift-add': () => addShift(arg),
+    'shift-del': () => { const c = cfgOf(S.unit); if (c.shifts.length > 1) { const [x] = c.shifts.splice(+arg, 1); saveSettings(); render(); toast(`${x.label} verwijderd.`); } },
+    'advice-apply': applyAdvice,
+    staffday: () => { S.staffDay = +arg; render(); },
+    play: togglePlay,
+    bandgran: () => { S.bandGran = arg; render(); },
+    trendmode: () => { S.trendMode = arg; render(); },
     theme: toggleTheme,
     export: exportTables,
   };
@@ -435,6 +453,12 @@ document.addEventListener('change', e => {
 });
 document.addEventListener('input', e => {
   const t = e.target;
+  if (t.id === 'week-range') {
+    const f = currentFrame(); if (!f) return;
+    S.weekSel = weekList(f)[+t.value]; stopPlay();
+    cancelAnimationFrame(t.$raf); t.$raf = requestAnimationFrame(() => { const y = window.scrollY; render(); window.scrollTo({ top: y }); const r = $('#week-range'); if (r) r.focus({ preventScroll: true }); });
+    return;
+  }
   if (t.type === 'range' && t.dataset.path) {
     const out = document.getElementById(t.dataset.out); if (out) out.value = t.value;
   }
@@ -454,25 +478,31 @@ document.addEventListener('drop', e => {
   readFiles(e.dataTransfer.files, tile ? tile.dataset.drop : undefined);
 });
 
-// Paden als "beds", "ratio.D", "plan.3.N", "shift.D.start", "fteHours", "jdtvpk.7".
+// Paden als "beds", "minStaff", "sh.2.ratio", "sh.0.plan.3", "sh.1.start", "fteHours", "jdtvpk.7".
 function setValue(path, raw) {
   const parts = path.split('.');
-  if (parts[0] === 'shift') {
-    const [hh, mm] = raw.split(':').map(Number); if (isNaN(hh) || isNaN(mm)) return;
-    SHIFT_INFO[parts[1]][parts[2]] = Math.round((hh * 60 + mm) / 15) * 15 % 1440;
-    invalidateFrames();
-  } else if (parts[0] === 'fteHours') S.fteHours = Math.max(1, +String(raw).replace(',', '.') || 36);
+  if (parts[0] === 'fteHours') S.fteHours = Math.max(1, +String(raw).replace(',', '.') || 36);
   else if (parts[0] === 'jdtvpk') {
     const v = Math.max(0, Math.round(+raw || 0));
     if (parts[1] === 'all') S.jdtVpk = S.jdtVpk.map(x => Math.max(0, x + v)); else S.jdtVpk[+parts[1]] = v;
   } else {
     const c = cfgOf(S.unit);
-    const v = Math.max(parts[0] === 'ratio' ? 0.5 : 0, +String(raw).replace(',', '.') || 0);
-    if (parts[0] === 'beds') c.beds = Math.max(1, Math.round(v));
-    else if (parts[0] === 'ratio') c.ratio[parts[1]] = v;
-    else if (parts[0] === 'plan') {
-      if (parts[1] === 'all') c.plan.forEach(p => { p[parts[2]] = Math.round(v); });
-      else c.plan[+parts[1]][parts[2]] = Math.round(v);
+    const num = () => +String(raw).replace(',', '.');
+    if (parts[0] === 'beds') c.beds = Math.max(1, Math.round(num() || 1));
+    else if (parts[0] === 'minStaff') c.minStaff = Math.max(0, Math.round(num() || 0));
+    else if (parts[0] === 'sh') {
+      const sh = c.shifts[+parts[1]]; if (!sh) return;
+      const f = parts[2];
+      if (f === 'label') sh.label = String(raw).trim().slice(0, 24) || 'Dienst';
+      else if (f === 'ratio') sh.ratio = Math.max(0.5, Math.round((num() || 0.5) * 10) / 10);
+      else if (f === 'start' || f === 'end') {
+        const [hh, mm] = String(raw).split(':').map(Number); if (isNaN(hh) || isNaN(mm)) return;
+        sh[f] = Math.round((hh * 60 + mm) / 15) * 15 % 1440;
+        if (SHIFT_INFO[sh.id]) SHIFT_INFO[sh.id][f] = sh[f];
+      } else if (f === 'plan') {
+        const v = Math.max(0, Math.round(num() || 0));
+        if (parts[3] === 'all') sh.plan = sh.plan.map(() => v); else sh.plan[+parts[3]] = v;
+      }
     }
   }
   saveSettings();
@@ -480,17 +510,55 @@ function setValue(path, raw) {
 }
 function stepValue(path, delta) {
   const parts = path.split('.');
-  let cur;
+  let cur, step = 1;
   if (parts[0] === 'jdtvpk') { if (parts[1] === 'all') return setValue(path, String(delta)); cur = S.jdtVpk[+parts[1]]; }
   else {
     const c = cfgOf(S.unit);
     if (parts[0] === 'beds') cur = c.beds;
-    else if (parts[0] === 'ratio') cur = c.ratio[parts[1]];
-    else if (parts[0] === 'plan') cur = parts[1] === 'all' ? c.plan[0][parts[2]] : c.plan[+parts[1]][parts[2]];
+    else if (parts[0] === 'minStaff') cur = c.minStaff;
+    else if (parts[0] === 'sh') {
+      const sh = c.shifts[+parts[1]];
+      if (parts[2] === 'ratio') { cur = sh.ratio; step = 0.5; }
+      else cur = parts[3] === 'all' ? sh.plan[0] : sh.plan[+parts[3]];
+    }
   }
-  const step = parts[0] === 'ratio' ? 0.5 : 1;
   setValue(path, String((cur || 0) + delta * step));
 }
+function addShift(kind) {
+  const c = cfgOf(S.unit);
+  const n = c.shifts.filter(s => !SHIFT_KEYS.includes(s.id)).length + 1;
+  const ratio = c.shifts[0] ? c.shifts[0].ratio : 2.5;
+  c.shifts.push(kind === 'tussen'
+    ? { id: 'T' + Date.now(), label: n > 1 ? `Tussendienst ${n}` : 'Tussendienst', start: 11 * 60, end: 19 * 60 + 30, ratio, plan: WD_SHORT.map(() => 1) }
+    : { id: 'X' + Date.now(), label: 'Nieuwe dienst', start: 9 * 60, end: 17 * 60, ratio, plan: WD_SHORT.map(() => 0) });
+  saveSettings(); render();
+  toast(`${c.shifts[c.shifts.length - 1].label} toegevoegd — pas tijden, norm en rooster aan.`);
+}
+function applyAdvice() {
+  const frame = currentFrame(); if (!frame) return;
+  const sum = staffSummary(frame, S.unit);
+  sum.shifts.forEach((s, i) => { s.plan = sum.days.map(d => d.plan[i]); });
+  saveSettings(); render();
+  toast('Advies overgenomen in het rooster.');
+}
+/* ── Tijdlijn afspelen: week na week door de historie ─────────────── */
+let PLAY_T = null;
+function togglePlay() { if (S.playing) { stopPlay(); render(); } else startPlay(); }
+function startPlay() {
+  const f = currentFrame(); if (!f) return;
+  const weeks = weekList(f); if (!weeks.length) return;
+  S.weekMode = 'week'; S.playing = true;
+  if (weeks.indexOf(S.weekSel) >= weeks.length - 1) S.weekSel = weeks[Math.max(0, weeks.length - 53)];
+  render();
+  PLAY_T = setInterval(() => {
+    const fr = currentFrame(); const ws = fr ? weekList(fr) : [];
+    const i = ws.indexOf(S.weekSel);
+    if (S.screen !== 'dash' || S.view !== 'overzicht' || i < 0 || i >= ws.length - 1) { stopPlay(); render(); return; }
+    S.weekSel = ws[i + 1];
+    const y = window.scrollY; render(); window.scrollTo({ top: y });
+  }, 1100);
+}
+function stopPlay() { S.playing = false; clearInterval(PLAY_T); PLAY_T = null; }
 function stepWeek(delta) {
   const f = currentFrame(); if (!f) return;
   const mondays = weekList(f);
@@ -513,6 +581,6 @@ function boot() {
   try { const t = localStorage.getItem('acuut-dash-theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) { /* negeren */ }
   loadSettings();
   applyChartDefaults();
-  Chart.register(whiskerPlugin, capLinePlugin, dayBandPlugin);
+  Chart.register(revealPlugin, whiskerPlugin, capLinePlugin, dayBandPlugin);
   render({ enter: true });
 }

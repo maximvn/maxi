@@ -100,6 +100,39 @@ const dayBandPlugin = {
   },
 };
 
+// Lijnen "tekenen" zichzelf bij de eerste weergave: een wipe van links naar
+// rechts (ease-out). Alleen bij binnenkomen; daarna morphen ze bij wijzigingen.
+const REVEAL_MS = 900;
+const revealPlugin = {
+  id: 'reveal',
+  beforeDatasetsDraw(chart, _args, opts) {
+    if (opts && opts.on && !chart.$reveal) chart.$reveal = { t0: null };
+    const r = chart.$reveal; if (!r || r.done) return;
+    const now = performance.now(); if (r.t0 == null) r.t0 = now;
+    const t = Math.min(1, (now - r.t0) / REVEAL_MS);
+    const p = 1 - Math.pow(1 - t, 3);
+    const a = chart.chartArea;
+    chart.ctx.save(); chart.ctx.beginPath();
+    chart.ctx.rect(a.left - 4, 0, (a.right - a.left + 8) * p, chart.height); chart.ctx.clip();
+    r.clipped = true;
+    if (t >= 1) r.done = true; else requestAnimationFrame(() => { if (chart.ctx) chart.draw(); });
+  },
+  afterDatasetsDraw(chart) { const r = chart.$reveal; if (r && r.clipped) { chart.ctx.restore(); r.clipped = false; } },
+};
+function withEntrance(config) {
+  if (REDUCED()) return { config, isLine: false };
+  const types = [config.type, ...config.data.datasets.map(d => d.type)].filter(Boolean);
+  const isLine = types.every(t => t === 'line');
+  config.options = config.options || {};
+  if (isLine) { config.options.animation = false; config.options.plugins = { ...(config.options.plugins || {}), reveal: { on: true } }; } // de wipe doet het werk
+  else {
+    const n = Math.max(1, config.data.labels.length);
+    const step = Math.min(28, 520 / n);
+    config.options.animation = { duration: 420, easing: 'easeOutQuart', delay: ctx => (ctx.type === 'data' && ctx.mode === 'default' ? ctx.dataIndex * step + ctx.datasetIndex * 40 : 0) };
+  }
+  return { config, isLine };
+}
+
 function mkChart(el, config) {
   if (!el) return null;
   const prev = takeStashed(el, config);
@@ -116,7 +149,8 @@ function mkChart(el, config) {
     CHARTS.push(prev);
     return prev;
   }
-  const ch = new Chart(el, config);
+  const ent = withEntrance(config);
+  const ch = new Chart(el, ent.config);
   CHARTS.push(ch);
   return ch;
 }

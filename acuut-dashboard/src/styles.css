@@ -459,3 +459,50 @@ body.busy .appbar::after { opacity: 1; animation: slide 1.1s linear infinite; }
 .vstep input { width: 30px; border: 0; text-align: center; padding: 3px 0; font-size: 12.5px; background: transparent; font-variant-numeric: tabular-nums; -moz-appearance: textfield; }
 .vstep input::-webkit-inner-spin-button { -webkit-appearance: none; }
 .pctcell { display: inline-block; min-width: 30px; padding: 3px 2px; border-radius: 4px; font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* ════ Bandbreedte per stroom ══════════════════════════════════════ */
+.band-head { margin-bottom: 12px; }
+.stream-cards { grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr)); }
+.s-card { cursor: pointer; min-width: 0; overflow: hidden; }
+.s-card.total { grid-column: 1 / -1; cursor: default; background: linear-gradient(180deg, var(--surface-2), var(--surface) 60%); }
+.s-card-nums { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.band-box { position: relative; height: 170px; min-width: 0; }
+.band-box.big { height: 240px; }
+.band-box canvas { max-width: 100%; }
+.band-sw { width: 14px !important; height: 10px; border-radius: 2px; background: color-mix(in srgb, var(--s1) 22%, transparent); border-top: 1px solid color-mix(in srgb, var(--s1) 55%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--s1) 55%, transparent); }
+
+/* ════ Afspelen ═════════════════════════════════════════════════════ */
+.btn.play { gap: 6px; }
+.btn.play.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.scrub { flex-basis: 100%; display: flex; align-items: center; gap: 10px; margin: 2px 0 0; font-size: 11px; color: var(--muted); }
+.scrub input[type="range"] { flex: 1; min-width: 0; }
+
+/* ════ Diensten en advies ═══════════════════════════════════════════ */
+.shift-list { display: grid; gap: 8px; }
+.shift-row { display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); }
+.shift-dot { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 12px; flex: none; }
+.shift-dot.small { width: 18px; height: 18px; border-radius: 5px; font-size: 10.5px; }
+.shift-name { width: 150px; font-weight: 600; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 5px; padding: 5px 8px; font-size: 13px; }
+.shift-time { gap: 6px; }
+.shift-ratio { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ratio-in { width: 64px; }
+.shift-row .icon-btn { margin-left: auto; font-size: 18px; }
+.shift-row .icon-btn:disabled { opacity: .35; cursor: not-allowed; }
+.hint { font-size: 11.5px; color: var(--muted); }
+.rowlbl { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.gantt { display: grid; gap: 4px; margin-top: 10px; }
+.g-row { display: grid; grid-template-columns: 110px 1fr; align-items: center; gap: 8px; }
+.g-lbl { font-size: 12px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.g-track { position: relative; height: 22px; background: repeating-linear-gradient(90deg, var(--grid) 0 1px, transparent 1px calc(100% / 8)); border-radius: 4px; }
+.g-bar { position: absolute; top: 2px; bottom: 2px; border-radius: 4px; background: color-mix(in srgb, var(--c) 22%, var(--surface)); border: 1px solid var(--c); font-style: normal; font-size: 11px; color: var(--ink); display: flex; align-items: center; padding: 0 6px; overflow: hidden; white-space: nowrap;
+  transform-origin: left center; animation: grow 520ms var(--ease-out) both; }
+.g-bar b { margin-right: 3px; }
+@keyframes grow { from { transform: scaleX(0.6); opacity: 0; } to { transform: none; opacity: 1; } }
+.g-axis .g-track { background: none; height: 14px; }
+.g-axis em { position: absolute; font-style: normal; font-size: 10px; color: var(--muted); transform: translateX(-50%); }
+.g-axis em:first-child { transform: none; }
+.advice { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.advice li { display: flex; gap: 10px; align-items: center; font-size: 13px; padding: 7px 10px; border-radius: 7px; background: var(--surface-2); }
+.advice-ok { display: flex; gap: 8px; align-items: center; color: var(--good); font-weight: 600; margin: 4px 0; }
+@media (max-width: 640px) { .g-row { grid-template-columns: 70px 1fr; } .shift-name { width: 120px; } }
+@media (prefers-reduced-motion: reduce) { .g-bar { animation: none; } }

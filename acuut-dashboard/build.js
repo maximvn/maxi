@@ -3,7 +3,7 @@
 const fs = require('fs')
 const path = require('path')
 const src = f => fs.readFileSync(path.join(__dirname, 'src', f), 'utf8')
-const js = ['config.js', 'data.js', 'charts.js', 'motion.js', 'app.js', 'views.js'].map(src).join('\n')
+const js = ['config.js', 'data.js', 'charts.js', 'motion.js', 'app.js', 'views.js', 'staff.js'].map(src).join('\n')
 const out = src('shell.html')
   .replace('/*__CSS__*/', () => src('styles.css'))
   .replace('/*__JS__*/', () => js)
