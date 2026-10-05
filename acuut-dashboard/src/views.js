@@ -31,49 +31,50 @@ function weekList(frame) {
 }
 
 /* ── Rekenblokken die meerdere weergaven delen ──────────────────────── */
-// 21 cellen (7 dagen × D/A/N): gemiddelde per component + statistiek van het totaal.
+// Alles volgt de gekozen norm: de hoogte is de norm (Gem./P95/µ+2σ/Max) van
+// het totaal; de verdeling over de stromen volgt hun aandeel in de bezetting.
+// (Normen als P95 zijn niet optelbaar; zo blijft de stapel gelijk aan de norm.)
+function splitByMetric(days, slots, ncomp) {
+  const tot = stats(collect(days, slots));
+  if (!tot) return { tot: null, val: null, parts: Array(ncomp).fill(null) };
+  const means = Array.from({ length: ncomp }, (_, ci) => mean(collect(days, slots, ci)));
+  const sum = means.reduce((a, b) => a + b, 0);
+  const val = mv(tot);
+  return { tot, val, parts: means.map(m => (sum > 0 ? val * m / sum : val / ncomp)) };
+}
+const HOUR_SLOTS = Array.from({ length: 24 }, (_, h) => [[0, h * 4], [0, h * 4 + 1], [0, h * 4 + 2], [0, h * 4 + 3]]);
+// 21 cellen (7 dagen × D/A/N) voor de typische week.
 function weekCells(frame) {
   const cells = [];
-  if (S.weekMode === 'typical') {
-    for (let wd = 0; wd < 7; wd++) {
-      const days = frame.days.filter(d => d.wd === wd);
-      for (const k of SHIFT_KEYS) {
-        const slots = shiftSlots(k);
-        const tot = stats(collect(days, slots));
-        cells.push({ wd, k, dayLabel: WD_SHORT[wd], title: `${WD_LONG[wd]} · ${SHIFT_INFO[k].label}`, parts: frame.comps.map((_, ci) => mean(collect(days, slots, ci))), tot, lo: tot && tot.p10, hi: mv(tot) });
-      }
-    }
-  } else {
-    const byDate = new Map(frame.all.map(d => [d.ds, d]));
-    for (let i = 0; i < 7; i++) {
-      const ds = addDays(S.weekSel, i), d = byDate.get(ds);
-      for (const k of SHIFT_KEYS) {
-        const slots = shiftSlots(k);
-        const tot = d ? stats(collect([d], slots)) : null;
-        cells.push({ wd: i, k, ds, dayLabel: fmtDay(ds), title: `${fmtDay(ds)} ${ds.slice(0, 4)} · ${SHIFT_INFO[k].label}`, parts: frame.comps.map((_, ci) => (d ? mean(collect([d], slots, ci)) : null)), tot, lo: tot && tot.min, hi: tot && tot.max });
-      }
+  for (let wd = 0; wd < 7; wd++) {
+    const days = frame.days.filter(d => d.wd === wd);
+    for (const k of SHIFT_KEYS) {
+      const sp = splitByMetric(days, shiftSlots(k), frame.comps.length);
+      cells.push({ wd, k, dayLabel: WD_SHORT[wd], title: `${WD_LONG[wd]} · ${SHIFT_INFO[k].label}`, ...sp, lo: sp.tot && sp.tot.p10, hi: sp.tot && sp.tot.max });
     }
   }
   return cells;
 }
-// Per kwartier van de dag: gemiddelde per component + statistiek van het totaal.
+// Per kwartier van de dag, volgens de norm.
 function dayProfile(frame) {
   const parts = frame.comps.map(() => new Array(96));
-  const tot = new Array(96);
+  const tot = new Array(96), val = new Array(96);
   for (let q = 0; q < 96; q++) {
-    const sl = [[0, q]];
-    frame.comps.forEach((_, ci) => { parts[ci][q] = mean(collect(frame.days, sl, ci)); });
-    tot[q] = stats(collect(frame.days, sl));
+    const sp = splitByMetric(frame.days, [[0, q]], frame.comps.length);
+    sp.parts.forEach((v, ci) => { parts[ci][q] = v; });
+    tot[q] = sp.tot; val[q] = sp.val;
   }
-  return { parts, tot };
+  return { parts, tot, val };
 }
 function monthly(frame) {
   const g = new Map();
   frame.days.forEach(d => { const k = `${d.y}-${pad2(d.m)}`; if (!g.has(k)) g.set(k, []); g.get(k).push(d); });
-  return [...g.entries()].map(([k, days]) => ({
-    k, label: `${MONTH_SHORT[+k.slice(5) - 1]} ${k.slice(2, 4)}`,
-    parts: frame.comps.map((_, ci) => mean(collect(days, ALL_SLOTS, ci))), tot: stats(collect(days, ALL_SLOTS)),
-  }));
+  return [...g.entries()].map(([k, days]) => {
+    const sp = splitByMetric(days, ALL_SLOTS, frame.comps.length);
+    // per stroom ook de eigen norm (voor de trendlijnen per stroom)
+    const own = frame.comps.map((_, ci) => { const st = stats(collect(days, ALL_SLOTS, ci)); return st ? mv(st) : null; });
+    return { k, label: `${MONTH_SHORT[+k.slice(5) - 1]} ${k.slice(2, 4)}`, ...sp, own };
+  });
 }
 const needOf = (v, ratio) => (v == null ? null : Math.ceil(v / ratio - 1e-9));
 
@@ -201,61 +202,7 @@ function renderView() {
   v(el, frame);
 }
 
-/* ═════════════ 1. OVERZICHT ═════════════ */
-function viewOverview(el, frame) {
-  const beds = bedsOf(S.unit);
-  const all = stats(collect(frame.days, ALL_SLOTS));
-  const full = pctAtOrAbove(all.sorted, beds);
-  const cells = weekCells(frame);
-  const prof = dayProfile(frame);
-  // piekmoment: hoogste gemiddelde per weekdag × uur
-  let peak = { v: -1 };
-  for (let wd = 0; wd < 7; wd++) {
-    const days = frame.days.filter(d => d.wd === wd);
-    for (let h = 0; h < 24; h++) { const v = mean(collect(days, [[0, h * 4], [0, h * 4 + 1], [0, h * 4 + 2], [0, h * 4 + 3]])); if (v > peak.v) peak = { v, wd, h }; }
-  }
-  const staff = S.unit === 'ALL' ? null : staffSummary(frame, S.unit);
-  const fullKind = full < 2 ? 'good' : full < 8 ? 'warn' : 'crit';
-
-  el.innerHTML = `
-    <div class="kpis">
-      ${kpi('Gemiddelde bezetting', kn(all.avg), 'patiënten', `${fmt(all.avg / beds * 100, 0)}% van ${beds} bedden`)}
-      ${kpi(`Bezetting (${mLabel()})`, kn(mv(all)), 'patiënten', METRICS[S.metric].desc)}
-      ${kpi('Tijd volledig bezet', kn(full), '%', `kwartieren met ≥ ${beds} patiënten`, statusPill(fullKind, fullKind === 'good' ? 'Ruim voldoende' : fullKind === 'warn' ? 'Let op' : 'Vaak vol'))}
-      ${kpi('Drukste moment', `${WD_SHORT[peak.wd]} ${pad2(peak.h)}:00`, '', `gemiddeld ${fmt(peak.v)} patiënten`)}
-      ${staff ? kpi('Diensten per week', kn(staff.need, 0), `nodig · ${staff.plan} ingepland`, `o.b.v. ${mLabel()} en ratio per dienst`, statusPill(staff.need > staff.plan ? 'crit' : 'good', staff.need > staff.plan ? `${staff.need - staff.plan} tekort` : staff.need === staff.plan ? 'Sluitend' : `${staff.plan - staff.need} ruimte`)) : kpi('Afdelingen', frame.comps.length, '', frame.comps.map(c => c.label).join(' · '))}
-    </div>
-    <div class="grid g-3-1">
-      <section class="panel stagger">
-        <div class="panel-head">
-          <div><h2>Bezetting per dienst</h2><div class="desc">${S.weekMode === 'typical' ? `Gemiddelde per stroom; streepje loopt van P10 tot ${mLabel()} van het totaal.` : 'Gemiddelde per stroom in deze dienst; streepje loopt van laagste tot hoogste bezetting.'}</div></div>
-          ${weekModeControl(frame, { play: true })}
-        </div>
-        <div class="chart-box tall"><canvas id="ch-week" role="img" aria-label="Bezetting per dag en dienst"></canvas></div>
-        ${legendHTML(frame.comps, `<span class="sep"></span><span><i class="wh"></i>Spreiding</span><span><i class="ln"></i>Open bedden</span><span class="sep"></span><span class="key"><b>D</b> Dag <b>A</b> Avond <b>N</b> Nacht</span>`)}
-      </section>
-      <section class="panel stagger">
-        <div class="panel-head"><div><h2>Signalen</h2><div class="desc">Automatisch afgeleid uit de selectie.</div></div></div>
-        <ul class="insights">${insights(frame, cells, all, beds).map(i => `<li><span class="ic ${i.kind}">${i.kind === 'good' ? ICON.check : i.kind === 'info' ? ICON.info : ICON.alert}</span><span>${i.text}</span></li>`).join('')}</ul>
-      </section>
-    </div>
-    <div class="grid g-2" style="margin-top:16px">
-      <section class="panel stagger">
-        <div class="panel-head"><div><h2>Dagverloop (24 uur)</h2><div class="desc">Gemiddelde bezetting per kwartier, gestapeld per ${S.unit === 'ALL' ? 'afdeling' : 'stroom'}; de lijn is ${mLabel()} van het totaal.</div></div></div>
-        <div class="chart-box"><canvas id="ch-day" role="img" aria-label="Dagverloop"></canvas></div>
-        ${legendHTML(frame.comps, `<span class="sep"></span><span><i class="ln solid"></i>${mLabel()} totaal</span><span><i class="ln"></i>Open bedden</span>`)}
-      </section>
-      <section class="panel stagger">
-        <div class="panel-head"><div><h2>Bezetting per maand</h2><div class="desc">Gemiddelde per stroom; streepje van P10 tot ${mLabel()}.</div></div></div>
-        <div class="chart-box"><canvas id="ch-month" role="img" aria-label="Bezetting per maand"></canvas></div>
-        ${legendHTML(frame.comps, `<span class="sep"></span><span><i class="wh"></i>Spreiding</span><span><i class="ln"></i>Open bedden</span>`)}
-      </section>
-    </div>`;
-
-  weekChart($('#ch-week'), frame, cells, beds);
-  dayChart($('#ch-day'), frame, prof, beds);
-  monthChart($('#ch-month'), frame, monthly(frame), beds);
-}
+/* 1. OVERZICHT: zie overview.js */
 
 function pctAtOrAbove(sorted, x) {
   let lo = 0, hi = sorted.length;
@@ -263,121 +210,29 @@ function pctAtOrAbove(sorted, x) {
   return sorted.length ? (sorted.length - lo) / sorted.length * 100 : 0;
 }
 
-function weekChart(canvas, frame, cells, beds) {
-  const c = C();
-  const hiMax = Math.max(beds, ...cells.map(x => x.hi || 0));
-  mkChart(canvas, {
-    type: 'bar',
-    data: {
-      labels: cells.map(shiftTick),
-      datasets: frame.comps.map((comp, ci) => ({
-        label: comp.label, data: cells.map(x => x.parts[ci]), backgroundColor: colorOf(comp),
-        borderColor: c.surface, borderWidth: { top: ci ? 1.5 : 0 }, borderSkipped: 'bottom', borderRadius: ci === frame.comps.length - 1 ? { topLeft: 3, topRight: 3 } : 0,
-        stack: 's', barPercentage: 0.82, categoryPercentage: 0.88,
-      })),
-    },
-    options: {
-      interaction: { mode: 'index', intersect: false },
-      scales: { ...baseScales({ stacked: true, yMax: Math.ceil(hiMax + 1), yTitle: 'Patiënten' }) },
-      plugins: {
-        whiskers: { data: cells.map(x => ({ lo: x.lo, hi: x.hi })) },
-        capLine: { value: beds, label: `${beds} open bedden` },
-        dayBands: { size: 3 },
-        tooltip: {
-          callbacks: {
-            title: items => `${cells[items[0].dataIndex].title} (${shiftTimes(cells[items[0].dataIndex].k)})`,
-            label: it => ` ${it.dataset.label}: ${fmt(it.raw)} gem.`,
-            footer: items => {
-              const x = cells[items[0].dataIndex]; if (!x.tot) return 'Geen data';
-              const over = x.hi - beds;
-              return [`Totaal gem. ${fmt(x.tot.avg)} · ${S.weekMode === 'typical' ? mLabel() : 'max'} ${fmt(x.hi)}`, over > 0 ? `${fmt(over)} boven de ${beds} bedden` : `${fmt(-over)} bedden marge`];
-            },
-          },
-        },
-      },
-    },
-  });
-}
-
-function dayChart(canvas, frame, prof, beds) {
-  const c = C();
-  const metricLine = prof.tot.map(s => mv(s));
-  mkChart(canvas, {
-    type: 'line',
-    data: {
-      labels: Array.from({ length: 96 }, (_, q) => q),
-      datasets: [
-        ...frame.comps.map((comp, ci) => ({
-          label: comp.label, data: prof.parts[ci], borderColor: colorOf(comp), backgroundColor: alpha(colorOf(comp), 0.55),
-          fill: ci ? '-1' : 'origin', borderWidth: 1.5, pointRadius: 0, tension: 0.3, stack: 'areas',
-        })),
-        { label: `${mLabel()} totaal`, data: metricLine, borderColor: c.ink, borderWidth: 2, pointRadius: 0, tension: 0.3, fill: false, stack: 'metric' },
-      ],
-    },
-    options: {
-      interaction: { mode: 'index', intersect: false },
-      scales: {
-        x: { grid: { display: false }, border: { color: c.axis }, ticks: { color: c.muted, autoSkip: false, maxRotation: 0, callback: tickEveryTwoHours } },
-        y: { stacked: true, beginAtZero: true, suggestedMax: Math.ceil(Math.max(beds, ...metricLine) + 1), grid: { color: c.grid }, border: { display: false }, ticks: { precision: 0 } },
-      },
-      plugins: {
-        capLine: { value: beds, label: `${beds} open bedden` },
-        tooltip: { callbacks: { title: it => `${slotLabel(it[0].dataIndex)} · dienst ${SHIFT_INFO[shiftOfSlot(it[0].dataIndex)].label.toLowerCase()}`, label: it => ` ${it.dataset.label}: ${fmt(it.raw)}` } },
-      },
-    },
-  });
-}
-
-function monthChart(canvas, frame, months, beds) {
-  const c = C();
-  mkChart(canvas, {
-    type: 'bar',
-    data: {
-      labels: months.map(m => m.label),
-      datasets: frame.comps.map((comp, ci) => ({
-        label: comp.label, data: months.map(m => m.parts[ci]), backgroundColor: colorOf(comp), stack: 's',
-        borderColor: c.surface, borderWidth: { top: ci ? 1 : 0 }, borderSkipped: 'bottom',
-        borderRadius: ci === frame.comps.length - 1 ? { topLeft: 2, topRight: 2 } : 0, barPercentage: 0.8, categoryPercentage: 0.9,
-      })),
-    },
-    options: {
-      interaction: { mode: 'index', intersect: false },
-      scales: { ...baseScales({ stacked: true, yMax: Math.ceil(Math.max(beds, ...months.map(m => mv(m.tot))) + 1) }), x: { stacked: true, grid: { display: false }, ticks: { color: c.muted, maxRotation: 0, autoSkip: true, autoSkipPadding: 8 } } },
-      plugins: {
-        whiskers: { data: months.map(m => ({ lo: m.tot.p10, hi: mv(m.tot) })) },
-        capLine: { value: beds, label: `${beds} bedden` },
-        tooltip: { callbacks: { label: it => ` ${it.dataset.label}: ${fmt(it.raw)} gem.`, footer: it => { const m = months[it[0].dataIndex]; return `Totaal gem. ${fmt(m.tot.avg)} · ${mLabel()} ${fmt(mv(m.tot))} · max ${fmt(m.tot.max, 0)}`; } } },
-      },
-    },
-  });
-}
-
-function insights(frame, cells, all, beds) {
-  const out = [];
-  const over = cells.filter(x => x.hi != null && x.hi > beds);
+function insights(frame, cells, beds) {
+  const out = [], m = mLabel();
+  const mOf = (days, slots, which) => { const st = stats(collect(days, slots, which)); return st ? mv(st) : 0; };
+  const over = cells.filter(x => x.val != null && x.val > beds);
   if (over.length) {
-    const worst = over.reduce((a, b) => (b.hi > a.hi ? b : a));
-    out.push({ kind: 'crit', text: `In <b>${over.length} van 21</b> diensten komt ${S.weekMode === 'typical' ? mLabel() : 'het maximum'} boven de ${beds} bedden. Het krapst: <b>${worst.title.toLowerCase()}</b> met ${fmt(worst.hi)}.` });
-  } else out.push({ kind: 'good', text: `Alle diensten blijven op ${S.weekMode === 'typical' ? mLabel() : 'het maximum'} binnen de <b>${beds} bedden</b>.` });
+    const worst = over.reduce((a, b) => (b.val > a.val ? b : a));
+    out.push({ kind: 'crit', text: `In <b>${over.length} van ${cells.length}</b> diensten komt de bezetting (${m}) boven de ${beds} bedden. Het krapst: <b>${worst.title.toLowerCase()}</b> met ${fmt(worst.val)}.` });
+  } else out.push({ kind: 'good', text: `Alle diensten blijven op ${m} binnen de <b>${beds} bedden</b>.` });
   if (frame.comps.length > 1) {
     const sums = frame.comps.map((_, ci) => mean(collect(frame.days, ALL_SLOTS, ci)));
     const tot = sums.reduce((a, b) => a + b, 0);
     const top = sums.indexOf(Math.max(...sums));
-    out.push({ kind: 'info', text: `<b>${esc(frame.comps[top].label)}</b> levert ${fmt(sums[top] / tot * 100, 0)}% van de bezetting (gem. ${fmt(sums[top])} patiënten).` });
+    out.push({ kind: 'info', text: `<b>${esc(frame.comps[top].label)}</b> levert ${fmt(sums[top] / tot * 100, 0)}% van de bezetting (${m} van die stroom: ${fmt(mOf(frame.days, ALL_SLOTS, top))}).` });
   }
-  const wk = mean(collect(frame.days.filter(d => d.wd < 5), ALL_SLOTS)), we = mean(collect(frame.days.filter(d => d.wd >= 5), ALL_SLOTS));
-  if (wk && we) {
-    const d = (we / wk - 1) * 100;
-    out.push({ kind: 'info', text: `In het weekend is de bezetting gemiddeld <b>${fmt(Math.abs(d), 0)}% ${d < 0 ? 'lager' : 'hoger'}</b> dan doordeweeks.` });
-  }
+  const wk = mOf(frame.days.filter(d => d.wd < 5), ALL_SLOTS), we = mOf(frame.days.filter(d => d.wd >= 5), ALL_SLOTS);
+  if (wk && we) { const d = (we / wk - 1) * 100; out.push({ kind: 'info', text: `In het weekend ligt de bezetting (${m}) <b>${fmt(Math.abs(d), 0)}% ${d < 0 ? 'lager' : 'hoger'}</b> dan doordeweeks: ${fmt(we)} tegen ${fmt(wk)}.` }); }
   const ys = frame.years;
   if (ys.length > 1) {
-    const a = mean(collect(frame.all.filter(d => d.y === ys[0]), ALL_SLOTS)), b = mean(collect(frame.all.filter(d => d.y === ys[ys.length - 1]), ALL_SLOTS));
-    const d = (b / a - 1) * 100;
-    out.push({ kind: Math.abs(d) < 3 ? 'good' : d > 0 ? 'warn' : 'info', text: `Van ${ys[0]} naar ${ys[ys.length - 1]} ${Math.abs(d) < 1 ? 'bleef de gemiddelde bezetting gelijk' : `${d > 0 ? 'steeg' : 'daalde'} de gemiddelde bezetting met <b>${fmt(Math.abs(d), 0)}%</b>`}.` });
+    const a = mOf(frame.all.filter(d => d.y === ys[0]), ALL_SLOTS), b = mOf(frame.all.filter(d => d.y === ys[ys.length - 1]), ALL_SLOTS);
+    const d = a ? (b / a - 1) * 100 : 0;
+    out.push({ kind: Math.abs(d) < 3 ? 'good' : d > 0 ? 'warn' : 'info', text: `Van ${ys[0]} naar ${ys[ys.length - 1]} ${Math.abs(d) < 1 ? `bleef de bezetting (${m}) gelijk` : `${d > 0 ? 'steeg' : 'daalde'} de bezetting (${m}) met <b>${fmt(Math.abs(d), 0)}%</b>`} (${fmt(a)} → ${fmt(b)}).` });
   }
-  const nightAvg = mean(collect(frame.days, shiftSlots('N'))), dayAvg = mean(collect(frame.days, shiftSlots('D')));
-  out.push({ kind: 'info', text: `Nachtdienst gemiddeld <b>${fmt(nightAvg)}</b> patiënten tegen <b>${fmt(dayAvg)}</b> overdag.` });
+  out.push({ kind: 'info', text: `Nachtdienst ${m} <b>${fmt(mOf(frame.days, shiftSlots('N')))}</b> patiënten tegen <b>${fmt(mOf(frame.days, shiftSlots('D')))}</b> in de dagdienst.` });
   return out;
 }
 
@@ -391,8 +246,8 @@ function bandSeries(frame, which, gran) {
     const keys = [...new Set(frame.days.map(d => `${d.y}-${pad2(d.m)}`))];
     groups = keys.map(k => ({ label: `${MONTH_SHORT[+k.slice(5) - 1]} ${k.slice(2, 4)}`, days: frame.days.filter(d => `${d.y}-${pad2(d.m)}` === k), slots: ALL_SLOTS }));
   }
-  const st = groups.map(g => stats(collect(g.days, g.slots, which)) || { min: 0, max: 0, p95: 0, avg: 0 });
-  return { labels: groups.map(g => g.label), min: st.map(x => x.min), max: st.map(x => x.max), p95: st.map(x => x.p95), avg: st.map(x => x.avg) };
+  const st = groups.map(g => stats(collect(g.days, g.slots, which)) || { min: 0, max: 0, p95: 0, avg: 0, mu2s: 0 });
+  return { labels: groups.map(g => g.label), min: st.map(x => x.min), max: st.map(x => x.max), p95: st.map(x => x.p95), avg: st.map(x => x.avg), m: st.map(x => mv(x)) };
 }
 function bandChart(canvas, ser, color, { big = false } = {}) {
   const c = C();
@@ -404,8 +259,8 @@ function bandChart(canvas, ser, color, { big = false } = {}) {
       datasets: [
         { label: 'Maximum', data: ser.max, borderColor: alpha(color, 0.55), borderWidth: 1, pointRadius: 0, stepped: S.bandGran === 'month' ? false : 'middle', fill: false },
         { label: 'Minimum', data: ser.min, borderColor: alpha(color, 0.55), borderWidth: 1, pointRadius: 0, stepped: S.bandGran === 'month' ? false : 'middle', fill: { target: 0 }, backgroundColor: alpha(color, 0.14) },
-        { label: 'P95', data: ser.p95, borderColor: color, borderWidth: 1.5, borderDash: [5, 4], pointRadius: 0, stepped: S.bandGran === 'month' ? false : 'middle', fill: false },
-        { label: 'Gemiddeld', data: ser.avg, borderColor: color, borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 4, pointBackgroundColor: color, tension: smooth, fill: false },
+        ...(S.metric === 'avg' ? [] : [{ label: 'Gemiddeld', data: ser.avg, borderColor: color, borderWidth: 1.5, borderDash: [5, 4], pointRadius: 0, tension: smooth, fill: false }]),
+        { label: METRICS[S.metric].label, data: ser.m, borderColor: color, borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 4, pointBackgroundColor: color, tension: smooth, fill: false },
       ],
     },
     options: {
@@ -415,7 +270,7 @@ function bandChart(canvas, ser, color, { big = false } = {}) {
         x: { grid: { display: false }, border: { color: c.axis }, ticks: { maxRotation: 0, autoSkip: true, autoSkipPadding: big ? 14 : 10, font: { size: 10.5 } } },
         y: { beginAtZero: true, grid: { color: c.grid }, border: { display: false }, ticks: { precision: 0, maxTicksLimit: big ? 6 : 4, font: { size: 10.5 } } },
       },
-      plugins: { tooltip: { itemSort: (a, b) => b.datasetIndex - a.datasetIndex, callbacks: { label: it => ` ${it.dataset.label}: ${fmt(it.raw, it.datasetIndex === 3 ? 1 : 0)}` } } },
+      plugins: { tooltip: { itemSort: (a, b) => b.datasetIndex - a.datasetIndex, callbacks: { label: it => ` ${it.dataset.label}: ${fmt(it.raw, it.datasetIndex >= 2 ? 1 : 0)}` } } },
     },
   });
 }
@@ -431,16 +286,16 @@ function viewStreams(el, frame) {
   const multi = comps.length > 1;
   const gran = S.bandGran;
   const granLbl = { hour: 'per uur van de dag', weekday: 'per weekdag', month: 'per maand' }[gran];
-  const nums = st => `<div class="s-card-nums"><div><span>Gemiddeld</span><b>${fmt(st.avg)}</b></div><div><span>P95</span><b>${fmt(st.p95, 0)}</b></div><div><span>Min</span><b>${fmt(st.min, 0)}</b></div><div><span>Max</span><b>${fmt(st.max, 0)}</b></div></div>`;
+  const nums = st => `<div class="s-card-nums"><div><span>Gemiddeld</span><b>${fmt(st.avg)}</b></div><div><span>${S.metric === 'avg' ? 'P95' : mLabel()}</span><b>${fmt(S.metric === 'avg' ? st.p95 : mv(st))}</b></div><div><span>Min</span><b>${fmt(st.min, 0)}</b></div><div><span>Max</span><b>${fmt(st.max, 0)}</b></div></div>`;
   const tag = c => (S.unit === 'ALL' ? `<span class="tag">${c.streams.length} ${c.streams.length === 1 ? 'stroom' : 'stromen'}</span>` : `<span class="tag ${STORE[c.id].source === 'bestand' ? 'ok' : 'demo'}">${DS[c.id].role === 'basis' ? STORE[c.id].source : DS[c.id].role}</span>`);
 
   el.innerHTML = `
     <section class="panel band-head stagger">
       <div class="panel-head" style="margin:0">
-        <div><h2>Bandbreedte per ${kindWord}</h2><div class="desc">Elke ${kindWord} in een eigen grafiek ${granLbl}: het vlak loopt van minimum tot maximum, de stippellijn is P95, de dikke lijn het gemiddelde.${multi ? ` Bovenaan alle ${kindWord === 'stroom' ? 'stromen' : 'afdelingen'} samen als één stroom.` : ''}</div></div>
+        <div><h2>Bandbreedte per ${kindWord}</h2><div class="desc">Elke ${kindWord} in een eigen grafiek ${granLbl}: het vlak loopt van minimum tot maximum, de dikke lijn is de gekozen norm (${mLabel()})${S.metric === 'avg' ? '' : ', de stippellijn het gemiddelde'}.${multi ? ` Bovenaan alle ${kindWord === 'stroom' ? 'stromen' : 'afdelingen'} samen als één stroom.` : ''}</div></div>
         <div class="seg small" role="group" aria-label="Indeling" data-ind="bandgran">${[['hour', 'Per uur'], ['weekday', 'Per weekdag'], ['month', 'Per maand']].map(([v, l]) => `<button class="${gran === v ? 'on' : ''}" data-act="bandgran" data-arg="${v}">${l}</button>`).join('')}</div>
       </div>
-      <div class="legend" style="margin-top:8px"><span><i class="sw band-sw"></i>Min – max</span><span><i class="ln" style="border-color:var(--ink-2)"></i>P95</span><span><i class="ln solid" style="border-color:var(--ink);border-top-width:3px"></i>Gemiddeld</span></div>
+      <div class="legend" style="margin-top:8px"><span><i class="sw band-sw"></i>Min – max</span><span><i class="ln solid" style="border-color:var(--ink);border-top-width:3px"></i>${METRICS[S.metric].label}</span>${S.metric === 'avg' ? '' : '<span><i class="ln" style="border-color:var(--ink-2)"></i>Gemiddeld</span>'}</div>
     </section>
     <div class="stream-cards">
       ${multi ? `<div class="s-card total stagger">
@@ -457,16 +312,16 @@ function viewStreams(el, frame) {
     </div>
     <div class="grid g-2">
       <section class="panel stagger">
-        <div class="panel-head"><div><h2>Weekpatroon · ${esc(comps[fi].label)}</h2><div class="desc">Gemiddelde bezetting per weekdag en uur. Klik een kaart hierboven om een andere ${kindWord} te kiezen.</div></div></div>
+        <div class="panel-head"><div><h2>Weekpatroon · ${esc(comps[fi].label)}</h2><div class="desc">Bezetting (${mLabel()}) per weekdag en uur. Klik een kaart hierboven om een andere ${kindWord} te kiezen.</div></div></div>
         <div class="table-wrap">${heatmapHTML(frame, fi)}</div>
       </section>
       <section class="panel stagger">
         <div class="panel-head">
-          <div><h2>Trend per maand</h2><div class="desc">Gemiddelde bezetting per maand${S.trendMode !== 'stroom' ? '; de zwarte lijn is alles samen, het vlak eronder de bandbreedte P10–P95 van het totaal' : ''}.</div></div>
+          <div><h2>Trend per maand</h2><div class="desc">${mLabel()} per maand${S.trendMode !== 'stroom' ? `; de zwarte lijn is alles samen (${mLabel()} van het totaal), het vlak de bandbreedte min–max van het totaal` : ' per stroom'}.</div></div>
           <div class="seg small" role="group" aria-label="Trendweergave" data-ind="trendmode">${[['stroom', 'Per ' + kindWord], ['samen', 'Samen'], ['both', 'Beide']].map(([v, l]) => `<button class="${S.trendMode === v ? 'on' : ''}" data-act="trendmode" data-arg="${v}">${l}</button>`).join('')}</div>
         </div>
         <div class="chart-box"><canvas id="ch-strend" role="img" aria-label="Trend per maand"></canvas></div>
-        ${legendHTML(S.trendMode === 'samen' ? [] : comps, S.trendMode === 'stroom' ? '' : `<span><i class="ln solid" style="border-color:var(--ink);border-top-width:3px"></i>Alles samen</span><span><i class="sw band-sw" style="background:color-mix(in srgb, var(--ink) 12%, transparent)"></i>P10–P95 totaal</span>`)}
+        ${legendHTML(S.trendMode === 'samen' ? [] : comps, S.trendMode === 'stroom' ? '' : `<span><i class="ln solid" style="border-color:var(--ink);border-top-width:3px"></i>Alles samen</span><span><i class="sw band-sw" style="background:color-mix(in srgb, var(--ink) 12%, transparent)"></i>Min–max totaal</span>`)}
       </section>
     </div>
     <section class="panel stagger" style="margin-top:16px">
@@ -480,11 +335,11 @@ function viewStreams(el, frame) {
   const cc = C();
   const months = monthly(frame);
   const ds = [];
-  if (S.trendMode !== 'samen') comps.forEach((c, ci) => ds.push({ label: c.label, data: months.map(m => m.parts[ci]), borderColor: colorOf(c), backgroundColor: colorOf(c), borderWidth: S.trendMode === 'both' ? 1.5 : 2, pointRadius: 0, pointHoverRadius: 4, tension: 0.25, fill: false }));
+  if (S.trendMode !== 'samen') comps.forEach((c, ci) => ds.push({ label: c.label, data: months.map(m => m.own[ci]), borderColor: colorOf(c), backgroundColor: colorOf(c), borderWidth: S.trendMode === 'both' ? 1.5 : 2, pointRadius: 0, pointHoverRadius: 4, tension: 0.25, fill: false }));
   if (S.trendMode !== 'stroom') {
-    ds.push({ label: 'P95 totaal', data: months.map(m => m.tot.p95), borderWidth: 0, pointRadius: 0, fill: false, tension: 0.25 });
-    ds.push({ label: 'P10 totaal', data: months.map(m => m.tot.p10), borderWidth: 0, pointRadius: 0, fill: { target: '-1' }, backgroundColor: alpha(cc.ink, 0.10), tension: 0.25 });
-    ds.push({ label: 'Alles samen', data: months.map(m => m.tot.avg), borderColor: cc.ink, backgroundColor: cc.ink, borderWidth: 3, pointRadius: 0, pointHoverRadius: 4, tension: 0.25, fill: false });
+    ds.push({ label: 'Max totaal', data: months.map(m => m.tot.max), borderWidth: 0, pointRadius: 0, fill: false, tension: 0.25 });
+    ds.push({ label: 'Min totaal', data: months.map(m => m.tot.min), borderWidth: 0, pointRadius: 0, fill: { target: '-1' }, backgroundColor: alpha(cc.ink, 0.08), tension: 0.25 });
+    ds.push({ label: `Alles samen (${mLabel()})`, data: months.map(m => m.val), borderColor: cc.ink, backgroundColor: cc.ink, borderWidth: 3, pointRadius: 0, pointHoverRadius: 4, tension: 0.25, fill: false });
   }
   mkChart($('#ch-strend'), {
     type: 'line',
@@ -497,22 +352,30 @@ function viewStreams(el, frame) {
   });
 }
 
-function heatmapHTML(frame, ci, agg = 'mean', unitLbl = 'patiënten (gem.)') {
+// Waarde per weekdag × uur volgens de norm. 'sum' = aankomsten per uur (instroom).
+function heatVal(days, h, ci, agg) {
+  if (agg === 'sum') {
+    const vals = days.map(d => d.parts[ci][h * 4] + d.parts[ci][h * 4 + 1] + d.parts[ci][h * 4 + 2] + d.parts[ci][h * 4 + 3]);
+    const st = stats(vals); return st ? mv(st) : 0;
+  }
+  const st = stats(collect(days, HOUR_SLOTS[h], ci)); return st ? mv(st) : 0;
+}
+function heatmapHTML(frame, ci, agg = 'mean', unitLbl = 'patiënten') {
   const grid = [];
   let max = 0;
   for (let wd = 0; wd < 7; wd++) {
     const days = frame.days.filter(d => d.wd === wd);
     const row = [];
-    for (let h = 0; h < 24; h++) { const v = mean(collect(days, [[0, h * 4], [0, h * 4 + 1], [0, h * 4 + 2], [0, h * 4 + 3]], ci)) * (agg === 'sum' ? 4 : 1); row.push(v); if (v > max) max = v; }
+    for (let h = 0; h < 24; h++) { const v = heatVal(days, h, ci, agg); row.push(v); if (v > max) max = v; }
     grid.push(row);
   }
   const steps = 8;
   const cls = v => Math.min(steps - 1, Math.floor((v / (max || 1)) * steps));
   return `<div class="heat" role="table" aria-label="Weekpatroon">
     <div></div>${Array.from({ length: 24 }, (_, h) => `<div class="hh">${h % 3 === 0 ? pad2(h) : ''}</div>`).join('')}
-    ${grid.map((row, wd) => `<div class="hl">${WD_SHORT[wd]}</div>${row.map((v, h) => { const s = cls(v); return `<div class="c" style="background:var(--seq-${s});color:${s >= 5 ? 'var(--surface)' : 'var(--ink-2)'}" title="${WD_LONG[wd]} ${pad2(h)}:00–${pad2(h + 1)}:00 · gem. ${fmt(v)} ${unitLbl.replace(' (gem.)', '')}">${v >= 10 ? Math.round(v) : fmt(v, 1)}</div>`; }).join('')}`).join('')}
+    ${grid.map((row, wd) => `<div class="hl">${WD_SHORT[wd]}</div>${row.map((v, h) => { const s = cls(v); return `<div class="c" style="background:var(--seq-${s});color:${s >= 5 ? 'var(--surface)' : 'var(--ink-2)'}" title="${WD_LONG[wd]} ${pad2(h)}:00–${pad2(h + 1)}:00 · ${mLabel()} ${fmt(v)} ${unitLbl}">${v >= 10 ? Math.round(v) : fmt(v, 1)}</div>`; }).join('')}`).join('')}
   </div>
-  <div class="heat-scale"><span>0</span><span class="ramp">${Array.from({ length: steps }, (_, i) => `<i style="background:var(--seq-${i})"></i>`).join('')}</span><span>${fmt(max)} ${unitLbl}</span></div>`;
+  <div class="heat-scale"><span>0</span><span class="ramp">${Array.from({ length: steps }, (_, i) => `<i style="background:var(--seq-${i})"></i>`).join('')}</span><span>${fmt(max)} ${unitLbl} (${mLabel()})</span></div>`;
 }
 
 function streamTable(frame) {
@@ -589,7 +452,7 @@ function viewBeds(el, frame) {
   const c = C();
   mkChart($('#ch-hist'), {
     type: 'bar',
-    data: { labels: hist.map((_, i) => i), datasets: [{ data: hist.map(n => n / all.n * 100), backgroundColor: hist.map((_, i) => (i > beds ? c.crit : c.series[0])), borderRadius: { topLeft: 3, topRight: 3 }, borderSkipped: 'bottom', barPercentage: 0.86, categoryPercentage: 0.92 }] },
+    data: { labels: hist.map((_, i) => i), datasets: [{ data: hist.map(n => n / all.n * 100), backgroundColor: hist.map((_, i) => (i > beds ? c.crit : c.series[0])), barPercentage: 0.86, categoryPercentage: 0.92 }] },
     options: {
       scales: { x: { grid: { display: false }, border: { color: c.axis }, title: { display: true, text: 'Aantal patiënten tegelijk', color: c.muted, font: { size: 11 } } }, y: { beginAtZero: true, grid: { color: c.grid }, border: { display: false }, ticks: { callback: v => v + '%' } } },
       plugins: { tooltip: { callbacks: { title: it => `${it[0].label} patiënten`, label: it => ` ${fmt(it.raw)}% van de tijd`, footer: it => (+it[0].label > beds ? 'Boven capaciteit' : `${beds - it[0].label} bedden vrij`) } } },
@@ -644,6 +507,15 @@ function bedTable(frame, beds) {
 /* 4. VERPLEEGKUNDIGE INZET: zie staff.js */
 
 /* ═════════════ 5. PROGNOSE ═════════════ */
+function todayWeek() { const t = new Date(); return { ds: ymd(t.getFullYear(), t.getMonth() + 1, t.getDate()), ...isoWeek(ymd(t.getFullYear(), t.getMonth() + 1, t.getDate())) }; }
+// Lijst van ISO-weken voor de gekozen horizon.
+function horizonWeeks(fc) {
+  const now = todayWeek();
+  if (S.fcRange === 'year') return Array.from({ length: 52 }, (_, i) => fc.at(now.isoYear, i + 1));
+  const out = []; let m = isoWeekMonday(now.isoYear, now.week);
+  for (let i = 0; i < 13; i++) { const w = isoWeek(m); out.push(fc.at(w.isoYear, w.week)); m = addDays(m, 7); }
+  return out;
+}
 function viewForecast(el, frame) {
   const beds = bedsOf(S.unit);
   const fc = forecast(frame, ALL_SLOTS, S.refusal);
@@ -653,70 +525,98 @@ function viewForecast(el, frame) {
   }
   const isAll = S.unit === 'ALL';
   const cfg = isAll ? null : cfgOf(S.unit);
-  const shiftFc = isAll ? null : cfg.shifts.map(sh => forecast(frame, slotsOfShift(sh), S.refusal));
-  const peak = fc.weeks.reduce((a, b) => (b.val > a.val ? b : a));
-  const overWeeks = fc.weeks.filter(w => w.val > beds).length;
-  const vac = fc.weeks.filter(w => w.vacation), nonVac = fc.weeks.filter(w => !w.vacation);
+  const now = todayWeek();
+  const weeks = horizonWeeks(fc);
+  const nowIdx = weeks.findIndex(w => w.isoYear === now.isoYear && w.week === now.week);
+  // Per week: het gemiddelde vraagprofiel geschaald met (prognose ÷ jaargemiddelde prognose),
+  // daarna hetzelfde kwartier-advies als bij Verpleegkundige inzet.
+  let shiftFc = null;
+  if (!isAll) {
+    const prof = demandProfile(frame);
+    const avgProf = Array.from({ length: 96 }, (_, q) => mean(prof.map(p => p[q])));
+    const base = mean(Array.from({ length: 52 }, (_, i) => fc.at(now.isoYear, i + 1).val)) || 1;
+    const avgPlan = cfg.shifts.map(sh => ({ ...sh, plan: Array(7).fill(Math.round(mean(sh.plan))) }));
+    const adv = weeks.map(w => adviseDay(avgPlan, avgProf.map(v => v * w.val / base), 0, cfg.minStaff).plan);
+    shiftFc = cfg.shifts.map((_, si) => weeks.map((w, wi) => ({ ...w, need: adv[wi][si] })));
+  }
+  const peak = weeks.reduce((a, b) => (b.val > a.val ? b : a));
+  const overWeeks = weeks.filter(w => w.val > beds).length;
+  const next4 = weeks.slice(Math.max(0, nowIdx), Math.max(0, nowIdx) + 4);
+  const all52 = Array.from({ length: 52 }, (_, i) => fc.at(now.isoYear, i + 1));
+  const vac = all52.filter(w => w.vacation), nonVac = all52.filter(w => !w.vacation);
   const vacDiff = (mean(vac.map(w => w.season)) / mean(nonVac.map(w => w.season)) - 1) * 100;
   const pct = 100 - S.refusal;
-  const holidays = nlHolidays(fc.fcYear);
+  const lastDs = frame.all[frame.all.length - 1].ds;
+  const gapWeeks = Math.max(0, Math.round((utcDate(isoWeekMonday(now.isoYear, now.week)) - utcDate(fc.lastMonday)) / (7 * 86400000)));
+  const holidays = { ...nlHolidays(now.isoYear), ...nlHolidays(now.isoYear + 1) };
   const holInWeek = w => Object.entries(holidays).filter(([ds]) => ds >= w.monday && ds <= addDays(w.monday, 6)).map(([, n]) => n);
   const c = C();
+  const span = `week ${weeks[0].week}${weeks[0].isoYear !== weeks[weeks.length - 1].isoYear ? ' ' + weeks[0].isoYear : ''} t/m week ${weeks[weeks.length - 1].week} ${weeks[weeks.length - 1].isoYear}`;
 
   el.innerHTML = `
-    <section class="panel stagger" style="margin-bottom:16px">
+    <section class="panel stagger fc-intro" style="margin-bottom:16px">
       <div class="panel-head">
-        <div><h2>Prognose ${fc.fcYear}</h2><div class="desc">Per week de P${fmt(pct, pct % 1 ? 1 : 0)} van de dagmaxima, met lineaire trend × seizoensindex per weeknummer. Gebaseerd op ${fc.nWeeks} weken historie (${fc.years[0]}–${fc.years[fc.years.length - 1]}). Periode- en dagfilters gelden hier niet; de prognose gebruikt alle historie.</div></div>
-        <div class="set"><label>Weigeringskans</label><div class="seg small" role="group" aria-label="Weigeringskans" data-ind="refusal">${[1, 2.5, 5, 10].map(r => `<button class="${S.refusal === r ? 'on' : ''}" data-act="refusal" data-arg="${r}">${fmt(r, r % 1 ? 1 : 0)}%</button>`).join('')}</div></div>
+        <div>
+          <h2>Prognose ${span}</h2>
+          <div class="desc">We zitten nu in <b>week ${now.week} van ${now.isoYear}</b> (${fmtDay(now.ds)}). De historie loopt t/m ${fmtDay(lastDs)} ${lastDs.slice(0, 4)} (${fc.nWeeks} weken, ${fc.years[0]}–${fc.years[fc.years.length - 1]})${gapWeeks > 1 ? `; de prognose kijkt dus ${gapWeeks} weken vooruit vanaf het einde van de data` : ''}.
+          Per week: P${fmt(pct, pct % 1 ? 1 : 0)} van de dagmaxima (weigeringskans ${fmt(S.refusal, S.refusal % 1 ? 1 : 0)}%), met lineaire trend × seizoensindex per weeknummer. Periode- en dagfilters gelden hier niet.</div>
+        </div>
+        <div class="set-row">
+          <div class="set"><label>Horizon</label><div class="seg small" role="group" aria-label="Horizon" data-ind="fcrange">${[['next', 'Komende 13 weken'], ['year', `Heel ${now.isoYear}`]].map(([v, l]) => `<button class="${S.fcRange === v ? 'on' : ''}" data-act="fcrange" data-arg="${v}">${l}</button>`).join('')}</div></div>
+          <div class="set"><label>Weigeringskans</label><div class="seg small" role="group" aria-label="Weigeringskans" data-ind="refusal">${[1, 2.5, 5, 10].map(r => `<button class="${S.refusal === r ? 'on' : ''}" data-act="refusal" data-arg="${r}">${fmt(r, r % 1 ? 1 : 0)}%</button>`).join('')}</div></div>
+        </div>
       </div>
     </section>
     <div class="kpis">
-      ${kpi('Drukste week', `wk ${peak.week}`, '', `${fmt(peak.val)} patiënten · ${fmtDay(peak.monday)}${peak.vacation ? ' · ' + peak.vacation.toLowerCase() : ''}`)}
-      ${kpi('Weken boven bedden', kn(overWeeks, 0), `van 52`, `prognose > ${beds} bedden`, statusPill(overWeeks === 0 ? 'good' : overWeeks < 8 ? 'warn' : 'crit', overWeeks === 0 ? 'Past het hele jaar' : `${overWeeks} weken krap`))}
-      ${kpi('Trend', `${fc.slopePerYear >= 0 ? '+' : ''}${fmt(fc.slopePerYear)}`, 'pat./jaar', 'lineaire trend in de wekelijkse piek')}
-      ${kpi('Effect schoolvakanties', `${vacDiff >= 0 ? '+' : ''}${fmt(vacDiff, 0)}`, '%', 'seizoensindex vakantieweken t.o.v. overige weken')}
+      ${kpi('Nu', `week ${now.week}`, String(now.isoYear), `${fmtDay(now.ds)} · prognose ${fmt(nowIdx >= 0 ? weeks[nowIdx].val : fc.at(now.isoYear, now.week).val)} patiënten`)}
+      ${kpi('Komende 4 weken', kn(next4.length ? Math.max(...next4.map(w => w.val)) : 0), 'patiënten piek', next4.length ? `week ${next4[0].week}–${next4[next4.length - 1].week}` : '', next4.some(w => w.val > beds) ? statusPill('crit', 'Boven de bedden') : statusPill('good', `Binnen ${beds} bedden`))}
+      ${kpi('Drukste week in beeld', `wk ${peak.week}`, String(peak.isoYear), `${fmt(peak.val)} patiënten · vanaf ${fmtDay(peak.monday)}${peak.vacation ? ' · ' + peak.vacation.toLowerCase() : ''}`)}
+      ${kpi('Weken boven bedden', kn(overWeeks, 0), `van ${weeks.length}`, `prognose > ${beds} bedden · trend ${fc.slopePerYear >= 0 ? '+' : ''}${fmt(fc.slopePerYear)} pat./jaar · vakanties ${vacDiff >= 0 ? '+' : ''}${fmt(vacDiff, 0)}%`, statusPill(overWeeks === 0 ? 'good' : overWeeks < 4 ? 'warn' : 'crit', overWeeks === 0 ? 'Past' : `${overWeeks} weken krap`))}
     </div>
     <section class="panel stagger">
-      <div class="panel-head"><div><h2>Verwachte piekbezetting per week</h2><div class="desc">Staaf = prognose; streepje = historisch gemiddelde tot maximum in dat weeknummer. Rood = boven de ${beds} bedden.</div></div></div>
+      <div class="panel-head"><div><h2>Verwachte piekbezetting per week</h2><div class="desc">Staaf = prognose voor die week; streepje = historisch gemiddelde tot maximum in hetzelfde weeknummer. Rood = boven de ${beds} bedden. "Nu" = de huidige week.</div></div></div>
       <div class="chart-box tall"><canvas id="ch-fc" role="img" aria-label="Prognose per week"></canvas></div>
       <div class="legend"><span><i class="sw" style="background:var(--s1)"></i>Prognose binnen capaciteit</span><span><i class="sw" style="background:var(--crit)"></i>Boven capaciteit</span><span class="sep"></span><span><i class="wh"></i>Historie gem.–max</span><span><i class="ln"></i>Open bedden</span></div>
     </section>
     ${isAll ? `<p class="note">Per afdeling zie je in hun eigen tabblad ook de benodigde verpleegkundigen per week.</p>` : `
     <section class="panel stagger" style="margin-top:16px">
-      <div class="panel-head"><div><h2>Verpleegkundigen nodig per week</h2><div class="desc">⌈ prognose per dienst ÷ ratio ⌉, vergeleken met het gemiddelde rooster van die dienst. Klik of beweeg over een week voor details.</div></div></div>
-      <div class="table-wrap">${forecastStrip(shiftFc, cfg)}</div>
+      <div class="panel-head"><div><h2>Verpleegkundigen nodig per week en dienst</h2><div class="desc">Advies per dienst als de bezetting de prognose van die week volgt (zelfde kwartier-toets als bij Verpleegkundige inzet), tegen het gemiddelde rooster. Beweeg over een week voor details.</div></div></div>
+      <div class="table-wrap">${forecastStrip(shiftFc, cfg, weeks, nowIdx)}</div>
       <div class="heat-scale"><span class="diff neg">−1</span> overschot <span class="diff zero">0</span> sluitend <span class="diff pos">+1</span> tekort t.o.v. rooster</div>
     </section>`}`;
 
   mkChart($('#ch-fc'), {
     type: 'bar',
-    data: { labels: fc.weeks.map(w => w.week), datasets: [{ label: 'Prognose', data: fc.weeks.map(w => w.val), backgroundColor: fc.weeks.map(w => (w.val > beds ? c.crit : c.series[0])), borderRadius: { topLeft: 2, topRight: 2 }, borderSkipped: 'bottom', barPercentage: 0.8, categoryPercentage: 0.92 }] },
+    data: { labels: weeks.map(w => [`wk ${w.week}`, w.week === 1 || w === weeks[0] ? String(w.isoYear) : '']), datasets: [{ label: 'Prognose', data: weeks.map(w => w.val), backgroundColor: weeks.map(w => (w.val > beds ? c.crit : c.series[0])), barPercentage: 0.8, categoryPercentage: 0.92 }] },
     options: {
-      scales: { ...baseScales({ yMax: Math.ceil(Math.max(beds, ...fc.weeks.map(w => w.max || 0)) + 1), yTitle: 'Patiënten' }), x: { grid: { display: false }, border: { color: c.axis }, ticks: { maxRotation: 0, autoSkip: false, callback: (v, i) => (i % 4 === 0 ? `wk ${fc.weeks[i].week}` : '') } } },
+      layout: { padding: { top: 18 } },
+      scales: { ...baseScales({ yMax: Math.ceil(Math.max(beds, ...weeks.map(w => w.max || 0), ...weeks.map(w => w.val)) + 1), yTitle: 'Patiënten' }), x: { grid: { display: false }, border: { color: c.axis }, ticks: { maxRotation: 0, autoSkip: false, callback: (v, i) => (weeks.length <= 13 || i % 4 === 0 || i === nowIdx ? [`wk ${weeks[i].week}`, i === 0 || weeks[i].week === 1 ? String(weeks[i].isoYear) : ''] : '') } } },
       plugins: {
-        whiskers: { data: fc.weeks.map(w => ({ lo: w.avg, hi: w.max })) },
+        nowMarker: nowIdx >= 0 ? { index: nowIdx } : {},
+        whiskers: { data: weeks.map(w => ({ lo: w.avg, hi: w.max })) },
         capLine: { value: beds, label: `${beds} open bedden` },
         tooltip: { callbacks: {
-          title: it => { const w = fc.weeks[it[0].dataIndex]; return `Week ${w.week} · vanaf ${fmtDay(w.monday)}`; },
+          title: it => { const w = weeks[it[0].dataIndex]; return `Week ${w.week} · ${w.isoYear} · vanaf ${fmtDay(w.monday)}`; },
           label: it => ` Prognose: ${fmt(it.raw)} patiënten`,
-          footer: it => { const w = fc.weeks[it[0].dataIndex]; const h = holInWeek(w); return [`Historie gem. ${fmt(w.avg)} · max ${fmt(w.max, 0)}`, `Seizoensindex ${fmt(w.season, 2)}`, ...(w.vacation ? [w.vacation] : []), ...(h.length ? [h.join(', ')] : [])]; },
+          footer: it => { const w = weeks[it[0].dataIndex]; const h = holInWeek(w); return [`Historie wk ${w.week}: gem. ${fmt(w.avg)} · max ${fmt(w.max, 0)}`, `Seizoensindex ${fmt(w.season, 2)}`, ...(w.vacation ? [w.vacation] : []), ...(h.length ? [h.join(', ')] : [])]; },
         } },
       },
     },
   });
 }
 
-function forecastStrip(shiftFc, cfg) {
-  return `<div class="strip" role="table" aria-label="Verpleegkundigen per week">
-    <div></div>${Array.from({ length: 52 }, (_, i) => `<div class="sh">${(i + 1) % 4 === 1 ? i + 1 : ''}</div>`).join('')}
+function forecastStrip(shiftFc, cfg, weeks, nowIdx) {
+  const n = weeks.length;
+  return `<div class="strip" role="table" aria-label="Verpleegkundigen per week" style="grid-template-columns: 110px repeat(${n}, minmax(0, 1fr)); min-width:${n > 13 ? 760 : 0}px">
+    <div></div>${weeks.map((w, i) => `<div class="sh ${i === nowIdx ? 'now' : ''}">${n <= 13 || i % 4 === 0 || i === nowIdx ? 'wk ' + w.week : ''}</div>`).join('')}
     ${cfg.shifts.map((sh, si) => {
       const f = shiftFc[si]; const plan = Math.round(mean(sh.plan));
-      return `<div class="sl" title="${esc(sh.label)} ${shiftSpan(sh)} · ${fmtRatio(sh.ratio)}">${esc(sh.label)}</div>` + (f ? f.weeks.map(w => {
-        const need = Math.max(cfg.minStaff, needOf(w.val, sh.ratio)); const d = need - plan;
-        const bg = d > 0 ? `color-mix(in srgb, var(--div-pos) ${Math.min(100, 35 + d * 25)}%, var(--surface))` : d < 0 ? `color-mix(in srgb, var(--div-neg) ${Math.min(80, 20 + -d * 18)}%, var(--surface))` : 'var(--surface-2)';
+      return `<div class="sl" title="${esc(sh.label)} ${shiftSpan(sh)} · ${fmtRatio(sh.ratio)}">${esc(sh.label)} <span class="hint">${plan} vpk</span></div>` + (f ? f.map((w, i) => {
+        const need = w.need; const d = need - plan;
+        const bg = d > 0 ? `color-mix(in srgb, var(--nurse) ${Math.min(100, 30 + d * 25)}%, var(--surface))` : d < 0 ? `color-mix(in srgb, var(--s2) ${Math.min(80, 20 + -d * 18)}%, var(--surface))` : 'var(--surface-2)';
         const fg = d >= 2 ? '#fff' : 'var(--ink)';
-        return `<div class="sc" style="background:${bg};color:${fg}" title="Week ${w.week} · ${esc(sh.label)}: ${need} nodig, ${plan} ingepland (prognose ${fmt(w.val)} pat., norm ${fmtRatio(sh.ratio)})">${need}</div>`;
-      }).join('') : Array.from({ length: 52 }, () => '<div class="sc">—</div>').join(''));
+        return `<div class="sc ${i === nowIdx ? 'now' : ''}" style="background:${bg};color:${fg}" title="Week ${w.week} ${w.isoYear} · ${esc(sh.label)}: advies ${need}, ingepland ${plan} (prognose ${fmt(w.val)} pat., norm ${fmtRatio(sh.ratio)})">${need}</div>`;
+      }).join('') : weeks.map(() => '<div class="sc">—</div>').join(''));
     }).join('')}
   </div>`;
 }
@@ -764,7 +664,8 @@ function viewInstroom(el) {
   if (!frame || !frame.days.length) { el.innerHTML = head + `<div class="empty-state"><h2>Geen dagen in deze selectie</h2><p>Verruim de periode- of dagfilter.</p></div>`; return; }
 
   const dayTot = ci => frame.days.map(d => { let t = 0; for (let q = 0; q < 96; q++) t += d.parts[ci][q]; return t; });
-  const perHour = ci => Array.from({ length: 24 }, (_, h) => mean(collect(frame.days, [[0, h * 4], [0, h * 4 + 1], [0, h * 4 + 2], [0, h * 4 + 3]], ci)) * 4);
+  // Aankomsten per uur volgens de norm: per dag het aantal in dat uur, daarover Gem./P95/µ+2σ/Max.
+  const perHour = ci => Array.from({ length: 24 }, (_, h) => heatVal(frame.days, h, ci, 'sum'));
   const t0 = stats(dayTot(0)), h0 = perHour(0);
   const peakH = h0.indexOf(Math.max(...h0));
   const wdAvg = WD_SHORT.map((_, wd) => { const dd = frame.days.filter(d => d.wd === wd); return dd.length ? mean(dd.map(d => { let t = 0; for (let q = 0; q < 96; q++) t += d.parts[0][q]; return t; })) : 0; });
@@ -773,37 +674,37 @@ function viewInstroom(el) {
 
   el.innerHTML = head + `
     <div class="kpis">
-      ${kpi('Aankomsten per dag', kn(t0.avg), 'gem.', esc(comps[0].label))}
+      ${kpi(`Aankomsten per dag (${mLabel()})`, kn(mv(t0)), '', `gemiddeld ${fmt(t0.avg)} · ${esc(comps[0].label)}`)}
       ${kpi('Drukke dag (P95)', kn(t0.p95, 0), 'aankomsten', `max ${fmt(t0.max, 0)} op één dag`)}
-      ${kpi('Drukste uur', `${pad2(peakH)}:00`, '', `gem. ${fmt(h0[peakH])} aankomsten per uur`)}
+      ${kpi('Drukste uur', `${pad2(peakH)}:00`, '', `${mLabel()} ${fmt(h0[peakH])} aankomsten per uur`)}
       ${kpi('Drukste weekdag', WD_LONG[peakWd], '', `gem. ${fmt(wdAvg[peakWd])} aankomsten`)}
     </div>
     <div class="grid g-2">
       <section class="panel stagger">
-        <div class="panel-head"><div><h2>Aankomsten per uur van de dag</h2><div class="desc">Gemiddeld aantal aankomsten per uur, per gekozen instroomreeks.</div></div></div>
+        <div class="panel-head"><div><h2>Aankomsten per uur van de dag</h2><div class="desc">Aankomsten per uur (${mLabel()} over de dagen), per gekozen instroomreeks.</div></div></div>
         <div class="chart-box"><canvas id="ch-in-hour" role="img" aria-label="Aankomsten per uur"></canvas></div>
         ${legendHTML(comps)}
       </section>
       <section class="panel stagger">
-        <div class="panel-head"><div><h2>Weekpatroon · ${esc(comps[0].label)}</h2><div class="desc">Gemiddeld aantal aankomsten per weekdag en uur.</div></div></div>
-        <div class="table-wrap">${heatmapHTML(frame, 0, 'sum', 'aankomsten per uur (gem.)')}</div>
+        <div class="panel-head"><div><h2>Weekpatroon · ${esc(comps[0].label)}</h2><div class="desc">Aankomsten per weekdag en uur (${mLabel()}).</div></div></div>
+        <div class="table-wrap">${heatmapHTML(frame, 0, 'sum', 'aankomsten per uur')}</div>
       </section>
     </div>
     <section class="panel stagger" style="margin-top:16px">
-      <div class="panel-head"><div><h2>Aankomsten per dag, per maand</h2><div class="desc">Gemiddeld aantal aankomsten per dag in elke maand.</div></div></div>
+      <div class="panel-head"><div><h2>Aankomsten per dag, per maand</h2><div class="desc">Aankomsten per dag in elke maand (${mLabel()} over de dagen van die maand).</div></div></div>
       <div class="chart-box short"><canvas id="ch-in-month" role="img" aria-label="Aankomsten per maand"></canvas></div>
       ${legendHTML(comps)}
     </section>
     <section class="panel stagger" style="margin-top:16px">
-      <div class="panel-head"><div><h2>Instroom per dienst</h2><div class="desc">Gemiddeld aantal aankomsten per dienst en per dag.</div></div></div>
-      <div class="table-wrap"><table class="data" data-name="Instroom"><thead><tr><th>Reeks</th><th class="num">Per dag</th><th class="num">P95 per dag</th><th class="num">Max per dag</th>${SHIFT_KEYS.map(k => `<th class="num">${SHIFT_INFO[k].label} <span class="mono">${shiftTimes(k)}</span></th>`).join('')}</tr></thead><tbody>
-        ${comps.map((cp, ci) => { const t = stats(dayTot(ci)); return `<tr><td><span class="cell-name"><i class="sw" style="background:${cssColor(cp)}"></i>${esc(cp.label)}</span></td><td class="num">${fmt(t.avg)}</td><td class="num">${fmt(t.p95, 0)}</td><td class="num">${fmt(t.max, 0)}</td>${SHIFT_KEYS.map(k => `<td class="num">${fmt(mean(collect(frame.days, shiftSlots(k), ci)) * shiftSlots(k).length)}</td>`).join('')}</tr>`; }).join('')}
+      <div class="panel-head"><div><h2>Instroom per dienst</h2><div class="desc">Aankomsten per dag en per dienst (${mLabel()} over de dagen).</div></div></div>
+      <div class="table-wrap"><table class="data" data-name="Instroom"><thead><tr><th>Reeks</th><th class="num">Per dag (${mLabel()})</th><th class="num">P95 per dag</th><th class="num">Max per dag</th>${SHIFT_KEYS.map(k => `<th class="num">${SHIFT_INFO[k].label} <span class="mono">${shiftTimes(k)}</span></th>`).join('')}</tr></thead><tbody>
+        ${comps.map((cp, ci) => { const t = stats(dayTot(ci)); return `<tr><td><span class="cell-name"><i class="sw" style="background:${cssColor(cp)}"></i>${esc(cp.label)}</span></td><td class="num">${fmt(mv(t))}</td><td class="num">${fmt(t.p95, 0)}</td><td class="num">${fmt(t.max, 0)}</td>${SHIFT_KEYS.map(k => { const st = stats(frame.days.map(d => { let t = 0; for (const [off, q] of shiftSlots(k)) { const src = off ? d.next : d; if (src) t += src.parts[ci][q]; } return t; })); return `<td class="num">${fmt(st ? mv(st) : null)}</td>`; }).join('')}</tr>`; }).join('')}
       </tbody></table></div>
     </section>`;
 
   mkChart($('#ch-in-hour'), {
     type: 'bar',
-    data: { labels: h0.map((_, h) => `${pad2(h)}:00`), datasets: comps.map((cp, ci) => ({ label: cp.label, data: perHour(ci), backgroundColor: colorOf(cp), borderRadius: { topLeft: 3, topRight: 3 }, borderSkipped: 'bottom', barPercentage: 0.9, categoryPercentage: 0.82 })) },
+    data: { labels: h0.map((_, h) => `${pad2(h)}:00`), datasets: comps.map((cp, ci) => ({ label: cp.label, data: perHour(ci), backgroundColor: colorOf(cp), barPercentage: 0.9, categoryPercentage: 0.82 })) },
     options: {
       interaction: { mode: 'index', intersect: false },
       scales: { x: { grid: { display: false }, border: { color: c.axis }, ticks: { maxRotation: 0, autoSkip: true, autoSkipPadding: 10 } }, y: { beginAtZero: true, grid: { color: c.grid }, border: { display: false } } },
@@ -814,7 +715,7 @@ function viewInstroom(el) {
   mkChart($('#ch-in-month'), {
     type: 'line',
     data: { labels: months.map(k => `${MONTH_SHORT[+k.slice(5) - 1]} ${k.slice(2, 4)}`), datasets: comps.map((cp, ci) => ({ label: cp.label, borderColor: colorOf(cp), backgroundColor: colorOf(cp), borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, tension: 0.25,
-      data: months.map(k => { const dd = frame.days.filter(d => `${d.y}-${pad2(d.m)}` === k); return mean(dd.map(d => { let t = 0; for (let q = 0; q < 96; q++) t += d.parts[ci][q]; return t; })); }) })) },
+      data: months.map(k => { const dd = frame.days.filter(d => `${d.y}-${pad2(d.m)}` === k); const st = stats(dd.map(d => { let t = 0; for (let q = 0; q < 96; q++) t += d.parts[ci][q]; return t; })); return st ? mv(st) : null; }) })) },
     options: { interaction: { mode: 'index', intersect: false }, scales: { x: { grid: { display: false }, ticks: { maxRotation: 0, autoSkipPadding: 10 } }, y: { beginAtZero: true, grid: { color: c.grid }, border: { display: false } } }, plugins: { tooltip: { callbacks: { label: it => ` ${it.dataset.label}: ${fmt(it.raw)} per dag` } } } },
   });
 }
@@ -839,7 +740,7 @@ function viewJDT(el) {
   const peakH = hourStats.reduce((b, s2, h) => (s2 && s2.avg > (hourStats[b] ? hourStats[b].avg : -1) ? h : b), 0);
   const pts = mean(days.map(d => d.hours.reduce((a, b) => a + (b || 0), 0)));
   const c = C();
-  const heat = WD_SHORT.map((_, wd) => Array.from({ length: 24 }, (_, h) => mean(days.filter(d => d.wd === wd).map(d => pct(d.hours[h], h)).filter(v => v != null))));
+  const heat = WD_SHORT.map((_, wd) => Array.from({ length: 24 }, (_, h) => { const st = stats(days.filter(d => d.wd === wd).map(d => pct(d.hours[h], h)).filter(v => v != null)); return st ? mv(st) : 0; }));
   const cellBg = v => (v >= 100 ? `color-mix(in srgb, var(--div-pos) ${Math.min(95, 30 + (v - 100) * 1.4)}%, var(--surface))` : `color-mix(in srgb, var(--div-neg) ${Math.max(4, Math.min(60, (100 - v) * 0.55))}%, var(--surface))`);
 
   el.innerHTML = `<div class="filters">
@@ -852,7 +753,7 @@ function viewJDT(el) {
       <span class="note" style="margin:0">${esc(st.fileName)} · ${days.length.toLocaleString('nl-NL')} dagen</span>
     </div>
     <div class="kpis">
-      ${kpi('Gemiddelde werkdruk', kn(tot ? tot.avg : 0, 0), '%', 'JDT-punten ÷ (vpk × 30)')}
+      ${kpi(`Werkdruk (${mLabel()})`, kn(tot ? mv(tot) : 0, 0), '%', `gemiddeld ${fmt(tot ? tot.avg : 0, 0)}% · JDT-punten ÷ (vpk × 30)`)}
       ${kpi('Uren boven 100%', kn(over), '%', 'van alle uren in de selectie', statusPill(over < 5 ? 'good' : over < 15 ? 'warn' : 'crit', over < 5 ? 'Beheersbaar' : over < 15 ? 'Regelmatig te hoog' : 'Vaak te hoog'))}
       ${kpi('Zwaarste uur', `${pad2(peakH)}:00`, '', `gem. ${fmt(hourStats[peakH] ? hourStats[peakH].avg : 0, 0)}% bij ${S.jdtVpk[peakH]} vpk`)}
       ${kpi('JDT-punten per dag', kn(pts, 0), 'gem.', `${fmt(pts / 24, 0)} per uur`)}
@@ -871,7 +772,7 @@ function viewJDT(el) {
       </tbody></table></div>
     </section>
     <section class="panel stagger" style="margin-top:16px">
-      <div class="panel-head"><div><h2>Werkdruk per weekdag en uur</h2><div class="desc">Gemiddelde werkdruk in %. Rood boven 100%, blauw eronder.</div></div></div>
+      <div class="panel-head"><div><h2>Werkdruk per weekdag en uur</h2><div class="desc">Werkdruk in % (${mLabel()}). Rood boven 100%, blauw eronder.</div></div></div>
       <div class="table-wrap"><div class="heat" role="table" aria-label="Werkdruk per weekdag en uur">
         <div></div>${Array.from({ length: 24 }, (_, h) => `<div class="hh">${h % 3 === 0 ? pad2(h) : ''}</div>`).join('')}
         ${heat.map((row, wd) => `<div class="hl">${WD_SHORT[wd]}</div>${row.map((v, h) => `<div class="c" style="background:${cellBg(v)};color:${v >= 140 ? '#fff' : 'var(--ink-2)'}" title="${WD_LONG[wd]} ${pad2(h)}:00 · ${fmt(v, 0)}% werkdruk">${Math.round(v)}</div>`).join('')}`).join('')}

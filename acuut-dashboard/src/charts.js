@@ -12,6 +12,7 @@ function C() {
     surface: tok('surface'), line: tok('line'), accent: tok('accent'),
     good: tok('good'), warn: tok('warn'), crit: tok('crit'), divPos: tok('div-pos'), divNeg: tok('div-neg'),
     series: [1, 2, 3, 4, 5, 6, 7, 8].map(i => tok('s' + i)),
+    gone: tok('gone'), nurse: tok('nurse'),
   };
 }
 function alpha(hex, a) {

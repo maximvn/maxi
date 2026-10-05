@@ -12,6 +12,8 @@
                     wat nergens nodig is (niet onder het minimum per dienst).
    ════════════════════════════════════════════════════════════════════ */
 const RATIO_PRESETS = [1, 1.5, 2, 2.5, 3, 4];
+// Dienstkleuren: alleen tinten waarop witte tekst leesbaar blijft.
+const SHIFT_TOKENS = ['s1', 's4', 's6', 's7', 's8', 's5'];
 const fmtRatio = r => '1:' + fmt(r, r % 1 ? 1 : 0);
 const shiftShort = s => (s.label || '?').trim().charAt(0).toUpperCase();
 const shiftSpan = s => `${hhmm(s.start)}–${hhmm(s.end)}`;
@@ -117,7 +119,7 @@ function viewStaff(el, frame) {
   const wd = S.staffDay ?? 0;
   const lines = adviceLines(sum);
   const c = C();
-  const shColor = i => `var(--s${(i % 8) + 1})`;
+  const shColor = i => `var(--${SHIFT_TOKENS[i % SHIFT_TOKENS.length]})`;
   const diffChip = d => `<span class="diff ${d > 0 ? 'pos' : d < 0 ? 'neg' : 'zero'}">${d > 0 ? '+' : ''}${d}</span>`;
   // patiënten volgens de norm per dienst en weekdag (ter informatie in het rooster)
   const shiftLoad = (s, w) => { const st = stats(collect(frame.days.filter(d => d.wd === w), slotsOfShift(s))); return st ? mv(st) : null; };
@@ -125,7 +127,7 @@ function viewStaff(el, frame) {
   el.innerHTML = `
     <section class="panel stagger" style="margin-bottom:16px">
       <div class="panel-head">
-        <div><h2>Diensten en normen</h2><div class="desc">Per dienst: tijden en hoeveel patiënten één verpleegkundige kan zien. Voeg tussendiensten toe waar pieken vallen; het advies rekent direct mee.</div></div>
+        <div><h2>Diensten, bezetting en normen</h2><div class="desc">Per dienst: tijden, het aantal verpleegkundigen en hoeveel patiënten één verpleegkundige kan zien. Voeg tussendiensten toe waar pieken vallen; het advies rekent direct mee. Per dag afwijken kan in het rooster onderaan.</div></div>
         <div class="set-row">
           <div class="set"><label for="in-minStaff">Minimum per dienst</label>${stepper('minStaff', cfg.minStaff, 'Minimum per dienst')}</div>
           <div class="set"><label for="in-fte">Contracturen per FTE</label><input type="number" id="in-fte" data-path="fteHours" value="${S.fteHours}" min="1" style="width:80px"></div>
@@ -136,11 +138,16 @@ function viewStaff(el, frame) {
           <span class="shift-dot" style="background:${shColor(i)}">${esc(shiftShort(s))}</span>
           <input type="text" class="shift-name" id="in-sh-${i}-label" data-path="sh.${i}.label" value="${esc(s.label)}" aria-label="Naam dienst ${i + 1}" maxlength="24">
           <span class="set-row shift-time"><input type="time" step="900" id="in-sh-${i}-start" data-path="sh.${i}.start" value="${hhmm(s.start)}" aria-label="Start ${esc(s.label)}"><span>–</span><input type="time" step="900" id="in-sh-${i}-end" data-path="sh.${i}.end" value="${hhmm(s.end)}" aria-label="Einde ${esc(s.label)}"><span class="hint">${fmt(shiftHrs(s), shiftHrs(s) % 1 ? 1 : 0)} uur</span></span>
+          <span class="shift-count">
+            <span class="hint">Aantal vpk</span>${stepper(`sh.${i}.plan.all`, Math.round(mean(s.plan)) , `Aantal verpleegkundigen ${s.label}`)}
+            ${s.plan.some(v => v !== s.plan[0]) ? `<span class="hint" title="Per dag verschillend, zie rooster">${Math.min(...s.plan)}–${Math.max(...s.plan)} per dag</span>` : ''}
+          </span>
           <span class="shift-ratio">
             <span class="hint">1 vpk op</span>
             <span class="seg small" role="group" aria-label="Norm ${esc(s.label)}" data-ind="ratio-${i}">${RATIO_PRESETS.map(r => `<button class="${s.ratio === r ? 'on' : ''}" data-act="ratio" data-path="sh.${i}.ratio" data-arg="${r}">${fmt(r, r % 1 ? 1 : 0)}</button>`).join('')}</span>
             <input type="number" step="0.1" min="0.5" class="ratio-in" id="in-sh-${i}-ratio" data-path="sh.${i}.ratio" value="${s.ratio}" aria-label="Eigen norm ${esc(s.label)}"><span class="hint">pat.</span>
           </span>
+          <span class="shift-cap" title="Aantal vpk × norm">= <b>${fmt(Math.round(mean(s.plan)) * s.ratio, (Math.round(mean(s.plan)) * s.ratio) % 1 ? 1 : 0)}</b> patiënten</span>
           <button class="icon-btn" data-act="shift-del" data-arg="${i}" aria-label="Verwijder ${esc(s.label)}" ${shifts.length > 1 ? '' : 'disabled'}>×</button>
         </div>`).join('')}
       </div>
@@ -184,7 +191,7 @@ function viewStaff(el, frame) {
     <section class="panel stagger" style="margin-top:16px">
       <div class="panel-head"><div><h2>Verpleegkundigen (advies − ingepland)</h2><div class="desc">Boven de nul: er is meer nodig dan ingepland. Onder de nul: ruimte in het rooster.</div></div></div>
       <div class="chart-box"><canvas id="ch-staffdiff" role="img" aria-label="Verschil advies en ingepland"></canvas></div>
-      <div class="legend"><span><i class="sw" style="background:var(--div-pos)"></i>Tekort</span><span><i class="sw" style="background:var(--div-neg)"></i>Overschot</span><span class="sep"></span><span class="key">${shifts.map(s => `<b>${esc(shiftShort(s))}</b> ${esc(s.label)}`).join(' ')}</span></div>
+      <div class="legend"><span><i class="sw" style="background:var(--nurse)"></i>Verpleegkundigen (advies − ingepland)</span><span class="sep"></span><span class="key">${shifts.map(s => `<b>${esc(shiftShort(s))}</b> ${esc(s.label)}`).join(' ')}</span></div>
     </section>
     <section class="panel stagger" style="margin-top:16px">
       <div class="panel-head"><div><h2>Rooster</h2><div class="desc">Aantal ingeplande verpleegkundigen per dag en dienst. De regel "Advies" laat zien wat het model voorstelt.</div></div></div>
@@ -228,7 +235,7 @@ function viewStaff(el, frame) {
   const lim = Math.max(2, ...diffs.map(Math.abs));
   mkChart($('#ch-staffdiff'), {
     type: 'bar',
-    data: { labels, datasets: [{ label: 'Advies − ingepland', data: diffs.map(d => (d === 0 ? 0.06 : d)), backgroundColor: diffs.map(d => (d > 0 ? c.divPos : d < 0 ? c.divNeg : c.axis)), borderRadius: 3, borderSkipped: false, barPercentage: 0.66, categoryPercentage: 0.9 }] },
+    data: { labels, datasets: [{ label: 'Advies − ingepland', data: diffs.map(d => (d === 0 ? 0.06 : d)), backgroundColor: c.nurse, borderSkipped: false, barPercentage: 0.66, categoryPercentage: 0.9 }] },
     options: {
       scales: { x: { grid: { display: false }, border: { display: false }, ticks: { maxRotation: 0, autoSkip: false } }, y: { min: -lim - 1, max: lim + 1, grid: { color: ctx => (ctx.tick.value === 0 ? c.axis : c.grid), lineWidth: ctx => (ctx.tick.value === 0 ? 1.5 : 1) }, border: { display: false }, ticks: { precision: 0 } } },
       plugins: { dayBands: { size: shifts.length }, tooltip: { callbacks: { title: it => { const x = cells[it[0].dataIndex]; return `${WD_LONG[x.w]} · ${x.s.label} (${shiftSpan(x.s)})`; }, label: it => { const x = cells[it.dataIndex]; return [` Ingepland ${x.cur} · advies ${x.adv}`, ` Norm ${fmtRatio(x.s.ratio)}`]; } } } },
@@ -268,8 +275,8 @@ function viewStaffAll(el) {
     data: {
       labels: ok.map(r => r.u.label),
       datasets: [
-        { label: 'Ingepland', data: ok.map(r => r.sum.plan), backgroundColor: c.axis, borderRadius: 3, barPercentage: 0.7, categoryPercentage: 0.6 },
-        { label: 'Advies', data: ok.map(r => r.sum.need), backgroundColor: c.series[0], borderRadius: 3, barPercentage: 0.7, categoryPercentage: 0.6 },
+        { label: 'Ingepland', data: ok.map(r => r.sum.plan), backgroundColor: c.axis, barPercentage: 0.7, categoryPercentage: 0.6 },
+        { label: 'Advies', data: ok.map(r => r.sum.need), backgroundColor: c.series[0], barPercentage: 0.7, categoryPercentage: 0.6 },
       ],
     },
     options: { indexAxis: 'y', scales: { x: { beginAtZero: true, grid: { color: c.grid }, border: { display: false } }, y: { grid: { display: false }, border: { color: c.axis } } }, plugins: { tooltip: { callbacks: { label: it => ` ${it.dataset.label}: ${it.raw} diensten per week` } } } },

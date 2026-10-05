@@ -26,8 +26,11 @@ die terug op synthetische reeksen.
 3. **Analyse** — locatie-tabs (zoals het huidige dashboard). Per afdeling kies je met
    **Stromen kiezen** welke bestanden meetellen (basisstromen, totalen, scenario's, triage,
    losse analyses); het dashboard waarschuwt als een keuze dubbel telt. Weergaven:
-   - **Overzicht** — KPI's, bezetting per dienst (D/A/N) gestapeld per stroom met spreiding
-     en open-beddenlijn (typische week of een specifieke week), dagverloop, maandverloop, signalen.
+   - **Overzicht** — nagebouwd naar het Slingeland-dashboard: bezetting 08:00 → 08:00 met een
+     "Nu"-markering (vóór Nu werkelijk: nog aanwezig / reeds vertrokken; na Nu huidige patiënten
+     die blijven + verwachte nieuwe patiënten, bandbreedte P10–P95, open bedden, werkelijk achteraf),
+     peilmoment kiezen en uur voor uur afspelen; verpleegkundigen (nodig − ingepland) of
+     patiëntcapaciteit per dag × dienst; bezetting per dienst rond Nu of in een typische week.
    - **Stromen** — elke stroom in een eigen bandbreedte-grafiek (min–max, P95, gemiddeld) per
      uur, weekdag of maand, plus alle stromen samen als één stroom; weekpatroon-heatmap,
      maandtrend per stroom / samen / beide, en kerncijfers per dienst.
@@ -39,10 +42,14 @@ die terug op synthetische reeksen.
      vraag (bezetting volgens de norm) tegen capaciteit (vpk × norm) en stelt per dienst en
      dag bij; met één klik over te nemen. Dekkingsgrafiek met dienstbalken, advies − ingepland
      en FTE.
-   - **Prognose** — volgend jaar per week (percentiel van dagmaxima, trend × seizoensindex,
-     zelfde methode als het rekenmodel), plus benodigde verpleegkundigen per week.
+   - **Prognose** — vanaf de huidige ISO-week (komende 13 weken of het hele jaar), met "Nu"-markering;
+     percentiel van dagmaxima, trend × seizoensindex (zelfde methode als het rekenmodel), plus
+     het verpleegkundig advies per week en dienst.
    - **Instroom** en **JDT werkdruk** (SEH en Acute Poort) — aankomsten per uur/weekdag/dienst
      en werkdruk per uur met aanpasbare verpleegkundigen per uur.
+
+Alle grafieken, trends en heatmaps volgen de gekozen norm (Gem./P95/µ+2σ/Max): de hoogte is
+de norm van het totaal, verdeeld over de stromen naar hun aandeel.
 
 Filters (stromen aan/uit, jaar, seizoen/kwartaal, werkdagen/weekend, norm: Gem./P95/µ+2σ/Max)
 gelden voor alle weergaven. Instellingen (bedden, ratio's, rooster, diensttijden, stroomkeuze) worden in de browser onthouden.

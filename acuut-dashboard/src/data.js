@@ -464,15 +464,21 @@ function forecast(frame, slots, refusalPct, which = 'total') {
   const ratios = {};
   y.forEach((v, i) => { const t = slope * (i + 1) + intercept; if (t > 0) (ratios[list[i].week] = ratios[list[i].week] || []).push(v / t); });
   const seasonal = w => (ratios[w] && ratios[w].length ? mean(ratios[w]) : 1);
-  const lastYear = list[list.length - 1].isoYear, fcYear = lastYear + 1;
+  const lastW = list[list.length - 1];
+  const lastMonday = isoWeekMonday(lastW.isoYear, lastW.week);
   const hist = {};
   list.forEach(w => { (hist[w.week] = hist[w.week] || []).push(...w.vals); });
-  const out = [];
-  for (let w = 1; w <= 52; w++) {
-    const idx = list.length + w;
-    const val = Math.max(0, (slope * idx + intercept) * seasonal(w));
-    const h = hist[w] ? stats(hist[w]) : null;
-    out.push({ week: w, monday: isoWeekMonday(fcYear, w), val, avg: h ? h.avg : null, max: h ? h.max : null, p10: h ? h.p10 : null, vacation: vacationOf(w), season: seasonal(w) });
-  }
-  return { weeks: out, fcYear, slopePerYear: slope * 52, nWeeks: list.length, years: [...new Set(list.map(w => w.isoYear))] };
+  const histStats = {};
+  // Prognose voor elke ISO-week: trend op het doorlopende weeknummer × seizoensindex.
+  const at = (isoYear, week) => {
+    const monday = isoWeekMonday(isoYear, week);
+    const dw = Math.round((utcDate(monday) - utcDate(lastMonday)) / (7 * 86400000));
+    const idx = list.length + dw;
+    const w52 = Math.min(52, week);
+    const val = Math.max(0, (slope * idx + intercept) * seasonal(w52));
+    if (!(w52 in histStats)) histStats[w52] = hist[w52] ? stats(hist[w52]) : null;
+    const h = histStats[w52];
+    return { week, isoYear, monday, val, avg: h ? h.avg : null, max: h ? h.max : null, p10: h ? h.p10 : null, vacation: vacationOf(week), season: seasonal(w52), future: dw > 0 };
+  };
+  return { at, lastMonday, lastWeek: lastW, slopePerYear: slope * 52, nWeeks: list.length, years: [...new Set(list.map(w => w.isoYear))], seasonal };
 }
