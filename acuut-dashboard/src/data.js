@@ -3,7 +3,7 @@
    rekenkern (dagframes, diensten, statistiek).
    ════════════════════════════════════════════════════════════════════ */
 
-// streamId -> { fileName, source: 'bestand'|'voorbeeld'|'synthetisch', days: Map(date -> Float32Array(96)) }
+// datasetKey -> { fileName, source: 'bestand'|'voorbeeld', days: Map(date -> Float32Array(96)) }
 const STORE = {};
 
 /* ── Hulpfuncties datum ─────────────────────────────────────────────── */
@@ -225,101 +225,6 @@ function streamSummary(key) {
   return { n: keys.length, from: keys[0], to: keys[keys.length - 1] };
 }
 
-/* ── Synthetische voorbeelddata (zelfde vorm als de echte bestanden) ── */
-function mulberry32(a) {
-  return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
-}
-function poisson(lambda, rnd) {
-  if (lambda <= 0) return 0;
-  if (lambda > 30) return Math.max(0, Math.round(lambda + Math.sqrt(lambda) * gauss(rnd)));
-  const L = Math.exp(-lambda); let k = 0, p = 1;
-  do { k++; p *= rnd(); } while (p > L);
-  return k - 1;
-}
-function gauss(rnd) { return Math.sqrt(-2 * Math.log(rnd() + 1e-12)) * Math.cos(2 * Math.PI * rnd()); }
-const seedOf = key => [...key].reduce((s, c) => s * 31 + c.charCodeAt(0), 7) >>> 0;
-const DEMO_FROM = 2022, DEMO_TO = 2025;
-function eachDemoDay(fn) { for (let ds = `${DEMO_FROM}-01-01`; ds <= `${DEMO_TO}-12-31`; ds = addDays(ds, 1)) fn(ds); }
-
-function generateBase(p, rnd) {
-  const days = new Map();
-  let level = p.base; // langzaam bewegend dagniveau → realistische autocorrelatie
-  eachDemoDay(ds => {
-    const { y, m } = dateParts(ds);
-    const wd = weekdayOf(ds);
-    const season = 1 + p.season * Math.cos(((m - 1.5) / 12) * 2 * Math.PI);
-    const trend = 1 + p.trend * (y - DEMO_FROM);
-    level = 0.8 * level + 0.2 * p.base * (0.75 + 0.5 * rnd());
-    const arr = new Float32Array(96);
-    let cur = poisson(level * p.wkd[wd] * season * trend, rnd);
-    for (let q = 0; q < 96; q++) {
-      const h = q / 4;
-      const diurnal = 1 + p.amp * Math.exp(-((h - p.peak) ** 2) / 18) - 0.25 * p.amp * Math.exp(-((h - 4) ** 2) / 10);
-      const target = Math.max(0, level * p.wkd[wd] * season * trend * diurnal / (1 + p.amp * 0.35));
-      // geboorte-sterfte stap: bezetting verandert kwartier op kwartier geleidelijk
-      if (rnd() < 0.18) cur += (target > cur ? 1 : target < cur ? -1 : 0) + (rnd() < 0.08 ? (rnd() < 0.5 ? 1 : -1) : 0);
-      cur = Math.max(0, Math.min(p.max, cur));
-      arr[q] = cur;
-    }
-    days.set(ds, arr);
-  });
-  return days;
-}
-// Aankomsten per kwartier: Poisson met ochtend- en avondpiek.
-function generateArrivals(perDay, rnd) {
-  const days = new Map();
-  const shape = Array.from({ length: 96 }, (_, q) => { const h = q / 4; return 0.25 + 1.6 * Math.exp(-((h - 11.5) ** 2) / 8) + 1.1 * Math.exp(-((h - 18.5) ** 2) / 6) + 0.2 * Math.exp(-((h - 15) ** 2) / 20); });
-  const norm = shape.reduce((a, b) => a + b, 0);
-  eachDemoDay(ds => {
-    const { y, m } = dateParts(ds); const wd = weekdayOf(ds);
-    const f = [1.18, 1.02, 0.98, 0.97, 1.02, 0.94, 0.98][wd] * (1 + 0.07 * Math.cos(((m - 1.5) / 12) * 2 * Math.PI)) * (1 + 0.03 * (y - DEMO_FROM));
-    days.set(ds, Float32Array.from(shape, v => poisson(perDay * f * v / norm, rnd)));
-  });
-  return days;
-}
-function generateJDT(rnd) {
-  const vpk = [3, 3, 3, 3, 3, 3, 3, 4, 5, 5, 6, 6, 6, 6, 6, 6, 6, 5, 5, 5, 5, 4, 4, 3];
-  const days = [];
-  eachDemoDay(ds => {
-    const wd = weekdayOf(ds);
-    const hours = Array.from({ length: 24 }, (_, h) => {
-      const load = 40 + 95 * Math.exp(-((h - 13) ** 2) / 22) + 35 * Math.exp(-((h - 19) ** 2) / 8);
-      return Math.max(0, Math.round(load * [1.12, 1.02, 1, 0.98, 1.03, 0.92, 0.95][wd] * (0.82 + 0.36 * rnd())));
-    });
-    days.push({ ds, wd, y: +ds.slice(0, 4), m: +ds.slice(5, 7), hours });
-  });
-  return { days, vpkBase: vpk, fileName: 'Synthetische JDT-reeks' };
-}
-// Maakt voorbeelddata voor één dataset; afgeleide sets (totalen, scenario's,
-// triage) worden uit hun bronnen berekend zodat de getallen kloppen.
-function demoDays(key, cache = {}) {
-  if (cache[key]) return cache[key];
-  const d = DS[key], rnd = mulberry32(seedOf(key));
-  let days;
-  if (STORE[key] && STORE[key].kind !== 'jdt') days = STORE[key].days;
-  else if (d.demo) days = generateBase(d.demo, rnd);
-  else if (d.demoArrivals) days = generateArrivals(d.demoArrivals, rnd);
-  else if (d.derive && d.derive.sum) {
-    const parts = d.derive.sum.map(k => demoDays(k, cache));
-    days = new Map();
-    for (const [ds] of parts[0]) {
-      if (!parts.every(p => p.has(ds))) continue;
-      const a = new Float32Array(96); parts.forEach(p => { const s = p.get(ds); for (let q = 0; q < 96; q++) a[q] += s[q]; });
-      days.set(ds, a);
-    }
-  } else if (d.derive && d.derive.scale) {
-    const src = demoDays(d.derive.scale, cache), f = d.derive.f;
-    days = new Map();
-    for (const [ds, s] of src) {
-      // vast aandeel van de bron met wat dag-op-dag variatie; afgerond op hele patiënten
-      const a = new Float32Array(96), dayF = f * (0.85 + 0.3 * rnd());
-      for (let q = 0; q < 96; q++) a[q] = Math.round(s[q] * dayF);
-      days.set(ds, a);
-    }
-  }
-  cache[key] = days;
-  return days;
-}
 /* ── Frames: bezetting per dag voor een set componenten ─────────────── */
 // Een component is één reeks in de grafieken: in een afdelingstab is dat een
 // stroom, op het tabblad "Alle" is het een hele afdeling (som van stromen).

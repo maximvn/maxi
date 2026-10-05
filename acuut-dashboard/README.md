@@ -4,9 +4,8 @@ Herbouw van het *Acuut Dashboard* (Slingeland Ziekenhuis): bezetting per kwartie
 afgezet tegen bedden en verpleegkundige inzet, voor **Oudbouw** en **Nieuwbouw**.
 
 Open `Acuut_Dashboard.html` direct in de browser (Chart.js en SheetJS komen van cdnjs).
-Wil je de knop *Laad voorbeelddata* de echte DUMMY-bestanden laten gebruiken, serveer
-de map dan via een webserver (bv. `npx serve acuut-dashboard`); via `file://` vallen
-die terug op synthetische reeksen.
+De knop *Laad voorbeeld (DUMMY IC)* laadt de twee DUMMY-bestanden uit `testdata/`; die
+worden bij het bouwen ingebouwd. Het dashboard verzint zelf nooit data.
 
 ## Werkwijze
 
@@ -66,5 +65,6 @@ alleen een korte fade over.
 - Bron in `src/` (`config.js` = stromen, afdelingen en standaardwaarden).
 - `node acuut-dashboard/build.js` bundelt alles tot `Acuut_Dashboard.html`.
 - `node acuut-dashboard/test_dashboard.mjs [map]` doorloopt het hele dashboard in Chromium
-  (licht, donker, mobiel), test de upload van de DUMMY-bestanden en maakt screenshots.
+  (licht, donker, mobiel), test de upload van de DUMMY-bestanden én van testbestanden in het
+  echte exportformaat voor alle 34 bestandstypen (`test/fixtures.cjs`), en maakt screenshots.
   Vereist `chart.js` lokaal (`CHARTJS_PATH` of `node_modules/chart.js`).

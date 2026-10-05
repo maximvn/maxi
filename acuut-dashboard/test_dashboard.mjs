@@ -19,6 +19,12 @@ const server = http.createServer((req, res) => {
   res.writeHead(200); fs.createReadStream(p).pipe(res)
 }).listen(0)
 const base = `http://localhost:${server.address().port}/Acuut_Dashboard.html`
+// Testbestanden in het echte exportformaat voor alle 34 bestandstypen
+import { execFileSync } from 'child_process'
+const fixDir = path.join(out, '_fixtures')
+execFileSync('node', [path.join(dir, 'test', 'fixtures.cjs'), fixDir])
+// de echte DUMMY-bestanden voor IC spoed/electief niet overschrijven
+const fixtures = fs.readdirSync(fixDir).filter(f => !/^2_[12]_ICU/.test(f)).map(f => path.join(fixDir, f))
 
 const browser = await chromium.launch(fs.existsSync('/opt/pw-browsers/chromium') ? { executablePath: '/opt/pw-browsers/chromium' } : {})
 const errors = []
@@ -45,14 +51,20 @@ async function run(theme, width) {
     await page.screenshot({ path: `${out}/02a-upload-${theme}-${width}.png`, fullPage: true })
     for (const id of ['6.1', '6.2', 'L1']) await page.click(`[data-act="unload"][data-arg="${id}"]`)
   }
+  // ingebouwd voorbeeld: precies de twee DUMMY-bestanden, niets verzonnen
   await page.click('[data-act="demo-all"]')
   await page.waitForSelector('.tag.demo', { timeout: 30000 })
+  const smp = await page.evaluate(() => Object.keys(STORE).sort().join(','))
+  if (smp !== '6.1,6.2') errors.push('voorbeeld laadt: ' + smp)
+  // alle overige bestandstypen uploaden (echte xlsx in exportformaat)
+  await page.setInputFiles('#multi-file', fixtures)
+  await page.waitForFunction(() => Object.keys(STORE).length >= 34, null, { timeout: 120000 })
   await page.waitForTimeout(300)
   await page.screenshot({ path: `${out}/02-data-${tag}.png`, fullPage: true })
   await page.click('[data-act="go"][data-arg="dash"]')
   const shots = width < 600 ? [['IC', 'overzicht']] : [
     ['IC', 'overzicht'], ['IC', 'stromen'], ['IC', 'bedden'], ['IC', 'vpk'], ['IC', 'prognose'],
-    ['SEH', 'overzicht'], ['SEH', 'instroom'], ['SEH', 'jdt'], ['ALL', 'overzicht'], ['ALL', 'vpk'], ['ALL', 'stromen'],
+    ['SEH', 'overzicht'], ['SEH', 'instroom'], ['SEH', 'jdt'], ['SEH', 'stromen'], ['ALL', 'overzicht'], ['ALL', 'vpk'], ['ALL', 'stromen'],
   ]
   for (const [u, v] of shots) {
     await page.click(`[data-act="unit"][data-arg="${u}"]`)
@@ -64,8 +76,8 @@ async function run(theme, width) {
     // specifieke week + rooster aanpassen
     await page.click('[data-act="unit"][data-arg="IC"]')
     await page.click('[data-act="view"][data-arg="overzicht"]')
+    await page.click('[data-act="weekmode"][data-arg="week"]')
     await page.click('[data-act="peil"][data-arg="1"]')
-    await page.click('[data-act="nursetab"][data-arg="cap"]')
     await page.waitForTimeout(1200)
     await page.screenshot({ path: `${out}/04-IC-week-${tag}.png`, fullPage: true })
     await page.click('[data-act="view"][data-arg="vpk"]')
@@ -114,7 +126,7 @@ async function run(theme, width) {
     await page.click('[data-act="mode"][data-arg="nieuw"]')
     await page.click('[data-act="unit"][data-arg="HF"]')
     await page.click('[data-act="view"][data-arg="overzicht"]')
-    await page.click('[data-act="rangemode"][data-arg="typical"]')
+    await page.click('[data-act="weekmode"][data-arg="typical"]')
     await page.waitForTimeout(1200)
     await page.screenshot({ path: `${out}/05-nieuw-HF-${tag}.png`, fullPage: true })
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)

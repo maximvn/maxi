@@ -25,7 +25,7 @@ const S = {
   jdtYear: 'all',
   staffDay: 0,           // weekdag in de dekkingsgrafiek
   bandGran: 'hour',      // bandbreedte per uur / weekdag / maand
-  trendMode: 'both',     // trend per maand: per stroom, samen of beide
+  trendMode: 'stroom',     // trend per maand: per stroom, samen of beide
   playing: false,        // peilmoment afspelen in Overzicht
   peil: null,            // { ds } — de gekozen dag in de historie
   nurseTab: 'vpk',       // Overzicht: verpleegkundigen of patiëntcapaciteit
@@ -216,14 +216,14 @@ function tileHTML(d) {
     <div class="tile-key mono">${esc(d.kind === 'los' ? 'L' : d.key)}</div>
     <div class="tile-body">
       <div class="tile-title">${sw}${esc(d.label)} ${role ? `<span class="tag">${role}</span>` : ''}</div>
-      <div class="tile-file mono" title="${esc(st && st.source !== 'synthetisch' ? st.fileName : d.file)}">${esc(st && st.source !== 'synthetisch' ? st.fileName : d.file)}</div>
+      <div class="tile-file mono" title="${esc(st ? st.fileName : d.file)}">${esc(st ? st.fileName : d.file)}</div>
       <div class="tile-desc">${esc(d.long)}</div>
     </div>
     <div class="tile-status">
       ${busy ? '<span class="spinner" aria-hidden="true"></span><span>Inlezen…</span>'
         : st ? `<span class="ok-mark">${ICON.check}</span><span>${sum.n.toLocaleString('nl-NL')} dagen</span><span class="tag ${st.source === 'bestand' ? 'ok' : 'demo'}">${st.source}</span>
           <button class="link-btn danger" data-act="unload" data-arg="${d.key}">Verwijder</button>`
-        : `<span class="muted">Klik of sleep een bestand</span>${d.kind === 'los' ? '' : `<button class="link-btn" data-act="demo-one" data-arg="${d.key}">Voorbeeld</button>`}`}
+        : `<span class="muted">Klik of sleep een bestand</span>`}
     </div>
   </div>`;
 }
@@ -257,7 +257,7 @@ function dataScreen() {
         <p>Dezelfde bestanden als het huidige dashboard. Sleep ze in één keer hierheen; ze worden aan de bestandsnaam herkend. Of klik op een tegel om één bestand te kiezen.</p>
       </div>
       <div class="btn-row">
-        <button class="btn" data-act="demo-all">${ICON.spark} Laad voorbeelddata</button>
+        <button class="btn" data-act="demo-all" title="De DUMMY-bestanden IC spoed en IC electief">${ICON.spark} Laad voorbeeld (DUMMY IC)</button>
       </div>
     </div>
     <label class="dropzone stagger" id="dropzone" for="multi-file">
@@ -275,7 +275,7 @@ function dataScreen() {
     </div>` : ''}
     ${sections}
     <div class="load-foot">
-      <p>${nLoaded ? `<b>${nLoaded}</b> ${nLoaded === 1 ? 'bestand' : 'bestanden'} geladen. Per afdeling kies je straks welke stromen meetellen.` : 'Nog geen data. Laad je eigen bestanden of start met de voorbeelddata.'}</p>
+      <p>${nLoaded ? `<b>${nLoaded}</b> ${nLoaded === 1 ? 'bestand' : 'bestanden'} geladen. Per afdeling kies je straks welke stromen meetellen.` : 'Nog geen data. Laad je eigen bestanden, of het voorbeeld met de DUMMY-bestanden van IC spoed en electief.'}</p>
       <div class="btn-row">
         <button class="btn" data-act="go" data-arg="start">${ICON.back} Andere omgeving</button>
         <button class="btn primary" data-act="go" data-arg="dash" ${nLoaded ? '' : 'disabled'}>Naar analyse ${ICON.arrow}</button>
@@ -320,25 +320,25 @@ async function readFiles(files, forcedKey) {
   else if (S.unmatched.length) toast('Kies hieronder wat het bestand is.');
 }
 
+// Laadt de meegeleverde DUMMY-bestanden (ingebouwd bij het bouwen). Er wordt
+// geen data verzonnen: wat niet in die bestanden zit, blijft leeg.
 async function loadSamples() {
-  setBusy(true); toast('Voorbeelddata wordt geladen…');
+  setBusy(true);
   await new Promise(r => setTimeout(r, 30));
-  let fromFile = 0;
-  for (const path of SAMPLE_FILES) {
-    try {
-      const r = await fetch(path); if (!r.ok) throw new Error(r.status);
-      const name = path.split('/').pop();
-      const res = readWorkbook(new Uint8Array(await r.arrayBuffer()), name);
-      const key = guessDataset(name);
-      if (key && res.kind === 'grid') { putStream(key, res.days, name, 'voorbeeld'); fromFile++; }
-    } catch (e) { /* bestand niet bereikbaar (bv. geopend via file://) → synthetisch */ }
-  }
-  const cache = {};
   S.justLoaded = new Set();
-  DATASETS.filter(d => ['bez', 'tri', 'in'].includes(d.kind) && !STORE[d.key]).forEach(d => { putStream(d.key, demoDays(d.key, cache), 'Synthetische reeks', 'synthetisch'); S.justLoaded.add(d.key); });
-  if (!STORE.jdt) { putJDT(generateJDT(mulberry32(99)), 'synthetisch'); S.justLoaded.add('jdt'); }
+  const list = typeof EMBEDDED_SAMPLES !== 'undefined' ? EMBEDDED_SAMPLES : [];
+  for (const smp of list) {
+    const bin = atob(smp.b64), days = new Map();
+    for (let i = 0; i < smp.n; i++) {
+      const a = new Float32Array(96);
+      for (let q = 0; q < 96; q++) a[q] = bin.charCodeAt(i * 96 + q);
+      days.set(addDays(smp.start, i), a);
+    }
+    putStream(smp.key, days, smp.file, 'voorbeeld');
+    S.justLoaded.add(smp.key);
+  }
   setBusy(false); render();
-  toast(fromFile ? `Voorbeeld geladen: ${fromFile} DUMMY-bestanden, overige bestanden synthetisch.` : 'Synthetische voorbeelddata geladen voor alle bestanden.');
+  toast(list.length ? `Voorbeeld geladen: ${list.map(x => DS[x.key].long).join(' en ')} (DUMMY-bestanden).` : 'Er zijn geen voorbeeldbestanden ingebouwd.');
 }
 
 /* ── Stromenkiezer (popover onder de knop "Stromen kiezen") ──────────── */
@@ -401,11 +401,6 @@ document.addEventListener('click', e => {
     go: () => go(arg),
     mode: () => chooseMode(arg),
     'demo-all': loadSamples,
-    'demo-one': () => {
-      const cache = {};
-      if (arg === 'jdt') putJDT(generateJDT(mulberry32(99)), 'synthetisch'); else putStream(arg, demoDays(arg, cache), 'Synthetische reeks', 'synthetisch');
-      S.justLoaded = new Set([arg]); render();
-    },
     unload: () => { removeDataset(arg); render(); },
     'drop-unmatched': () => { S.unmatched.splice(+arg, 1); render(); },
     unit: () => { S.unit = arg; S.pickerOpen = false; stopPlay(); if (!availableViews().some(v => v.id === S.view)) S.view = 'overzicht'; render(); },
@@ -435,6 +430,8 @@ document.addEventListener('click', e => {
     nursetab: () => { S.nurseTab = arg; render(); },
     rangemode: () => { S.rangeMode = arg; render(); },
     fcrange: () => { S.fcRange = arg; render(); },
+    jdtpick: () => { S.jdtDate = arg; const y = window.scrollY; render(); window.scrollTo({ top: y }); },
+    jdtday: () => { if (STORE.jdt) { const ds = STORE.jdt.days.map(d => d.ds); const i = ds.indexOf(S.jdtDate); S.jdtDate = ds[Math.max(0, Math.min(ds.length - 1, i + +arg))]; const y = window.scrollY; render(); window.scrollTo({ top: y }); } },
     bandgran: () => { S.bandGran = arg; render(); },
     trendmode: () => { S.trendMode = arg; render(); },
     theme: toggleTheme,
@@ -458,6 +455,7 @@ document.addEventListener('change', e => {
   if (t.dataset.filter) { S.filter[t.dataset.filter] = t.value; render(); return; }
   if (t.dataset.path) { setValue(t.dataset.path, t.value); return; }
   if (t.id === 'week-select') { S.weekSel = t.value; render(); }
+  if (t.id === 'jdt-date' && t.value) { S.jdtDate = t.value; render(); return; }
   if (t.id === 'peil-date' && t.value) { stopPlay(); S.peil = { ds: t.value }; render(); }
 });
 document.addEventListener('input', e => {
@@ -553,14 +551,18 @@ function applyAdvice() {
 /* ── Tijdlijn afspelen: week na week door de historie ─────────────── */
 let PLAY_T = null;
 function togglePlay() { if (S.playing) { stopPlay(); render(); } else startPlay(); }
-// Afspelen: de gekozen dag loopt dag voor dag door de historie.
+// Afspelen: "Bezetting per dienst" loopt week na week door de gemeten historie.
 function startPlay() {
   const f = currentFrame(); if (!f) return;
-  peilOf(f);
-  S.playing = true; render();
+  const weeks = weekList(f); if (!weeks.length) return;
+  S.weekMode = 'week'; S.playing = true;
+  if (!S.weekSel || weeks.indexOf(S.weekSel) >= weeks.length - 1) S.weekSel = weeks[Math.max(0, weeks.length - 53)];
+  render();
   PLAY_T = setInterval(() => {
-    const fr = currentFrame();
-    if (S.screen !== 'dash' || S.view !== 'overzicht' || !fr || !movePeil(1, fr)) { stopPlay(); render(); return; }
+    const fr = currentFrame(); const ws = fr ? weekList(fr) : [];
+    const i = ws.indexOf(S.weekSel);
+    if (S.screen !== 'dash' || S.view !== 'overzicht' || i < 0 || i >= ws.length - 1) { stopPlay(); render(); return; }
+    S.weekSel = ws[i + 1];
     const y = window.scrollY; render(); window.scrollTo({ top: y });
   }, 1100);
 }

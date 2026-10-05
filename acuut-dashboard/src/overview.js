@@ -53,16 +53,15 @@ function dayHours(frame, unitId) {
   };
 }
 
-// Dagen rond de gekozen dag (twee ervoor t/m twee erna).
-function rangeDays(frame) { const p = peilOf(frame); return [-2, -1, 0, 1, 2].map(i => addDays(p.ds, i)); }
-function rangeCells(frame) {
+// Diensten (D/A/N) voor een reeks datums: gemeten als de dag in de data zit,
+// anders het normale beeld van die weekdag (open staaf).
+function dateCells(frame, dates) {
   const map = dayByDate(frame);
   const cells = [];
-  rangeDays(frame).forEach(ds => {
+  dates.forEach(ds => {
     const wd = weekdayOf(ds), d = map.get(ds);
     SHIFT_KEYS.forEach(k => {
       const known = !!d && (k !== 'N' || !!d.next);
-      // gemeten op die dag; ontbreekt de dag in de data, dan het normale beeld van die weekdag
       const sp = known ? splitByMetric([d], shiftSlots(k), frame.comps.length) : splitByMetric(frame.days.filter(x => x.wd === wd), shiftSlots(k), frame.comps.length);
       cells.push({ ds, wd, k, known, dayLabel: fmtDay(ds), title: `${fmtDay(ds)} ${ds.slice(0, 4)} · ${SHIFT_INFO[k].label}${known ? '' : ' (geen data — normaal voor deze weekdag)'}`, ...sp, lo: sp.tot && (known ? sp.tot.min : sp.tot.p10), hi: sp.tot && sp.tot.max });
     });
@@ -75,78 +74,85 @@ function viewOverview(el, frame) {
   const beds = bedsOf(unitId);
   const all = stats(collect(frame.days, ALL_SLOTS));
   const full = pctAtOrAbove(all.sorted, beds);
-  const day = dayHours(frame, unitId);
-  const peakH = day.hours.reduce((a, b) => (b.peak > a.peak ? b : a));
-  const overBeds = day.hours.filter(x => x.peak > x.beds).length;
-  const aboveNormal = day.hours.filter(x => x.hi != null && x.total > x.hi).length;
-  const dayAvg = mean(day.hours.map(x => x.total)), normAvg = mean(day.hours.map(x => (x.lo + x.hi) / 2));
-  const typical = S.rangeMode === 'typical';
-  const cells = typical ? weekCells(frame) : rangeCells(frame);
+  const typical = S.weekMode !== 'week';
+  if (!typical) weekModeControl(frame); // zet een geldige week
+  const cells = typical ? weekCells(frame) : dateCells(frame, Array.from({ length: 7 }, (_, i) => addDays(S.weekSel, i)));
   const staff = unitId === 'ALL' ? null : staffSummary(frame, unitId);
   const fullKind = full < 2 ? 'good' : full < 8 ? 'warn' : 'crit';
+  let peak = { v: -1 };
+  const prof = weekdayHourProfile(frame);
+  prof.forEach((row, wd) => row.forEach((st, h) => { if (st && mv(st) > peak.v) peak = { v: mv(st), wd, h }; }));
+  const day = dayHours(frame, unitId);
+  const dayPeak = day.hours.reduce((a, b) => (b.peak > a.peak ? b : a));
+  const overBeds = day.hours.filter(x => x.peak > x.beds).length;
   const dayName = `${WD_LONG[day.wd].toLowerCase()} ${fmtDay(day.ds).split(' ').slice(1).join(' ')} ${day.ds.slice(0, 4)}`;
+  const ins = insights(frame, typical ? cells : weekCells(frame), beds).map(i => `<li><span class="ic ${i.kind}">${i.kind === 'good' ? ICON.check : i.kind === 'info' ? ICON.info : ICON.alert}</span><span>${i.text}</span></li>`).join('');
 
   el.innerHTML = `
     <div class="kpis">
-      ${kpi(`Hoogste bezetting · ${fmtDay(day.ds)}`, kn(peakH.peak, 0), `van ${peakH.beds} bedden`, `gemeten om ${pad2(peakH.h)}:00`, statusPill(peakH.peak > peakH.beds ? 'crit' : peakH.peak >= peakH.beds ? 'warn' : 'good', peakH.peak > peakH.beds ? 'Boven de bedden' : peakH.peak >= peakH.beds ? 'Vol' : 'Binnen de bedden'))}
-      ${kpi('Uren boven de bedden', kn(overBeds, 0), 'van 24', `op ${fmtDay(day.ds)} · ${aboveNormal} uur boven het normale bereik`, statusPill(overBeds ? 'crit' : 'good', overBeds ? 'Te weinig bedden' : 'Gedekt'))}
-      ${kpi('Tijd volledig bezet', kn(full), '%', `kwartieren met ≥ ${beds} patiënten (hele selectie)`, statusPill(fullKind, fullKind === 'good' ? 'Zelden' : fullKind === 'warn' ? 'Regelmatig' : 'Vaak'))}
-      ${staff ? kpi('Verpleegkundigen per week', kn(staff.need, 0), `diensten advies · ${staff.plan} ingepland`, `norm ${mLabel()}`, statusPill(staff.need > staff.plan ? 'crit' : 'good', staff.need > staff.plan ? `${staff.need - staff.plan} tekort` : staff.need === staff.plan ? 'Sluitend' : `${staff.plan - staff.need} ruimte`)) : kpi('Afdelingen', kn(frame.comps.length, 0), '', frame.comps.map(c => c.label).join(' · '))}
+      ${kpi(`Bezetting (${mLabel()})`, kn(mv(all)), 'patiënten', `gemiddeld ${fmt(all.avg)} · ${fmt(all.avg / beds * 100, 0)}% van ${beds} bedden`)}
+      ${kpi('Tijd volledig bezet', kn(full), '%', `kwartieren met ≥ ${beds} patiënten`, statusPill(fullKind, fullKind === 'good' ? 'Zelden' : fullKind === 'warn' ? 'Regelmatig' : 'Vaak'))}
+      ${kpi('Drukste moment', `${WD_SHORT[peak.wd]} ${pad2(peak.h)}:00`, '', `${mLabel()} ${fmt(peak.v)} patiënten`)}
+      ${staff ? kpi('Verpleegkundigen per week', kn(staff.need, 0), `diensten nodig · ${staff.plan} ingepland`, `uit Verpleegkundige inzet · norm ${mLabel()}`, statusPill(staff.need > staff.plan ? 'crit' : 'good', staff.need > staff.plan ? `${staff.need - staff.plan} tekort` : staff.need === staff.plan ? 'Sluitend' : `${staff.plan - staff.need} ruimte`)) : kpi('Afdelingen', kn(frame.comps.length, 0), '', frame.comps.map(c => c.label).join(' · '))}
     </div>
 
-    <section class="panel stagger">
+    <div class="grid g-3-1">
+      <section class="panel stagger">
+        <div class="panel-head">
+          <div><h2>Bezetting per dienst</h2><div class="desc">${typical ? `Typische week. Hoogte = ${mLabel()} van het totaal, verdeeld over de ${unitId === 'ALL' ? 'afdelingen' : 'stromen'}; streepje van P10 tot maximum.` : `Gemeten in deze week. Hoogte = ${mLabel()} binnen de dienst; streepje van laagste tot hoogste kwartier.`}</div></div>
+          ${weekModeControl(frame, { play: true })}
+        </div>
+        <div class="chart-box tall"><canvas id="ch-week" role="img" aria-label="Bezetting per dag en dienst"></canvas></div>
+        ${legendHTML(frame.comps, `<span class="sep"></span><span><i class="wh"></i>Spreiding</span><span><i class="ln"></i>Open bedden</span><span class="sep"></span><span class="key"><b>D</b> Dag <b>A</b> Avond <b>N</b> Nacht</span>`)}
+      </section>
+      <section class="panel stagger">
+        <div class="panel-head"><div><h2>Signalen</h2><div class="desc">Afgeleid uit de selectie (norm ${mLabel()}).</div></div></div>
+        <ul class="insights">${ins}</ul>
+      </section>
+    </div>
+
+    ${unitId === 'ALL' ? '' : `<div class="grid g-2" style="margin-top:16px">
+      <section class="panel stagger">
+        <div class="panel-head"><div><h2>Verpleegkundigen (nodig − ingepland)</h2><div class="desc">Uit het tabblad Verpleegkundige inzet: per weekdag en dienst het advies min het rooster. Boven nul = tekort. Streepje: advies bij gemiddelde tot maximale bezetting.</div></div></div>
+        <div class="chart-box"><canvas id="ch-nurse" role="img" aria-label="Verpleegkundigen nodig min ingepland"></canvas></div>
+        <div class="legend"><span><i class="sw" style="background:var(--nurse)"></i>Verpleegkundigen (nodig − ingepland)</span><span class="sep"></span><span class="key">${cfgOf(unitId).shifts.map(s => `<b>${esc(shiftShort(s))}</b> ${esc(s.label)}`).join(' ')}</span></div>
+      </section>
+      <section class="panel stagger">
+        <div class="panel-head"><div><h2>Bezetting tegen capaciteit</h2><div class="desc"><b>Bezetting</b> = aantal patiënten in de dienst (hoogste kwartier, ${mLabel()}). <b>Capaciteit</b> = ingeplande verpleegkundigen × norm (patiënten per vpk), uit Verpleegkundige inzet.</div></div></div>
+        <div class="chart-box"><canvas id="ch-cap" role="img" aria-label="Bezetting tegen capaciteit"></canvas></div>
+        <div class="legend"><span><i class="sw" style="background:var(--s1)"></i>Bezetting (${mLabel()})</span><span><i class="sw" style="background:var(--crit)"></i>Bezetting boven capaciteit</span><span><i class="cap-k"></i>Capaciteit rooster</span></div>
+      </section>
+    </div>`}
+
+    <section class="panel stagger" style="margin-top:16px">
       <div class="panel-head">
-        <div><h2>Bezetting op ${dayName}</h2><div class="desc">Gemeten aantal patiënten per uur, per ${unitId === 'ALL' ? 'afdeling' : 'stroom'}, tegen het normale bereik voor een ${WD_LONG[day.wd].toLowerCase()} uit de historie (P10–P95). Gemiddeld ${fmt(dayAvg)} patiënten deze dag; normaal rond ${fmt(normAvg)}.</div></div>
+        <div><h2>Bezetting op ${dayName}</h2><div class="desc">Gemeten aantal patiënten per uur (gemiddelde van de 4 kwartieren) tegen het normale bereik voor een ${WD_LONG[day.wd].toLowerCase()} (P10–P95). Hoogste kwartier: <b>${fmt(dayPeak.peak, 0)}</b> om ${pad2(dayPeak.h)}:00${overBeds ? ` · <b>${overBeds} uur</b> boven de bedden` : ''}.</div></div>
         <div class="set-row">
           <button class="icon-btn" data-act="peil" data-arg="-1" aria-label="Vorige dag">‹</button>
           <input type="date" id="peil-date" value="${day.ds}" min="${frame.all[0].ds}" max="${frame.all[frame.all.length - 1].ds}" aria-label="Dag">
           <button class="icon-btn" data-act="peil" data-arg="1" aria-label="Volgende dag">›</button>
-          <button class="btn small play ${S.playing ? 'on' : ''}" data-act="play" aria-pressed="${S.playing}">${S.playing ? '<svg viewBox="0 0 16 16" width="12" height="12"><rect x="3" y="2.5" width="3.5" height="11" fill="currentColor"/><rect x="9.5" y="2.5" width="3.5" height="11" fill="currentColor"/></svg> Pauze' : '<svg viewBox="0 0 16 16" width="12" height="12"><path d="M4 2.5v11l9.5-5.5z" fill="currentColor"/></svg> Afspelen'}</button>
         </div>
       </div>
-      <div class="chart-box tall"><canvas id="ch-24" role="img" aria-label="Bezetting per uur op de gekozen dag"></canvas></div>
+      <div class="chart-box"><canvas id="ch-24" role="img" aria-label="Bezetting per uur op de gekozen dag"></canvas></div>
       ${legendHTML(frame.comps, `<span><i class="sw band-sw"></i>Normaal bereik P10–P95 (${WD_SHORT[day.wd].toLowerCase()})</span><span><i class="ln" style="border-color:var(--s2)"></i>${mLabel()} voor deze weekdag</span><span><i class="ln"></i>Open bedden</span>`)}
     </section>
 
     <div class="grid g-2" style="margin-top:16px">
-      ${unitId === 'ALL' ? `<section class="panel stagger"><div class="panel-head"><div><h2>Signalen</h2><div class="desc">Automatisch afgeleid uit de selectie.</div></div></div><ul class="insights">${insights(frame, cells, beds).map(i => `<li><span class="ic ${i.kind}">${i.kind === 'good' ? ICON.check : i.kind === 'info' ? ICON.info : ICON.alert}</span><span>${i.text}</span></li>`).join('')}</ul></section>` : `
       <section class="panel stagger">
-        <div class="panel-head">
-          <div class="seg small" role="tablist" aria-label="Personeel" data-ind="nursetab">${[['vpk', 'Verpleegkundigen'], ['cap', 'Patiëntcapaciteit']].map(([v, l]) => `<button class="${S.nurseTab === v ? 'on' : ''}" data-act="nursetab" data-arg="${v}">${l}</button>`).join('')}</div>
-        </div>
-        <div class="chart-box"><canvas id="ch-nurse" role="img" aria-label="Verpleegkundigen nodig min ingepland"></canvas></div>
-        <div class="legend"><span><i class="sw" style="background:var(--nurse)"></i>${S.nurseTab === 'cap' ? 'Capaciteit − hoogste bezetting in de dienst (patiënten)' : 'Verpleegkundigen (nodig − ingepland)'}</span><span class="sep"></span><span class="key">${cfgOf(unitId).shifts.map(s => `<b>${esc(shiftShort(s))}</b> ${esc(s.label)}`).join(' ')}</span></div>
-      </section>`}
-      <section class="panel stagger">
-        <div class="panel-head">
-          <div><h2>Bezetting per dienst</h2><div class="desc">${typical ? `Typische week. Hoogte = ${mLabel()}; streepje van P10 tot maximum.` : `Gemeten rond de gekozen dag. Hoogte = ${mLabel()} binnen de dienst; streepje van laagste tot hoogste kwartier.`}</div></div>
-          <div class="seg small" role="group" aria-label="Periode" data-ind="rangemode">${[['peil', 'Rond gekozen dag'], ['typical', 'Typische week']].map(([v, l]) => `<button class="${(S.rangeMode || 'peil') === v ? 'on' : ''}" data-act="rangemode" data-arg="${v}">${l}</button>`).join('')}</div>
-        </div>
-        <div class="chart-box"><canvas id="ch-week" role="img" aria-label="Bezetting per dag en dienst"></canvas></div>
-        ${legendHTML(frame.comps, `<span><i class="ln"></i>Open bedden</span><span class="sep"></span><span class="key"><b>D</b> Dag <b>A</b> Avond <b>N</b> Nacht</span>`)}
-      </section>
-    </div>
-
-    <div class="grid g-2" style="margin-top:16px">
-      <section class="panel stagger">
-        <div class="panel-head"><div><h2>Dagverloop (24 uur)</h2><div class="desc">Bezetting per kwartier (${mLabel()} over alle dagen in de selectie), gestapeld per ${unitId === 'ALL' ? 'afdeling' : 'stroom'}; het vlak erachter is de bandbreedte P10–max.</div></div></div>
+        <div class="panel-head"><div><h2>Dagverloop (24 uur)</h2><div class="desc">Bezetting per kwartier (${mLabel()} over alle dagen in de selectie), verdeeld over de ${unitId === 'ALL' ? 'afdelingen' : 'stromen'}; het vlak erachter is de bandbreedte P10–max.</div></div></div>
         <div class="chart-box"><canvas id="ch-day" role="img" aria-label="Dagverloop"></canvas></div>
         ${legendHTML(frame.comps, `<span><i class="sw band-sw"></i>P10–max</span><span><i class="ln"></i>Open bedden</span>`)}
       </section>
-      ${unitId === 'ALL' ? '' : `<section class="panel stagger">
-        <div class="panel-head"><div><h2>Signalen</h2><div class="desc">Automatisch afgeleid uit de selectie (norm ${mLabel()}).</div></div></div>
-        <ul class="insights">${insights(frame, typical ? cells : weekCells(frame), beds).map(i => `<li><span class="ic ${i.kind}">${i.kind === 'good' ? ICON.check : i.kind === 'info' ? ICON.info : ICON.alert}</span><span>${i.text}</span></li>`).join('')}</ul>
-      </section>`}
-    </div>
-    <section class="panel stagger" style="margin-top:16px">
-      <div class="panel-head"><div><h2>Bezetting per maand</h2><div class="desc">${mLabel()} per maand, verdeeld over de stromen; streepje van P10 tot maximum.</div></div></div>
-      <div class="chart-box short"><canvas id="ch-month" role="img" aria-label="Bezetting per maand"></canvas></div>
-      ${legendHTML(frame.comps, `<span><i class="wh"></i>P10 – max</span><span><i class="ln"></i>Open bedden</span>`)}
-    </section>`;
+      <section class="panel stagger">
+        <div class="panel-head"><div><h2>Bezetting per maand</h2><div class="desc">${mLabel()} per maand, verdeeld over de stromen; streepje van P10 tot maximum.</div></div></div>
+        <div class="chart-box"><canvas id="ch-month" role="img" aria-label="Bezetting per maand"></canvas></div>
+        ${legendHTML(frame.comps, `<span><i class="wh"></i>P10 – max</span><span><i class="ln"></i>Open bedden</span>`)}
+      </section>
+    </div>`;
 
-  chartDay($('#ch-24'), frame, day);
-  if (unitId !== 'ALL') nurseChart($('#ch-nurse'), frame, unitId);
   shiftChart($('#ch-week'), frame, cells, beds, typical);
+  if (unitId !== 'ALL') { nurseChart($('#ch-nurse'), frame, unitId); capChart($('#ch-cap'), frame, unitId); }
+  chartDay($('#ch-24'), frame, day);
   dayChart($('#ch-day'), frame, dayProfile(frame), beds);
   monthChart($('#ch-month'), frame, monthly(frame), beds);
 }
@@ -205,43 +211,65 @@ function chartDay(canvas, frame, day) {
   });
 }
 
-// Verpleegkundigen (nodig − ingepland) of patiëntcapaciteit per dag × dienst.
-function nurseChart(canvas, frame, unitId) {
-  const c = C(), cfg = cfgOf(unitId), shifts = cfg.shifts, peil = peilOf(frame), map = dayByDate(frame);
-  const typical = S.rangeMode === 'typical';
-  const dates = typical ? null : rangeDays(frame);
-  const profM = demandProfile(frame), profAvg = profileFor(frame, 'avg'), profMax = profileFor(frame, 'max');
+// Verpleegkundigen (nodig − ingepland) per weekdag × dienst — exact het advies uit
+// het tabblad Verpleegkundige inzet (zelfde diensten, normen, rooster en norm).
+function nurseCells(frame, unitId) {
+  const cfg = cfgOf(unitId), sum = staffSummary(frame, unitId);
+  const profAvg = profileFor(frame, 'avg'), profMax = profileFor(frame, 'max');
   const cells = [];
-  (typical ? WD_SHORT.map((_, wd) => ({ wd, label: WD_SHORT[wd] })) : dates.map(ds => ({ ds, wd: weekdayOf(ds), label: fmtDay(ds) }))).forEach(day => {
-    const d = day.ds && map.get(day.ds);
-    const known = !!d;
-    const dem = known ? Array.from(d.total) : profM[day.wd];
-    const adv = adviseDay(shifts, dem, day.wd, cfg.minStaff).plan;
-    const lo = adviseDay(shifts, profAvg[day.wd], day.wd, cfg.minStaff).plan, hi = adviseDay(shifts, profMax[day.wd], day.wd, cfg.minStaff).plan;
-    shifts.forEach((s, i) => {
-      const plan = s.plan[day.wd];
-      let load = 0; for (let q = 0; q < 96; q++) if (shiftActive(s, q)) load = Math.max(load, dem[q]);
-      cells.push({ ...day, s, i, plan, need: adv[i], lo: lo[i], hi: hi[i], cap: plan * s.ratio - load, load, known });
+  WD_SHORT.forEach((label, wd) => {
+    const lo = adviseDay(cfg.shifts, profAvg[wd], wd, cfg.minStaff).plan, hi = adviseDay(cfg.shifts, profMax[wd], wd, cfg.minStaff).plan;
+    cfg.shifts.forEach((s, i) => {
+      let load = 0; for (let q = 0; q < 96; q++) if (shiftActive(s, q)) load = Math.max(load, sum.dem[wd][q]);
+      cells.push({ wd, label, s, i, plan: s.plan[wd], need: sum.days[wd].plan[i], lo: lo[i], hi: hi[i], load, cap: s.plan[wd] * s.ratio });
     });
   });
-  const mid = Math.floor((shifts.length - 1) / 2);
-  const cap = S.nurseTab === 'cap';
-  const vals = cells.map(x => (cap ? x.cap : x.need - x.plan));
-  const lim = Math.max(2, ...vals.map(Math.abs), ...(cap ? [] : cells.map(x => Math.max(Math.abs(x.hi - x.plan), Math.abs(x.lo - x.plan)))));
+  return { cells, n: cfg.shifts.length };
+}
+function nurseLabels(cells, n) {
+  const mid = Math.floor((n - 1) / 2);
+  return cells.map(x => (narrow() ? (x.i === mid ? x.label : '') : x.i === mid ? [shiftShort(x.s), x.label] : [shiftShort(x.s), '']));
+}
+function nurseChart(canvas, frame, unitId) {
+  const c = C(), { cells, n } = nurseCells(frame, unitId);
+  const vals = cells.map(x => x.need - x.plan);
+  const lim = Math.max(2, ...cells.map(x => Math.max(Math.abs(x.hi - x.plan), Math.abs(x.lo - x.plan), Math.abs(x.need - x.plan))));
   mkChart(canvas, {
     type: 'bar',
+    data: { labels: nurseLabels(cells, n), datasets: [{ label: 'Nodig − ingepland', data: vals.map(v => (v === 0 ? 0.05 : v)), backgroundColor: c.nurse, borderSkipped: false, barPercentage: 0.5, categoryPercentage: 0.9 }] },
+    options: {
+      scales: { x: { grid: { display: false }, border: { display: false }, ticks: { maxRotation: 0, autoSkip: false } }, y: { min: -lim - 0.5, max: lim + 0.5, grid: { color: ctx => (ctx.tick.value === 0 ? c.axis : c.grid), lineWidth: ctx => (ctx.tick.value === 0 ? 1.5 : 1) }, border: { display: false }, ticks: { precision: 0 } } },
+      plugins: {
+        whiskers: { data: cells.map(x => ({ lo: x.lo - x.plan, hi: x.hi - x.plan })) },
+        dayBands: { size: n },
+        tooltip: { callbacks: {
+          title: it => { const x = cells[it[0].dataIndex]; return `${WD_LONG[x.wd]} · ${x.s.label} (${shiftSpan(x.s)})`; },
+          label: it => { const x = cells[it.dataIndex]; return [` Nodig ${x.need} · ingepland ${x.plan} → ${x.need > x.plan ? `${x.need - x.plan} tekort` : x.need < x.plan ? `${x.plan - x.need} ruimte` : 'sluitend'}`, ` Nodig bij gem.–max bezetting: ${x.lo}–${x.hi}`, ` Norm ${fmtRatio(x.s.ratio)}`]; },
+        } },
+      },
+    },
+  });
+}
+// Bezetting (patiënten) tegen capaciteit (vpk × norm) per weekdag × dienst.
+function capChart(canvas, frame, unitId) {
+  const c = C(), { cells, n } = nurseCells(frame, unitId);
+  mkChart(canvas, {
     data: {
-      labels: cells.map(x => (narrow() ? (x.i === mid ? x.label.split(' ')[0] : '') : x.i === mid ? [shiftShort(x.s), x.label] : [shiftShort(x.s), ''])),
-      datasets: [{ label: cap ? 'Capaciteit − patiënten' : 'Nodig − ingepland', data: vals.map(v => (Math.abs(v) < 0.05 ? 0.05 : v)), backgroundColor: cells.map(x => alpha(c.nurse, x.known || typical ? 1 : 0.6)), borderSkipped: false, barPercentage: 0.5, categoryPercentage: 0.9 }],
+      labels: nurseLabels(cells, n),
+      datasets: [
+        { type: 'bar', label: `Bezetting (${mLabel()})`, data: cells.map(x => x.load), backgroundColor: cells.map(x => (x.load > x.cap + 1e-9 ? c.crit : c.series[0])), barPercentage: 0.62, categoryPercentage: 0.9, order: 2 },
+        { type: 'line', label: 'Capaciteit rooster', data: cells.map(x => x.cap), showLine: false, pointStyle: 'line', pointRadius: 9, pointHoverRadius: 11, pointBorderWidth: 3, pointBorderColor: c.nurse, pointBackgroundColor: c.nurse, order: 1 },
+      ],
     },
     options: {
-      scales: { x: { grid: { display: false }, border: { display: false }, ticks: { maxRotation: 0, autoSkip: false } }, y: { min: -Math.ceil(lim) - 0.5, max: Math.ceil(lim) + 0.5, grid: { color: ctx => (ctx.tick.value === 0 ? c.axis : c.grid), lineWidth: ctx => (ctx.tick.value === 0 ? 1.5 : 1) }, border: { display: false }, ticks: { precision: 0 } } },
+      interaction: { mode: 'index', intersect: false },
+      scales: { x: { grid: { display: false }, border: { color: c.axis }, ticks: { maxRotation: 0, autoSkip: false } }, y: { beginAtZero: true, grid: { color: c.grid }, border: { display: false }, ticks: { precision: 0 }, title: { display: true, text: 'Patiënten', color: c.muted, font: { size: 11 } } } },
       plugins: {
-        whiskers: cap ? {} : { data: cells.map(x => ({ lo: x.lo - x.plan, hi: x.hi - x.plan })) },
-        dayBands: { size: shifts.length },
+        dayBands: { size: n },
         tooltip: { callbacks: {
-          title: it => { const x = cells[it[0].dataIndex]; return `${x.ds ? fmtDay(x.ds) : WD_LONG[x.wd]} · ${x.s.label} (${shiftSpan(x.s)})`; },
-          label: it => { const x = cells[it.dataIndex]; return cap ? [` ${x.plan} vpk × ${fmtRatio(x.s.ratio).slice(2)} = ${fmt(x.plan * x.s.ratio)} patiënten`, ` Piek in dienst: ${fmt(x.load)} → ${x.cap >= 0 ? 'ruimte' : 'tekort'} ${fmt(Math.abs(x.cap))}`] : [` Nodig ${x.need} · ingepland ${x.plan}`, ` Bandbreedte nodig: ${x.lo}–${x.hi} (gem.–max)`, ` Norm ${fmtRatio(x.s.ratio)}`]; },
+          title: it => { const x = cells[it[0].dataIndex]; return `${WD_LONG[x.wd]} · ${x.s.label} (${shiftSpan(x.s)})`; },
+          label: it => { const x = cells[it.dataIndex]; return it.datasetIndex === 0 ? ` Bezetting (${mLabel()}): ${fmt(x.load)} patiënten` : ` Capaciteit: ${x.plan} vpk × ${fmt(x.s.ratio, x.s.ratio % 1 ? 1 : 0)} = ${fmt(x.cap, x.cap % 1 ? 1 : 0)} patiënten`; },
+          footer: it => { const x = cells[it[0].dataIndex]; const d = x.cap - x.load; return d >= 0 ? `Ruimte voor ${fmt(d)} patiënten` : `${fmt(-d)} patiënten meer dan het rooster aankan`; },
         } },
       },
     },

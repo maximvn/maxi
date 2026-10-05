@@ -249,6 +249,45 @@ function bandSeries(frame, which, gran) {
   const st = groups.map(g => stats(collect(g.days, g.slots, which)) || { min: 0, max: 0, p95: 0, avg: 0, mu2s: 0 });
   return { labels: groups.map(g => g.label), min: st.map(x => x.min), max: st.map(x => x.max), p95: st.map(x => x.p95), avg: st.map(x => x.avg), m: st.map(x => mv(x)) };
 }
+// Alle stromen samen: per groep de norm van het totaal, verdeeld over de stromen.
+function stackSeries(frame, gran) {
+  let groups;
+  if (gran === 'hour') groups = HOUR_SLOTS.map((sl, h) => ({ label: `${pad2(h)}:00`, days: frame.days, slots: sl }));
+  else if (gran === 'weekday') groups = WD_SHORT.map((d, wd) => ({ label: d, days: frame.days.filter(x => x.wd === wd), slots: ALL_SLOTS }));
+  else {
+    const keys = [...new Set(frame.days.map(d => `${d.y}-${pad2(d.m)}`))];
+    groups = keys.map(k => ({ label: `${MONTH_SHORT[+k.slice(5) - 1]} ${k.slice(2, 4)}`, days: frame.days.filter(d => `${d.y}-${pad2(d.m)}` === k), slots: ALL_SLOTS }));
+  }
+  const sp = groups.map(g => splitByMetric(g.days, g.slots, frame.comps.length));
+  return { labels: groups.map(g => g.label), parts: frame.comps.map((_, ci) => sp.map(x => x.parts[ci])), min: sp.map(x => x.tot && x.tot.min), max: sp.map(x => x.tot && x.tot.max), val: sp.map(x => x.val) };
+}
+function stackChart(canvas, frame, ser, { big = false } = {}) {
+  const c = C();
+  const smooth = S.bandGran === 'month' ? 0.25 : 0.35;
+  return mkChart(canvas, {
+    type: 'line',
+    data: {
+      labels: ser.labels,
+      datasets: [
+        ...frame.comps.map((comp, ci) => ({ label: comp.label, data: ser.parts[ci], borderColor: colorOf(comp), backgroundColor: alpha(colorOf(comp), 0.9), borderWidth: 0, pointRadius: 0, fill: ci ? '-1' : 'origin', tension: smooth, stack: 'a', order: 2 })),
+        { label: 'Maximum', data: ser.max, borderColor: alpha(c.series[1], 0.8), borderWidth: 1, pointRadius: 0, fill: '+1', backgroundColor: alpha(c.series[1], 0.16), tension: smooth, stack: 'm1', order: 5 },
+        { label: 'Minimum', data: ser.min, borderColor: alpha(c.series[1], 0.8), borderWidth: 1, pointRadius: 0, fill: false, tension: smooth, stack: 'm2', order: 6 },
+      ],
+    },
+    options: {
+      interaction: { mode: 'index', intersect: false },
+      layout: { padding: { top: 4 } },
+      scales: {
+        x: { grid: { display: false }, border: { color: c.axis }, ticks: { maxRotation: 0, autoSkip: true, autoSkipPadding: big ? 14 : 10, font: { size: 10.5 } } },
+        y: { stacked: true, beginAtZero: true, grid: { color: c.grid }, border: { display: false }, ticks: { precision: 0, maxTicksLimit: 6, font: { size: 10.5 } } },
+      },
+      plugins: { tooltip: { callbacks: {
+        label: it => (it.dataset.stack === 'a' ? ` ${it.dataset.label}: ${fmt(it.raw)}` : ` ${it.dataset.label}: ${fmt(it.raw, 0)}`),
+        footer: it => `Totaal ${mLabel()}: ${fmt(ser.val[it[0].dataIndex])}`,
+      } } },
+    },
+  });
+}
 function bandChart(canvas, ser, color, { big = false } = {}) {
   const c = C();
   const smooth = S.bandGran === 'month' ? 0.25 : 0.35;
@@ -292,14 +331,15 @@ function viewStreams(el, frame) {
   el.innerHTML = `
     <section class="panel band-head stagger">
       <div class="panel-head" style="margin:0">
-        <div><h2>Bandbreedte per ${kindWord}</h2><div class="desc">Elke ${kindWord} in een eigen grafiek ${granLbl}: het vlak loopt van minimum tot maximum, de dikke lijn is de gekozen norm (${mLabel()})${S.metric === 'avg' ? '' : ', de stippellijn het gemiddelde'}.${multi ? ` Bovenaan alle ${kindWord === 'stroom' ? 'stromen' : 'afdelingen'} samen als één stroom.` : ''}</div></div>
+        <div><h2>Bandbreedte per ${kindWord}</h2><div class="desc">Elke ${kindWord} in een eigen grafiek ${granLbl}: het vlak loopt van minimum tot maximum, de dikke lijn is de gekozen norm (${mLabel()})${S.metric === 'avg' ? '' : ', de stippellijn het gemiddelde'}.${multi ? ` Bovenaan alle ${kindWord === 'stroom' ? 'stromen' : 'afdelingen'} samen: de norm van het totaal, opgebouwd uit de ${kindWord === 'stroom' ? 'stromen' : 'afdelingen'}.` : ''}</div></div>
         <div class="seg small" role="group" aria-label="Indeling" data-ind="bandgran">${[['hour', 'Per uur'], ['weekday', 'Per weekdag'], ['month', 'Per maand']].map(([v, l]) => `<button class="${gran === v ? 'on' : ''}" data-act="bandgran" data-arg="${v}">${l}</button>`).join('')}</div>
       </div>
       <div class="legend" style="margin-top:8px"><span><i class="sw band-sw"></i>Min – max</span><span><i class="ln solid" style="border-color:var(--ink);border-top-width:3px"></i>${METRICS[S.metric].label}</span>${S.metric === 'avg' ? '' : '<span><i class="ln" style="border-color:var(--ink-2)"></i>Gemiddeld</span>'}</div>
     </section>
     <div class="stream-cards">
       ${multi ? `<div class="s-card total stagger">
-        <div class="s-card-head"><span class="s-card-name"><i class="sw" style="background:var(--ink)"></i>Alle ${kindWord === 'stroom' ? 'stromen' : 'afdelingen'} samen</span><span class="tag">${comps.length} ${kindWord === 'stroom' ? 'stromen' : 'afdelingen'}</span></div>
+        <div class="s-card-head"><span class="s-card-name"><span class="stack-ic" aria-hidden="true">${comps.map(c => `<i style="background:${cssColor(c)}"></i>`).join('')}</span>Alle ${kindWord === 'stroom' ? 'stromen' : 'afdelingen'} samen</span><span class="tag">${comps.length} ${kindWord === 'stroom' ? 'stromen' : 'afdelingen'}</span></div>
+        <div class="legend" style="margin:0">${comps.map(c => `<span><i class="sw" style="background:${cssColor(c)}"></i>${esc(c.label)}</span>`).join('')}<span><i class="sw band-sw"></i>Min – max totaal</span></div>
         ${nums(tot)}
         <div class="band-box big"><canvas id="band-total" role="img" aria-label="Bandbreedte alle stromen samen"></canvas></div>
       </div>` : ''}
@@ -317,11 +357,11 @@ function viewStreams(el, frame) {
       </section>
       <section class="panel stagger">
         <div class="panel-head">
-          <div><h2>Trend per maand</h2><div class="desc">${mLabel()} per maand${S.trendMode !== 'stroom' ? `; de zwarte lijn is alles samen (${mLabel()} van het totaal), het vlak de bandbreedte min–max van het totaal` : ' per stroom'}.</div></div>
-          <div class="seg small" role="group" aria-label="Trendweergave" data-ind="trendmode">${[['stroom', 'Per ' + kindWord], ['samen', 'Samen'], ['both', 'Beide']].map(([v, l]) => `<button class="${S.trendMode === v ? 'on' : ''}" data-act="trendmode" data-arg="${v}">${l}</button>`).join('')}</div>
+          <div><h2>Trend per maand</h2><div class="desc">${S.trendMode === 'samen' ? `${mLabel()} van het totaal per maand, opgebouwd uit de ${kindWord === 'stroom' ? 'stromen' : 'afdelingen'}, met de bandbreedte min–max van het totaal.` : `${mLabel()} per maand, per ${kindWord} (elke ${kindWord} zijn eigen ${mLabel()}).`}</div></div>
+          <div class="seg small" role="group" aria-label="Trendweergave" data-ind="trendmode">${[['stroom', 'Per ' + kindWord], ['samen', 'Samen']].map(([v, l]) => `<button class="${S.trendMode === v ? 'on' : ''}" data-act="trendmode" data-arg="${v}">${l}</button>`).join('')}</div>
         </div>
         <div class="chart-box"><canvas id="ch-strend" role="img" aria-label="Trend per maand"></canvas></div>
-        ${legendHTML(S.trendMode === 'samen' ? [] : comps, S.trendMode === 'stroom' ? '' : `<span><i class="ln solid" style="border-color:var(--ink);border-top-width:3px"></i>Alles samen</span><span><i class="sw band-sw" style="background:color-mix(in srgb, var(--ink) 12%, transparent)"></i>Min–max totaal</span>`)}
+        ${legendHTML(comps, S.trendMode === 'samen' ? `<span><i class="sw band-sw"></i>Min–max totaal</span>` : '')}
       </section>
     </div>
     <section class="panel stagger" style="margin-top:16px">
@@ -329,18 +369,13 @@ function viewStreams(el, frame) {
       <div class="table-wrap">${streamTable(frame)}</div>
     </section>`;
 
-  if (multi) bandChart($('#band-total'), bandSeries(frame, 'total', gran), C().ink, { big: true });
+  if (multi) stackChart($('#band-total'), frame, stackSeries(frame, gran), { big: true });
   comps.forEach((c, ci) => bandChart($('#band-' + ci), bandSeries(frame, ci, gran), colorOf(c)));
 
   const cc = C();
+  if (S.trendMode === 'samen') { stackChart($('#ch-strend'), frame, stackSeries(frame, 'month')); return; }
   const months = monthly(frame);
-  const ds = [];
-  if (S.trendMode !== 'samen') comps.forEach((c, ci) => ds.push({ label: c.label, data: months.map(m => m.own[ci]), borderColor: colorOf(c), backgroundColor: colorOf(c), borderWidth: S.trendMode === 'both' ? 1.5 : 2, pointRadius: 0, pointHoverRadius: 4, tension: 0.25, fill: false }));
-  if (S.trendMode !== 'stroom') {
-    ds.push({ label: 'Max totaal', data: months.map(m => m.tot.max), borderWidth: 0, pointRadius: 0, fill: false, tension: 0.25 });
-    ds.push({ label: 'Min totaal', data: months.map(m => m.tot.min), borderWidth: 0, pointRadius: 0, fill: { target: '-1' }, backgroundColor: alpha(cc.ink, 0.08), tension: 0.25 });
-    ds.push({ label: `Alles samen (${mLabel()})`, data: months.map(m => m.val), borderColor: cc.ink, backgroundColor: cc.ink, borderWidth: 3, pointRadius: 0, pointHoverRadius: 4, tension: 0.25, fill: false });
-  }
+  const ds = comps.map((c, ci) => ({ label: c.label, data: months.map(m => m.own[ci]), borderColor: colorOf(c), backgroundColor: colorOf(c), borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, tension: 0.25, fill: false }));
   mkChart($('#ch-strend'), {
     type: 'line',
     data: { labels: months.map(m => m.label), datasets: ds },
@@ -743,6 +778,16 @@ function viewJDT(el) {
   const heat = WD_SHORT.map((_, wd) => Array.from({ length: 24 }, (_, h) => { const st = stats(days.filter(d => d.wd === wd).map(d => pct(d.hours[h], h)).filter(v => v != null)); return st ? mv(st) : 0; }));
   const cellBg = v => (v >= 100 ? `color-mix(in srgb, var(--div-pos) ${Math.min(95, 30 + (v - 100) * 1.4)}%, var(--surface))` : `color-mix(in srgb, var(--div-neg) ${Math.max(4, Math.min(60, (100 - v) * 0.55))}%, var(--surface))`);
 
+  // Gekozen datum
+  const byDs = new Map(st.days.map(d => [d.ds, d]));
+  if (!S.jdtDate || !byDs.has(S.jdtDate)) S.jdtDate = st.days[st.days.length - 1].ds;
+  const dd = byDs.get(S.jdtDate);
+  const sameWd = st.days.filter(d => d.wd === dd.wd);
+  const jd = { ds: dd.ds, hours: dd.hours.map((a, h) => pct(a, h)), band: Array.from({ length: 24 }, (_, h) => stats(sameWd.map(d => pct(d.hours[h], h)).filter(v => v != null))) };
+  jd.points = dd.hours.reduce((a, b) => a + (b || 0), 0);
+  jd.peakH = jd.hours.reduce((b, v, h) => ((v ?? -1) > (jd.hours[b] ?? -1) ? h : b), 0);
+  jd.peak = jd.hours[jd.peakH] ?? 0;
+
   el.innerHTML = `<div class="filters">
       <div class="f-group"><span class="f-label">Jaar</span>
         <div class="seg small" role="group" aria-label="Jaar" data-ind="jdtyear">${['all', ...years].map(y => `<button class="${String(S.jdtYear) === String(y) ? 'on' : ''}" data-act="jdtyear" data-arg="${y}">${y === 'all' ? 'Alle jaren' : y}</button>`).join('')}</div>
@@ -762,6 +807,23 @@ function viewJDT(el) {
       <div class="panel-head"><div><h2>Werkdruk per uur</h2><div class="desc">Gemiddelde, P95 en maximum per uur, bij de verpleegkundigen hieronder. Boven de lijn is de werkdruk hoger dan 100%.</div></div></div>
       <div class="chart-box"><canvas id="ch-jdt" role="img" aria-label="Werkdruk per uur"></canvas></div>
       <div class="legend"><span><i class="ln solid" style="border-color:var(--s1)"></i>Gemiddeld</span><span><i class="ln solid" style="border-color:var(--ink)"></i>P95</span><span><i class="ln solid" style="border-color:var(--muted)"></i>Maximum</span><span><i class="ln"></i>100% werkdruk</span></div>
+    </section>
+    <section class="panel stagger" style="margin-top:16px">
+      <div class="panel-head">
+        <div><h2>Werkdruk op ${WD_LONG[weekdayOf(jd.ds)].toLowerCase()} ${fmtDay(jd.ds).split(' ').slice(1).join(' ')} ${jd.ds.slice(0, 4)}</h2><div class="desc">Gemeten JDT-punten per uur op deze datum, omgerekend naar werkdruk bij de verpleegkundigen hieronder; het vlak is het normale bereik voor een ${WD_LONG[weekdayOf(jd.ds)].toLowerCase()} (P10–P95). Totaal ${fmt(jd.points, 0)} JDT-punten; hoogste uur ${pad2(jd.peakH)}:00 met ${fmt(jd.peak, 0)}%.</div></div>
+        <div class="set-row">
+          <button class="icon-btn" data-act="jdtday" data-arg="-1" aria-label="Vorige datum">‹</button>
+          <input type="date" id="jdt-date" value="${jd.ds}" min="${st.days[0].ds}" max="${st.days[st.days.length - 1].ds}" aria-label="Datum">
+          <button class="icon-btn" data-act="jdtday" data-arg="1" aria-label="Volgende datum">›</button>
+        </div>
+      </div>
+      <div class="chart-box"><canvas id="ch-jdt-day" role="img" aria-label="Werkdruk per uur op de gekozen datum"></canvas></div>
+      <div class="legend"><span><i class="sw" style="background:var(--s1)"></i>Werkdruk ≤ 100%</span><span><i class="sw" style="background:var(--crit)"></i>Werkdruk &gt; 100%</span><span><i class="sw band-sw"></i>Normaal bereik P10–P95</span><span><i class="ln"></i>100% werkdruk</span></div>
+    </section>
+    <section class="panel stagger" style="margin-top:16px">
+      <div class="panel-head"><div><h2>Kalender: hoogste werkdruk per datum</h2><div class="desc">Elke cel is één datum (hoogste uur van die dag). Klik een datum om die hierboven te bekijken.</div></div></div>
+      <div class="table-wrap">${jdtCalendar(st.days.filter(d => S.jdtYear === 'all' || d.y === +S.jdtYear), pct, jd.ds, cellBg)}</div>
+      <div class="heat-scale"><span>Laag</span><span class="ramp"><i style="background:color-mix(in srgb, var(--div-neg) 50%, var(--surface))"></i><i style="background:color-mix(in srgb, var(--div-neg) 20%, var(--surface))"></i><i style="background:var(--surface-2)"></i><i style="background:color-mix(in srgb, var(--div-pos) 40%, var(--surface))"></i><i style="background:color-mix(in srgb, var(--div-pos) 80%, var(--surface))"></i></span><span>100% = grens</span></div>
     </section>
     <section class="panel stagger" style="margin-top:16px">
       <div class="panel-head"><div><h2>Verpleegkundigen per uur</h2><div class="desc">Pas de bezetting per uur aan; de werkdruk rekent direct mee. Startwaarden komen uit het tabblad "%" van het bestand.</div></div>
@@ -796,4 +858,36 @@ function viewJDT(el) {
       plugins: { capLine: { value: 100, label: '100% werkdruk' }, tooltip: { callbacks: { label: it => ` ${it.dataset.label}: ${fmt(it.raw, 0)}%`, footer: it => `${S.jdtVpk[it[0].dataIndex]} verpleegkundigen` } } },
     },
   });
+  mkChart($('#ch-jdt-day'), {
+    data: {
+      labels: jd.hours.map((_, h) => `${pad2(h)}:00`),
+      datasets: [
+        { type: 'bar', label: 'Werkdruk', data: jd.hours, backgroundColor: jd.hours.map(v => (v > 100 ? c.crit : c.series[0])), barPercentage: 0.8, categoryPercentage: 0.95, order: 2 },
+        { type: 'line', label: 'P95', data: jd.band.map(b => b && b.p95), borderColor: alpha(c.series[1], 0.9), borderWidth: 1.5, pointRadius: 0, tension: 0.4, fill: '+1', backgroundColor: alpha(c.series[1], 0.2), order: 3 },
+        { type: 'line', label: 'P10', data: jd.band.map(b => b && b.p10), borderColor: alpha(c.series[1], 0.9), borderWidth: 1.5, pointRadius: 0, tension: 0.4, fill: false, order: 4 },
+      ],
+    },
+    options: {
+      interaction: { mode: 'index', intersect: false },
+      scales: { x: { grid: { display: false }, border: { color: c.axis }, ticks: { maxRotation: 0, autoSkipPadding: 10 } }, y: { beginAtZero: true, suggestedMax: 120, grid: { color: c.grid }, border: { display: false }, ticks: { callback: v => v + '%' } } },
+      plugins: {
+        capLine: { value: 100, label: '100% werkdruk' },
+        tooltip: { filter: it => it.dataset.label !== 'P10', callbacks: {
+          label: it => (it.dataset.label === 'P95' ? ` Normaal bereik: ${fmt(jd.band[it.dataIndex].p10, 0)}–${fmt(jd.band[it.dataIndex].p95, 0)}%` : ` Werkdruk: ${fmt(it.raw, 0)}%`),
+          footer: it => `${fmt(dd.hours[it[0].dataIndex], 0)} JDT-punten · ${S.jdtVpk[it[0].dataIndex]} vpk`,
+        } },
+      },
+    },
+  });
 }
+
+// Kalender: maanden onder elkaar, dagen 1–31 naast elkaar; cel = hoogste werkdruk die dag.
+function jdtCalendar(days, pct, selDs, cellBg) {
+  const months = new Map();
+  days.forEach(d => { const k = d.ds.slice(0, 7); if (!months.has(k)) months.set(k, new Map()); const mx = Math.max(...d.hours.map((a, h) => pct(a, h) ?? 0)); months.get(k).set(+d.ds.slice(8, 10), { ds: d.ds, mx }); });
+  return `<div class="cal" role="table" aria-label="Werkdruk per datum">
+    <div></div>${Array.from({ length: 31 }, (_, i) => `<div class="cal-h">${i + 1}</div>`).join('')}
+    ${[...months.entries()].map(([k, m]) => `<div class="cal-l">${MONTH_SHORT[+k.slice(5) - 1]} ${k.slice(2, 4)}</div>${Array.from({ length: 31 }, (_, i) => { const x = m.get(i + 1); return x ? `<button class="cal-c ${x.ds === selDs ? 'sel' : ''}" style="background:${cellBg(x.mx)};color:${x.mx >= 140 ? '#fff' : 'var(--ink-2)'}" data-act="jdtpick" data-arg="${x.ds}" title="${fmtDay(x.ds)} ${x.ds.slice(0, 4)} · hoogste werkdruk ${fmt(x.mx, 0)}%">${x.mx >= 100 ? Math.round(x.mx) : ''}</button>` : '<div></div>'; }).join('')}`).join('')}
+  </div>`;
+}
+
