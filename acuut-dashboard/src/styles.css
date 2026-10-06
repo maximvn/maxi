@@ -530,3 +530,22 @@ body.busy .appbar::after { opacity: 1; animation: slide 1.1s linear infinite; }
 .hero-chart { height: 380px; }
 .brush-box { position: relative; height: 64px; margin-top: 12px; border-top: 1px solid var(--line); padding-top: 6px; }
 @media (max-width: 640px) { .hero-chart { height: 300px; } }
+
+/* ════ Inzoomen op een dag ═══════════════════════════════════════ */
+.crumb { display: inline-flex; align-items: center; gap: 6px; border: 0; background: var(--accent-soft); color: var(--accent); font-weight: 600; font-size: 12.5px; padding: 4px 10px 4px 8px; border-radius: 999px; margin-bottom: 4px; transition: transform 160ms var(--ease-out), background-color 160ms ease; }
+.crumb:active { transform: scale(0.97); }
+@media (hover: hover) and (pointer: fine) { .crumb:hover { background: color-mix(in srgb, var(--accent) 18%, var(--surface)); } }
+/* Inzoomen: de nieuwe weergave groeit vanuit iets kleiner op, zodat het voelt als dichterbij komen. */
+@keyframes zoomIn { from { opacity: 0; transform: scale(0.965); } to { opacity: 1; transform: none; } }
+.hero-chart.zoom-in { animation: zoomIn 280ms var(--ease-out) both; }
+.hour-strip { display: grid; grid-template-columns: repeat(24, minmax(0, 1fr)); gap: 3px; margin-top: 10px; }
+.hs { display: grid; justify-items: center; gap: 1px; padding: 5px 0; border-radius: 4px; background: var(--surface-2); font-variant-numeric: tabular-nums; }
+.hs span { font-size: 10px; color: var(--muted); }
+.hs b { font-size: 13px; font-weight: 600; color: var(--ink); }
+.hs em { font-style: normal; font-size: 9.5px; color: var(--muted); }
+.hs.full { background: var(--warn-soft); }
+.hs.over { background: var(--crit-soft); box-shadow: inset 0 0 0 1.5px var(--crit); }
+.hs.over em { color: var(--crit); font-weight: 600; }
+.hs.na { opacity: .45; }
+@media (max-width: 760px) { .hour-strip { grid-template-columns: repeat(12, minmax(0, 1fr)); } }
+@media (prefers-reduced-motion: reduce) { .hero-chart.zoom-in { animation: fade 200ms ease both; } }

@@ -28,6 +28,8 @@ const S = {
   trendMode: 'stroom',     // trend per maand: per stroom, samen of beide
   playing: false,        // peilmoment afspelen in Overzicht
   win: null,             // Overzicht: venster van het bezettingsverloop { gran, start }
+  zoomFrom: null,        // venster waaruit is ingezoomd op een dag (voor 'Terug')
+  justZoomed: false,
   nurseTab: 'vpk',       // Overzicht: verpleegkundigen of patiëntcapaciteit
   rangeMode: 'peil',     // Overzicht: rond Nu of typische week
   fcRange: 'next',       // prognose: komende 13 weken of heel jaar
@@ -427,7 +429,8 @@ document.addEventListener('click', e => {
     staffday: () => { S.staffDay = +arg; render(); },
     play: togglePlay,
     win: () => { const f = currentFrame(); if (f) { stopPlay(); moveWin(+arg, f); const y = window.scrollY; render(); window.scrollTo({ top: y }); } },
-    wingran: () => { const f = currentFrame(); if (f) { stopPlay(); const w = winOf(f); w.gran = arg; w.start = alignStart(w.start, arg); render(); } },
+    wingran: () => { const f = currentFrame(); if (f) { stopPlay(); S.zoomFrom = null; const w = winOf(f); w.gran = arg; w.start = alignStart(w.start, arg); render(); } },
+    zoomback: () => { stopPlay(); if (S.zoomFrom) { S.win = S.zoomFrom; S.zoomFrom = null; S.justZoomed = true; } const y = window.scrollY; render(); window.scrollTo({ top: y }); },
     nursetab: () => { S.nurseTab = arg; render(); },
     rangemode: () => { S.rangeMode = arg; render(); },
     fcrange: () => { S.fcRange = arg; render(); },
@@ -585,6 +588,6 @@ function boot() {
   try { const t = localStorage.getItem('acuut-dash-theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) { /* negeren */ }
   loadSettings();
   applyChartDefaults();
-  Chart.register(revealPlugin, nowMarkerPlugin, brushPlugin, whiskerPlugin, capLinePlugin, dayBandPlugin);
+  Chart.register(revealPlugin, nowMarkerPlugin, brushPlugin, zoomHoverPlugin, whiskerPlugin, capLinePlugin, dayBandPlugin);
   render({ enter: true });
 }

@@ -28,7 +28,9 @@ worden bij het bouwen ingebouwd. Het dashboard verzint zelf nooit data.
    - **Overzicht** — begint met het **bezettingsverloop**: de gemeten bezetting als tijdlijn
      (dag/week per kwartier, maand per uur, jaar per dag), opgebouwd uit de stromen, met open
      bedden, het normale bereik voor die weekdag en rood waar het boven de bedden komt; daaronder
-     de hele historie om te springen, en afspelen periode voor periode. Daarna de kerncijfers van
+     de hele historie om te springen, en afspelen periode voor periode. Klik op een dag (in week,
+     maand of jaar) om in te zoomen: die dag per uur, gestapeld per stroom, met laagste–drukste
+     kwartier, normaal bereik, bedden en een uurstrook; "Terug" brengt je naar de vorige weergave. Daarna de kerncijfers van
      die periode, per dienst in een gewone week (gemiddeld per stroom + de norm), verpleegkundigen
      (nodig − ingepland) en bezetting tegen capaciteit uit Verpleegkundige inzet, dagverloop en maand.
    - **Stromen** — elke stroom in een eigen bandbreedte-grafiek (min–max, P95, gemiddeld) per
