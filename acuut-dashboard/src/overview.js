@@ -160,7 +160,7 @@ function viewOverview(el, frame) {
     <section class="panel hero stagger">
       <div class="panel-head">
         <div>${back ? `<button class="crumb" data-act="zoomback">${ICON.back} Terug naar ${esc(winTitle(back, winEnd(back.start, back.gran)))}</button>` : '<div class="eyebrow">Bezettingsverloop</div>'}<h2 class="hero-title">${winTitle(w, tl.end)}</h2>
-          <div class="desc">${lay === 'over' ? `Elke dag als lijn van 00:00 tot 24:00 over elkaar gelegd (totaal aantal patiënten per kwartier). Beweeg over een lijn om die dag uit te lichten; klik een dag in de legenda om hem aan of uit te zetten. Weekend gestippeld.${selTxt}` : lay === 'los' ? `Elke dag een eigen grafiek op dezelfde schaal, opgebouwd uit de ${unitId === 'ALL' ? 'afdelingen' : 'stromen'}. Rood = boven de bedden. Klik een dag om in te zoomen.${selTxt}` : w.gran === 'dag' ? `Per uur de ${mLabel()} van de kwartieren, verdeeld over de ${unitId === 'ALL' ? 'afdelingen' : 'stromen'}; het streepje loopt van het rustigste tot het drukste kwartier binnen dat uur. Het vlak is het normale bereik voor een ${WD_LONG[weekdayOf(w.start)].toLowerCase()} (P10–P95).` : `Gemeten aantal patiënten ${w.gran === 'jaar' ? `per dag (${mLabel()} van de kwartieren; lijn = drukste kwartier van de dag)` : w.gran === 'maand' ? `per uur (${mLabel()} van de kwartieren; lijn = drukste kwartier van het uur)` : 'per kwartier (gemeten waarden)'}, opgebouwd uit de ${unitId === 'ALL' ? 'afdelingen' : 'stromen'}. Rood = meer patiënten dan open bedden. <b>Klik op een dag om in te zoomen.</b>${selTxt}`}</div></div>
+          <div class="desc">${lay === 'over' ? `Elke dag als lijn van 00:00 tot 24:00 over elkaar gelegd (totaal aantal patiënten per kwartier). Beweeg over een lijn om die dag uit te lichten; klik een dag in de legenda om hem aan of uit te zetten. Weekend gestippeld.${selTxt}` : lay === 'los' ? `Elke dag een eigen grafiek op dezelfde schaal${builtFrom(unitId)}. Rood = boven de bedden. Klik een dag om in te zoomen.${selTxt}` : w.gran === 'dag' ? `Per uur de ${mLabel()} van de kwartieren${builtFrom(unitId, ', verdeeld over de ')}; het streepje loopt van het rustigste tot het drukste kwartier binnen dat uur. Het vlak is het normale bereik voor een ${WD_LONG[weekdayOf(w.start)].toLowerCase()} (P10–P95).` : `Gemeten aantal patiënten ${w.gran === 'jaar' ? `per dag (${mLabel()} van de kwartieren; lijn = drukste kwartier van de dag)` : w.gran === 'maand' ? `per uur (${mLabel()} van de kwartieren; lijn = drukste kwartier van het uur)` : 'per kwartier (gemeten waarden)'}${builtFrom(unitId)}. Rood = meer patiënten dan open bedden. <b>Klik op een dag om in te zoomen.</b>${selTxt}`}</div></div>
         <div class="set-row">
           ${w.gran === 'week' || w.gran === 'maand' ? `<div class="seg small" role="group" aria-label="Dagen tonen" data-ind="cm-tl">${[['na', 'Na elkaar'], ['over', 'Over elkaar'], ['los', 'Per dag']].map(([v, l]) => `<button class="${lay === v ? 'on' : ''}" data-act="chartmode" data-arg="tl:${v}">${l}</button>`).join('')}</div>` : ''}
           ${bedsButton(unitId)}
@@ -191,7 +191,7 @@ function viewOverview(el, frame) {
 
     <div class="grid g-3-1">
       <section class="panel stagger">
-        <div class="panel-head"><div><h2>Per dienst in een gewone week</h2><div class="desc">${mLabel()} van het aantal patiënten in die dienst, verdeeld naar het aandeel van elke ${unitId === 'ALL' ? 'afdeling' : 'stroom'}; streepje tot het drukste kwartier. Over alle dagen in de selectie.</div></div></div>
+        <div class="panel-head"><div><h2>Per dienst in een gewone week</h2><div class="desc">${mLabel()} van het aantal patiënten in die dienst${partsWord(unitId) ? `, verdeeld naar het aandeel van elke ${unitId === 'ALL' ? 'afdeling' : 'stroom'}` : ''}; streepje tot het drukste kwartier. Over alle dagen in de selectie.</div></div></div>
         <div class="chart-box"><canvas id="ch-week" role="img" aria-label="Bezetting per dag en dienst"></canvas></div>
         ${legendHTML(frame.comps, `<span><i class="wh"></i>Tot drukste kwartier</span><span><i class="ln"></i>Open bedden</span><span class="sep"></span><span class="key"><b>D</b> Dag <b>A</b> Avond <b>N</b> Nacht</span>`)}
       </section>
@@ -216,13 +216,13 @@ function viewOverview(el, frame) {
 
     <div class="grid g-2" style="margin-top:16px">
       <section class="panel stagger">
-        <div class="panel-head"><div><h2>Dagverloop (24 uur)</h2><div class="desc">${S.chartMode.dag === 'weekdag' ? `Bezetting per kwartier (${mLabel()} van het totaal), één lijn per weekdag in de selectie — zo zie je welke dag drukker is en wanneer. Weekend gestippeld.` : `Bezetting per kwartier (${mLabel()} over alle dagen in de selectie), verdeeld over de ${unitId === 'ALL' ? 'afdelingen' : 'stromen'}; het vlak erachter is de bandbreedte P10–max.`}</div></div>
-          ${modeSeg('dag', [['stroom', unitId === 'ALL' ? 'Afdelingen' : 'Stromen'], ['weekdag', 'Per weekdag']], 'Weergave dagverloop')}</div>
+        <div class="panel-head"><div><h2>Dagverloop (24 uur)</h2><div class="desc">${S.chartMode.dag === 'weekdag' ? `Bezetting per kwartier (${mLabel()} van het totaal), één lijn per weekdag in de selectie — zo zie je welke dag drukker is en wanneer. Weekend gestippeld.` : `Bezetting per kwartier (${mLabel()} over alle dagen in de selectie)${builtFrom(unitId, ', verdeeld over de ')}; het vlak erachter is de bandbreedte P10–max.`}</div></div>
+          ${modeSeg('dag', [['stroom', unitId === 'ALL' ? 'Afdelingen' : hasStreams() ? 'Stromen' : 'Alle dagen'], ['weekdag', 'Per weekdag']], 'Weergave dagverloop')}</div>
         <div class="chart-box"><canvas id="ch-day" role="img" aria-label="Dagverloop"></canvas></div>
         ${S.chartMode.dag === 'weekdag' ? wdLegendHTML(dayWd, '<span><i class="ln"></i>Open bedden</span>') : legendHTML(frame.comps, `<span><i class="sw band-sw"></i>P10–max</span><span><i class="ln"></i>Open bedden</span>`)}
       </section>
       <section class="panel stagger">
-        <div class="panel-head"><div><h2>Bezetting per maand</h2><div class="desc">${mLabel()} per maand, verdeeld over de stromen; streepje van P10 tot maximum.</div></div></div>
+        <div class="panel-head"><div><h2>Bezetting per maand</h2><div class="desc">${mLabel()} per maand${builtFrom(unitId, ', verdeeld over de ')}; streepje van P10 tot maximum.</div></div></div>
         <div class="chart-box"><canvas id="ch-month" role="img" aria-label="Bezetting per maand"></canvas></div>
         ${legendHTML(frame.comps, `<span><i class="wh"></i>P10 – max</span><span><i class="ln"></i>Open bedden</span>`)}
       </section>
@@ -519,6 +519,20 @@ function brushChart(canvas, frame, tl) {
 }
 
 /* ── "Nu"-markering (prognose: de huidige week) — schuift zacht mee ── */
+// Verticale lijn bij de laatste week met gemeten data (prognose).
+const fcEdgePlugin = {
+  id: 'fcEdge',
+  afterDatasetsDraw(chart, _a, opts) {
+    if (!opts || opts.index == null || opts.index < 0) return;
+    const { ctx, chartArea: a, scales: { x } } = chart, c = C();
+    const px = x.getPixelForValue(opts.index);
+    ctx.save(); ctx.strokeStyle = c.muted; ctx.setLineDash([2, 3]); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(px, a.top); ctx.lineTo(px, a.bottom); ctx.stroke();
+    ctx.setLineDash([]); ctx.fillStyle = c.muted; ctx.font = "500 10.5px 'IBM Plex Sans', system-ui, sans-serif"; ctx.textAlign = 'right'; ctx.textBaseline = 'top';
+    ctx.fillText('einde data', px - 4, a.top + 2); ctx.textAlign = 'left'; ctx.fillText('prognose →', px + 4, a.top + 2);
+    ctx.restore();
+  },
+};
 const nowMarkerPlugin = {
   id: 'nowMarker',
   beforeDatasetsDraw(chart, _a, opts) {

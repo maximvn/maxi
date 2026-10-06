@@ -111,14 +111,15 @@ const TRI_TOKEN = { rood: 'tri-rood', oranje: 'tri-oranje', geel: 'tri-geel', gr
 const MODES = {
   oud: {
     label: 'Oudbouw', eyebrow: 'Bestaande situatie',
-    desc: 'Elke afdeling apart, met eigen bedden en bemensing. Per afdeling kies je welke stromen je bekijkt.',
+    desc: 'Elke afdeling apart, met eigen bedden en bemensing. Je kijkt per afdeling naar één bezetting: de afdeling als geheel.',
+    streams: false,
     units: [
       { id: 'IC',  label: 'IC',  long: 'Intensive Care', beds: 10, ratio: { D: 2.5, A: 2.5, N: 3 }, plan: { D: 4, A: 4, N: 3 },
-        cats: ['ICU', 'LOS'], defaults: ['6.1', '6.2', '6.3'] },
+        cats: ['ICU', 'LOS'], defaults: ['6.1', '6.2', '6.3'], total: '6.4' },
       { id: 'CCU', label: 'CCU', long: 'CCU / SCU', beds: 8, ratio: { D: 2, A: 2, N: 3 }, plan: { D: 3, A: 3, N: 2 },
         cats: ['CCU', 'CCU-SC', 'SCU', 'SCU-SC', 'LOS'], defaults: ['5.1', '7.1'] },
       { id: 'SEH', label: 'SEH', long: 'Spoedeisende Hulp', beds: 18, ratio: { D: 3, A: 3, N: 4 }, plan: { D: 5, A: 5, N: 3 },
-        cats: ['SEH', 'SEH-SC', 'KIND', 'TRIAGE', 'LOS'], defaults: ['1.0', '2.0', '4.0'], extra: ['instroom', 'jdt'] },
+        cats: ['SEH', 'SEH-SC', 'KIND', 'TRIAGE', 'LOS'], defaults: ['1.0', '2.0', '4.0'], total: '3.0', extra: ['instroom', 'jdt'] },
       { id: 'EHH', label: 'EHH', long: 'Eerste Harthulp', beds: 5, ratio: { D: 3, A: 3, N: 4 }, plan: { D: 1, A: 1, N: 1 },
         cats: ['EHH', 'LOS'], defaults: ['8.1'] },
     ],
@@ -126,6 +127,7 @@ const MODES = {
   nieuw: {
     label: 'Nieuwbouw', eyebrow: 'Toekomstige situatie',
     desc: 'Afdelingen samengevoegd: de Acute Poort en de Hotfloor (IC + CCU + SCU) delen bedden en personeel.',
+    streams: true,
     units: [
       { id: 'AP', label: 'Acute Poort', long: 'Acute Poort — SEH, kinderen en EHH', beds: 23, ratio: { D: 3, A: 3, N: 4 }, plan: { D: 6, A: 6, N: 4 },
         cats: ['SEH', 'SEH-SC', 'KIND', 'TRIAGE', 'EHH', 'CCU', 'CCU-SC', 'LOS'], defaults: ['1.0', '2.0', '4.0', '8.1'], extra: ['instroom', 'jdt'] },

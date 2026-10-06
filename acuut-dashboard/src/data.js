@@ -362,6 +362,15 @@ const vacationOf = w => (VACATIONS.find(v => v.weeks.includes(w)) || {}).label |
    2. Trend: lineaire regressie op het doorlopende weeknummer.
    3. Seizoensindex per weeknummer = gemiddelde van (waarde ÷ trend).
    4. Prognose = trend(week) × seizoensindex(weeknummer).            */
+// Lineaire trend op het weeknummer × seizoensindex per ISO-week, gefit op de eerste n weken.
+function fitTrendSeason(y, wk, n) {
+  const mx = (n + 1) / 2; let my = 0; for (let i = 0; i < n; i++) my += y[i]; my /= n;
+  let num = 0, den = 0; for (let i = 0; i < n; i++) { num += (i + 1 - mx) * (y[i] - my); den += (i + 1 - mx) ** 2; }
+  const slope = den ? num / den : 0, intercept = my - slope * mx;
+  const ratios = {};
+  for (let i = 0; i < n; i++) { const t = slope * (i + 1) + intercept; if (t > 0) (ratios[wk[i]] = ratios[wk[i]] || []).push(y[i] / t); }
+  return { slope, intercept, seasonal: w => (ratios[w] && ratios[w].length ? mean(ratios[w]) : 1) };
+}
 function forecast(frame, slots, refusalPct, which = 'total') {
   const p = 1 - refusalPct / 100;
   const weeks = new Map();
@@ -381,18 +390,41 @@ function forecast(frame, slots, refusalPct, which = 'total') {
   const list = [...weeks.values()].filter(w => w.maxes.length >= 4).sort((a, b) => a.isoYear - b.isoYear || a.week - b.week);
   if (list.length < 30) return null;
   const y = list.map(w => percentileInc(w.maxes, p));
-  const xs = y.map((_, i) => i + 1);
-  const mx = mean(xs), my = mean(y);
-  let num = 0, den = 0; xs.forEach((x, i) => { num += (x - mx) * (y[i] - my); den += (x - mx) ** 2; });
-  const slope = den ? num / den : 0, intercept = my - slope * mx;
-  const ratios = {};
-  y.forEach((v, i) => { const t = slope * (i + 1) + intercept; if (t > 0) (ratios[list[i].week] = ratios[list[i].week] || []).push(v / t); });
-  const seasonal = w => (ratios[w] && ratios[w].length ? mean(ratios[w]) : 1);
+  const wk = list.map(w => Math.min(52, w.week));
+  const { slope, intercept, seasonal } = fitTrendSeason(y, wk, y.length);
+  const n = y.length, mx = (n + 1) / 2;
+  let den = 0; for (let i = 1; i <= n; i++) den += (i - mx) ** 2;
+  // Onzekerheid: residu in de historie + backtest. Het model wordt telkens op een deel
+  // van de historie gefit en h weken vooruit getoetst; zo groeit de fout met de horizon.
+  const res = y.map((v, i) => v - (slope * (i + 1) + intercept) * seasonal(wk[i]));
+  const sigma = Math.sqrt(res.reduce((a, r) => a + r * r, 0) / Math.max(1, n - 2));
+  const H = 78, errs = Array.from({ length: H + 1 }, () => []);
+  for (let o = Math.max(52, Math.floor(n / 2)); o < n; o += 2) {
+    const m = fitTrendSeason(y, wk, o);
+    for (let h = 1; h <= H && o + h - 1 < n; h++) { const i = o + h - 1; errs[h].push(y[i] - (m.slope * (i + 1) + m.intercept) * m.seasonal(wk[i])); }
+  }
+  // var(h) = a + b·h, gefit op de backtest-fouten (b ≥ 0); val terug op de regressieformule.
+  const pts = []; errs.forEach((e, h) => { if (h && e.length >= 6) pts.push([h, e.reduce((a, r) => a + r * r, 0) / e.length]); });
+  let va = sigma * sigma, vb = 0;
+  if (pts.length >= 4) {
+    const hx = mean(pts.map(q => q[0])), vy = mean(pts.map(q => q[1]));
+    let nn = 0, dd = 0; pts.forEach(([h, v]) => { nn += (h - hx) * (v - vy); dd += (h - hx) ** 2; });
+    vb = Math.max(0, dd ? nn / dd : 0); va = Math.max(sigma * sigma, vy - vb * hx);
+  }
+  // Ondergrens voor de groei: na een jaar is de variantie minstens verdubbeld
+  // (het niveau kan verschuiven); meer als de backtest dat laat zien.
+  const vbData = vb; vb = Math.max(vb, va / 52);
+  const sdAt = h => {
+    if (h <= 0) return sigma;
+    const x0 = n + h, reg = sigma * sigma * (1 + 1 / n + (x0 - mx) ** 2 / (den || 1));
+    return Math.sqrt(Math.max(reg, va + vb * h));
+  };
   const lastW = list[list.length - 1];
   const lastMonday = isoWeekMonday(lastW.isoYear, lastW.week);
   const hist = {};
   list.forEach(w => { (hist[w.week] = hist[w.week] || []).push(...w.vals); });
   const histStats = {};
+  const actual = new Map(list.map((w, i) => [w.isoYear * 100 + w.week, y[i]]));
   // Prognose voor elke ISO-week: trend op het doorlopende weeknummer × seizoensindex.
   const at = (isoYear, week) => {
     const monday = isoWeekMonday(isoYear, week);
@@ -400,9 +432,12 @@ function forecast(frame, slots, refusalPct, which = 'total') {
     const idx = list.length + dw;
     const w52 = Math.min(52, week);
     const val = Math.max(0, (slope * idx + intercept) * seasonal(w52));
+    const sd = sdAt(dw), z80 = 1.2816, z95 = 1.96;
+    const k = isoYear * 100 + week, act = actual.get(k);
     if (!(w52 in histStats)) histStats[w52] = hist[w52] ? stats(hist[w52]) : null;
     const h = histStats[w52];
-    return { week, isoYear, monday, val, avg: h ? h.avg : null, max: h ? h.max : null, p10: h ? h.p10 : null, vacation: vacationOf(week), season: seasonal(w52), future: dw > 0 };
+    return { week, isoYear, monday, val, avg: h ? h.avg : null, max: h ? h.max : null, p10: h ? h.p10 : null, vacation: vacationOf(week), season: seasonal(w52), future: dw > 0,
+      ahead: dw, sd, lo80: Math.max(0, val - z80 * sd), hi80: val + z80 * sd, lo95: Math.max(0, val - z95 * sd), hi95: val + z95 * sd, actual: act == null ? null : act };
   };
-  return { at, lastMonday, lastWeek: lastW, slopePerYear: slope * 52, nWeeks: list.length, years: [...new Set(list.map(w => w.isoYear))], seasonal };
+  return { at, lastMonday, lastWeek: lastW, slopePerYear: slope * 52, nWeeks: list.length, years: [...new Set(list.map(w => w.isoYear))], seasonal, sigma, backtest: pts, growthFromData: vbData >= vb - 1e-9 };
 }

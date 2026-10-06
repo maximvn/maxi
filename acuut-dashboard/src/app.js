@@ -71,6 +71,8 @@ function loadSettings() {
 }
 
 /* ── Units, stromen en selectie ─────────────────────────────────────── */
+// Nieuwbouw werkt met stromen; Oudbouw kijkt per afdeling naar één bezetting.
+const hasStreams = () => !!(S.mode && MODES[S.mode].streams);
 function unitsOf() { return S.mode ? MODES[S.mode].units : []; }
 function unitDef(id) { return unitsOf().find(u => u.id === id); }
 function cfgOf(id) {
@@ -97,6 +99,8 @@ function loadedPool(u) { return poolOf(u).filter(d => STORE[d.key]); }
 function selectedFor(u) {
   const loaded = new Set(loadedPool(u).map(d => d.key));
   if (S.sel[u.id]) return S.sel[u.id].filter(k => loaded.has(k));
+  // Oudbouw: liefst het totaalbestand van de afdeling (dan telt niets dubbel).
+  if (!hasStreams() && u.total && loaded.has(u.total)) return [u.total];
   const def = u.defaults.filter(k => loaded.has(k));
   if (def.length) return def;
   const first = loadedPool(u)[0];
@@ -357,7 +361,8 @@ function renderPicker() {
   const warn = overlapWarnings(sel);
   const groups = [...new Set(poolOf(u).map(d => d.cat))];
   el.innerHTML = `
-    <div class="picker-head"><b>Stromen in ${esc(u.label)}</b><span>${sel.length} gekozen</span></div>
+    <div class="picker-head"><b>${hasStreams() ? `Stromen in ${esc(u.label)}` : `Gegevens voor ${esc(u.label)}`}</b><span>${sel.length} gekozen</span></div>
+    ${hasStreams() ? '' : `<div class="picker-note">De gekozen bestanden worden opgeteld tot één bezetting van ${esc(u.long)}. Kies bij voorkeur het totaalbestand, of een scenario.</div>`}
     ${warn.length ? `<div class="picker-warn">${ICON.alert}<div>${warn.map(esc).join('<br>')}<br><span>Deze stromen tellen dubbel als je ze samen kiest.</span></div></div>` : ''}
     <div class="picker-body">
       ${groups.map(cat => `<div class="picker-group"><div class="picker-cat">${esc(CATS[cat].label)}</div>
@@ -596,6 +601,6 @@ function boot() {
   try { const t = localStorage.getItem('acuut-dash-theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) { /* negeren */ }
   loadSettings();
   applyChartDefaults();
-  Chart.register(revealPlugin, nowMarkerPlugin, brushPlugin, zoomHoverPlugin, whiskerPlugin, capLinePlugin, dayBandPlugin);
+  Chart.register(revealPlugin, nowMarkerPlugin, fcEdgePlugin, brushPlugin, zoomHoverPlugin, whiskerPlugin, capLinePlugin, dayBandPlugin);
   render({ enter: true });
 }

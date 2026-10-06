@@ -9,11 +9,14 @@ function compsFor(unitId) {
       .filter(c => c.streams.length && !S.off[c.id]);
   }
   const u = unitDef(unitId);
+  // Oudbouw: één reeks per afdeling (de gekozen bestanden opgeteld).
+  if (!hasStreams()) { const ks = selectedFor(u); return ks.length ? [{ id: u.id, label: u.long, streams: ks, color: 's1' }] : []; }
   return selectedFor(u).map(k => ({ id: k, label: dsLabel(k), streams: [k], color: colorFor(u, k) }));
 }
 function availableViews() {
   const u = S.unit === 'ALL' ? null : unitDef(S.unit);
-  return VIEWS.filter(v => !v.extra || (u && (u.extra || []).includes(v.extra)));
+  return VIEWS.filter(v => (!v.extra || (u && (u.extra || []).includes(v.extra))) && !(v.id === 'stromen' && u && !hasStreams()))
+    .map(v => (v.id === 'stromen' && !u ? { ...v, label: 'Afdelingen' } : v));
 }
 function currentFrame() { const comps = compsFor(S.unit); return comps.length ? buildFrame(comps, S.filter) : null; }
 const colorOf = c => tok(c.color);
@@ -55,6 +58,9 @@ function wdLegendHTML(lines, extra = '') {
   const vals = lines.map(w => w.day).filter(v => v != null), lo = Math.min(...vals), hi = Math.max(...vals);
   return `<div class="legend wd-legend">${lines.map(w => `<span class="${w.day === hi && hi !== lo ? 'hi' : w.day === lo && hi !== lo ? 'lo' : ''}"><i class="ln solid" style="border-color:var(--s${w.wd + 1});border-top-width:3px;${w.wd >= 5 ? 'border-top-style:dashed' : ''}"></i>${w.short} <b>${fmt(w.day)}</b></span>`).join('')}${extra}<span class="hint">${mLabel()} over de hele dag · hoogste vet, laagste licht</span></div>`;
 }
+// Waaruit de bezetting is opgebouwd ('' bij Oudbouw: één afdeling = één reeks).
+function partsWord(unitId) { return unitId === 'ALL' ? 'afdelingen' : hasStreams() ? 'stromen' : ''; }
+const builtFrom = (unitId, pre = ', opgebouwd uit de ') => (partsWord(unitId) ? `${pre}${partsWord(unitId)}` : '');
 const mv = st => (st ? st[S.metric] : null);
 const mLabel = () => METRICS[S.metric].short;
 const hhmm = m => `${pad2(Math.floor(m / 60))}:${pad2(m % 60)}`;
@@ -175,9 +181,12 @@ function dashScreen() {
     const sel = selectedFor(u);
     const warn = overlapWarnings(sel);
     const avail = loadedPool(u).length;
-    streamGroup = `<div class="f-group f-streams"><span class="f-label">Stromen</span>
+    streamGroup = hasStreams() ? `<div class="f-group f-streams"><span class="f-label">Stromen</span>
       ${sel.map(k => `<button class="chip" data-act="unsel" data-arg="${k}" title="Klik om ${esc(DS[k].label)} uit te zetten"><i class="sw" style="background:var(--${colorFor(u, k)})"></i>${esc(dsLabel(k))}<span class="x" aria-hidden="true">×</span></button>`).join('')}
-      <button class="chip add" id="picker-btn" data-act="picker" aria-expanded="${S.pickerOpen}" aria-haspopup="dialog">${ICON.layers}Stromen kiezen <span class="cnt">${sel.length}/${avail}</span></button>
+      <button class="chip add" id="picker-btn" data-act="picker" aria-expanded="${S.pickerOpen}" aria-haspopup="dialog">${ICON.layers}Stromen kiezen <span class="cnt">${sel.length}/${avail}</span></button>`
+    : `<div class="f-group f-streams"><span class="f-label">Gegevens</span>
+      <span class="src-line" title="${esc(sel.map(k => DS[k].long || DS[k].label).join(' + '))}"><i class="sw" style="background:var(--s1)"></i><b>${esc(u.label)}</b>${sel.length ? ` = ${sel.map(k => esc(DS[k].role === 'totaal' ? 'totaalbestand' : dsLabel(k))).join(' + ')}` : ' — nog geen bestand'}</span>
+      <button class="chip add" id="picker-btn" data-act="picker" aria-expanded="${S.pickerOpen}" aria-haspopup="dialog">${ICON.layers}Bron wijzigen <span class="cnt">${sel.length}/${avail}</span></button>
       ${warn.length ? `<span class="status warn" title="${esc(warn.join(' · '))}">${ICON.alert}Telt dubbel</span>` : ''}
     </div>`;
   }
@@ -228,7 +237,7 @@ function renderView() {
   if (!frame || !frame.days.length) {
     const noData = !frame;
     el.innerHTML = `<div class="empty-state">
-      <h2>${noData ? 'Nog geen stromen gekozen' : 'Geen dagen in deze selectie'}</h2>
+      <h2>${noData ? (hasStreams() ? 'Nog geen stromen gekozen' : 'Nog geen gegevens gekozen') : 'Geen dagen in deze selectie'}</h2>
       <p>${noData ? (S.unit !== 'ALL' && loadedPool(unitDef(S.unit)).length ? 'Kies met "Stromen kiezen" welke bestanden je wilt bekijken.' : 'Laad de Excel-bestanden van deze afdeling, of start met de voorbeelddata.') : 'Verruim de periode- of dagfilter in de strook hierboven.'}</p>
       ${noData ? `<button class="btn primary" data-act="go" data-arg="data">${ICON.file} Naar data inladen</button>` : ''}
     </div>`;
@@ -706,6 +715,13 @@ function viewForecast(el, frame) {
   const holidays = { ...nlHolidays(now.isoYear), ...nlHolidays(now.isoYear + 1) };
   const holInWeek = w => Object.entries(holidays).filter(([ds]) => ds >= w.monday && ds <= addDays(w.monday, 6)).map(([, n]) => n);
   const c = C();
+  // Lijn: een half jaar gemeten historie tot en met het einde van de horizon.
+  const series = [];
+  for (let m = addDays(fc.lastMonday, -7 * 26); m <= weeks[weeks.length - 1].monday; m = addDays(m, 7)) { const iw = isoWeek(m); series.push(fc.at(iw.isoYear, iw.week)); }
+  const sNow = series.findIndex(w => w.isoYear === now.isoYear && w.week === now.week);
+  const sLast = series.findIndex(w => w.ahead === 0);
+  const nowFc = nowIdx >= 0 ? weeks[nowIdx] : fc.at(now.isoYear, now.week);
+  const h1 = fc.at(...(() => { const iw = isoWeek(addDays(fc.lastMonday, 7)); return [iw.isoYear, iw.week]; })());
   const span = `week ${weeks[0].week}${weeks[0].isoYear !== weeks[weeks.length - 1].isoYear ? ' ' + weeks[0].isoYear : ''} t/m week ${weeks[weeks.length - 1].week} ${weeks[weeks.length - 1].isoYear}`;
 
   el.innerHTML = `
@@ -723,15 +739,15 @@ function viewForecast(el, frame) {
       </div>
     </section>
     <div class="kpis">
-      ${kpi('Nu', `week ${now.week}`, String(now.isoYear), `${fmtDay(now.ds)} · prognose ${fmt(nowIdx >= 0 ? weeks[nowIdx].val : fc.at(now.isoYear, now.week).val)} patiënten`)}
+      ${kpi('Nu', `week ${now.week}`, String(now.isoYear), `${fmtDay(now.ds)} · prognose ${fmt(nowFc.val)} patiënten (80%: ${fmt(nowFc.lo80, 0)}–${fmt(nowFc.hi80, 0)})`)}
       ${kpi('Komende 4 weken', kn(next4.length ? Math.max(...next4.map(w => w.val)) : 0), 'patiënten piek', next4.length ? `week ${next4[0].week}–${next4[next4.length - 1].week}` : '', next4.some(w => w.val > beds) ? statusPill('crit', 'Boven de bedden') : statusPill('good', `Binnen ${beds} bedden`))}
-      ${kpi('Drukste week in beeld', `wk ${peak.week}`, String(peak.isoYear), `${fmt(peak.val)} patiënten · vanaf ${fmtDay(peak.monday)}${peak.vacation ? ' · ' + peak.vacation.toLowerCase() : ''}`)}
+      ${kpi('Drukste week in beeld', `wk ${peak.week}`, String(peak.isoYear), `${fmt(peak.val)} patiënten (80%: ${fmt(peak.lo80, 0)}–${fmt(peak.hi80, 0)}) · vanaf ${fmtDay(peak.monday)}${peak.vacation ? ' · ' + peak.vacation.toLowerCase() : ''}`)}
       ${kpi('Weken boven bedden', kn(overWeeks, 0), `van ${weeks.length}`, `prognose > ${beds} bedden · trend ${fc.slopePerYear >= 0 ? '+' : ''}${fmt(fc.slopePerYear)} pat./jaar · vakanties ${vacDiff >= 0 ? '+' : ''}${fmt(vacDiff, 0)}%`, statusPill(overWeeks === 0 ? 'good' : overWeeks < 4 ? 'warn' : 'crit', overWeeks === 0 ? 'Past' : `${overWeeks} weken krap`))}
     </div>
     <section class="panel stagger">
-      <div class="panel-head"><div><h2>Verwachte piekbezetting per week</h2><div class="desc">Staaf = prognose voor die week; streepje = historisch P10 tot maximum in hetzelfde weeknummer. Rood = boven de ${beds} bedden. "Nu" = de huidige week.</div></div></div>
-      <div class="chart-box tall"><canvas id="ch-fc" role="img" aria-label="Prognose per week"></canvas></div>
-      <div class="legend"><span><i class="sw" style="background:var(--s1)"></i>Prognose binnen capaciteit</span><span><i class="sw" style="background:var(--crit)"></i>Boven capaciteit</span><span class="sep"></span><span><i class="wh"></i>Historie P10–max</span><span><i class="ln"></i>Open bedden</span></div>
+      <div class="panel-head"><div><h2>Verwachte piekbezetting per week</h2><div class="desc">Zwart = gemeten (t/m week ${fc.lastWeek.week} ${fc.lastWeek.isoYear}), blauw = prognose, rood waar die boven de ${beds} bedden komt. Het vlak is de <b>bandbreedte</b>: 80% (donker) en 95% (licht) kans dat de werkelijke week daarbinnen valt. Hoe verder vooruit, hoe breder: 1 week na de laatste data ±${fmt(1.2816 * h1.sd)}, bij week ${now.week} (nu, ${Math.max(0, nowFc.ahead)} weken na de data) ±${fmt(1.2816 * nowFc.sd)} patiënten (80%). ${fc.growthFromData ? 'De groei is gemeten door het model op de eigen historie terug te toetsen.' : 'De startbreedte komt uit het terugtoetsen van het model op de eigen historie; de groei is een vaste aanname (na een jaar is de spreiding √2 zo groot), omdat de historie daar zelf geen sterkere groei voor laat zien.'}</div></div></div>
+      <div class="chart-box tall"><canvas id="ch-fc" role="img" aria-label="Prognose per week met bandbreedte"></canvas></div>
+      <div class="legend"><span><i class="ln solid" style="border-color:var(--ink);border-top-width:2px"></i>Gemeten</span><span><i class="ln" style="border-color:var(--muted)"></i>Model op de historie</span><span><i class="ln solid" style="border-color:var(--s1);border-top-width:3px"></i>Prognose</span><span><i class="sw" style="background:color-mix(in srgb, var(--s1) 34%, var(--surface))"></i>80% bandbreedte</span><span><i class="sw" style="background:color-mix(in srgb, var(--s1) 14%, var(--surface))"></i>95% bandbreedte</span><span><i class="ln"></i>Open bedden</span></div>
     </section>
     ${isAll ? `<p class="note">Per afdeling zie je in hun eigen tabblad ook de benodigde verpleegkundigen per week.</p>` : `
     <section class="panel stagger" style="margin-top:16px">
@@ -740,21 +756,42 @@ function viewForecast(el, frame) {
       <div class="heat-scale"><span class="diff neg">−1</span> overschot <span class="diff zero">0</span> sluitend <span class="diff pos">+1</span> tekort t.o.v. rooster</div>
     </section>`}`;
 
+  const fut = (w, v) => (w.ahead >= 0 ? v : null);
+  const yTop = Math.ceil(Math.max(beds, ...series.map(w => Math.max(w.hi95, w.actual ?? 0))) + 1);
   mkChart($('#ch-fc'), {
-    type: 'bar',
-    data: { labels: weeks.map(w => [`wk ${w.week}`, w.week === 1 || w === weeks[0] ? String(w.isoYear) : '']), datasets: [{ label: 'Prognose', data: weeks.map(w => w.val), backgroundColor: weeks.map(w => (w.val > beds ? c.crit : c.series[0])), barPercentage: 0.8, categoryPercentage: 0.92 }] },
+    type: 'line',
+    data: {
+      labels: series.map(w => `wk ${w.week}`),
+      datasets: [
+        { label: '95% hoog', data: series.map(w => fut(w, w.hi95)), borderWidth: 0, pointRadius: 0, fill: 1, backgroundColor: alpha(c.series[0], 0.12), tension: 0.35 },
+        { label: '95% laag', data: series.map(w => fut(w, w.lo95)), borderWidth: 0, pointRadius: 0, fill: false, tension: 0.35 },
+        { label: '80% hoog', data: series.map(w => fut(w, w.hi80)), borderWidth: 0, pointRadius: 0, fill: 3, backgroundColor: alpha(c.series[0], 0.24), tension: 0.35 },
+        { label: '80% laag', data: series.map(w => fut(w, w.lo80)), borderWidth: 0, pointRadius: 0, fill: false, tension: 0.35 },
+        { label: 'Prognose', data: series.map(w => fut(w, w.val)), borderColor: c.series[0], borderWidth: 3, pointRadius: 0, pointHoverRadius: 4, tension: 0.35, fill: false,
+          segment: { borderColor: ctx => (ctx.p1.parsed.y > beds ? c.crit : c.series[0]) } },
+        { label: 'Model', data: series.map(w => (w.ahead <= 0 ? w.val : null)), borderColor: c.muted, borderWidth: 1.25, borderDash: [4, 4], pointRadius: 0, tension: 0.35, fill: false },
+        { label: 'Gemeten', data: series.map(w => w.actual), borderColor: c.ink, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, tension: 0.2, fill: false },
+        { label: 'Open bedden', data: series.map(() => beds), borderColor: c.ink, borderWidth: 1.5, borderDash: [5, 4], pointRadius: 0, fill: false },
+      ],
+    },
     options: {
+      interaction: { mode: 'index', intersect: false },
       layout: { padding: { top: 18 } },
-      scales: { ...baseScales({ yMax: Math.ceil(Math.max(beds, ...weeks.map(w => w.max || 0), ...weeks.map(w => w.val)) + 1), yTitle: 'Patiënten' }), x: { grid: { display: false }, border: { color: c.axis }, ticks: { maxRotation: 0, autoSkip: false, callback: (v, i) => (weeks.length <= 13 || i % 4 === 0 || i === nowIdx ? [`wk ${weeks[i].week}`, i === 0 || weeks[i].week === 1 ? String(weeks[i].isoYear) : ''] : '') } } },
+      scales: {
+        x: { grid: { display: false }, border: { color: c.axis }, ticks: { maxRotation: 0, autoSkip: false, callback: (v, i) => { const w = series[i]; if (i === sNow) return ['nu', `wk ${w.week}`]; return w.week === 1 ? [`wk 1`, String(w.isoYear)] : w.week % 4 === 0 && w.week < 51 && Math.abs(i - sNow) > 2 ? `wk ${w.week}` : ''; } } },
+        y: { beginAtZero: true, max: yTop, grid: { color: c.grid }, border: { display: false }, ticks: { precision: 0 }, title: { display: true, text: 'Patiënten', color: c.muted, font: { size: 11 } } },
+      },
       plugins: {
-        nowMarker: nowIdx >= 0 ? { index: nowIdx } : {},
-        whiskers: { data: weeks.map(w => ({ lo: w.p10, hi: w.max })) },
-        capLine: { value: beds, label: `${beds} open bedden` },
-        tooltip: { callbacks: {
-          title: it => { const w = weeks[it[0].dataIndex]; return `Week ${w.week} · ${w.isoYear} · vanaf ${fmtDay(w.monday)}`; },
-          label: it => ` Prognose: ${fmt(it.raw)} patiënten`,
-          footer: it => { const w = weeks[it[0].dataIndex]; const h = holInWeek(w); return [`Historie wk ${w.week}: P10 ${fmt(w.p10)} · max ${fmt(w.max, 0)}`, `Seizoensindex ${fmt(w.season, 2)}`, ...(w.vacation ? [w.vacation] : []), ...(h.length ? [h.join(', ')] : [])]; },
-        } },
+        nowMarker: sNow >= 0 ? { index: sNow } : {},
+        fcEdge: { index: sLast },
+        tooltip: {
+          filter: it => ['Prognose', 'Gemeten', 'Model'].includes(it.dataset.label) && it.raw != null,
+          callbacks: {
+            title: it => { const w = series[it[0].dataIndex]; return `Week ${w.week} · ${w.isoYear} · vanaf ${fmtDay(w.monday)}`; },
+            label: it => ` ${it.dataset.label === 'Model' ? 'Model (historie)' : it.dataset.label}: ${fmt(it.raw)} patiënten`,
+            footer: it => { const w = series[it[0].dataIndex]; const h = holInWeek(w); return [...(w.ahead >= 0 ? [`80%: ${fmt(w.lo80)}–${fmt(w.hi80)} · 95%: ${fmt(w.lo95)}–${fmt(w.hi95)}`, w.ahead > 0 ? `${w.ahead} ${w.ahead === 1 ? 'week' : 'weken'} na de laatste data` : 'laatste week met data'] : []), `Seizoensindex ${fmt(w.season, 2)}`, ...(w.vacation ? [w.vacation] : []), ...(h.length ? [h.join(', ')] : [])]; },
+          },
+        },
       },
     },
   });

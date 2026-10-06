@@ -63,8 +63,8 @@ async function run(theme, width) {
   await page.screenshot({ path: `${out}/02-data-${tag}.png`, fullPage: true })
   await page.click('[data-act="go"][data-arg="dash"]')
   const shots = width < 600 ? [['IC', 'overzicht']] : [
-    ['IC', 'overzicht'], ['IC', 'stromen'], ['IC', 'bedden'], ['IC', 'vpk'], ['IC', 'prognose'],
-    ['SEH', 'overzicht'], ['SEH', 'instroom'], ['SEH', 'jdt'], ['SEH', 'stromen'], ['ALL', 'overzicht'], ['ALL', 'vpk'], ['ALL', 'stromen'],
+    ['IC', 'overzicht'], ['IC', 'bedden'], ['IC', 'vpk'], ['IC', 'prognose'],
+    ['SEH', 'overzicht'], ['SEH', 'instroom'], ['SEH', 'jdt'], ['ALL', 'overzicht'], ['ALL', 'vpk'], ['ALL', 'stromen'],
   ]
   for (const [u, v] of shots) {
     await page.click(`[data-act="unit"][data-arg="${u}"]`)
@@ -73,6 +73,10 @@ async function run(theme, width) {
     await page.screenshot({ path: `${out}/03-${u}-${v}-${tag}.png`, fullPage: true })
   }
   if (width >= 600) {
+    // Oudbouw: één reeks per afdeling, geen Stromen-tab
+    await page.click('[data-act="unit"][data-arg="IC"]')
+    const oud = await page.evaluate(() => ({ n: compsFor('IC').length, tab: !!document.querySelector('[data-act="view"][data-arg="stromen"]') }))
+    if (oud.n !== 1 || oud.tab) errors.push('oudbouw nog met stromen: ' + JSON.stringify(oud))
     // specifieke week + rooster aanpassen
     await page.click('[data-act="unit"][data-arg="IC"]')
     await page.click('[data-act="view"][data-arg="overzicht"]')
@@ -141,6 +145,7 @@ async function run(theme, width) {
     await page.screenshot({ path: `${out}/06-vpk-tussendienst-${tag}.png`, fullPage: true })
     if (await page.$('[data-act="advice-apply"]')) await page.click('[data-act="advice-apply"]')
     // stromen: bandbreedte per weekdag + trend samen
+    await page.click('[data-act="unit"][data-arg="ALL"]')
     await page.click('[data-act="view"][data-arg="stromen"]')
     await page.click('[data-act="bandgran"][data-arg="weekday"]')
     await page.click('[data-act="trendmode"][data-arg="samen"]')
@@ -153,6 +158,7 @@ async function run(theme, width) {
     await page.waitForTimeout(900)
     await page.screenshot({ path: `${out}/07b-stromen-samen-weekdag-${tag}.png` })
     await page.click('[data-act="chartmode"][data-arg="tot:lijnen"]')
+    await page.click('[data-act="unit"][data-arg="IC"]')
     // weekdagen los filteren + vergelijken in Dagverloop en Bedden
     await page.click('[data-act="view"][data-arg="overzicht"]')
     for (const wd of ['4', '5', '6']) await page.click(`[data-act="wd"][data-arg="${wd}"]`)
@@ -217,6 +223,15 @@ async function run(theme, width) {
     await page.click('[data-act="wingran"][data-arg="maand"]')
     await page.waitForTimeout(1200)
     await page.screenshot({ path: `${out}/05-nieuw-HF-${tag}.png`, fullPage: true })
+    if ((await page.evaluate(() => compsFor('HF').length)) < 2) errors.push('nieuwbouw zonder stromen')
+    await page.click('[data-act="view"][data-arg="stromen"]')
+    await page.waitForTimeout(900)
+    await page.screenshot({ path: `${out}/05b-nieuw-HF-stromen-${tag}.png`, fullPage: true })
+    await page.click('[data-act="view"][data-arg="prognose"]')
+    await page.waitForTimeout(1200)
+    await page.screenshot({ path: `${out}/05c-nieuw-HF-prognose-${tag}.png`, fullPage: true })
+    const fcw = await page.evaluate(() => { const f = forecast(currentFrame(), ALL_SLOTS, 5); const a = f.at(...Object.values(isoWeek(addDays(f.lastMonday, 7))).slice(0, 2)), b = f.at(...Object.values(isoWeek(addDays(f.lastMonday, 7 * 40))).slice(0, 2)); return [a.hi80 - a.lo80, b.hi80 - b.lo80]; })
+    if (!(fcw[1] > fcw[0])) errors.push('bandbreedte groeit niet: ' + JSON.stringify(fcw))
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)
     if (overflow) errors.push(`[${tag}] horizontale scroll op de pagina`)
   }
