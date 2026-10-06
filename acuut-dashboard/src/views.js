@@ -15,7 +15,7 @@ function compsFor(unitId) {
 }
 function availableViews() {
   const u = S.unit === 'ALL' ? null : unitDef(S.unit);
-  return VIEWS.filter(v => (!v.extra || (u && (u.extra || []).includes(v.extra))) && !(v.id === 'stromen' && u && !hasStreams()))
+  return VIEWS.filter(v => (!v.extra || (u && (u.extra || []).includes(v.extra))) && !(v.id === 'stromen' && u && !hasStreams()) && !(v.nieuw && !(u && hasStreams() && u.from)))
     .map(v => (v.id === 'stromen' && !u ? { ...v, label: 'Afdelingen' } : v));
 }
 function currentFrame() { const comps = compsFor(S.unit); return comps.length ? buildFrame(comps, S.filter) : null; }
@@ -245,7 +245,7 @@ function renderView() {
     </div>`;
     return;
   }
-  const v = { overzicht: viewOverview, stromen: viewStreams, bedden: viewBeds, vpk: viewStaff, prognose: viewForecast }[S.view];
+  const v = { overzicht: viewOverview, stromen: viewStreams, bedden: viewBeds, vpk: viewStaff, prognose: viewForecast, rooster: viewRoster }[S.view];
   v(el, frame);
 }
 
@@ -824,6 +824,8 @@ function exportTables() {
     tables.forEach((t, i) => {
       const clone = t.cloneNode(true);
       clone.querySelectorAll('.stepper-input').forEach(s => { s.replaceWith(document.createTextNode(s.querySelector('input').value)); });
+      // ingevulde tekstvelden (bv. inschatting team) meenemen
+      t.querySelectorAll('input[type="text"], textarea').forEach((inp, j) => { const c2 = clone.querySelectorAll('input[type="text"], textarea')[j]; if (c2) c2.replaceWith(document.createTextNode(inp.value)); });
       XLSX.utils.book_append_sheet(wb, XLSX.utils.table_to_sheet(clone), (t.dataset.name || 'Tabel ' + (i + 1)).slice(0, 31));
     });
     const name = `${S.unit === 'ALL' ? 'Alle' : unitDef(S.unit).label}_${S.view}.xlsx`.replace(/\s+/g, '_');

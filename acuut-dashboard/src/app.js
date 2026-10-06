@@ -7,6 +7,8 @@ const S = {
   unit: null,            // unit-id of 'ALL'
   view: 'overzicht',
   filter: { year: 'all', months: 'all', days: 'all' },
+  team: {},             // inschatting team per unit → weekdag → dienst: { n, note }
+  rosterWd: 0,
   chartMode: { dag: 'stroom', bedhour: 'totaal', tot: 'lijnen', tl: 'na' },
   metric: 'p95',
   sel: {},               // unit-id → gekozen dataset-keys (volgorde = volgorde in de grafiek)
@@ -57,13 +59,14 @@ const ICON = {
 
 /* ── Persistente instellingen (alleen gemak; werkt ook zonder) ─────── */
 function saveSettings() {
-  try { localStorage.setItem('acuut-dash-v2', JSON.stringify({ cfg: S.cfg, shifts: SHIFT_INFO, metric: S.metric, fteHours: S.fteHours, sel: S.sel })); } catch (e) { /* geen opslag beschikbaar */ }
+  try { localStorage.setItem('acuut-dash-v2', JSON.stringify({ cfg: S.cfg, shifts: SHIFT_INFO, metric: S.metric, fteHours: S.fteHours, sel: S.sel, team: S.team })); } catch (e) { /* geen opslag beschikbaar */ }
 }
 function loadSettings() {
   try {
     const raw = JSON.parse(localStorage.getItem('acuut-dash-v2') || 'null'); if (!raw) return;
     if (raw.cfg) S.cfg = raw.cfg;
     if (raw.sel) S.sel = raw.sel;
+    if (raw.team) S.team = raw.team;
     if (raw.shifts) SHIFT_KEYS.forEach(k => raw.shifts[k] && Object.assign(SHIFT_INFO[k], { start: raw.shifts[k].start, end: raw.shifts[k].end }));
     if (raw.metric && METRICS[raw.metric]) S.metric = raw.metric;
     if (raw.fteHours) S.fteHours = raw.fteHours;
@@ -74,7 +77,7 @@ function loadSettings() {
 // Nieuwbouw werkt met stromen; Oudbouw kijkt per afdeling naar één bezetting.
 const hasStreams = () => !!(S.mode && MODES[S.mode].streams);
 function unitsOf() { return S.mode ? MODES[S.mode].units : []; }
-function unitDef(id) { return unitsOf().find(u => u.id === id); }
+function unitDef(id) { return unitsOf().find(u => u.id === id) || Object.values(MODES).flatMap(m => m.units).find(u => u.id === id); }
 function cfgOf(id) {
   const u = unitDef(id);
   if (!S.cfg[id]) S.cfg[id] = { beds: u.beds };
@@ -96,11 +99,11 @@ function poolOf(u) {
 function loadedPool(u) { return poolOf(u).filter(d => STORE[d.key]); }
 // Gekozen stromen: eigen keuze, anders de standaardstromen die geladen zijn,
 // anders de eerste geladen stroom (bv. alleen een totaalbestand).
-function selectedFor(u) {
+function selectedFor(u, oud = !hasStreams()) {
   const loaded = new Set(loadedPool(u).map(d => d.key));
   if (S.sel[u.id]) return S.sel[u.id].filter(k => loaded.has(k));
   // Oudbouw: liefst het totaalbestand van de afdeling (dan telt niets dubbel).
-  if (!hasStreams() && u.total && loaded.has(u.total)) return [u.total];
+  if (oud && u.total && loaded.has(u.total)) return [u.total];
   const def = u.defaults.filter(k => loaded.has(k));
   if (def.length) return def;
   const first = loadedPool(u)[0];
@@ -445,6 +448,9 @@ document.addEventListener('click', e => {
     fcrange: () => { S.fcRange = arg; render(); },
     jdtpick: () => { S.jdtDate = arg; const y = window.scrollY; render(); window.scrollTo({ top: y }); },
     jdtday: () => { if (STORE.jdt) { const ds = STORE.jdt.days.map(d => d.ds); const i = ds.indexOf(S.jdtDate); S.jdtDate = ds[Math.max(0, Math.min(ds.length - 1, i + +arg))]; const y = window.scrollY; render(); window.scrollTo({ top: y }); } },
+    rosterwd: () => { S.rosterWd = +arg; const y = window.scrollY; render(); window.scrollTo({ top: y }); },
+    rosterexport: () => exportRoster(),
+    rosterapply: () => applyRoster(),
     bedsedit: () => { S.bedsEdit = !S.bedsEdit; const y = window.scrollY; render(); window.scrollTo({ top: y }); },
     bedsreset: () => { delete cfgOf(S.unit).bedsShift; saveSettings(); const y = window.scrollY; render(); window.scrollTo({ top: y }); },
     bandgran: () => { S.bandGran = arg; render(); },
@@ -503,6 +509,15 @@ document.addEventListener('drop', e => {
 // Paden als "beds", "minStaff", "sh.2.ratio", "sh.0.plan.3", "sh.1.start", "fteHours", "jdtvpk.7".
 function setValue(path, raw) {
   const parts = path.split('.');
+  if (parts[0] === 'team' || parts[0] === 'teamnote') {
+    // inschatting team: team.<weekdag>.<dienst> (aantal vpk) of teamnote.<weekdag>.<dienst> (tekst)
+    const t = ((S.team[S.unit] = S.team[S.unit] || {})[parts[1]] = S.team[S.unit][parts[1]] || {});
+    const e = (t[parts[2]] = t[parts[2]] || {});
+    if (parts[0] === 'team') e.n = Math.max(0, Math.round(+String(raw).replace(',', '.') || 0)); else e.note = String(raw).slice(0, 400);
+    saveSettings();
+    const y = window.scrollY; render(); window.scrollTo({ top: y });
+    return;
+  }
   if (parts[0] === 'fteHours') S.fteHours = Math.max(1, +String(raw).replace(',', '.') || 36);
   else if (parts[0] === 'jdtvpk') {
     const v = Math.max(0, Math.round(+raw || 0));
@@ -535,6 +550,7 @@ function stepValue(path, delta) {
   const parts = path.split('.');
   let cur, step = 1;
   if (parts[0] === 'jdtvpk') { if (parts[1] === 'all') return setValue(path, String(delta)); cur = S.jdtVpk[+parts[1]]; }
+  else if (parts[0] === 'team') cur = ((((S.team[S.unit] || {})[parts[1]]) || {})[parts[2]] || {}).n || 0;
   else {
     const c = cfgOf(S.unit);
     if (parts[0] === 'beds') cur = c.beds;

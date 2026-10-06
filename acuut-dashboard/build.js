@@ -6,7 +6,7 @@ const fs = require('fs')
 const path = require('path')
 global.XLSX = require('xlsx')
 const src = f => fs.readFileSync(path.join(__dirname, 'src', f), 'utf8')
-const files = ['config.js', 'data.js', 'charts.js', 'motion.js', 'app.js', 'views.js', 'overview.js', 'staff.js']
+const files = ['config.js', 'data.js', 'charts.js', 'motion.js', 'app.js', 'views.js', 'overview.js', 'staff.js', 'roster.js']
 
 // Voorbeeldbestanden inlezen met dezelfde parser als het dashboard en compact opslaan:
 // per dataset de eerste datum + per dag 96 kwartierwaarden (gehele getallen 0–255) als base64.

@@ -130,9 +130,9 @@ const MODES = {
     streams: true,
     units: [
       { id: 'AP', label: 'Acute Poort', long: 'Acute Poort — SEH, kinderen en EHH', beds: 23, ratio: { D: 3, A: 3, N: 4 }, plan: { D: 6, A: 6, N: 4 },
-        cats: ['SEH', 'SEH-SC', 'KIND', 'TRIAGE', 'EHH', 'CCU', 'CCU-SC', 'LOS'], defaults: ['1.0', '2.0', '4.0', '8.1'], extra: ['instroom', 'jdt'] },
+        cats: ['SEH', 'SEH-SC', 'KIND', 'TRIAGE', 'EHH', 'CCU', 'CCU-SC', 'LOS'], defaults: ['1.0', '2.0', '4.0', '8.1'], extra: ['instroom', 'jdt'], from: ['SEH', 'EHH'] },
       { id: 'HF', label: 'Hotfloor', long: 'Hotfloor — IC + CCU + SCU', beds: 18, ratio: { D: 2.5, A: 2.5, N: 3 }, plan: { D: 7, A: 7, N: 5 },
-        cats: ['ICU', 'CCU', 'CCU-SC', 'SCU', 'SCU-SC', 'LOS'], defaults: ['6.1', '6.2', '6.3', '5.1', '7.1'] },
+        cats: ['ICU', 'CCU', 'CCU-SC', 'SCU', 'SCU-SC', 'LOS'], defaults: ['6.1', '6.2', '6.3', '5.1', '7.1'], from: ['IC', 'CCU'] },
     ],
   },
 };
@@ -158,6 +158,7 @@ const VIEWS = [
   { id: 'bedden',    label: 'Bedden' },
   { id: 'vpk',       label: 'Verpleegkundige inzet' },
   { id: 'prognose',  label: 'Prognose' },
+  { id: 'rooster',   label: 'Roostersleutel', nieuw: true },
   { id: 'instroom',  label: 'Instroom', extra: 'instroom' },
   { id: 'jdt',       label: 'JDT werkdruk', extra: 'jdt' },
 ];

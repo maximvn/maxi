@@ -22,39 +22,47 @@ worden bij het bouwen ingebouwd. Het dashboard verzint zelf nooit data.
    - losse analyses: elk bestand in bezettingsvorm, daarna te kiezen in elke afdeling.
    Bestanden worden herkend aan de oorspronkelijke bestandsnaam (ook met `_DUMMY` erachter);
    wat niet herkend wordt koppel je zelf of voeg je toe als losse analyse.
-3. **Analyse** — locatie-tabs (zoals het huidige dashboard). Per afdeling kies je met
-   **Stromen kiezen** welke bestanden meetellen (basisstromen, totalen, scenario's, triage,
-   losse analyses); het dashboard waarschuwt als een keuze dubbel telt. Weergaven:
-   - **Overzicht** — begint met het **bezettingsverloop**: de gemeten bezetting als tijdlijn
-     (dag/week per kwartier, maand per uur, jaar per dag), opgebouwd uit de stromen, met open
-     bedden, het normale bereik voor die weekdag en rood waar het boven de bedden komt; daaronder
-     de hele historie om te springen, en afspelen periode voor periode. Klik op een dag (in week,
-     maand of jaar) om in te zoomen: die dag per uur, gestapeld per stroom, met laagste–drukste
-     kwartier, normaal bereik, bedden en een uurstrook; "Terug" brengt je naar de vorige weergave. Daarna de kerncijfers van
-     die periode, per dienst in een gewone week (gemiddeld per stroom + de norm), verpleegkundigen
-     (nodig − ingepland) en bezetting tegen capaciteit uit Verpleegkundige inzet, dagverloop en maand.
-   - **Stromen** — elke stroom in een eigen bandbreedte-grafiek (min–max, P95, gemiddeld) per
-     uur, weekdag of maand, plus alle stromen samen als één stroom; weekpatroon-heatmap,
-     maandtrend per stroom / samen / beide, en kerncijfers per dienst.
-   - **Bedden** — bedden instellen, advies voor 90/95/99% dekking, verdeling van de
-     bezetting, kans op een volle afdeling per weekdag × uur.
-   - **Verpleegkundige inzet** — diensten zelf beheren (vroeg/laat/nacht plus tussendiensten
-     toevoegen of verwijderen), per dienst tijden en norm (1 vpk op 1, 1,5, 2, 2,5, 3, 4 of
-     eigen waarde), minimum per dienst en rooster per weekdag. Het advies toetst per kwartier
-     vraag (bezetting volgens de norm) tegen capaciteit (vpk × norm) en stelt per dienst en
-     dag bij; met één klik over te nemen. Dekkingsgrafiek met dienstbalken, advies − ingepland
-     en FTE.
-   - **Prognose** — vanaf de huidige ISO-week (komende 13 weken of het hele jaar), met "Nu"-markering;
-     percentiel van dagmaxima, trend × seizoensindex (zelfde methode als het rekenmodel), plus
-     het verpleegkundig advies per week en dienst.
-   - **Instroom** en **JDT werkdruk** (SEH en Acute Poort) — aankomsten per uur/weekdag/dienst
-     en werkdruk per uur met aanpasbare verpleegkundigen per uur.
+3. **Analyse** — locatie-tabs (zoals het huidige dashboard).
+   - **Oudbouw** kijkt per afdeling naar één bezetting: het totaalbestand van de afdeling, of de
+     gekozen bestanden opgeteld ("Bron wijzigen", bv. een scenario). Geen stromen.
+   - **Nieuwbouw** werkt met stromen: met **Stromen kiezen** bepaal je welke bestanden meetellen;
+     het dashboard waarschuwt als een keuze dubbel telt.
 
-Alle grafieken, trends en heatmaps volgen de gekozen norm (Gem./P95/µ+2σ/Max): de hoogte is
-de norm van het totaal, verdeeld over de stromen naar hun aandeel.
+   Weergaven:
+   - **Overzicht** — het **bezettingsverloop** (dag/week per kwartier, maand per uur, jaar per dag)
+     met open bedden (instelbaar via het bedden-knopje, ook per dienst), normaal bereik en rood
+     boven de bedden. Bij week en maand: *Na elkaar* (tijdlijn), *Over elkaar* (elke dag een
+     24-uurslijn, dagen aan/uit) of *Per dag* (losse grafieken, maand als kalender). Klik een dag
+     om in te zoomen. Daaronder kerncijfers, per dienst in een gewone week, verpleegkundigen nodig
+     tegen ingepland, bezetting tegen capaciteit, dagverloop (ook per weekdag) en per maand.
+   - **Stromen** (Nieuwbouw; bij "Alle" heet dit **Afdelingen**) — bandbreedte per stroom, alle
+     stromen samen als lijnen / opgestapeld / per weekdag met beddenlijn, weekpatroon, maandtrend
+     en kerncijfers per dienst.
+   - **Bedden** — bedden instellen, advies voor 90/95/99% dekking, verdeling, kans op een volle
+     afdeling, bedden nodig per uur (ook per weekdag).
+   - **Verpleegkundige inzet** — diensten en tussendiensten, tijden, norm (patiënten per vpk),
+     minimum en rooster per weekdag; advies per kwartier, met één klik over te nemen.
+   - **Prognose** — lijngrafiek met gemeten historie, model en prognose per week, met een
+     80%/95%-bandbreedte die breder wordt naarmate de week verder na de laatste data ligt
+     (startbreedte uit het terugtoetsen van het model op de eigen historie; groei minstens een
+     verdubbelde variantie na een jaar, meer als de backtest dat laat zien). Plus het verpleegkundig
+     advies per week en dienst.
+   - **Roostersleutel** (Nieuwbouw) — de nieuwe roostersleutel op basis van de huidige: per uur de
+     patiëntaanwezigheid van de huidige afdelingen (Oudbouw: Hotfloor ← IC + CCU, Acute Poort ←
+     SEH + EHH) tegen de nieuwe, en vpk nieuw = vpk nu × (patiënten nieuw ÷ patiënten nu), afgerond
+     naar boven. Diensten van de nieuwe unit als banden in de grafiek; per dienst de nieuwe sleutel
+     en een signaal als de behoefte binnen de dienst sterk wisselt (diensttijden of tussendienst
+     heroverwegen). Per dienst vult het team het verwachte tekort en een toelichting in (bewaard in
+     de browser). Export naar Excel voor alle weekdagen, en "Overnemen als rooster" zet de sleutel
+     in Verpleegkundige inzet.
+   - **Instroom** en **JDT werkdruk** (SEH en Acute Poort).
 
-Filters (stromen aan/uit, jaar, seizoen/kwartaal, werkdagen/weekend, norm: Gem./P95/µ+2σ/Max)
-gelden voor alle weergaven. Instellingen (bedden, ratio's, rooster, diensttijden, stroomkeuze) worden in de browser onthouden.
+Alle grafieken volgen de gekozen norm (P90/P95/µ+2σ/Max); het gemiddelde is nergens de
+hoofdmaat. Negatieve waarden in een bronbestand worden bij het inladen 0 en gemeld.
+
+Filters (jaar, seizoen/kwartaal, alle dagen/werkdagen/weekend of losse weekdagen Ma–Zo, norm)
+gelden voor alle weergaven, ook voor het bezettingsverloop. Instellingen (bedden, rooster,
+diensttijden, bronkeuze, inschatting team) worden in de browser onthouden.
 
 Beweging: lijnen tekenen zichzelf bij binnenkomen, staven groeien gestaffeld, "Afspelen"
 loopt week na week door de historie (met tijdlijn-schuif), grafieken morphen naar de nieuwe stand bij een filter,
