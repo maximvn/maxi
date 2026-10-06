@@ -7,7 +7,7 @@ const S = {
   unit: null,            // unit-id of 'ALL'
   view: 'overzicht',
   filter: { year: 'all', months: 'all', days: 'all' },
-  chartMode: { dag: 'stroom', bedhour: 'totaal', tot: 'lijnen' },
+  chartMode: { dag: 'stroom', bedhour: 'totaal', tot: 'lijnen', tl: 'na' },
   metric: 'p95',
   sel: {},               // unit-id → gekozen dataset-keys (volgorde = volgorde in de grafiek)
   off: {},               // unit-id → true wanneer uitgezet op het tabblad "Alle"
@@ -416,6 +416,7 @@ document.addEventListener('click', e => {
     metric: () => { S.metric = arg; saveSettings(); render(); },
     days: () => { S.filter.days = arg; render(); },
     wd: () => { const m = wdMask(S.filter.days); m[+arg] = m[+arg] ? 0 : 1; if (!m.some(Boolean)) { toast('Kies minstens één weekdag.'); return; } S.filter.days = maskToDays(m); render(); },
+    zoomday: () => zoomInto(arg),
     chartmode: () => { const [k, v] = arg.split(':'); S.chartMode[k] = v; const y = window.scrollY; render(); window.scrollTo({ top: y }); },
     weekmode: () => { S.weekMode = arg; if (arg === 'typical') stopPlay(); render(); },
     weekstep: () => { stepWeek(+arg); },

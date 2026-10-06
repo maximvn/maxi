@@ -77,6 +77,7 @@ function timeline(frame, unitId) {
   const pts = [];
   for (let ds = w.start; ds <= end; ds = addDays(ds, 1)) {
     const d = map.get(ds), wd = weekdayOf(ds);
+    if (w.gran !== 'dag' && !dayPass(S.filter.days, wd)) continue; // alleen de gekozen weekdagen
     if (w.gran === 'jaar') {
       if (!d) { pts.push({ ds, label: fmtDay(ds), parts: Array(nc).fill(null), total: null, max: null, beds: bedsOf(unitId) }); continue; }
       const sp = splitByMetric([d], ALL_SLOTS, nc);
@@ -135,7 +136,7 @@ function viewOverview(el, frame) {
   const vals = tl.pts.filter(p => p.total != null);
   // norm (P95) over alle gemeten kwartieren in het venster
   const map = dayByDate(frame);
-  const winDays = []; for (let ds = w.start; ds <= tl.end; ds = addDays(ds, 1)) { const d = map.get(ds); if (d) winDays.push(d); }
+  const winDays = []; for (let ds = w.start; ds <= tl.end; ds = addDays(ds, 1)) { const d = map.get(ds); if (d && (w.gran === 'dag' || dayPass(S.filter.days, d.wd))) winDays.push(d); }
   const winSt = stats(collect(winDays, ALL_SLOTS));
   const winNorm = winSt ? mv(winSt) : 0;
   const winPeak = vals.reduce((a, b) => ((b.max ?? b.total) > (a.max ?? a.total) ? b : a), vals[0] || { total: 0 });
@@ -150,13 +151,18 @@ function viewOverview(el, frame) {
   const full = pctAtOrAbove(all.sorted, beds);
   const ins = insights(frame, cells, beds).map(i => `<li><span class="ic ${i.kind}">${i.kind === 'good' ? ICON.check : i.kind === 'info' ? ICON.info : ICON.alert}</span><span>${i.text}</span></li>`).join('');
 
+  // Week/maand: na elkaar (tijdlijn), over elkaar (elke dag een 24-uurslijn) of per dag (losse grafiekjes).
+  const lay = w.gran === 'week' || w.gran === 'maand' ? S.chartMode.tl : 'na';
+  const layDays = winDays.filter(d => d.ds >= w.start && d.ds <= tl.end);
+  const selTxt = S.filter.days === 'all' ? '' : ` Alleen ${wdMask(S.filter.days).map((v, i) => (v ? WD_LONG[i].toLowerCase() : null)).filter(Boolean).join(', ')}.`;
   const dayWd = S.chartMode.dag === 'weekdag' ? weekdayLines(frame, Array.from({ length: 96 }, (_, q) => ({ slots: [[0, q]] })), 'total') : null;
   el.innerHTML = `
     <section class="panel hero stagger">
       <div class="panel-head">
         <div>${back ? `<button class="crumb" data-act="zoomback">${ICON.back} Terug naar ${esc(winTitle(back, winEnd(back.start, back.gran)))}</button>` : '<div class="eyebrow">Bezettingsverloop</div>'}<h2 class="hero-title">${winTitle(w, tl.end)}</h2>
-          <div class="desc">${w.gran === 'dag' ? `Per uur de ${mLabel()} van de kwartieren, verdeeld over de ${unitId === 'ALL' ? 'afdelingen' : 'stromen'}; het streepje loopt van het rustigste tot het drukste kwartier binnen dat uur. Het vlak is het normale bereik voor een ${WD_LONG[weekdayOf(w.start)].toLowerCase()} (P10–P95).` : `Gemeten aantal patiënten ${w.gran === 'jaar' ? `per dag (${mLabel()} van de kwartieren; lijn = drukste kwartier van de dag)` : w.gran === 'maand' ? `per uur (${mLabel()} van de kwartieren; lijn = drukste kwartier van het uur)` : 'per kwartier (gemeten waarden)'}, opgebouwd uit de ${unitId === 'ALL' ? 'afdelingen' : 'stromen'}. Rood = meer patiënten dan open bedden. <b>Klik op een dag om in te zoomen.</b>`}</div></div>
+          <div class="desc">${lay === 'over' ? `Elke dag als lijn van 00:00 tot 24:00 over elkaar gelegd (totaal aantal patiënten per kwartier). Beweeg over een lijn om die dag uit te lichten; klik een dag in de legenda om hem aan of uit te zetten. Weekend gestippeld.${selTxt}` : lay === 'los' ? `Elke dag een eigen grafiek op dezelfde schaal, opgebouwd uit de ${unitId === 'ALL' ? 'afdelingen' : 'stromen'}. Rood = boven de bedden. Klik een dag om in te zoomen.${selTxt}` : w.gran === 'dag' ? `Per uur de ${mLabel()} van de kwartieren, verdeeld over de ${unitId === 'ALL' ? 'afdelingen' : 'stromen'}; het streepje loopt van het rustigste tot het drukste kwartier binnen dat uur. Het vlak is het normale bereik voor een ${WD_LONG[weekdayOf(w.start)].toLowerCase()} (P10–P95).` : `Gemeten aantal patiënten ${w.gran === 'jaar' ? `per dag (${mLabel()} van de kwartieren; lijn = drukste kwartier van de dag)` : w.gran === 'maand' ? `per uur (${mLabel()} van de kwartieren; lijn = drukste kwartier van het uur)` : 'per kwartier (gemeten waarden)'}, opgebouwd uit de ${unitId === 'ALL' ? 'afdelingen' : 'stromen'}. Rood = meer patiënten dan open bedden. <b>Klik op een dag om in te zoomen.</b>${selTxt}`}</div></div>
         <div class="set-row">
+          ${w.gran === 'week' || w.gran === 'maand' ? `<div class="seg small" role="group" aria-label="Dagen tonen" data-ind="cm-tl">${[['na', 'Na elkaar'], ['over', 'Over elkaar'], ['los', 'Per dag']].map(([v, l]) => `<button class="${lay === v ? 'on' : ''}" data-act="chartmode" data-arg="tl:${v}">${l}</button>`).join('')}</div>` : ''}
           ${bedsButton(unitId)}
           <div class="seg small" role="group" aria-label="Periode" data-ind="wingran">${WIN_GRANS.map(([v, l]) => `<button class="${w.gran === v ? 'on' : ''}" data-act="wingran" data-arg="${v}">${l}</button>`).join('')}</div>
           <button class="icon-btn" data-act="win" data-arg="-1" aria-label="Vorige periode">‹</button>
@@ -166,10 +172,12 @@ function viewOverview(el, frame) {
         </div>
       </div>
       ${bedsPanel(unitId)}
-      <div class="chart-box hero-chart ${zoomed ? 'zoom-in' : ''}"><canvas id="ch-timeline" role="img" aria-label="Bezettingsverloop"></canvas></div>
+      ${lay === 'over' ? `<div class="chart-box hero-chart"><canvas id="ch-overlay" role="img" aria-label="Dagen over elkaar"></canvas></div>${overlayLegend(layDays, w.gran)}`
+      : lay === 'los' ? smallMultiplesHTML(layDays, w, frame)
+      : `<div class="chart-box hero-chart ${zoomed ? 'zoom-in' : ''}"><canvas id="ch-timeline" role="img" aria-label="Bezettingsverloop"></canvas></div>
       ${w.gran === 'dag'
         ? legendHTML(frame.comps, `<span><i class="wh"></i>Laagste – drukste kwartier</span><span><i class="sw band-sw"></i>Normaal bereik P10–P95</span><span><i class="ln"></i>Open bedden</span><span><i class="sw" style="background:transparent;box-shadow:inset 0 0 0 2px var(--crit)"></i>Uur boven de bedden</span>`) + hourStrip(tl.pts)
-        : legendHTML(frame.comps, `${w.gran === 'week' ? '<span><i class="sw band-sw"></i>Normaal bereik P10–P95</span>' : '<span><i class="ln solid" style="border-color:var(--ink-2)"></i>Hoogste kwartier</span>'}<span><i class="ln"></i>Open bedden</span><span><i class="sw" style="background:var(--crit)"></i>Boven de bedden</span>`)}
+        : legendHTML(frame.comps, `${w.gran === 'week' ? '<span><i class="sw band-sw"></i>Normaal bereik P10–P95</span>' : '<span><i class="ln solid" style="border-color:var(--ink-2)"></i>Hoogste kwartier</span>'}<span><i class="ln"></i>Open bedden</span><span><i class="sw" style="background:var(--crit)"></i>Boven de bedden</span>`)}`}
       <div class="brush-box"><canvas id="ch-brush" role="img" aria-label="Hele historie — klik om te springen"></canvas></div>
       <div class="note" style="margin-top:4px">Hele historie (${mLabel()} per dag). Klik om naar een periode te springen; het gemarkeerde deel staat hierboven.</div>
     </section>
@@ -220,7 +228,9 @@ function viewOverview(el, frame) {
       </section>
     </div>`;
 
-  timelineChart($('#ch-timeline'), frame, tl);
+  if (lay === 'over') overlayChart($('#ch-overlay'), layDays, w.gran, unitId);
+  else if (lay === 'los') smallMultiples(layDays, frame, unitId);
+  else timelineChart($('#ch-timeline'), frame, tl);
   brushChart($('#ch-brush'), frame, tl);
   shiftChart($('#ch-week'), frame, cells, beds);
   if (unitId !== 'ALL') { nurseChart($('#ch-nurse'), frame, unitId); capChart($('#ch-cap'), frame, unitId); }
@@ -290,6 +300,130 @@ const zoomHoverPlugin = {
     ctx.restore();
   },
 };
+/* ── Dagen over elkaar: elke dag een lijn over 24 uur ─────────────────── */
+const tlHidden = new Set();
+function overlayLegend(days, gran) {
+  if (!days.length) return '<p class="note">Geen dagen met data in deze periode en selectie.</p>';
+  return `<div class="legend ov-legend">${days.map((d, i) => {
+    const mx = Math.max(...d.total), st = stats(Array.from(d.total));
+    return `<button class="ov-item ${tlHidden.has(d.ds) ? 'off' : ''}" data-ov="${i}" data-ds="${d.ds}" aria-pressed="${!tlHidden.has(d.ds)}" title="${WD_LONG[d.wd]} ${fmtDay(d.ds)} · ${mLabel()} ${fmt(mv(st))} · max ${fmt(mx, 0)}"><i class="ln solid" style="border-color:var(--s${d.wd + 1});border-top-width:3px;${d.wd >= 5 ? 'border-top-style:dashed' : ''}"></i>${gran === 'week' ? WD_SHORT[d.wd] + ' ' + fmtDay(d.ds).split(' ').slice(1).join(' ') : fmtDay(d.ds)} <b>${fmt(mv(st))}</b></button>`;
+  }).join('')}${gran === 'maand' ? `<span><i class="ln solid" style="border-color:var(--ink);border-top-width:3px"></i>${mLabel()} van deze dagen</span>` : ''}<span><i class="ln"></i>Open bedden</span><span class="hint">getal = ${mLabel()} van die dag</span></div>`;
+}
+function overlayChart(canvas, days, gran, unitId) {
+  if (!canvas || !days.length) return;
+  const c = C();
+  const thin = gran === 'maand';
+  const col = d => c.series[d.wd];
+  const ds = days.map(d => ({
+    label: `${WD_SHORT[d.wd]} ${fmtDay(d.ds).split(' ').slice(1).join(' ')}`, $ds: d.ds, data: Array.from(d.total),
+    borderColor: ctx => { const h = ctx.chart.$hl; return h == null || h === ctx.datasetIndex ? col(d) : alpha(col(d), 0.14); },
+    backgroundColor: col(d), borderWidth: ctx => (ctx.chart.$hl === ctx.datasetIndex ? 3.5 : thin ? 1.4 : 2.2),
+    borderDash: d.wd >= 5 ? [6, 3] : [], pointRadius: 0, pointHoverRadius: 3, stepped: 'before', fill: false, hidden: tlHidden.has(d.ds),
+  }));
+  if (thin) {
+    const ref = Array.from({ length: 96 }, (_, q) => { const st = stats(days.map(d => d.total[q])); return st ? mv(st) : null; });
+    ds.push({ label: `${mLabel()} van deze dagen`, data: ref, borderColor: c.ink, borderWidth: 3, pointRadius: 0, tension: 0.3, cubicInterpolationMode: 'monotone', fill: false, $ref: true });
+  }
+  ds.push({ label: 'Open bedden', data: Array.from({ length: 96 }, (_, q) => bedsAtHour(unitId, Math.floor(q / 4))), borderColor: c.ink, borderWidth: 1.5, borderDash: [5, 4], pointRadius: 0, stepped: true, fill: false, $ref: true });
+  const top = Math.max(bedsAtHour(unitId, 12), ...days.map(d => Math.max(...d.total)));
+  const ch = mkChart(canvas, {
+    type: 'line',
+    data: { labels: Array.from({ length: 96 }, (_, q) => q), datasets: ds },
+    options: {
+      interaction: thin ? { mode: 'nearest', intersect: false, axis: 'xy' } : { mode: 'index', intersect: false },
+      onHover: (ev, els, chart) => {
+        const i = els.length && !chart.data.datasets[els[0].datasetIndex].$ref ? (thin ? els[0].datasetIndex : nearestLine(chart, ev)) : null;
+        if (chart.$hl !== i) { chart.$hl = i; chart.update('none'); syncOvLegend(i); }
+      },
+      onClick: (ev, els, chart) => { const i = chart.$hl; const d = i != null && chart.data.datasets[i]; if (d && d.$ds) setTimeout(() => zoomInto(d.$ds), 0); },
+      scales: {
+        x: { grid: { display: false }, border: { color: c.axis }, ticks: { autoSkip: false, maxRotation: 0, callback: tickEveryTwoHours } },
+        y: { beginAtZero: true, max: Math.ceil(top + 1), grid: { color: c.grid }, border: { display: false }, ticks: { precision: 0 }, title: { display: true, text: 'Patiënten', color: c.muted, font: { size: 11 } } },
+      },
+      plugins: { tooltip: {
+        filter: it => it.dataset.label !== 'Open bedden',
+        itemSort: (a, b) => (b.raw ?? -1) - (a.raw ?? -1),
+        callbacks: {
+          title: it => `${slotLabel(it[0].dataIndex)}${thin && it[0].dataset.$ds ? ' · ' + WD_LONG[weekdayOf(it[0].dataset.$ds)] + ' ' + fmtDay(it[0].dataset.$ds).split(' ').slice(1).join(' ') : ''}`,
+          label: it => ` ${it.dataset.label}: ${fmt(it.raw, 0)} patiënten`,
+          footer: () => `Klik om op deze dag in te zoomen · ${bedsAtHour(unitId, 12)} open bedden`,
+        },
+      } },
+    },
+  });
+  // legenda: dag aan/uit en uitlichten
+  document.querySelectorAll('.ov-item').forEach(b => {
+    const i = +b.dataset.ov;
+    b.onclick = () => { const vis = !ch.isDatasetVisible(i); ch.setDatasetVisibility(i, vis); vis ? tlHidden.delete(b.dataset.ds) : tlHidden.add(b.dataset.ds); b.classList.toggle('off', !vis); b.setAttribute('aria-pressed', vis); ch.update(); };
+    b.onmouseenter = () => { ch.$hl = i; ch.update('none'); };
+    b.onmouseleave = () => { ch.$hl = null; ch.update('none'); };
+  });
+}
+// In 'index'-modus: de lijn die het dichtst bij de muis ligt.
+function nearestLine(chart, ev) {
+  const x = Math.round(chart.scales.x.getValueForPixel(ev.x)), y = chart.scales.y.getValueForPixel(ev.y);
+  let best = null, bd = Infinity;
+  chart.data.datasets.forEach((d, i) => { if (d.$ref || !chart.isDatasetVisible(i)) return; const v = d.data[x]; if (v == null) return; const dist = Math.abs(v - y); if (dist < bd) { bd = dist; best = i; } });
+  return best;
+}
+function syncOvLegend(i) { document.querySelectorAll('.ov-item').forEach(b => b.classList.toggle('hl', +b.dataset.ov === i)); }
+
+/* ── Per dag: kleine grafieken op dezelfde schaal ───────────────────── */
+function smallMultiplesHTML(days, w, frame) {
+  if (!days.length) return '<p class="note">Geen dagen met data in deze periode en selectie.</p>';
+  // maand: als kalender (kolom = weekdag); week: één rij
+  const lead = w.gran === 'maand' ? weekdayOf(w.start) : 0;
+  const cols = WD_SHORT.map((l, wd) => (dayPass(S.filter.days, wd) ? wd : null)).filter(v => v != null);
+  const byDs = new Map(days.map(d => [d.ds, d]));
+  const cells = [];
+  for (let ds = w.start; ds <= winEnd(w.start, w.gran); ds = addDays(ds, 1)) {
+    const wd = weekdayOf(ds); if (!cols.includes(wd)) continue;
+    cells.push({ ds, wd, d: byDs.get(ds) });
+  }
+  const startCol = cols.indexOf(weekdayOf(cells[0].ds));
+  return `<div class="sm-grid" style="--cols:${cols.length}">
+    ${cols.map(wd => `<div class="sm-head">${WD_LONG[wd]}</div>`).join('')}
+    ${Array.from({ length: w.gran === 'maand' ? startCol : 0 }, () => '<div class="sm-cell empty"></div>').join('')}
+    ${cells.map(x => {
+      if (!x.d) return `<div class="sm-cell na"><div class="sm-title">${fmtDay(x.ds)}</div><div class="sm-na">geen data</div></div>`;
+      const mx = Math.max(...x.d.total), st = stats(Array.from(x.d.total));
+      let over = 0; for (let q = 0; q < 96; q++) if (x.d.total[q] > bedsAtHour(S.unit, Math.floor(q / 4))) over++;
+      return `<button class="sm-cell" data-act="zoomday" data-arg="${x.ds}" title="Inzoomen op ${WD_LONG[x.wd].toLowerCase()} ${fmtDay(x.ds)}">
+        <div class="sm-title"><span>${fmtDay(x.ds)}</span><span class="sm-stat"><b>${fmt(mv(st))}</b> ${mLabel()} · max <b class="${over ? 'crit' : ''}">${fmt(mx, 0)}</b></span></div>
+        <div class="sm-box"><canvas id="sm-${x.ds}" aria-label="Bezetting ${fmtDay(x.ds)}"></canvas></div>
+        ${over ? `<div class="sm-over">${fmt(over / 4, over % 4 ? 1 : 0)} uur boven de bedden</div>` : '<div class="sm-over ok">binnen de bedden</div>'}
+      </button>`;
+    }).join('')}
+  </div>
+  ${legendHTML(frame.comps, '<span><i class="ln"></i>Open bedden</span><span><i class="sw" style="background:var(--crit)"></i>Boven de bedden</span>')}`;
+}
+function smallMultiples(days, frame, unitId) {
+  const c = C(), nc = frame.comps.length;
+  const top = Math.ceil(Math.max(bedsOf(unitId), ...days.map(d => Math.max(...d.total))) + 1);
+  const beds = Array.from({ length: 96 }, (_, q) => bedsAtHour(unitId, Math.floor(q / 4)));
+  days.forEach(d => {
+    mkChart(document.getElementById('sm-' + d.ds), {
+      type: 'line',
+      data: {
+        labels: Array.from({ length: 96 }, (_, q) => q),
+        datasets: [
+          ...frame.comps.map((comp, ci) => ({ label: comp.label, data: Array.from(d.parts[ci]), backgroundColor: alpha(colorOf(comp), 0.88), borderWidth: 0, pointRadius: 0, fill: ci ? '-1' : 'origin', stepped: 'before', stack: 'a', order: 3 })),
+          { label: 'Open bedden', data: beds, borderColor: c.ink, borderWidth: 1, borderDash: [3, 3], pointRadius: 0, stepped: true, fill: false, stack: 'b', order: 1 },
+          { label: 'Boven', data: Array.from(d.total).map((v, q) => Math.max(v, beds[q])), borderWidth: 0, pointRadius: 0, fill: { target: nc, above: alpha(c.crit, 0.82), below: 'transparent' }, stepped: 'before', stack: 'o', order: 2 },
+        ],
+      },
+      options: {
+        animation: false, events: [],
+        layout: { padding: 0 },
+        scales: {
+          x: { grid: { display: false }, border: { display: false }, ticks: { autoSkip: false, maxRotation: 0, padding: 0, font: { size: 9 }, color: c.muted, callback: (v, i) => (i % 24 === 0 ? pad2(i / 4) : '') } },
+          y: { stacked: true, beginAtZero: true, max: top, grid: { color: c.grid, drawTicks: false }, border: { display: false }, ticks: { display: false, stepSize: Math.max(1, Math.round(top / 3)) } },
+        },
+        plugins: { tooltip: { enabled: false } },
+      },
+    });
+  });
+}
 function zoomInto(ds) {
   stopPlay();
   S.zoomFrom = { ...S.win };
@@ -304,13 +438,14 @@ function timelineChart(canvas, frame, tl) {
   const fine = g === 'dag' || g === 'week';
   const total = P.map(p => p.total);
   const maxY = Math.ceil(Math.max(...P.map(p => Math.max(p.beds, p.max ?? 0, p.total ?? 0, p.hi ?? 0))) + 1);
+  const dayStep = Math.max(1, Math.ceil(P.length / 24 / 10)); // maand: hooguit ~10 dagen gelabeld
   // x-as: dag → elk 2e uur; week → elke dag; maand → elke maandag; jaar → elke maand
   const tick = (v, i) => {
     const p = P[i];
     if (g === 'dag') return p.q % 8 === 0 ? slotLabel(p.q) : '';
     if (g === 'week') return p.q === 0 ? fmtDay(p.ds) : p.q === 48 ? '12:00' : '';
-    if (g === 'maand') return p.h === 0 && (weekdayOf(p.ds) === 0 || +p.ds.slice(8, 10) === 1) ? fmtDay(p.ds) : '';
-    return +p.ds.slice(8, 10) === 1 ? MONTH_SHORT[+p.ds.slice(5, 7) - 1] : '';
+    if (g === 'maand') { if (p.h !== 0) return ''; const k = Math.floor(i / 24); return k % dayStep === 0 ? fmtDay(p.ds) : ''; }
+    const prev = P[i - 1]; return !prev || prev.ds.slice(5, 7) !== p.ds.slice(5, 7) ? MONTH_SHORT[+p.ds.slice(5, 7) - 1] : '';
   };
   const ds = [
     ...frame.comps.map((comp, ci) => ({ label: comp.label, data: P.map(p => p.parts[ci]), borderColor: colorOf(comp), backgroundColor: alpha(colorOf(comp), 0.88), borderWidth: 0, pointRadius: 0, fill: ci ? '-1' : 'origin', stepped: g === 'dag' || g === 'week' ? 'before' : false, tension: fine ? 0 : 0.2, stack: 'a', order: 3, spanGaps: false })),

@@ -82,14 +82,18 @@ function staffSummary(frame, unitId) {
   const shifts = cfg.shifts;
   const dem = demandProfile(frame);
   const days = WD_SHORT.map((_, wd) => adviseDay(shifts, dem[wd], wd, cfg.minStaff));
-  const plan = shifts.reduce((t, s) => t + s.plan.reduce((a, b) => a + b, 0), 0);
-  const need = days.reduce((t, d) => t + d.plan.reduce((a, b) => a + b, 0), 0);
-  const planH = shifts.reduce((t, s) => t + s.plan.reduce((a, b) => a + b, 0) * shiftHrs(s), 0);
-  const needH = days.reduce((t, d) => t + d.plan.reduce((a, b, i) => a + b * shiftHrs(shifts[i]), 0), 0);
+  // alleen weekdagen die in de selectie zitten tellen mee (dagfilter)
+  const has = WD_SHORT.map((_, wd) => frame.days.some(d => d.wd === wd));
+  const nDays = has.filter(Boolean).length || 1;
+  const sumW = arr => arr.reduce((a, b, wd) => a + (has[wd] ? b : 0), 0);
+  const plan = shifts.reduce((t, s) => t + sumW(s.plan), 0);
+  const need = days.reduce((t, d, wd) => t + (has[wd] ? d.plan.reduce((a, b) => a + b, 0) : 0), 0);
+  const planH = shifts.reduce((t, s) => t + sumW(s.plan) * shiftHrs(s), 0);
+  const needH = days.reduce((t, d, wd) => t + (has[wd] ? d.plan.reduce((a, b, i) => a + b * shiftHrs(shifts[i]), 0) : 0), 0);
   let shortQ = 0;
-  WD_SHORT.forEach((_, wd) => { for (let q = 0; q < 96; q++) if (dem[wd][q] - capacityAt(shifts, shifts.map(s => s.plan[wd]), q) > 1e-6) shortQ++; });
+  WD_SHORT.forEach((_, wd) => { if (has[wd]) for (let q = 0; q < 96; q++) if (dem[wd][q] - capacityAt(shifts, shifts.map(s => s.plan[wd]), q) > 1e-6) shortQ++; });
   const uncovered = [...new Set(days.flatMap(d => d.uncovered))].sort((a, b) => a - b);
-  return { shifts, dem, days, plan, need, fteNeed: needH / S.fteHours, ftePlan: planH / S.fteHours, shortPct: shortQ / (7 * 96) * 100, uncovered };
+  return { shifts, dem, days, plan, need, fteNeed: needH / S.fteHours, ftePlan: planH / S.fteHours, shortPct: shortQ / (nDays * 96) * 100, uncovered };
 }
 
 // Kwartieren zonder dienst samenvatten als tijdvakken.
