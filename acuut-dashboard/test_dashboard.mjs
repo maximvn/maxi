@@ -36,6 +36,11 @@ async function run(theme, width) {
   await page.route(/cdnjs\.cloudflare\.com.*Chart/, r => r.fulfill({ path: chartLib, contentType: 'text/javascript' }))
   await page.route(/fonts\.(googleapis|gstatic)/, r => r.fulfill({ body: '', contentType: 'text/css' }))
   await page.goto(base)
+  // De inhoud moet de volle breedte gebruiken en niet in de filterbalk terechtkomen.
+  const checkWidth = async where => {
+    const r = await page.evaluate(() => { const v = document.querySelector('#view'); return { parent: v.parentElement.className, w: v.getBoundingClientRect().width, full: (p => { const cs = getComputedStyle(p); return p.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) })(v.parentElement) } })
+    if (r.parent !== 'wrap' || r.w < r.full * 0.98) errors.push(`[${where}] inhoud niet op volle breedte: ${JSON.stringify(r)}`)
+  }
   const tag = `${theme}-${width}`
   await page.screenshot({ path: `${out}/01-start-${tag}.png`, fullPage: true })
   await page.click('[data-act="mode"][data-arg="oud"]')
@@ -71,6 +76,7 @@ async function run(theme, width) {
     await page.click(`[data-act="view"][data-arg="${v}"]`)
     await page.waitForTimeout(1200)
     await page.screenshot({ path: `${out}/03-${u}-${v}-${tag}.png`, fullPage: true })
+    await checkWidth(`${u}/${v}`)
   }
   if (width >= 600) {
     // Oudbouw: één reeks per afdeling, geen Stromen-tab
@@ -224,6 +230,10 @@ async function run(theme, width) {
     await page.waitForTimeout(1200)
     await page.screenshot({ path: `${out}/05-nieuw-HF-${tag}.png`, fullPage: true })
     if ((await page.evaluate(() => compsFor('HF').length)) < 2) errors.push('nieuwbouw zonder stromen')
+    for (const v of ['overzicht', 'stromen', 'bedden', 'vpk', 'prognose']) { await page.click(`[data-act="view"][data-arg="${v}"]`); await checkWidth(`HF/${v}`) }
+    await page.click('[data-act="unit"][data-arg="AP"]')
+    for (const v of ['stromen', 'instroom', 'jdt']) { await page.click(`[data-act="view"][data-arg="${v}"]`); await checkWidth(`AP/${v}`) }
+    await page.click('[data-act="unit"][data-arg="HF"]')
     await page.click('[data-act="view"][data-arg="stromen"]')
     await page.waitForTimeout(900)
     await page.screenshot({ path: `${out}/05b-nieuw-HF-stromen-${tag}.png`, fullPage: true })

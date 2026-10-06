@@ -183,7 +183,9 @@ function dashScreen() {
     const avail = loadedPool(u).length;
     streamGroup = hasStreams() ? `<div class="f-group f-streams"><span class="f-label">Stromen</span>
       ${sel.map(k => `<button class="chip" data-act="unsel" data-arg="${k}" title="Klik om ${esc(DS[k].label)} uit te zetten"><i class="sw" style="background:var(--${colorFor(u, k)})"></i>${esc(dsLabel(k))}<span class="x" aria-hidden="true">×</span></button>`).join('')}
-      <button class="chip add" id="picker-btn" data-act="picker" aria-expanded="${S.pickerOpen}" aria-haspopup="dialog">${ICON.layers}Stromen kiezen <span class="cnt">${sel.length}/${avail}</span></button>`
+      <button class="chip add" id="picker-btn" data-act="picker" aria-expanded="${S.pickerOpen}" aria-haspopup="dialog">${ICON.layers}Stromen kiezen <span class="cnt">${sel.length}/${avail}</span></button>
+      ${warn.length ? `<span class="status warn" title="${esc(warn.join(' · '))}">${ICON.alert}Telt dubbel</span>` : ''}
+    </div>`
     : `<div class="f-group f-streams"><span class="f-label">Gegevens</span>
       <span class="src-line" title="${esc(sel.map(k => DS[k].long || DS[k].label).join(' + '))}"><i class="sw" style="background:var(--s1)"></i><b>${esc(u.label)}</b>${sel.length ? ` = ${sel.map(k => esc(DS[k].role === 'totaal' ? 'totaalbestand' : dsLabel(k))).join(' + ')}` : ' — nog geen bestand'}</span>
       <button class="chip add" id="picker-btn" data-act="picker" aria-expanded="${S.pickerOpen}" aria-haspopup="dialog">${ICON.layers}Bron wijzigen <span class="cnt">${sel.length}/${avail}</span></button>
