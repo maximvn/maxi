@@ -150,6 +150,7 @@ function viewOverview(el, frame) {
   const full = pctAtOrAbove(all.sorted, beds);
   const ins = insights(frame, cells, beds).map(i => `<li><span class="ic ${i.kind}">${i.kind === 'good' ? ICON.check : i.kind === 'info' ? ICON.info : ICON.alert}</span><span>${i.text}</span></li>`).join('');
 
+  const dayWd = S.chartMode.dag === 'weekdag' ? weekdayLines(frame, Array.from({ length: 96 }, (_, q) => ({ slots: [[0, q]] })), 'total') : null;
   el.innerHTML = `
     <section class="panel hero stagger">
       <div class="panel-head">
@@ -207,9 +208,10 @@ function viewOverview(el, frame) {
 
     <div class="grid g-2" style="margin-top:16px">
       <section class="panel stagger">
-        <div class="panel-head"><div><h2>Dagverloop (24 uur)</h2><div class="desc">Bezetting per kwartier (${mLabel()} over alle dagen in de selectie), verdeeld over de ${unitId === 'ALL' ? 'afdelingen' : 'stromen'}; het vlak erachter is de bandbreedte P10–max.</div></div></div>
+        <div class="panel-head"><div><h2>Dagverloop (24 uur)</h2><div class="desc">${S.chartMode.dag === 'weekdag' ? `Bezetting per kwartier (${mLabel()} van het totaal), één lijn per weekdag in de selectie — zo zie je welke dag drukker is en wanneer. Weekend gestippeld.` : `Bezetting per kwartier (${mLabel()} over alle dagen in de selectie), verdeeld over de ${unitId === 'ALL' ? 'afdelingen' : 'stromen'}; het vlak erachter is de bandbreedte P10–max.`}</div></div>
+          ${modeSeg('dag', [['stroom', unitId === 'ALL' ? 'Afdelingen' : 'Stromen'], ['weekdag', 'Per weekdag']], 'Weergave dagverloop')}</div>
         <div class="chart-box"><canvas id="ch-day" role="img" aria-label="Dagverloop"></canvas></div>
-        ${legendHTML(frame.comps, `<span><i class="sw band-sw"></i>P10–max</span><span><i class="ln"></i>Open bedden</span>`)}
+        ${S.chartMode.dag === 'weekdag' ? wdLegendHTML(dayWd, '<span><i class="ln"></i>Open bedden</span>') : legendHTML(frame.comps, `<span><i class="sw band-sw"></i>P10–max</span><span><i class="ln"></i>Open bedden</span>`)}
       </section>
       <section class="panel stagger">
         <div class="panel-head"><div><h2>Bezetting per maand</h2><div class="desc">${mLabel()} per maand, verdeeld over de stromen; streepje van P10 tot maximum.</div></div></div>
@@ -222,7 +224,7 @@ function viewOverview(el, frame) {
   brushChart($('#ch-brush'), frame, tl);
   shiftChart($('#ch-week'), frame, cells, beds);
   if (unitId !== 'ALL') { nurseChart($('#ch-nurse'), frame, unitId); capChart($('#ch-cap'), frame, unitId); }
-  dayChart($('#ch-day'), frame, dayProfile(frame), beds);
+  if (S.chartMode.dag === 'weekdag') wdDayChart($('#ch-day'), dayWd); else dayChart($('#ch-day'), frame, dayProfile(frame), beds);
   monthChart($('#ch-month'), frame, monthly(frame), beds);
 }
 
@@ -413,6 +415,7 @@ function nurseCells(frame, unitId) {
   const profAvg = profileFor(frame, 'p50'), profMax = profileFor(frame, 'max');
   const cells = [];
   WD_SHORT.forEach((label, wd) => {
+    if (!frame.days.some(d => d.wd === wd)) return; // weekdag niet in de selectie
     const lo = adviseDay(cfg.shifts, profAvg[wd], wd, cfg.minStaff).plan, hi = adviseDay(cfg.shifts, profMax[wd], wd, cfg.minStaff).plan;
     cfg.shifts.forEach((s, i) => {
       let load = 0; for (let q = 0; q < 96; q++) if (shiftActive(s, q)) load = Math.max(load, sum.dem[wd][q]);
@@ -527,6 +530,28 @@ function dayChart(canvas, frame, prof, beds) {
         y: { stacked: true, beginAtZero: true, grid: { color: c.grid }, border: { display: false }, ticks: { precision: 0 } },
       },
       plugins: { tooltip: { filter: it => it.dataset.label !== 'P10', callbacks: { title: it => `${slotLabel(it[0].dataIndex)} · ${mLabel()}`, label: it => (it.dataset.label === 'max' ? ` Bandbreedte: ${fmt(prof.tot[it.dataIndex].p10, 0)}–${fmt(prof.tot[it.dataIndex].max, 0)}` : ` ${it.dataset.label}: ${fmt(it.raw)}`) } } },
+    },
+  });
+}
+
+function wdDayChart(canvas, lines) {
+  const c = C();
+  mkChart(canvas, {
+    type: 'line',
+    data: {
+      labels: Array.from({ length: 96 }, (_, q) => q),
+      datasets: [
+        ...lines.map(w => wdDataset(c, w)),
+        { label: 'Open bedden', data: Array.from({ length: 96 }, (_, q) => bedsAtHour(S.unit, Math.floor(q / 4))), borderColor: c.ink, borderWidth: 1.5, borderDash: [5, 4], pointRadius: 0, stepped: true, fill: false },
+      ],
+    },
+    options: {
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        x: { grid: { display: false }, border: { color: c.axis }, ticks: { autoSkip: false, maxRotation: 0, callback: tickEveryTwoHours } },
+        y: { ...wdYRange(lines, bedsAtHour(S.unit, 12)), grid: { color: c.grid }, border: { display: false }, ticks: { precision: 0 }, title: { display: true, text: 'Patiënten', color: c.muted, font: { size: 11 } } },
+      },
+      plugins: { tooltip: { itemSort: (a, b) => (b.raw ?? -1) - (a.raw ?? -1), callbacks: { title: it => `${slotLabel(it[0].dataIndex)} · ${mLabel()}`, label: it => ` ${it.dataset.label}: ${fmt(it.raw)}` } } },
     },
   });
 }

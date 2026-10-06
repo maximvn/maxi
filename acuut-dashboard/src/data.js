@@ -235,6 +235,18 @@ function streamSummary(key) {
 /* ── Frames: bezetting per dag voor een set componenten ─────────────── */
 // Een component is één reeks in de grafieken: in een afdelingstab is dat een
 // stroom, op het tabblad "Alle" is het een hele afdeling (som van stromen).
+// Dagfilter: 'all' | 'werk' | 'weekend' | 'w:1011000' (vrij gekozen weekdagen, ma→zo).
+function wdMask(days) {
+  if (days === 'werk') return [1, 1, 1, 1, 1, 0, 0];
+  if (days === 'weekend') return [0, 0, 0, 0, 0, 1, 1];
+  if (typeof days === 'string' && days.startsWith('w:')) return days.slice(2).split('').map(Number);
+  return [1, 1, 1, 1, 1, 1, 1];
+}
+function maskToDays(m) {
+  const k = m.join('');
+  return k === '1111111' ? 'all' : k === '1111100' ? 'werk' : k === '0000011' ? 'weekend' : 'w:' + k;
+}
+const dayPass = (days, wd) => !!wdMask(days)[wd];
 let FRAME_CACHE = new Map();
 function invalidateFrames() { FRAME_CACHE = new Map(); }
 
@@ -262,7 +274,7 @@ function buildFrame(comps, filter) {
   const days = all.filter(d =>
     (filter.year === 'all' || d.y === +filter.year) &&
     (filter.months === 'all' || MONTH_SETS[filter.months].includes(d.m)) &&
-    (filter.days === 'all' || (filter.days === 'werk' ? d.wd < 5 : d.wd >= 5)));
+    dayPass(filter.days, d.wd));
   const frame = { comps, days, all, years };
   FRAME_CACHE.set(key, frame);
   return frame;

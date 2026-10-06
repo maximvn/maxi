@@ -19,6 +19,42 @@ function currentFrame() { const comps = compsFor(S.unit); return comps.length ? 
 const colorOf = c => tok(c.color);
 const cssColor = c => `var(--${c.color})`;
 function bedsOf(unitId) { return unitId === 'ALL' ? unitsOf().reduce((s, u) => s + cfgOf(u.id).beds, 0) : cfgOf(unitId).beds; }
+// Dagfilter: snelkeuzes + elke weekdag apart aan/uit.
+function dayFilterHTML() {
+  const m = wdMask(S.filter.days);
+  return `<div class="seg small" role="group" aria-label="Dagen" data-ind="days">${[['all', 'Alle dagen'], ['werk', 'Werkdagen'], ['weekend', 'Weekend']].map(([v, l]) => `<button class="${S.filter.days === v ? 'on' : ''}" data-act="days" data-arg="${v}">${l}</button>`).join('')}</div>
+    <div class="wd-chips" role="group" aria-label="Weekdagen">${WD_SHORT.map((l, wd) => `<button class="wd-chip ${m[wd] ? 'on' : ''}" data-act="wd" data-arg="${wd}" aria-pressed="${!!m[wd]}" title="${WD_LONG[wd]} ${m[wd] ? 'uitzetten' : 'aanzetten'}">${l}</button>`).join('')}</div>`;
+}
+// Kleine schakelaar boven een bestaande grafiek (bijv. stromen ↔ per weekdag).
+function modeSeg(key, opts, label) {
+  return `<div class="seg small" role="group" aria-label="${label}" data-ind="cm-${key}">${opts.map(([v, l]) => `<button class="${S.chartMode[key] === v ? 'on' : ''}" data-act="chartmode" data-arg="${key}:${v}">${l}</button>`).join('')}</div>`;
+}
+// Eén lijn per weekdag in de selectie: per groep kwartieren de norm van het totaal.
+function weekdayLines(frame, groups, which) {
+  return WD_SHORT.map((l, wd) => {
+    const days = frame.days.filter(d => d.wd === wd);
+    if (!days.length) return null;
+    const data = groups.map(g => { const dd = g.days ? g.days(days) : days; const st = stats(collect(dd, g.slots, which)); return st ? mv(st) : null; });
+    const day = stats(collect(days, ALL_SLOTS, which));
+    return { wd, label: WD_LONG[wd], short: l, data, day: day ? mv(day) : null, n: days.length };
+  }).filter(Boolean);
+}
+// As ingezoomd op de lijnen (niet vanaf 0), zodat verschillen tussen weekdagen zichtbaar zijn.
+function wdYRange(lines, beds) {
+  const v = lines.flatMap(w => w.data).filter(x => x != null);
+  if (beds != null) v.push(beds);
+  const lo = Math.min(...v), hi = Math.max(...v), pad = Math.max(1, (hi - lo) * 0.15);
+  return { min: Math.max(0, Math.floor(lo - pad)), max: Math.ceil(hi + pad) };
+}
+function wdDataset(c, w, extra = {}) {
+  const col = c.series[w.wd];
+  return { label: w.label, data: w.data, borderColor: col, backgroundColor: col, borderWidth: 2, borderDash: w.wd >= 5 ? [6, 3] : [], pointRadius: 0, pointHoverRadius: 4, tension: 0.3, cubicInterpolationMode: 'monotone', fill: false, ...extra };
+}
+// Legenda met per weekdag de norm over de hele dag — direct te vergelijken.
+function wdLegendHTML(lines, extra = '') {
+  const vals = lines.map(w => w.day).filter(v => v != null), lo = Math.min(...vals), hi = Math.max(...vals);
+  return `<div class="legend wd-legend">${lines.map(w => `<span class="${w.day === hi && hi !== lo ? 'hi' : w.day === lo && hi !== lo ? 'lo' : ''}"><i class="ln solid" style="border-color:var(--s${w.wd + 1});border-top-width:3px;${w.wd >= 5 ? 'border-top-style:dashed' : ''}"></i>${w.short} <b>${fmt(w.day)}</b></span>`).join('')}${extra}<span class="hint">${mLabel()} over de hele dag · hoogste vet, laagste licht</span></div>`;
+}
 const mv = st => (st ? st[S.metric] : null);
 const mLabel = () => METRICS[S.metric].short;
 const hhmm = m => `${pad2(Math.floor(m / 60))}:${pad2(m % 60)}`;
@@ -174,7 +210,7 @@ function dashScreen() {
         <select data-filter="months" id="f-months" aria-label="Seizoen of kwartaal">
           ${[['all', 'Heel jaar'], ['winter', 'Winter'], ['lente', 'Lente'], ['zomer', 'Zomer'], ['herfst', 'Herfst'], ['q1', 'Q1'], ['q2', 'Q2'], ['q3', 'Q3'], ['q4', 'Q4']].map(([v, l]) => `<option value="${v}" ${S.filter.months === v ? 'selected' : ''}>${l}</option>`).join('')}
         </select>
-        <div class="seg small" role="group" aria-label="Dagen" data-ind="days">${[['all', 'Alle dagen'], ['werk', 'Werkdagen'], ['weekend', 'Weekend']].map(([v, l]) => `<button class="${S.filter.days === v ? 'on' : ''}" data-act="days" data-arg="${v}">${l}</button>`).join('')}</div>
+        ${dayFilterHTML()}
       </div>
       <div class="f-group"><span class="f-label">Norm</span>
         <div class="seg small" role="group" aria-label="Norm" data-ind="metric">${Object.entries(METRICS).map(([k, m]) => `<button class="${S.metric === k ? 'on' : ''}" data-act="metric" data-arg="${k}" title="${m.desc}">${m.short}</button>`).join('')}</div>
@@ -290,6 +326,55 @@ function stackChart(canvas, frame, ser, { big = false, beds = null } = {}) {
     },
   });
 }
+// Alle stromen samen als lijnen: elke stroom zijn eigen norm + het totaal (per kwartier opgeteld).
+function totLineChart(canvas, frame, ser, own, beds) {
+  const c = C();
+  const smooth = S.bandGran === 'month' ? 0.25 : 0.35;
+  const sumOwn = ser.labels.map((_, i) => own.reduce((t, o) => t + (o[i] || 0), 0));
+  return mkChart(canvas, {
+    type: 'line',
+    data: {
+      labels: ser.labels,
+      datasets: [
+        { label: 'Alle stromen opgeteld', data: ser.val, borderColor: c.ink, backgroundColor: c.ink, borderWidth: 3, pointRadius: 0, pointHoverRadius: 4, tension: smooth, cubicInterpolationMode: 'monotone', fill: false, order: 0 },
+        ...frame.comps.map((comp, ci) => ({ label: comp.label, data: own[ci], borderColor: colorOf(comp), backgroundColor: colorOf(comp), borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, tension: smooth, cubicInterpolationMode: 'monotone', fill: false, order: 1 })),
+        { label: 'Maximum totaal', data: ser.max, borderColor: alpha(c.series[1], 0.5), borderWidth: 1, pointRadius: 0, fill: '+1', backgroundColor: alpha(c.series[1], 0.1), tension: smooth, order: 5 },
+        { label: 'Minimum totaal', data: ser.min, borderColor: alpha(c.series[1], 0.5), borderWidth: 1, pointRadius: 0, fill: false, tension: smooth, order: 6 },
+        { label: 'Open bedden', data: ser.labels.map(() => beds), borderColor: c.ink, borderWidth: 1.5, borderDash: [5, 4], pointRadius: 0, fill: false, order: 2 },
+      ],
+    },
+    options: {
+      interaction: { mode: 'index', intersect: false },
+      layout: { padding: { top: 4 } },
+      scales: {
+        x: { grid: { display: false }, border: { color: c.axis }, ticks: { maxRotation: 0, autoSkip: true, autoSkipPadding: 14, font: { size: 10.5 } } },
+        y: { beginAtZero: true, max: Math.ceil(Math.max(beds, ...ser.max.filter(v => v != null)) + 1), grid: { color: c.grid }, border: { display: false }, ticks: { precision: 0, maxTicksLimit: 7, font: { size: 10.5 } } },
+      },
+      plugins: { tooltip: {
+        filter: it => !/totaal$/.test(it.dataset.label) && it.dataset.label !== 'Open bedden',
+        callbacks: {
+          label: it => ` ${it.dataset.label}: ${fmt(it.raw)}`,
+          footer: it => { const i = it[0].dataIndex; return [`Som van de losse ${mLabel()}'s: ${fmt(sumOwn[i])}`, `Bereik totaal: ${fmt(ser.min[i], 0)}–${fmt(ser.max[i], 0)} · ${beds} open bedden`]; },
+        },
+      } },
+    },
+  });
+}
+function wdTotChart(canvas, labels, lines, beds) {
+  const c = C();
+  return mkChart(canvas, {
+    type: 'line',
+    data: { labels, datasets: [...lines.map(w => wdDataset(c, w)), { label: 'Open bedden', data: labels.map(() => beds), borderColor: c.ink, borderWidth: 1.5, borderDash: [5, 4], pointRadius: 0, fill: false }] },
+    options: {
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        x: { grid: { display: false }, border: { color: c.axis }, ticks: { maxRotation: 0, autoSkip: true, autoSkipPadding: 14, font: { size: 10.5 } } },
+        y: { ...wdYRange(lines, beds), grid: { color: c.grid }, border: { display: false }, ticks: { precision: 0, maxTicksLimit: 7, font: { size: 10.5 } } },
+      },
+      plugins: { tooltip: { itemSort: (a, b) => (b.raw ?? -1) - (a.raw ?? -1), callbacks: { label: it => ` ${it.dataset.label}: ${fmt(it.raw)}` } } },
+    },
+  });
+}
 function bandChart(canvas, ser, color, { big = false } = {}) {
   const c = C();
   const smooth = S.bandGran === 'month' ? 0.25 : 0.35;
@@ -326,6 +411,20 @@ function viewStreams(el, frame) {
   const multi = comps.length > 1;
   const gran = S.bandGran;
   const granLbl = { hour: 'per uur van de dag', weekday: 'per weekdag', month: 'per maand' }[gran];
+  const totOpts = [['lijnen', 'Lijnen'], ['stapel', 'Opgestapeld'], ...(gran === 'weekday' ? [] : [['weekdag', 'Per weekdag']])];
+  if (!totOpts.some(o => o[0] === S.chartMode.tot)) S.chartMode.tot = 'lijnen';
+  const tm = S.chartMode.tot;
+  const bandSers = comps.map((_, ci) => bandSeries(frame, ci, gran));
+  const stackSer = multi ? stackSeries(frame, gran) : null;
+  let totWd = null;
+  if (multi && tm === 'weekdag') {
+    const groups = gran === 'hour' ? HOUR_SLOTS.map(sl => ({ slots: sl }))
+      : [...new Set(frame.days.map(d => `${d.y}-${pad2(d.m)}`))].map(k => ({ slots: ALL_SLOTS, days: dd => dd.filter(d => `${d.y}-${pad2(d.m)}` === k) }));
+    totWd = weekdayLines(frame, groups, 'total');
+  }
+  const totDesc = tm === 'lijnen' ? `Elke gekleurde lijn is één ${kindWord} (zijn eigen ${mLabel()}); de <b>zwarte lijn</b> is alle ${kindWord === 'stroom' ? 'stromen' : 'afdelingen'} per kwartier opgeteld en daarvan de ${mLabel()}. Die is meestal lager dan de som van de losse lijnen, omdat ze niet allemaal tegelijk pieken (zie tooltip).`
+    : tm === 'stapel' ? `Het totaal (${mLabel()}) opgebouwd uit de ${kindWord === 'stroom' ? 'stromen' : 'afdelingen'} naar hun aandeel; het vlak erachter is min–max van het totaal.`
+    : `Het totaal (${mLabel()}), één lijn per weekdag in de selectie. Weekend gestippeld.`;
   const nums = st => `<div class="s-card-nums"><div class="main"><span>${mLabel()}</span><b>${fmt(mv(st))}</b></div><div><span>Max</span><b>${fmt(st.max, 0)}</b></div><div><span>Mediaan</span><b>${fmt(st.p50, 0)}</b></div><div><span>Min</span><b>${fmt(st.min, 0)}</b></div></div>`;
   // Alle samen: norm, drukste kwartier, tijd boven de bedden en het drukste moment van de week.
   const beds = bedsOf(S.unit);
@@ -354,7 +453,8 @@ function viewStreams(el, frame) {
         <div class="s-card-head"><span class="s-card-name"><span class="stack-ic" aria-hidden="true">${comps.map(c => `<i style="background:${cssColor(c)}"></i>`).join('')}</span>Alle ${kindWord === 'stroom' ? 'stromen' : 'afdelingen'} samen</span>${typeof bedsButton === 'function' ? bedsButton(S.unit) : ''}</div>
         ${typeof bedsPanel === 'function' ? bedsPanel(S.unit) : ''}
         ${totNums}
-        <div class="legend" style="margin:0">${comps.map(c => `<span><i class="sw" style="background:${cssColor(c)}"></i>${esc(c.label)}</span>`).join('')}<span><i class="sw band-sw"></i>Min – max totaal</span><span><i class="ln"></i>Open bedden</span></div>
+        <div class="tot-mode"><div class="desc">${totDesc}</div>${modeSeg('tot', totOpts, 'Weergave alle samen')}</div>
+        ${tm === 'weekdag' ? wdLegendHTML(totWd, '<span><i class="ln"></i>Open bedden</span>') : `<div class="legend" style="margin:0">${tm === 'lijnen' ? '<span><i class="ln solid" style="border-color:var(--ink);border-top-width:3px"></i><b>Alle samen</b></span>' : ''}${comps.map(c => tm === 'lijnen' ? `<span><i class="ln solid" style="border-color:${cssColor(c)};border-top-width:2px"></i>${esc(c.label)}</span>` : `<span><i class="sw" style="background:${cssColor(c)}"></i>${esc(c.label)}</span>`).join('')}<span><i class="sw band-sw"></i>Min – max totaal</span><span><i class="ln"></i>Open bedden</span></div>`}
         <div class="band-box big"><canvas id="band-total" role="img" aria-label="Bandbreedte alle stromen samen"></canvas></div>
       </div>` : ''}
       ${comps.map((c, ci) => `<button class="s-card stagger ${ci === fi ? 'on' : ''}" data-act="focus" data-arg="${c.id}" aria-pressed="${ci === fi}">
@@ -383,8 +483,12 @@ function viewStreams(el, frame) {
       <div class="table-wrap">${streamTable(frame)}</div>
     </section>`;
 
-  if (multi) stackChart($('#band-total'), frame, stackSeries(frame, gran), { big: true, beds });
-  comps.forEach((c, ci) => bandChart($('#band-' + ci), bandSeries(frame, ci, gran), colorOf(c)));
+  if (multi) {
+    if (tm === 'stapel') stackChart($('#band-total'), frame, stackSer, { big: true, beds });
+    else if (tm === 'lijnen') totLineChart($('#band-total'), frame, stackSer, bandSers.map(b => b.m), beds);
+    else wdTotChart($('#band-total'), stackSer.labels, totWd, beds);
+  }
+  comps.forEach((c, ci) => bandChart($('#band-' + ci), bandSers[ci], colorOf(c)));
 
   const cc = C();
   if (S.trendMode === 'samen') { stackChart($('#ch-strend'), frame, stackSeries(frame, 'month'), { beds }); return; }
@@ -449,6 +553,7 @@ function viewBeds(el, frame) {
   const target = S.bedTarget / 100;
   const advise = Math.ceil(all.sorted[Math.max(0, Math.ceil(all.n * target) - 1)]);
   const isAll = S.unit === 'ALL';
+  const bedWd = S.chartMode.bedhour === 'weekdag' ? weekdayLines(frame, HOUR_SLOTS.map(sl => ({ slots: sl })), 'total') : null;
   const maxV = Math.ceil(all.max);
   const hist = new Array(maxV + 1).fill(0);
   all.sorted.forEach(v => { hist[Math.min(maxV, Math.max(0, Math.round(v)))]++; });
@@ -482,9 +587,10 @@ function viewBeds(el, frame) {
         <div class="legend"><span><i class="sw" style="background:var(--s1)"></i>Past binnen ${beds} bedden</span><span><i class="sw" style="background:var(--crit)"></i>Boven capaciteit</span></div>
       </section>
       <section class="panel stagger">
-        <div class="panel-head"><div><h2>Bedden nodig per uur</h2><div class="desc">${mLabel()} per uur van de dag (dikke lijn), met het bereik van mediaan tot maximum, tegen de open bedden.</div></div></div>
+        <div class="panel-head"><div><h2>Bedden nodig per uur</h2><div class="desc">${bedWd ? `${mLabel()} per uur van de dag, één lijn per weekdag in de selectie, tegen de open bedden. Weekend gestippeld.` : `${mLabel()} per uur van de dag (dikke lijn), met het bereik van mediaan tot maximum, tegen de open bedden.`}</div></div>
+          ${modeSeg('bedhour', [['totaal', 'Alle dagen'], ['weekdag', 'Per weekdag']], 'Weergave bedden per uur')}</div>
         <div class="chart-box"><canvas id="ch-bedhour" role="img" aria-label="Bedden nodig per uur"></canvas></div>
-        <div class="legend"><span><i class="ln solid" style="border-color:var(--s1);border-top-width:3px"></i>${mLabel()}</span><span><i class="sw band-sw"></i>Mediaan – max</span><span><i class="ln"></i>Open bedden</span></div>
+        ${bedWd ? wdLegendHTML(bedWd, '<span><i class="ln"></i>Open bedden</span>') : `<div class="legend"><span><i class="ln solid" style="border-color:var(--s1);border-top-width:3px"></i>${mLabel()}</span><span><i class="sw band-sw"></i>Mediaan – max</span><span><i class="ln"></i>Open bedden</span></div>`}
       </section>
     </div>
     <div class="grid g-2" style="margin-top:16px">
@@ -512,7 +618,7 @@ function viewBeds(el, frame) {
     type: 'line',
     data: {
       labels: hrs.map((_, h) => `${pad2(h)}:00`),
-      datasets: [
+      datasets: bedWd ? bedWd.map(w => wdDataset(c, w)) : [
         { label: mLabel(), data: hrs.map(s => mv(s)), borderColor: c.series[0], borderWidth: 3, pointRadius: 0, pointHoverRadius: 4, tension: 0.3, order: 1 },
         { label: 'Maximum', data: hrs.map(s => s.max), borderColor: alpha(c.series[1], 0.6), borderWidth: 1, pointRadius: 0, tension: 0.3, fill: '+1', backgroundColor: alpha(c.series[1], 0.14), order: 2 },
         { label: 'Mediaan', data: hrs.map(s => s.p50), borderColor: alpha(c.series[1], 0.6), borderWidth: 1, pointRadius: 0, tension: 0.3, fill: false, order: 3 },
@@ -520,8 +626,8 @@ function viewBeds(el, frame) {
     },
     options: {
       interaction: { mode: 'index', intersect: false },
-      scales: { x: { grid: { display: false }, border: { color: c.axis }, ticks: { maxRotation: 0, autoSkip: true, autoSkipPadding: 12 } }, y: { beginAtZero: true, suggestedMax: Math.max(beds, all.max) + 1, grid: { color: c.grid }, border: { display: false }, ticks: { precision: 0 } } },
-      plugins: { capLine: { value: beds, label: `${beds} open bedden` }, tooltip: { callbacks: { label: it => ` ${it.dataset.label}: ${fmt(it.raw)}` } } },
+      scales: { x: { grid: { display: false }, border: { color: c.axis }, ticks: { maxRotation: 0, autoSkip: true, autoSkipPadding: 12 } }, y: { ...(bedWd ? wdYRange(bedWd, beds) : { beginAtZero: true, suggestedMax: Math.max(beds, all.max) + 1 }), grid: { color: c.grid }, border: { display: false }, ticks: { precision: 0 } } },
+      plugins: { capLine: { value: beds, label: `${beds} open bedden` }, tooltip: { itemSort: bedWd ? (a, b) => (b.raw ?? -1) - (a.raw ?? -1) : undefined, callbacks: { label: it => ` ${it.dataset.label}: ${fmt(it.raw)}` } } },
     },
   });
 }
@@ -548,9 +654,9 @@ function bedTable(frame, beds) {
     const adv = Math.ceil(s.sorted[Math.max(0, Math.ceil(s.n * t) - 1)]);
     const full = pctAtOrAbove(s.sorted, beds);
     const d = adv - beds;
-    return `<tr><td>${name}</td><td class="num"><b>${fmt(mv(s))}</b></td><td class="num">${fmt(s.p95, 0)}</td><td class="num">${fmt(s.max, 0)}</td><td class="num">${fmt(full)}%</td><td class="num"><b>${adv}</b> <span class="diff ${d > 0 ? 'pos' : d < 0 ? 'neg' : 'zero'}">${d > 0 ? '+' : ''}${d}</span></td></tr>`;
+    return `<tr><td>${name}</td><td class="num"><b>${fmt(mv(s))}</b></td>${S.metric === 'p95' ? '' : `<td class="num">${fmt(s.p95, 0)}</td>`}${S.metric === 'max' ? '' : `<td class="num">${fmt(s.max, 0)}</td>`}<td class="num">${fmt(full)}%</td><td class="num"><b>${adv}</b> <span class="diff ${d > 0 ? 'pos' : d < 0 ? 'neg' : 'zero'}">${d > 0 ? '+' : ''}${d}</span></td></tr>`;
   }).join('');
-  return `<table class="data" data-name="Bedden"><thead><tr><th>Weekdag</th><th class="num">${mLabel()}</th><th class="num">P95</th><th class="num">Max</th><th class="num">Tijd vol</th><th class="num">Advies (${S.bedTarget}%)</th></tr></thead><tbody>${rows}</tbody></table>`;
+  return `<table class="data" data-name="Bedden"><thead><tr><th>Weekdag</th><th class="num">${mLabel()}</th>${S.metric === 'p95' ? '' : '<th class="num">P95</th>'}${S.metric === 'max' ? '' : '<th class="num">Max</th>'}<th class="num">Tijd vol</th><th class="num">Advies (${S.bedTarget}%)</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 /* 4. VERPLEEGKUNDIGE INZET: zie staff.js */
@@ -707,7 +813,7 @@ function viewInstroom(el) {
     </div>
     <div class="f-group"><span class="f-label">Periode</span>
       <select data-filter="year" id="f-year" aria-label="Jaar"><option value="all">Alle jaren</option>${years.map(y => `<option value="${y}" ${String(y) === String(S.filter.year) ? 'selected' : ''}>${y}</option>`).join('')}</select>
-      <div class="seg small" role="group" aria-label="Dagen" data-ind="days">${[['all', 'Alle dagen'], ['werk', 'Werkdagen'], ['weekend', 'Weekend']].map(([v, l]) => `<button class="${S.filter.days === v ? 'on' : ''}" data-act="days" data-arg="${v}">${l}</button>`).join('')}</div>
+      ${dayFilterHTML()}
     </div>
   </div>`;
   if (!frame || !frame.days.length) { el.innerHTML = head + `<div class="empty-state"><h2>Geen dagen in deze selectie</h2><p>Verruim de periode- of dagfilter.</p></div>`; return; }
@@ -780,7 +886,7 @@ function viewJDT(el) {
   if (!S.jdtVpk) S.jdtVpk = st.vpkBase.slice(0, 24);
   const years = [...new Set(st.days.map(d => d.y))];
   if (S.jdtYear !== 'all' && !years.includes(+S.jdtYear)) S.jdtYear = 'all';
-  const days = st.days.filter(d => (S.jdtYear === 'all' || d.y === +S.jdtYear) && (S.filter.days === 'all' || (S.filter.days === 'werk' ? d.wd < 5 : d.wd >= 5)));
+  const days = st.days.filter(d => (S.jdtYear === 'all' || d.y === +S.jdtYear) && dayPass(S.filter.days, d.wd));
   const pct = (a, h) => (a == null || !S.jdtVpk[h] ? null : a / (S.jdtVpk[h] * 30) * 100);
   const hourStats = Array.from({ length: 24 }, (_, h) => stats(days.map(d => pct(d.hours[h], h)).filter(v => v != null)));
   const allP = days.flatMap(d => d.hours.map((a, h) => pct(a, h)).filter(v => v != null));
@@ -808,7 +914,7 @@ function viewJDT(el) {
         <div class="seg small" role="group" aria-label="Jaar" data-ind="jdtyear">${['all', ...years].map(y => `<button class="${String(S.jdtYear) === String(y) ? 'on' : ''}" data-act="jdtyear" data-arg="${y}">${y === 'all' ? 'Alle jaren' : y}</button>`).join('')}</div>
       </div>
       <div class="f-group"><span class="f-label">Dagen</span>
-        <div class="seg small" role="group" aria-label="Dagen" data-ind="days">${[['all', 'Alle dagen'], ['werk', 'Werkdagen'], ['weekend', 'Weekend']].map(([v, l]) => `<button class="${S.filter.days === v ? 'on' : ''}" data-act="days" data-arg="${v}">${l}</button>`).join('')}</div>
+        ${dayFilterHTML()}
       </div>
       <span class="note" style="margin:0">${esc(st.fileName)} · ${days.length.toLocaleString('nl-NL')} dagen</span>
     </div>
