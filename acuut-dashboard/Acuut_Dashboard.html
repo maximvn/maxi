@@ -30,8 +30,8 @@
   --good: #0a8a0a; --good-soft: #e5f4e5;
   --warn: #b77a00; --warn-soft: #fdf3dc;
   --crit: #c93535; --crit-soft: #fbe7e7;
-  /* Kleuren zoals het Slingeland-dashboard: marine (spoed/huidig), lichtblauw (electief/nieuw), daarna vlak gehouden tinten */
-  --s1: #1f3c6e; --s2: #5f9de6; --s3: #a9c9f1; --s4: #2a8c8c; --s5: #d09a1e; --s6: #a3367e; --s7: #6d7b93; --s8: #7a5fb0;
+  /* Stroomkleuren: acht duidelijk verschillende tinten, gevalideerd op kleurenblindheid (licht én donker) */
+  --s1: #2c63b5; --s2: #eb6834; --s3: #1baf7a; --s4: #7c5cc9; --s5: #e5a000; --s6: #d4508a; --s7: #4b8f2b; --s8: #178fb0;
   --gone: #c3c9d3; --nurse: #b0307a;
   --div-pos: #d03b3b; --div-neg: #2a78d6;
   --seq-0: #f1f6fd; --seq-1: #cde2fb; --seq-2: #9ec5f4; --seq-3: #6da7ec; --seq-4: #3987e5; --seq-5: #256abf; --seq-6: #184f95; --seq-7: #0d366b;
@@ -52,7 +52,7 @@
     --line: #262f3c; --line-strong: #364152; --accent: #7fa8ee; --accent-ink: #0c1118; --accent-soft: #1b2a44; --focus: #7fa8ee;
     --grid: #222a36; --axis: #3a4555;
     --good: #2bb52b; --good-soft: #13281a; --warn: #e3a51c; --warn-soft: #2d2410; --crit: #ec6a6a; --crit-soft: #351919;
-    --s1: #8fb6ef; --s2: #4b80cf; --s3: #2c5590; --s4: #2fa3a3; --s5: #d9a536; --s6: #d0589c; --s7: #8a98af; --s8: #9d85d6; --gone: #4a5361; --nurse: #d0589c;
+    --s1: #5b8fe0; --s2: #d95926; --s3: #199e70; --s4: #8a7ce0; --s5: #c98500; --s6: #d55181; --s7: #4f9d33; --s8: #2093b4; --gone: #4a5361; --nurse: #d0589c;
     --div-pos: #e66767; --div-neg: #3987e5;
     --seq-0: #16202d; --seq-1: #13294a; --seq-2: #173a68; --seq-3: #1c5cab; --seq-4: #2a78d6; --seq-5: #5598e7; --seq-6: #86b6ef; --seq-7: #cde2fb;
     --heat-0: #241a16; --heat-1: #4a2616; --heat-2: #7a3518; --heat-3: #b34a1d; --heat-4: #e06a33; --heat-5: #f6a27a;
@@ -64,7 +64,7 @@
   --line: #262f3c; --line-strong: #364152; --accent: #7fa8ee; --accent-ink: #0c1118; --accent-soft: #1b2a44; --focus: #7fa8ee;
   --grid: #222a36; --axis: #3a4555;
   --good: #2bb52b; --good-soft: #13281a; --warn: #e3a51c; --warn-soft: #2d2410; --crit: #ec6a6a; --crit-soft: #351919;
-  --s1: #8fb6ef; --s2: #4b80cf; --s3: #2c5590; --s4: #2fa3a3; --s5: #d9a536; --s6: #d0589c; --s7: #8a98af; --s8: #9d85d6; --gone: #4a5361; --nurse: #d0589c;
+  --s1: #5b8fe0; --s2: #d95926; --s3: #199e70; --s4: #8a7ce0; --s5: #c98500; --s6: #d55181; --s7: #4f9d33; --s8: #2093b4; --gone: #4a5361; --nurse: #d0589c;
   --div-pos: #e66767; --div-neg: #3987e5;
   --seq-0: #16202d; --seq-1: #13294a; --seq-2: #173a68; --seq-3: #1c5cab; --seq-4: #2a78d6; --seq-5: #5598e7; --seq-6: #86b6ef; --seq-7: #cde2fb;
   --heat-0: #241a16; --heat-1: #4a2616; --heat-2: #7a3518; --heat-3: #b34a1d; --heat-4: #e06a33; --heat-5: #f6a27a;
@@ -559,6 +559,32 @@ body.busy .appbar::after { opacity: 1; animation: slide 1.1s linear infinite; }
 .hs.na { opacity: .45; }
 @media (max-width: 760px) { .hour-strip { grid-template-columns: repeat(12, minmax(0, 1fr)); } }
 @media (prefers-reduced-motion: reduce) { .hero-chart.zoom-in { animation: fade 200ms ease both; } }
+.tag.warn { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
+
+/* Bedden-knopje bij een grafiek */
+.beds-btn { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 9px; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--ink-2); font-size: 12px; cursor: pointer; transition: border-color .15s ease, color .15s ease, background-color .15s ease; }
+.beds-btn b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.beds-btn:hover:not(:disabled), .beds-btn.on { border-color: var(--accent); color: var(--accent); }
+.beds-btn.on svg:last-child { transform: rotate(180deg); }
+.beds-btn svg:last-child { transition: transform .2s ease; }
+.beds-btn:disabled { cursor: default; opacity: .8; }
+.beds-pop { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 16px; margin: 4px 0 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); animation: pop-in .18s ease-out; }
+.beds-pop label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--ink-2); }
+.beds-pop label em { font-style: normal; color: var(--muted); font-size: 11px; }
+.beds-pop .sep { width: 1px; align-self: stretch; background: var(--line); }
+.beds-pop .hint, .beds-pop .link-btn { align-self: center; font-size: 12px; }
+@keyframes pop-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .beds-pop { animation: none; } }
+.s-card-nums .main b { color: var(--accent); }
+.s-card-nums em { font-style: normal; font-size: 11px; color: var(--muted); }
+.tot-nums { padding: 10px 0 4px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.tot-nums b { font-size: 22px; }
+.tot-nums .warn b { color: var(--warn, #b7791f); }
+.tot-nums .crit b { color: var(--crit); }
+.s-card.total .s-card-head { align-items: center; }
+td.num.muted, th.num.muted { color: var(--muted); font-weight: 400; }
+@media (max-width: 640px) { .tot-nums { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.legend i.dia { width: 8px; height: 8px; background: var(--ink); transform: rotate(45deg); display: inline-block; margin: 0 2px; }
 
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -724,7 +750,7 @@ const SHIFT_INFO = {
 };
 
 const METRICS = {
-  avg:  { short: 'Gem.',  label: 'Gemiddeld',     desc: 'Gemiddelde bezetting over alle kwartieren' },
+  p90:  { short: 'P90',   label: 'P90',           desc: '90% van de kwartieren ligt op of onder deze waarde' },
   p95:  { short: 'P95',   label: 'P95',           desc: '95% van de kwartieren ligt op of onder deze waarde' },
   mu2s: { short: 'µ+2σ',  label: 'µ + 2σ',        desc: 'Gemiddelde plus twee standaarddeviaties (planningsnorm)' },
   max:  { short: 'Max',   label: 'Maximum',       desc: 'Hoogste gemeten bezetting' },
@@ -851,19 +877,26 @@ function parseGrid(grid) {
   });
   if (slotCols.length < 24) return null;
   const days = new Map();
+  const fixes = { neg: 0, examples: [] };
   for (let r = hr + 1; r < grid.length; r++) {
     const row = grid[r]; if (!row) continue;
     const ds = cellToDate(row[iDate]); if (!ds) continue;
     const arr = new Float32Array(96).fill(NaN);
     let any = false;
-    for (const { i, q } of slotCols) { const v = toNum(row[i]); if (!isNaN(v)) { arr[q] = v; any = true; } }
+    for (const { i, q } of slotCols) {
+      let v = toNum(row[i]);
+      if (isNaN(v)) continue;
+      // Een bezetting kan niet negatief zijn: zo'n waarde is een fout in de bron → 0.
+      if (v < 0) { v = 0; fixes.neg++; if (fixes.examples.length < 3) fixes.examples.push(`${ds} ${slotLabel(q)}`); }
+      arr[q] = v; any = true;
+    }
     if (!any) continue;
     // Ontbrekende kwartieren (bv. bestand met uurkolommen) opvullen met de vorige waarde.
     for (let q = 0; q < 96; q++) if (isNaN(arr[q])) arr[q] = q > 0 ? arr[q - 1] : 0;
     days.set(ds, arr);
   }
   if (!days.size) return null;
-  return { days };
+  return { days, fixes };
 }
 
 /* ── JDT SEH werkdruk: tabblad "JDT aantal" + "%" (vpk per uur) ───── */
@@ -888,7 +921,7 @@ function parseJDT(wb, fileName) {
   for (let r = h + 1; r < g.length; r++) {
     const row = g[r]; if (!row) continue;
     const ds = cellToDate(row[iDate]); if (!ds) continue;
-    days.push({ ds, wd: weekdayOf(ds), y: +ds.slice(0, 4), m: +ds.slice(5, 7), hours: hourCols.map(ci => { const v = toNum(row[ci]); return isNaN(v) ? null : v; }) });
+    days.push({ ds, wd: weekdayOf(ds), y: +ds.slice(0, 4), m: +ds.slice(5, 7), hours: hourCols.map(ci => { const v = toNum(row[ci]); return isNaN(v) ? null : Math.max(0, v); }) });
   }
   if (!days.length) throw new Error('Geen datumrijen gevonden in "JDT aantal".');
   days.sort((x, y) => (x.ds < y.ds ? -1 : 1));
@@ -950,20 +983,20 @@ function guessDataset(fileName) {
   return null;
 }
 
-function putStream(key, days, fileName, source) {
+function putStream(key, days, fileName, source, fixes) {
   const sorted = new Map([...days.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)));
-  STORE[key] = { kind: DS[key].kind, fileName, source, days: sorted };
+  STORE[key] = { kind: DS[key].kind, fileName, source, days: sorted, fixes: fixes || { neg: 0, examples: [] } };
   invalidateFrames();
 }
 function putJDT(res, source) {
   STORE.jdt = { kind: 'jdt', fileName: res.fileName, source, days: res.days, vpkBase: res.vpkBase };
 }
 let LOOSE_N = 0;
-function addLoose(days, fileName, source, name) {
+function addLoose(days, fileName, source, name, fixes) {
   const key = 'L' + (++LOOSE_N);
   const d = { key, kind: 'los', cat: 'LOS', role: 'basis', label: name || fileName.replace(/\.(xlsx|xlsm|xls|csv)$/i, '').slice(0, 40), long: 'Losse analyse · ' + fileName, file: fileName };
   DATASETS.push(d); DS[key] = d;
-  putStream(key, days, fileName, source);
+  putStream(key, days, fileName, source, fixes);
   return key;
 }
 function removeDataset(key) {
@@ -1628,7 +1661,7 @@ function tileHTML(d) {
     </div>
     <div class="tile-status">
       ${busy ? '<span class="spinner" aria-hidden="true"></span><span>Inlezen…</span>'
-        : st ? `<span class="ok-mark">${ICON.check}</span><span>${sum.n.toLocaleString('nl-NL')} dagen</span><span class="tag ${st.source === 'bestand' ? 'ok' : 'demo'}">${st.source}</span>
+        : st ? `<span class="ok-mark">${ICON.check}</span><span>${sum.n.toLocaleString('nl-NL')} dagen</span><span class="tag ${st.source === 'bestand' ? 'ok' : 'demo'}">${st.source}</span>${st.fixes && st.fixes.neg ? `<span class="tag warn" title="Voorbeelden: ${esc(st.fixes.examples.join(', '))}">${st.fixes.neg.toLocaleString('nl-NL')} negatieve waarden → 0</span>` : ''}
           <button class="link-btn danger" data-act="unload" data-arg="${d.key}">Verwijder</button>`
         : `<span class="muted">Klik of sleep een bestand</span>`}
     </div>
@@ -1702,8 +1735,8 @@ function setBusy(on) { document.body.classList.toggle('busy', on); }
 
 function storeResult(key, res, fileName, source) {
   if (key === 'jdt') { if (res.kind !== 'jdt') throw new Error('Dit is geen JDT-bestand (tabblad "JDT aantal" ontbreekt).'); putJDT(res, source); S.jdtVpk = null; }
-  else if (key === 'LOS') { if (res.kind !== 'grid') throw new Error('Een JDT-bestand kan geen losse analyse zijn.'); return addLoose(res.days, fileName, source); }
-  else { if (res.kind !== 'grid') throw new Error('Dit bestand is een JDT-bestand.'); putStream(key, res.days, fileName, source); }
+  else if (key === 'LOS') { if (res.kind !== 'grid') throw new Error('Een JDT-bestand kan geen losse analyse zijn.'); return addLoose(res.days, fileName, source, null, res.fixes); }
+  else { if (res.kind !== 'grid') throw new Error('Dit bestand is een JDT-bestand.'); putStream(key, res.days, fileName, source, res.fixes); }
   return key;
 }
 async function readFiles(files, forcedKey) {
@@ -1711,19 +1744,19 @@ async function readFiles(files, forcedKey) {
   if (forcedKey && forcedKey !== 'LOS') S.loading.add(forcedKey);
   setBusy(true); render();
   await new Promise(r => setTimeout(r, 30));
-  const done = [], failed = [];
+  const done = [], failed = [], fixedMsgs = [];
   S.justLoaded = new Set();
   for (const f of list) {
     try {
       const res = readWorkbook(new Uint8Array(await f.arrayBuffer()), f.name);
       const key = forcedKey || (res.kind === 'jdt' ? 'jdt' : guessDataset(f.name));
-      if (key) { const k = storeResult(key, res, f.name, 'bestand'); S.justLoaded.add(k); done.push(k); }
+      if (key) { const k = storeResult(key, res, f.name, 'bestand'); S.justLoaded.add(k); done.push(k); if (res.fixes && res.fixes.neg) fixedMsgs.push(`${f.name}: ${res.fixes.neg} negatieve waarden op 0 gezet`); }
       else S.unmatched.push({ fileName: f.name, res });
     } catch (e) { failed.push(`${f.name}: ${e.message}`); }
   }
   S.loading.clear(); setBusy(false); render();
   if (failed.length) toast(`Niet ingelezen — ${failed.join(' · ')}`);
-  else if (done.length) toast(`Ingelezen: ${done.map(k => (DS[k] ? DS[k].label : k)).join(', ')}`);
+  else if (done.length) toast(`Ingelezen: ${done.map(k => (DS[k] ? DS[k].label : k)).join(', ')}${fixedMsgs.length ? ' · Gecorrigeerd — ' + fixedMsgs.join(' · ') : ''}`);
   else if (S.unmatched.length) toast('Kies hieronder wat het bestand is.');
 }
 
@@ -1841,6 +1874,8 @@ document.addEventListener('click', e => {
     fcrange: () => { S.fcRange = arg; render(); },
     jdtpick: () => { S.jdtDate = arg; const y = window.scrollY; render(); window.scrollTo({ top: y }); },
     jdtday: () => { if (STORE.jdt) { const ds = STORE.jdt.days.map(d => d.ds); const i = ds.indexOf(S.jdtDate); S.jdtDate = ds[Math.max(0, Math.min(ds.length - 1, i + +arg))]; const y = window.scrollY; render(); window.scrollTo({ top: y }); } },
+    bedsedit: () => { S.bedsEdit = !S.bedsEdit; const y = window.scrollY; render(); window.scrollTo({ top: y }); },
+    bedsreset: () => { delete cfgOf(S.unit).bedsShift; saveSettings(); const y = window.scrollY; render(); window.scrollTo({ top: y }); },
     bandgran: () => { S.bandGran = arg; render(); },
     trendmode: () => { S.trendMode = arg; render(); },
     theme: toggleTheme,
@@ -1905,6 +1940,7 @@ function setValue(path, raw) {
     const c = cfgOf(S.unit);
     const num = () => +String(raw).replace(',', '.');
     if (parts[0] === 'beds') c.beds = Math.max(1, Math.round(num() || 1));
+    else if (parts[0] === 'bedsShift') { c.bedsShift = c.bedsShift || {}; const v = Math.max(0, Math.round(num() || 0)); if (v === c.beds) delete c.bedsShift[parts[1]]; else c.bedsShift[parts[1]] = v; }
     else if (parts[0] === 'minStaff') c.minStaff = Math.max(0, Math.round(num() || 0));
     else if (parts[0] === 'sh') {
       const sh = c.shifts[+parts[1]]; if (!sh) return;
@@ -1931,6 +1967,7 @@ function stepValue(path, delta) {
   else {
     const c = cfgOf(S.unit);
     if (parts[0] === 'beds') cur = c.beds;
+    else if (parts[0] === 'bedsShift') cur = c.bedsShift && c.bedsShift[parts[1]] != null ? c.bedsShift[parts[1]] : c.beds;
     else if (parts[0] === 'minStaff') cur = c.minStaff;
     else if (parts[0] === 'sh') {
       const sh = c.shifts[+parts[1]];
@@ -2260,8 +2297,9 @@ function stackSeries(frame, gran) {
   const sp = groups.map(g => splitByMetric(g.days, g.slots, frame.comps.length));
   return { labels: groups.map(g => g.label), parts: frame.comps.map((_, ci) => sp.map(x => x.parts[ci])), min: sp.map(x => x.tot && x.tot.min), max: sp.map(x => x.tot && x.tot.max), val: sp.map(x => x.val) };
 }
-function stackChart(canvas, frame, ser, { big = false } = {}) {
+function stackChart(canvas, frame, ser, { big = false, beds = null } = {}) {
   const c = C();
+  const yMax = beds ? Math.ceil(Math.max(beds, ...ser.max.filter(v => v != null)) + 1) : undefined;
   const smooth = S.bandGran === 'month' ? 0.25 : 0.35;
   return mkChart(canvas, {
     type: 'line',
@@ -2271,6 +2309,7 @@ function stackChart(canvas, frame, ser, { big = false } = {}) {
         ...frame.comps.map((comp, ci) => ({ label: comp.label, data: ser.parts[ci], borderColor: colorOf(comp), backgroundColor: alpha(colorOf(comp), 0.9), borderWidth: 0, pointRadius: 0, fill: ci ? '-1' : 'origin', tension: smooth, stack: 'a', order: 2 })),
         { label: 'Maximum', data: ser.max, borderColor: alpha(c.series[1], 0.8), borderWidth: 1, pointRadius: 0, fill: '+1', backgroundColor: alpha(c.series[1], 0.16), tension: smooth, stack: 'm1', order: 5 },
         { label: 'Minimum', data: ser.min, borderColor: alpha(c.series[1], 0.8), borderWidth: 1, pointRadius: 0, fill: false, tension: smooth, stack: 'm2', order: 6 },
+        ...(beds ? [{ label: 'Open bedden', data: ser.labels.map(() => beds), borderColor: c.ink, borderWidth: 1.5, borderDash: [5, 4], pointRadius: 0, fill: false, stack: 'beds', order: 1 }] : []),
       ],
     },
     options: {
@@ -2278,11 +2317,11 @@ function stackChart(canvas, frame, ser, { big = false } = {}) {
       layout: { padding: { top: 4 } },
       scales: {
         x: { grid: { display: false }, border: { color: c.axis }, ticks: { maxRotation: 0, autoSkip: true, autoSkipPadding: big ? 14 : 10, font: { size: 10.5 } } },
-        y: { stacked: true, beginAtZero: true, grid: { color: c.grid }, border: { display: false }, ticks: { precision: 0, maxTicksLimit: 6, font: { size: 10.5 } } },
+        y: { stacked: true, beginAtZero: true, max: yMax, grid: { color: c.grid }, border: { display: false }, ticks: { precision: 0, maxTicksLimit: 6, font: { size: 10.5 } } },
       },
       plugins: { tooltip: { callbacks: {
         label: it => (it.dataset.stack === 'a' ? ` ${it.dataset.label}: ${fmt(it.raw)}` : ` ${it.dataset.label}: ${fmt(it.raw, 0)}`),
-        footer: it => `Totaal ${mLabel()}: ${fmt(ser.val[it[0].dataIndex])}`,
+        footer: it => { const v = ser.val[it[0].dataIndex]; return [`Totaal ${mLabel()}: ${fmt(v)}`, ...(beds && v != null ? [v > beds ? `${fmt(v - beds)} boven de ${beds} bedden` : `${fmt(beds - v)} bedden marge`] : [])]; },
       } } },
     },
   });
@@ -2297,7 +2336,6 @@ function bandChart(canvas, ser, color, { big = false } = {}) {
       datasets: [
         { label: 'Maximum', data: ser.max, borderColor: alpha(color, 0.55), borderWidth: 1, pointRadius: 0, stepped: S.bandGran === 'month' ? false : 'middle', fill: false },
         { label: 'Minimum', data: ser.min, borderColor: alpha(color, 0.55), borderWidth: 1, pointRadius: 0, stepped: S.bandGran === 'month' ? false : 'middle', fill: { target: 0 }, backgroundColor: alpha(color, 0.14) },
-        ...(S.metric === 'avg' ? [] : [{ label: 'Gemiddeld', data: ser.avg, borderColor: color, borderWidth: 1.5, borderDash: [5, 4], pointRadius: 0, tension: smooth, fill: false }]),
         { label: METRICS[S.metric].label, data: ser.m, borderColor: color, borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 4, pointBackgroundColor: color, tension: smooth, fill: false },
       ],
     },
@@ -2324,22 +2362,35 @@ function viewStreams(el, frame) {
   const multi = comps.length > 1;
   const gran = S.bandGran;
   const granLbl = { hour: 'per uur van de dag', weekday: 'per weekdag', month: 'per maand' }[gran];
-  const nums = st => `<div class="s-card-nums"><div><span>Gemiddeld</span><b>${fmt(st.avg)}</b></div><div><span>${S.metric === 'avg' ? 'P95' : mLabel()}</span><b>${fmt(S.metric === 'avg' ? st.p95 : mv(st))}</b></div><div><span>Min</span><b>${fmt(st.min, 0)}</b></div><div><span>Max</span><b>${fmt(st.max, 0)}</b></div></div>`;
+  const nums = st => `<div class="s-card-nums"><div class="main"><span>${mLabel()}</span><b>${fmt(mv(st))}</b></div><div><span>Max</span><b>${fmt(st.max, 0)}</b></div><div><span>Mediaan</span><b>${fmt(st.p50, 0)}</b></div><div><span>Min</span><b>${fmt(st.min, 0)}</b></div></div>`;
+  // Alle samen: norm, drukste kwartier, tijd boven de bedden en het drukste moment van de week.
+  const beds = bedsOf(S.unit);
+  const totVals = collect(frame.days, ALL_SLOTS);
+  const overPct = totVals.length ? totVals.filter(v => v > beds).length / totVals.length * 100 : 0;
+  let peak = { v: -1 };
+  WD_SHORT.forEach((_, wd) => { const dd = frame.days.filter(d => d.wd === wd); HOUR_SLOTS.forEach((sl, h) => { const st = stats(collect(dd, sl)); if (st && mv(st) > peak.v) peak = { v: mv(st), wd, h }; }); });
+  const totNums = `<div class="s-card-nums tot-nums">
+    <div class="main"><span>${mLabel()} totaal</span><b>${fmt(mv(tot))}</b><em>${fmt(mv(tot) / beds * 100, 0)}% van ${beds} bedden</em></div>
+    <div><span>Drukste kwartier</span><b>${fmt(tot.max, 0)}</b><em>${tot.max > beds ? `${fmt(tot.max - beds, 0)} boven de bedden` : 'binnen de bedden'}</em></div>
+    <div class="${overPct >= 5 ? 'crit' : overPct >= 1 ? 'warn' : ''}"><span>Tijd boven de bedden</span><b>${fmt(overPct, overPct < 10 ? 1 : 0)}%</b><em>van alle kwartieren</em></div>
+    <div><span>Drukste moment</span><b>${peak.v < 0 ? '—' : `${WD_SHORT[peak.wd]} ${pad2(peak.h)}:00`}</b><em>${peak.v < 0 ? '' : `${mLabel()} ${fmt(peak.v)}`}</em></div>
+  </div>`;
   const tag = c => (S.unit === 'ALL' ? `<span class="tag">${c.streams.length} ${c.streams.length === 1 ? 'stroom' : 'stromen'}</span>` : `<span class="tag ${STORE[c.id].source === 'bestand' ? 'ok' : 'demo'}">${DS[c.id].role === 'basis' ? STORE[c.id].source : DS[c.id].role}</span>`);
 
   el.innerHTML = `
     <section class="panel band-head stagger">
       <div class="panel-head" style="margin:0">
-        <div><h2>Bandbreedte per ${kindWord}</h2><div class="desc">Elke ${kindWord} in een eigen grafiek ${granLbl}: het vlak loopt van minimum tot maximum, de dikke lijn is de gekozen norm (${mLabel()})${S.metric === 'avg' ? '' : ', de stippellijn het gemiddelde'}.${multi ? ` Bovenaan alle ${kindWord === 'stroom' ? 'stromen' : 'afdelingen'} samen: de norm van het totaal, opgebouwd uit de ${kindWord === 'stroom' ? 'stromen' : 'afdelingen'}.` : ''}</div></div>
+        <div><h2>Bandbreedte per ${kindWord}</h2><div class="desc">Elke ${kindWord} in een eigen grafiek ${granLbl}: het vlak loopt van minimum tot maximum, de dikke lijn is de gekozen norm (${mLabel()}).${multi ? ` Bovenaan alle ${kindWord === 'stroom' ? 'stromen' : 'afdelingen'} samen: de norm van het totaal, opgebouwd uit de ${kindWord === 'stroom' ? 'stromen' : 'afdelingen'}.` : ''}</div></div>
         <div class="seg small" role="group" aria-label="Indeling" data-ind="bandgran">${[['hour', 'Per uur'], ['weekday', 'Per weekdag'], ['month', 'Per maand']].map(([v, l]) => `<button class="${gran === v ? 'on' : ''}" data-act="bandgran" data-arg="${v}">${l}</button>`).join('')}</div>
       </div>
-      <div class="legend" style="margin-top:8px"><span><i class="sw band-sw"></i>Min – max</span><span><i class="ln solid" style="border-color:var(--ink);border-top-width:3px"></i>${METRICS[S.metric].label}</span>${S.metric === 'avg' ? '' : '<span><i class="ln" style="border-color:var(--ink-2)"></i>Gemiddeld</span>'}</div>
+      <div class="legend" style="margin-top:8px"><span><i class="sw band-sw"></i>Min – max</span><span><i class="ln solid" style="border-color:var(--ink);border-top-width:3px"></i>${METRICS[S.metric].label}</span></div>
     </section>
     <div class="stream-cards">
       ${multi ? `<div class="s-card total stagger">
-        <div class="s-card-head"><span class="s-card-name"><span class="stack-ic" aria-hidden="true">${comps.map(c => `<i style="background:${cssColor(c)}"></i>`).join('')}</span>Alle ${kindWord === 'stroom' ? 'stromen' : 'afdelingen'} samen</span><span class="tag">${comps.length} ${kindWord === 'stroom' ? 'stromen' : 'afdelingen'}</span></div>
-        <div class="legend" style="margin:0">${comps.map(c => `<span><i class="sw" style="background:${cssColor(c)}"></i>${esc(c.label)}</span>`).join('')}<span><i class="sw band-sw"></i>Min – max totaal</span></div>
-        ${nums(tot)}
+        <div class="s-card-head"><span class="s-card-name"><span class="stack-ic" aria-hidden="true">${comps.map(c => `<i style="background:${cssColor(c)}"></i>`).join('')}</span>Alle ${kindWord === 'stroom' ? 'stromen' : 'afdelingen'} samen</span>${typeof bedsButton === 'function' ? bedsButton(S.unit) : ''}</div>
+        ${typeof bedsPanel === 'function' ? bedsPanel(S.unit) : ''}
+        ${totNums}
+        <div class="legend" style="margin:0">${comps.map(c => `<span><i class="sw" style="background:${cssColor(c)}"></i>${esc(c.label)}</span>`).join('')}<span><i class="sw band-sw"></i>Min – max totaal</span><span><i class="ln"></i>Open bedden</span></div>
         <div class="band-box big"><canvas id="band-total" role="img" aria-label="Bandbreedte alle stromen samen"></canvas></div>
       </div>` : ''}
       ${comps.map((c, ci) => `<button class="s-card stagger ${ci === fi ? 'on' : ''}" data-act="focus" data-arg="${c.id}" aria-pressed="${ci === fi}">
@@ -2368,11 +2419,11 @@ function viewStreams(el, frame) {
       <div class="table-wrap">${streamTable(frame)}</div>
     </section>`;
 
-  if (multi) stackChart($('#band-total'), frame, stackSeries(frame, gran), { big: true });
+  if (multi) stackChart($('#band-total'), frame, stackSeries(frame, gran), { big: true, beds });
   comps.forEach((c, ci) => bandChart($('#band-' + ci), bandSeries(frame, ci, gran), colorOf(c)));
 
   const cc = C();
-  if (S.trendMode === 'samen') { stackChart($('#ch-strend'), frame, stackSeries(frame, 'month')); return; }
+  if (S.trendMode === 'samen') { stackChart($('#ch-strend'), frame, stackSeries(frame, 'month'), { beds }); return; }
   const months = monthly(frame);
   const ds = comps.map((c, ci) => ({ label: c.label, data: months.map(m => m.own[ci]), borderColor: colorOf(c), backgroundColor: colorOf(c), borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, tension: 0.25, fill: false }));
   mkChart($('#ch-strend'), {
@@ -2417,10 +2468,10 @@ function streamTable(frame) {
     const cells = ['all', ...SHIFT_KEYS].map(k => stats(collect(frame.days, k === 'all' ? ALL_SLOTS : shiftSlots(k), which)));
     return cells.map((s, i) => `<tr class="${i ? 'sub' : cls}">
       <td>${i ? `<span style="padding-left:18px">${SHIFT_INFO[SHIFT_KEYS[i - 1]].label} <span class="mono" style="color:var(--muted);font-size:11.5px">${shiftTimes(SHIFT_KEYS[i - 1])}</span></span>` : `<span class="cell-name">${sw ? `<i class="sw" style="background:${sw}"></i>` : ''}${esc(name)}</span>`}</td>
-      <td class="num">${fmt(s.avg)}</td><td class="num">${fmt(s.p50, 0)}</td><td class="num">${fmt(s.p95, 0)}</td><td class="num">${fmt(s.mu2s)}</td><td class="num">${fmt(s.max, 0)}</td>
+      <td class="num"><b>${fmt(mv(s))}</b></td>${S.metric === 'p95' ? '' : `<td class="num">${fmt(s.p95, 0)}</td>`}<td class="num">${fmt(s.max, 0)}</td><td class="num">${fmt(s.p50, 0)}</td><td class="num">${fmt(s.mu2s)}</td><td class="num muted">${fmt(s.avg)}</td>
     </tr>`).join('');
   };
-  return `<table class="data" data-name="Stromen"><thead><tr><th>${S.unit === 'ALL' ? 'Afdeling' : 'Stroom'} / dienst</th><th class="num">Gemiddeld</th><th class="num">Mediaan</th><th class="num">P95</th><th class="num">µ+2σ</th><th class="num">Max</th></tr></thead>
+  return `<table class="data" data-name="Stromen"><thead><tr><th>${S.unit === 'ALL' ? 'Afdeling' : 'Stroom'} / dienst</th><th class="num">${mLabel()} (norm)</th>${S.metric === 'p95' ? '' : '<th class="num">P95</th>'}<th class="num">Max</th><th class="num">Mediaan</th><th class="num">µ+2σ</th><th class="num muted">Gem.</th></tr></thead>
     <tbody>${frame.comps.map((c, ci) => rowsFor(ci, c.label, cssColor(c))).join('')}${frame.comps.length > 1 ? rowsFor('total', 'Totaal', null, 'total') : ''}</tbody></table>`;
 }
 
@@ -2430,7 +2481,7 @@ function viewBeds(el, frame) {
   const all = stats(collect(frame.days, ALL_SLOTS));
   const full = pctAtOrAbove(all.sorted, beds);
   const overflow = pctAtOrAbove(all.sorted, beds + 1);
-  let free = 0; for (const v of all.sorted) free += Math.max(0, beds - v); free /= all.n;
+  const norm = mv(all);
   const target = S.bedTarget / 100;
   const advise = Math.ceil(all.sorted[Math.max(0, Math.ceil(all.n * target) - 1)]);
   const isAll = S.unit === 'ALL';
@@ -2457,8 +2508,8 @@ function viewBeds(el, frame) {
     <div class="kpis">
       ${kpi('Tijd volledig bezet', kn(full), '%', `≥ ${beds} patiënten tegelijk`)}
       ${kpi('Tijd boven capaciteit', kn(overflow), '%', `meer patiënten dan bedden`, statusPill(overflow < 1 ? 'good' : overflow < 5 ? 'warn' : 'crit', overflow < 1 ? 'Zelden' : overflow < 5 ? 'Regelmatig' : 'Vaak'))}
-      ${kpi('Gemiddeld vrije bedden', kn(free), 'bedden', `bij ${beds} open bedden`)}
-      ${kpi('Gemiddelde benutting', kn(all.avg / beds * 100, 0), '%', `gem. ${fmt(all.avg)} van ${beds} bedden`)}
+      ${kpi(`Vrije bedden bij ${mLabel()}`, kn(beds - norm), 'bedden', `${mLabel()} ${fmt(norm)} patiënten bij ${beds} open bedden`, statusPill(norm > beds ? 'crit' : norm >= beds - 1 ? 'warn' : 'good', norm > beds ? 'Tekort' : norm >= beds - 1 ? 'Krap' : 'Ruimte'))}
+      ${kpi(`Benutting bij ${mLabel()}`, kn(norm / beds * 100, 0), '%', `drukste kwartier ${fmt(all.max, 0)} patiënten`)}
     </div>
     <div class="grid g-2">
       <section class="panel stagger">
@@ -2467,9 +2518,9 @@ function viewBeds(el, frame) {
         <div class="legend"><span><i class="sw" style="background:var(--s1)"></i>Past binnen ${beds} bedden</span><span><i class="sw" style="background:var(--crit)"></i>Boven capaciteit</span></div>
       </section>
       <section class="panel stagger">
-        <div class="panel-head"><div><h2>Bedden nodig per uur</h2><div class="desc">Gemiddelde, ${mLabel()} en maximum per uur van de dag, tegen de open bedden.</div></div></div>
+        <div class="panel-head"><div><h2>Bedden nodig per uur</h2><div class="desc">${mLabel()} per uur van de dag (dikke lijn), met het bereik van mediaan tot maximum, tegen de open bedden.</div></div></div>
         <div class="chart-box"><canvas id="ch-bedhour" role="img" aria-label="Bedden nodig per uur"></canvas></div>
-        <div class="legend"><span><i class="ln solid" style="border-color:var(--s1)"></i>Gemiddeld</span><span><i class="ln solid" style="border-color:var(--ink)"></i>${mLabel()}</span><span><i class="ln solid" style="border-color:var(--muted)"></i>Maximum</span><span><i class="ln"></i>Open bedden</span></div>
+        <div class="legend"><span><i class="ln solid" style="border-color:var(--s1);border-top-width:3px"></i>${mLabel()}</span><span><i class="sw band-sw"></i>Mediaan – max</span><span><i class="ln"></i>Open bedden</span></div>
       </section>
     </div>
     <div class="grid g-2" style="margin-top:16px">
@@ -2498,9 +2549,9 @@ function viewBeds(el, frame) {
     data: {
       labels: hrs.map((_, h) => `${pad2(h)}:00`),
       datasets: [
-        { label: 'Gemiddeld', data: hrs.map(s => s.avg), borderColor: c.series[0], backgroundColor: alpha(c.series[0], 0.12), fill: 'origin', borderWidth: 2, pointRadius: 0, tension: 0.3 },
-        { label: mLabel(), data: hrs.map(s => mv(s)), borderColor: c.ink, borderWidth: 2, pointRadius: 0, tension: 0.3 },
-        { label: 'Maximum', data: hrs.map(s => s.max), borderColor: c.muted, borderWidth: 1.5, pointRadius: 0, stepped: 'middle' },
+        { label: mLabel(), data: hrs.map(s => mv(s)), borderColor: c.series[0], borderWidth: 3, pointRadius: 0, pointHoverRadius: 4, tension: 0.3, order: 1 },
+        { label: 'Maximum', data: hrs.map(s => s.max), borderColor: alpha(c.series[1], 0.6), borderWidth: 1, pointRadius: 0, tension: 0.3, fill: '+1', backgroundColor: alpha(c.series[1], 0.14), order: 2 },
+        { label: 'Mediaan', data: hrs.map(s => s.p50), borderColor: alpha(c.series[1], 0.6), borderWidth: 1, pointRadius: 0, tension: 0.3, fill: false, order: 3 },
       ],
     },
     options: {
@@ -2533,9 +2584,9 @@ function bedTable(frame, beds) {
     const adv = Math.ceil(s.sorted[Math.max(0, Math.ceil(s.n * t) - 1)]);
     const full = pctAtOrAbove(s.sorted, beds);
     const d = adv - beds;
-    return `<tr><td>${name}</td><td class="num">${fmt(s.avg)}</td><td class="num">${fmt(s.p95, 0)}</td><td class="num">${fmt(s.max, 0)}</td><td class="num">${fmt(full)}%</td><td class="num"><b>${adv}</b> <span class="diff ${d > 0 ? 'pos' : d < 0 ? 'neg' : 'zero'}">${d > 0 ? '+' : ''}${d}</span></td></tr>`;
+    return `<tr><td>${name}</td><td class="num"><b>${fmt(mv(s))}</b></td><td class="num">${fmt(s.p95, 0)}</td><td class="num">${fmt(s.max, 0)}</td><td class="num">${fmt(full)}%</td><td class="num"><b>${adv}</b> <span class="diff ${d > 0 ? 'pos' : d < 0 ? 'neg' : 'zero'}">${d > 0 ? '+' : ''}${d}</span></td></tr>`;
   }).join('');
-  return `<table class="data" data-name="Bedden"><thead><tr><th>Weekdag</th><th class="num">Gemiddeld</th><th class="num">P95</th><th class="num">Max</th><th class="num">Tijd vol</th><th class="num">Advies (${S.bedTarget}%)</th></tr></thead><tbody>${rows}</tbody></table>`;
+  return `<table class="data" data-name="Bedden"><thead><tr><th>Weekdag</th><th class="num">${mLabel()}</th><th class="num">P95</th><th class="num">Max</th><th class="num">Tijd vol</th><th class="num">Advies (${S.bedTarget}%)</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 /* 4. VERPLEEGKUNDIGE INZET: zie staff.js */
@@ -2608,13 +2659,13 @@ function viewForecast(el, frame) {
       ${kpi('Weken boven bedden', kn(overWeeks, 0), `van ${weeks.length}`, `prognose > ${beds} bedden · trend ${fc.slopePerYear >= 0 ? '+' : ''}${fmt(fc.slopePerYear)} pat./jaar · vakanties ${vacDiff >= 0 ? '+' : ''}${fmt(vacDiff, 0)}%`, statusPill(overWeeks === 0 ? 'good' : overWeeks < 4 ? 'warn' : 'crit', overWeeks === 0 ? 'Past' : `${overWeeks} weken krap`))}
     </div>
     <section class="panel stagger">
-      <div class="panel-head"><div><h2>Verwachte piekbezetting per week</h2><div class="desc">Staaf = prognose voor die week; streepje = historisch gemiddelde tot maximum in hetzelfde weeknummer. Rood = boven de ${beds} bedden. "Nu" = de huidige week.</div></div></div>
+      <div class="panel-head"><div><h2>Verwachte piekbezetting per week</h2><div class="desc">Staaf = prognose voor die week; streepje = historisch P10 tot maximum in hetzelfde weeknummer. Rood = boven de ${beds} bedden. "Nu" = de huidige week.</div></div></div>
       <div class="chart-box tall"><canvas id="ch-fc" role="img" aria-label="Prognose per week"></canvas></div>
-      <div class="legend"><span><i class="sw" style="background:var(--s1)"></i>Prognose binnen capaciteit</span><span><i class="sw" style="background:var(--crit)"></i>Boven capaciteit</span><span class="sep"></span><span><i class="wh"></i>Historie gem.–max</span><span><i class="ln"></i>Open bedden</span></div>
+      <div class="legend"><span><i class="sw" style="background:var(--s1)"></i>Prognose binnen capaciteit</span><span><i class="sw" style="background:var(--crit)"></i>Boven capaciteit</span><span class="sep"></span><span><i class="wh"></i>Historie P10–max</span><span><i class="ln"></i>Open bedden</span></div>
     </section>
     ${isAll ? `<p class="note">Per afdeling zie je in hun eigen tabblad ook de benodigde verpleegkundigen per week.</p>` : `
     <section class="panel stagger" style="margin-top:16px">
-      <div class="panel-head"><div><h2>Verpleegkundigen nodig per week en dienst</h2><div class="desc">Advies per dienst als de bezetting de prognose van die week volgt (zelfde kwartier-toets als bij Verpleegkundige inzet), tegen het gemiddelde rooster. Beweeg over een week voor details.</div></div></div>
+      <div class="panel-head"><div><h2>Verpleegkundigen nodig per week en dienst</h2><div class="desc">Advies per dienst als de bezetting de prognose van die week volgt (zelfde kwartier-toets als bij Verpleegkundige inzet), tegen het rooster (per dienst het gebruikelijke aantal vpk). Beweeg over een week voor details.</div></div></div>
       <div class="table-wrap">${forecastStrip(shiftFc, cfg, weeks, nowIdx)}</div>
       <div class="heat-scale"><span class="diff neg">−1</span> overschot <span class="diff zero">0</span> sluitend <span class="diff pos">+1</span> tekort t.o.v. rooster</div>
     </section>`}`;
@@ -2627,12 +2678,12 @@ function viewForecast(el, frame) {
       scales: { ...baseScales({ yMax: Math.ceil(Math.max(beds, ...weeks.map(w => w.max || 0), ...weeks.map(w => w.val)) + 1), yTitle: 'Patiënten' }), x: { grid: { display: false }, border: { color: c.axis }, ticks: { maxRotation: 0, autoSkip: false, callback: (v, i) => (weeks.length <= 13 || i % 4 === 0 || i === nowIdx ? [`wk ${weeks[i].week}`, i === 0 || weeks[i].week === 1 ? String(weeks[i].isoYear) : ''] : '') } } },
       plugins: {
         nowMarker: nowIdx >= 0 ? { index: nowIdx } : {},
-        whiskers: { data: weeks.map(w => ({ lo: w.avg, hi: w.max })) },
+        whiskers: { data: weeks.map(w => ({ lo: w.p10, hi: w.max })) },
         capLine: { value: beds, label: `${beds} open bedden` },
         tooltip: { callbacks: {
           title: it => { const w = weeks[it[0].dataIndex]; return `Week ${w.week} · ${w.isoYear} · vanaf ${fmtDay(w.monday)}`; },
           label: it => ` Prognose: ${fmt(it.raw)} patiënten`,
-          footer: it => { const w = weeks[it[0].dataIndex]; const h = holInWeek(w); return [`Historie wk ${w.week}: gem. ${fmt(w.avg)} · max ${fmt(w.max, 0)}`, `Seizoensindex ${fmt(w.season, 2)}`, ...(w.vacation ? [w.vacation] : []), ...(h.length ? [h.join(', ')] : [])]; },
+          footer: it => { const w = weeks[it[0].dataIndex]; const h = holInWeek(w); return [`Historie wk ${w.week}: P10 ${fmt(w.p10)} · max ${fmt(w.max, 0)}`, `Seizoensindex ${fmt(w.season, 2)}`, ...(w.vacation ? [w.vacation] : []), ...(h.length ? [h.join(', ')] : [])]; },
         } },
       },
     },
@@ -2702,16 +2753,16 @@ function viewInstroom(el) {
   const perHour = ci => Array.from({ length: 24 }, (_, h) => heatVal(frame.days, h, ci, 'sum'));
   const t0 = stats(dayTot(0)), h0 = perHour(0);
   const peakH = h0.indexOf(Math.max(...h0));
-  const wdAvg = WD_SHORT.map((_, wd) => { const dd = frame.days.filter(d => d.wd === wd); return dd.length ? mean(dd.map(d => { let t = 0; for (let q = 0; q < 96; q++) t += d.parts[0][q]; return t; })) : 0; });
+  const wdAvg = WD_SHORT.map((_, wd) => { const st = stats(frame.days.filter(d => d.wd === wd).map(d => { let t = 0; for (let q = 0; q < 96; q++) t += d.parts[0][q]; return t; })); return st ? mv(st) : 0; });
   const peakWd = wdAvg.indexOf(Math.max(...wdAvg));
   const c = C();
 
   el.innerHTML = head + `
     <div class="kpis">
-      ${kpi(`Aankomsten per dag (${mLabel()})`, kn(mv(t0)), '', `gemiddeld ${fmt(t0.avg)} · ${esc(comps[0].label)}`)}
-      ${kpi('Drukke dag (P95)', kn(t0.p95, 0), 'aankomsten', `max ${fmt(t0.max, 0)} op één dag`)}
+      ${kpi(`Aankomsten per dag (${mLabel()})`, kn(mv(t0)), '', `max ${fmt(t0.max, 0)} · ${esc(comps[0].label)}`)}
+      ${kpi('Rustige dag (P10)', kn(t0.p10, 0), 'aankomsten', `mediaan ${fmt(t0.p50, 0)} per dag`)}
       ${kpi('Drukste uur', `${pad2(peakH)}:00`, '', `${mLabel()} ${fmt(h0[peakH])} aankomsten per uur`)}
-      ${kpi('Drukste weekdag', WD_LONG[peakWd], '', `gem. ${fmt(wdAvg[peakWd])} aankomsten`)}
+      ${kpi('Drukste weekdag', WD_LONG[peakWd], '', `${mLabel()} ${fmt(wdAvg[peakWd])} aankomsten`)}
     </div>
     <div class="grid g-2">
       <section class="panel stagger">
@@ -2771,8 +2822,9 @@ function viewJDT(el) {
   const allP = days.flatMap(d => d.hours.map((a, h) => pct(a, h)).filter(v => v != null));
   const tot = stats(allP);
   const over = allP.length ? allP.filter(v => v > 100).length / allP.length * 100 : 0;
-  const peakH = hourStats.reduce((b, s2, h) => (s2 && s2.avg > (hourStats[b] ? hourStats[b].avg : -1) ? h : b), 0);
-  const pts = mean(days.map(d => d.hours.reduce((a, b) => a + (b || 0), 0)));
+  const peakH = hourStats.reduce((b, s2, h) => (s2 && mv(s2) > (hourStats[b] ? mv(hourStats[b]) : -1) ? h : b), 0);
+  const ptsSt = stats(days.map(d => d.hours.reduce((a, b) => a + (b || 0), 0)));
+  const pts = ptsSt ? mv(ptsSt) : 0;
   const c = C();
   const heat = WD_SHORT.map((_, wd) => Array.from({ length: 24 }, (_, h) => { const st = stats(days.filter(d => d.wd === wd).map(d => pct(d.hours[h], h)).filter(v => v != null)); return st ? mv(st) : 0; }));
   const cellBg = v => (v >= 100 ? `color-mix(in srgb, var(--div-pos) ${Math.min(95, 30 + (v - 100) * 1.4)}%, var(--surface))` : `color-mix(in srgb, var(--div-neg) ${Math.max(4, Math.min(60, (100 - v) * 0.55))}%, var(--surface))`);
@@ -2797,15 +2849,15 @@ function viewJDT(el) {
       <span class="note" style="margin:0">${esc(st.fileName)} · ${days.length.toLocaleString('nl-NL')} dagen</span>
     </div>
     <div class="kpis">
-      ${kpi(`Werkdruk (${mLabel()})`, kn(tot ? mv(tot) : 0, 0), '%', `gemiddeld ${fmt(tot ? tot.avg : 0, 0)}% · JDT-punten ÷ (vpk × 30)`)}
+      ${kpi(`Werkdruk (${mLabel()})`, kn(tot ? mv(tot) : 0, 0), '%', `max ${fmt(tot ? tot.max : 0, 0)}% · JDT-punten ÷ (vpk × 30)`)}
       ${kpi('Uren boven 100%', kn(over), '%', 'van alle uren in de selectie', statusPill(over < 5 ? 'good' : over < 15 ? 'warn' : 'crit', over < 5 ? 'Beheersbaar' : over < 15 ? 'Regelmatig te hoog' : 'Vaak te hoog'))}
-      ${kpi('Zwaarste uur', `${pad2(peakH)}:00`, '', `gem. ${fmt(hourStats[peakH] ? hourStats[peakH].avg : 0, 0)}% bij ${S.jdtVpk[peakH]} vpk`)}
-      ${kpi('JDT-punten per dag', kn(pts, 0), 'gem.', `${fmt(pts / 24, 0)} per uur`)}
+      ${kpi('Zwaarste uur', `${pad2(peakH)}:00`, '', `${mLabel()} ${fmt(hourStats[peakH] ? mv(hourStats[peakH]) : 0, 0)}% bij ${S.jdtVpk[peakH]} vpk`)}
+      ${kpi(`JDT-punten per dag (${mLabel()})`, kn(pts, 0), '', `drukste dag ${fmt(ptsSt ? ptsSt.max : 0, 0)} punten`)}
     </div>
     <section class="panel stagger">
-      <div class="panel-head"><div><h2>Werkdruk per uur</h2><div class="desc">Gemiddelde, P95 en maximum per uur, bij de verpleegkundigen hieronder. Boven de lijn is de werkdruk hoger dan 100%.</div></div></div>
+      <div class="panel-head"><div><h2>Werkdruk per uur</h2><div class="desc">${mLabel()} per uur (dikke lijn) met het bereik van mediaan tot maximum, bij de verpleegkundigen hieronder. Boven de lijn is de werkdruk hoger dan 100%.</div></div></div>
       <div class="chart-box"><canvas id="ch-jdt" role="img" aria-label="Werkdruk per uur"></canvas></div>
-      <div class="legend"><span><i class="ln solid" style="border-color:var(--s1)"></i>Gemiddeld</span><span><i class="ln solid" style="border-color:var(--ink)"></i>P95</span><span><i class="ln solid" style="border-color:var(--muted)"></i>Maximum</span><span><i class="ln"></i>100% werkdruk</span></div>
+      <div class="legend"><span><i class="ln solid" style="border-color:var(--s1);border-top-width:3px"></i>${mLabel()}</span><span><i class="sw band-sw"></i>Mediaan – max</span><span><i class="ln"></i>100% werkdruk</span></div>
     </section>
     <section class="panel stagger" style="margin-top:16px">
       <div class="panel-head">
@@ -2829,7 +2881,7 @@ function viewJDT(el) {
         <div class="set-row"><button class="btn small" data-act="step" data-path="jdtvpk.all" data-arg="-1">Alle uren −1</button><button class="btn small" data-act="step" data-path="jdtvpk.all" data-arg="1">Alle uren +1</button></div></div>
       <div class="table-wrap"><table class="data jdt-table" data-name="JDT vpk"><thead><tr><th>Uur</th>${S.jdtVpk.map((_, h) => `<th class="num">${pad2(h)}</th>`).join('')}</tr></thead><tbody>
         <tr><td>Vpk</td>${S.jdtVpk.map((v, h) => `<td class="num"><span class="vstep"><button data-act="step" data-path="jdtvpk.${h}" data-arg="1" aria-label="Meer vpk om ${pad2(h)}:00">+</button><input type="number" id="in-jdtvpk-${h}" data-path="jdtvpk.${h}" value="${v}" aria-label="Vpk om ${pad2(h)}:00"><button data-act="step" data-path="jdtvpk.${h}" data-arg="-1" aria-label="Minder vpk om ${pad2(h)}:00">−</button></span></td>`).join('')}</tr>
-        <tr><td>Gem. %</td>${hourStats.map(s2 => { const v = s2 ? s2.avg : null; return `<td class="num"><span class="pctcell" style="background:${v == null ? 'transparent' : cellBg(v)};color:${v >= 140 ? '#fff' : 'var(--ink)'}">${v == null ? '—' : Math.round(v)}</span></td>`; }).join('')}</tr>
+        <tr><td>${mLabel()} %</td>${hourStats.map(s2 => { const v = s2 ? mv(s2) : null; return `<td class="num"><span class="pctcell" style="background:${v == null ? 'transparent' : cellBg(v)};color:${v >= 140 ? '#fff' : 'var(--ink)'}">${v == null ? '—' : Math.round(v)}</span></td>`; }).join('')}</tr>
       </tbody></table></div>
     </section>
     <section class="panel stagger" style="margin-top:16px">
@@ -2846,9 +2898,9 @@ function viewJDT(el) {
     data: {
       labels: hourStats.map((_, h) => `${pad2(h)}:00`),
       datasets: [
-        { label: 'Gemiddeld', data: hourStats.map(s2 => s2 && s2.avg), borderColor: c.series[0], backgroundColor: alpha(c.series[0], 0.12), fill: 'origin', borderWidth: 2, pointRadius: 0, tension: 0.3 },
-        { label: 'P95', data: hourStats.map(s2 => s2 && s2.p95), borderColor: c.ink, borderWidth: 2, pointRadius: 0, tension: 0.3 },
-        { label: 'Maximum', data: hourStats.map(s2 => s2 && s2.max), borderColor: c.muted, borderWidth: 1.5, pointRadius: 0, stepped: 'middle' },
+        { label: mLabel(), data: hourStats.map(s2 => s2 && mv(s2)), borderColor: c.series[0], borderWidth: 3, pointRadius: 0, pointHoverRadius: 4, tension: 0.3, order: 1 },
+        { label: 'Maximum', data: hourStats.map(s2 => s2 && s2.max), borderColor: alpha(c.series[1], 0.6), borderWidth: 1, pointRadius: 0, tension: 0.3, fill: '+1', backgroundColor: alpha(c.series[1], 0.14), order: 2 },
+        { label: 'Mediaan', data: hourStats.map(s2 => s2 && s2.p50), borderColor: alpha(c.series[1], 0.6), borderWidth: 1, pointRadius: 0, tension: 0.3, fill: false, order: 3 },
       ],
     },
     options: {
@@ -2908,6 +2960,24 @@ function bedsAtHour(unitId, h) {
   return c.bedsShift && c.bedsShift[k] != null ? c.bedsShift[k] : c.beds;
 }
 
+// Subtiel knopje bij een grafiek om het aantal open bedden direct aan te passen
+// (totaal en desgewenst per dienst). Bij "Alle" is het de som van de afdelingen.
+function bedsButton(unitId) {
+  const open = S.bedsEdit && unitId !== 'ALL';
+  return `<button class="beds-btn ${open ? 'on' : ''}" data-act="bedsedit" aria-expanded="${open}" ${unitId === 'ALL' ? 'disabled title="Som van de afdelingen — pas per afdeling aan"' : 'title="Open bedden aanpassen"'}><svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path d="M1.5 4v9M1.5 10h13v3M1.5 8h5V6.5h6a2 2 0 0 1 2 2V10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg><b>${bedsOf(unitId)}</b> bedden${unitId === 'ALL' ? '' : '<svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>'}</button>`;
+}
+function bedsPanel(unitId) {
+  if (!S.bedsEdit || unitId === 'ALL') return '';
+  const c = cfgOf(unitId), bs = c.bedsShift || {};
+  const custom = SHIFT_KEYS.some(k => bs[k] != null);
+  return `<div class="beds-pop">
+    <label><span>Open bedden</span>${stepper('beds', c.beds, 'Open bedden')}</label>
+    <span class="sep"></span>
+    ${SHIFT_KEYS.map(k => `<label><span>${esc(SHIFT_INFO[k].label)} <em>${shiftTimes(k)}</em></span>${stepper(`bedsShift.${k}`, bs[k] != null ? bs[k] : c.beds, `Open bedden ${SHIFT_INFO[k].label}`)}</label>`).join('')}
+    ${custom ? '<button class="link-btn" data-act="bedsreset">Overal gelijk</button>' : '<span class="hint">Per dienst afwijkend? Pas hier aan.</span>'}
+  </div>`;
+}
+
 const byDateCache = new WeakMap();
 function dayByDate(frame) { let m = byDateCache.get(frame); if (!m) { m = new Map(frame.all.map(d => [d.ds, d])); byDateCache.set(frame, m); } return m; }
 // Historisch profiel per weekdag × uur (statistiek van het totaal), gecachet.
@@ -2954,21 +3024,22 @@ function timeline(frame, unitId) {
     const d = map.get(ds), wd = weekdayOf(ds);
     if (w.gran === 'jaar') {
       if (!d) { pts.push({ ds, label: fmtDay(ds), parts: Array(nc).fill(null), total: null, max: null, beds: bedsOf(unitId) }); continue; }
-      const parts = frame.comps.map((_, ci) => mean(d.parts[ci]));
-      pts.push({ ds, label: fmtDay(ds), parts, total: parts.reduce((a, b) => a + b, 0), max: Math.max(...d.total), beds: bedsOf(unitId) });
+      const sp = splitByMetric([d], ALL_SLOTS, nc);
+      pts.push({ ds, label: fmtDay(ds), parts: sp.parts, total: sp.val, max: sp.tot.max, beds: bedsOf(unitId) });
     } else if (w.gran === 'maand') {
       for (let h = 0; h < 24; h++) {
         const sl = HOUR_SLOTS[h];
         if (!d) { pts.push({ ds, h, label: `${fmtDay(ds)} ${pad2(h)}:00`, parts: Array(nc).fill(null), total: null, max: null, beds: bedsAtHour(unitId, h) }); continue; }
-        const parts = frame.comps.map((_, ci) => (d.parts[ci][h * 4] + d.parts[ci][h * 4 + 1] + d.parts[ci][h * 4 + 2] + d.parts[ci][h * 4 + 3]) / 4);
-        pts.push({ ds, h, label: `${fmtDay(ds)} ${pad2(h)}:00`, parts, total: parts.reduce((a, b) => a + b, 0), max: Math.max(...sl.map(([, q]) => d.total[q])), beds: bedsAtHour(unitId, h) });
+        const sp = splitByMetric([d], sl, nc);
+        pts.push({ ds, h, label: `${fmtDay(ds)} ${pad2(h)}:00`, parts: sp.parts, total: sp.val, max: sp.tot.max, beds: bedsAtHour(unitId, h) });
       }
     } else if (w.gran === 'dag') {
       // ingezoomd op één dag: per uur, met het laagste en hoogste kwartier binnen dat uur
       for (let h = 0; h < 24; h++) {
         const st = prof[wd][h], qs = [0, 1, 2, 3].map(i => (d ? d.total[h * 4 + i] : null));
-        const parts = d ? frame.comps.map((_, ci) => (d.parts[ci][h * 4] + d.parts[ci][h * 4 + 1] + d.parts[ci][h * 4 + 2] + d.parts[ci][h * 4 + 3]) / 4) : Array(nc).fill(null);
-        pts.push({ ds, h, label: `${pad2(h)}:00`, parts, qs, total: d ? parts.reduce((a, b) => a + b, 0) : null, max: d ? Math.max(...qs) : null, min: d ? Math.min(...qs) : null, lo: st ? st.p10 : null, hi: st ? st.p95 : null, beds: bedsAtHour(unitId, h) });
+        const sp = d ? splitByMetric([d], HOUR_SLOTS[h], nc) : null;
+        const parts = sp ? sp.parts : Array(nc).fill(null);
+        pts.push({ ds, h, label: `${pad2(h)}:00`, parts, qs, total: sp ? sp.val : null, max: d ? Math.max(...qs) : null, min: d ? Math.min(...qs) : null, lo: st ? st.p10 : null, hi: st ? st.p95 : null, beds: bedsAtHour(unitId, h) });
       }
     } else {
       for (let q = 0; q < 96; q++) {
@@ -2988,16 +3059,14 @@ function winTitle(w, end) {
   return `Jaar ${p.y}`;
 }
 
-// Typische week per dienst: gemiddeld aantal patiënten per stroom (gestapeld,
-// echte samenstelling) en de gekozen norm van het totaal als lijn.
+// Per dienst: de norm (P95) van het totaal, verdeeld naar het aandeel per stroom.
 function shiftCellsMean(frame) {
   const cells = [];
   for (let wd = 0; wd < 7; wd++) {
     const days = frame.days.filter(d => d.wd === wd);
     for (const k of SHIFT_KEYS) {
-      const sl = shiftSlots(k);
-      const tot = stats(collect(days, sl));
-      cells.push({ wd, k, dayLabel: WD_SHORT[wd], title: `${WD_LONG[wd]} · ${SHIFT_INFO[k].label}`, parts: frame.comps.map((_, ci) => mean(collect(days, sl, ci))), tot, val: tot ? mv(tot) : null });
+      const sp = splitByMetric(days, shiftSlots(k), frame.comps.length);
+      cells.push({ wd, k, dayLabel: WD_SHORT[wd], title: `${WD_LONG[wd]} · ${SHIFT_INFO[k].label}`, ...sp });
     }
   }
   return cells;
@@ -3009,7 +3078,11 @@ function viewOverview(el, frame) {
   const tl = timeline(frame, unitId);
   const w = tl.w;
   const vals = tl.pts.filter(p => p.total != null);
-  const winAvg = mean(vals.map(p => p.total));
+  // norm (P95) over alle gemeten kwartieren in het venster
+  const map = dayByDate(frame);
+  const winDays = []; for (let ds = w.start; ds <= tl.end; ds = addDays(ds, 1)) { const d = map.get(ds); if (d) winDays.push(d); }
+  const winSt = stats(collect(winDays, ALL_SLOTS));
+  const winNorm = winSt ? mv(winSt) : 0;
   const winPeak = vals.reduce((a, b) => ((b.max ?? b.total) > (a.max ?? a.total) ? b : a), vals[0] || { total: 0 });
   const peakVal = winPeak ? (winPeak.max ?? winPeak.total) : 0;
   const overPct = vals.length ? vals.filter(p => (p.max ?? p.total) > p.beds).length / vals.length * 100 : 0;
@@ -3026,8 +3099,9 @@ function viewOverview(el, frame) {
     <section class="panel hero stagger">
       <div class="panel-head">
         <div>${back ? `<button class="crumb" data-act="zoomback">${ICON.back} Terug naar ${esc(winTitle(back, winEnd(back.start, back.gran)))}</button>` : '<div class="eyebrow">Bezettingsverloop</div>'}<h2 class="hero-title">${winTitle(w, tl.end)}</h2>
-          <div class="desc">${w.gran === 'dag' ? `Per uur het gemiddeld aantal patiënten per ${unitId === 'ALL' ? 'afdeling' : 'stroom'}; het streepje loopt van het rustigste tot het drukste kwartier binnen dat uur. Het vlak is het normale bereik voor een ${WD_LONG[weekdayOf(w.start)].toLowerCase()} (P10–P95).` : `Gemeten aantal patiënten ${w.gran === 'jaar' ? 'per dag (gemiddelde; lijn = hoogste kwartier van de dag)' : w.gran === 'maand' ? 'per uur (gemiddelde; lijn = hoogste kwartier van het uur)' : 'per kwartier'}, opgebouwd uit de ${unitId === 'ALL' ? 'afdelingen' : 'stromen'}. Rood = meer patiënten dan open bedden. <b>Klik op een dag om in te zoomen.</b>`}</div></div>
+          <div class="desc">${w.gran === 'dag' ? `Per uur de ${mLabel()} van de kwartieren, verdeeld over de ${unitId === 'ALL' ? 'afdelingen' : 'stromen'}; het streepje loopt van het rustigste tot het drukste kwartier binnen dat uur. Het vlak is het normale bereik voor een ${WD_LONG[weekdayOf(w.start)].toLowerCase()} (P10–P95).` : `Gemeten aantal patiënten ${w.gran === 'jaar' ? `per dag (${mLabel()} van de kwartieren; lijn = drukste kwartier van de dag)` : w.gran === 'maand' ? `per uur (${mLabel()} van de kwartieren; lijn = drukste kwartier van het uur)` : 'per kwartier (gemeten waarden)'}, opgebouwd uit de ${unitId === 'ALL' ? 'afdelingen' : 'stromen'}. Rood = meer patiënten dan open bedden. <b>Klik op een dag om in te zoomen.</b>`}</div></div>
         <div class="set-row">
+          ${bedsButton(unitId)}
           <div class="seg small" role="group" aria-label="Periode" data-ind="wingran">${WIN_GRANS.map(([v, l]) => `<button class="${w.gran === v ? 'on' : ''}" data-act="wingran" data-arg="${v}">${l}</button>`).join('')}</div>
           <button class="icon-btn" data-act="win" data-arg="-1" aria-label="Vorige periode">‹</button>
           <input type="date" id="win-date" value="${w.start}" min="${frame.all[0].ds}" max="${frame.all[frame.all.length - 1].ds}" aria-label="Begin van de periode">
@@ -3035,16 +3109,17 @@ function viewOverview(el, frame) {
           <button class="btn small play ${S.playing ? 'on' : ''}" data-act="play" aria-pressed="${S.playing}">${S.playing ? '<svg viewBox="0 0 16 16" width="12" height="12"><rect x="3" y="2.5" width="3.5" height="11" fill="currentColor"/><rect x="9.5" y="2.5" width="3.5" height="11" fill="currentColor"/></svg> Pauze' : '<svg viewBox="0 0 16 16" width="12" height="12"><path d="M4 2.5v11l9.5-5.5z" fill="currentColor"/></svg> Afspelen'}</button>
         </div>
       </div>
+      ${bedsPanel(unitId)}
       <div class="chart-box hero-chart ${zoomed ? 'zoom-in' : ''}"><canvas id="ch-timeline" role="img" aria-label="Bezettingsverloop"></canvas></div>
       ${w.gran === 'dag'
         ? legendHTML(frame.comps, `<span><i class="wh"></i>Laagste – drukste kwartier</span><span><i class="sw band-sw"></i>Normaal bereik P10–P95</span><span><i class="ln"></i>Open bedden</span><span><i class="sw" style="background:transparent;box-shadow:inset 0 0 0 2px var(--crit)"></i>Uur boven de bedden</span>`) + hourStrip(tl.pts)
         : legendHTML(frame.comps, `${w.gran === 'week' ? '<span><i class="sw band-sw"></i>Normaal bereik P10–P95</span>' : '<span><i class="ln solid" style="border-color:var(--ink-2)"></i>Hoogste kwartier</span>'}<span><i class="ln"></i>Open bedden</span><span><i class="sw" style="background:var(--crit)"></i>Boven de bedden</span>`)}
       <div class="brush-box"><canvas id="ch-brush" role="img" aria-label="Hele historie — klik om te springen"></canvas></div>
-      <div class="note" style="margin-top:4px">Hele historie (gemiddelde per dag). Klik om naar een periode te springen; het gemarkeerde deel staat hierboven.</div>
+      <div class="note" style="margin-top:4px">Hele historie (${mLabel()} per dag). Klik om naar een periode te springen; het gemarkeerde deel staat hierboven.</div>
     </section>
 
     <div class="kpis" style="margin-top:16px">
-      ${kpi('Gemiddeld in deze periode', kn(winAvg), 'patiënten', `${fmt(winAvg / beds * 100, 0)}% van ${beds} bedden`)}
+      ${kpi(`Bezetting ${mLabel()} in deze periode`, kn(winNorm), 'patiënten', `${fmt(winNorm / beds * 100, 0)}% van ${beds} bedden`, statusPill(winNorm > beds ? 'crit' : winNorm >= beds - 1 ? 'warn' : 'good', winNorm > beds ? 'Boven de bedden' : winNorm >= beds - 1 ? 'Krap' : 'Ruimte'))}
       ${kpi('Hoogste bezetting', kn(peakVal, 0), `van ${winPeak ? winPeak.beds : beds} bedden`, winPeak ? (w.gran === 'dag' ? `drukste kwartier, om ${winPeak.label}` : winPeak.label) : '', statusPill(peakVal > (winPeak ? winPeak.beds : beds) ? 'crit' : 'good', peakVal > (winPeak ? winPeak.beds : beds) ? 'Boven de bedden' : 'Binnen de bedden'))}
       ${kpi('Boven de bedden', kn(overPct), '%', `van de ${unitLbl} in deze periode · hele historie ${fmt(full)}% vol`, statusPill(overPct < 1 ? 'good' : overPct < 5 ? 'warn' : 'crit', overPct < 1 ? 'Zelden' : overPct < 5 ? 'Soms' : 'Vaak'))}
       ${staff ? kpi('Verpleegkundigen per week', kn(staff.need, 0), `diensten nodig · ${staff.plan} ingepland`, `uit Verpleegkundige inzet · norm ${mLabel()}`, statusPill(staff.need > staff.plan ? 'crit' : 'good', staff.need > staff.plan ? `${staff.need - staff.plan} tekort` : staff.need === staff.plan ? 'Sluitend' : `${staff.plan - staff.need} ruimte`)) : kpi('Afdelingen', kn(frame.comps.length, 0), '', frame.comps.map(c => c.label).join(' · '))}
@@ -3052,9 +3127,9 @@ function viewOverview(el, frame) {
 
     <div class="grid g-3-1">
       <section class="panel stagger">
-        <div class="panel-head"><div><h2>Per dienst in een gewone week</h2><div class="desc">Staaf: gemiddeld aantal patiënten per ${unitId === 'ALL' ? 'afdeling' : 'stroom'} in die dienst. Lijn: ${mLabel()} van het totaal (de planningsnorm). Over alle dagen in de selectie.</div></div></div>
+        <div class="panel-head"><div><h2>Per dienst in een gewone week</h2><div class="desc">${mLabel()} van het aantal patiënten in die dienst, verdeeld naar het aandeel van elke ${unitId === 'ALL' ? 'afdeling' : 'stroom'}; streepje tot het drukste kwartier. Over alle dagen in de selectie.</div></div></div>
         <div class="chart-box"><canvas id="ch-week" role="img" aria-label="Bezetting per dag en dienst"></canvas></div>
-        ${legendHTML(frame.comps, `<span><i class="ln solid" style="border-color:var(--ink)"></i>${mLabel()} totaal</span><span><i class="ln"></i>Open bedden</span><span class="sep"></span><span class="key"><b>D</b> Dag <b>A</b> Avond <b>N</b> Nacht</span>`)}
+        ${legendHTML(frame.comps, `<span><i class="wh"></i>Tot drukste kwartier</span><span><i class="ln"></i>Open bedden</span><span class="sep"></span><span class="key"><b>D</b> Dag <b>A</b> Avond <b>N</b> Nacht</span>`)}
       </section>
       <section class="panel stagger">
         <div class="panel-head"><div><h2>Signalen</h2><div class="desc">Afgeleid uit de selectie (norm ${mLabel()}).</div></div></div>
@@ -3064,9 +3139,9 @@ function viewOverview(el, frame) {
 
     ${unitId === 'ALL' ? '' : `<div class="grid g-2" style="margin-top:16px">
       <section class="panel stagger">
-        <div class="panel-head"><div><h2>Verpleegkundigen (nodig − ingepland)</h2><div class="desc">Uit het tabblad Verpleegkundige inzet: per weekdag en dienst het advies min het rooster. Boven nul = tekort. Streepje: advies bij gemiddelde tot maximale bezetting.</div></div></div>
-        <div class="chart-box"><canvas id="ch-nurse" role="img" aria-label="Verpleegkundigen nodig min ingepland"></canvas></div>
-        <div class="legend"><span><i class="sw" style="background:var(--nurse)"></i>Verpleegkundigen (nodig − ingepland)</span><span class="sep"></span><span class="key">${cfgOf(unitId).shifts.map(s => `<b>${esc(shiftShort(s))}</b> ${esc(s.label)}`).join(' ')}</span></div>
+        <div class="panel-head"><div><h2>Verpleegkundigen: nodig en ingepland</h2><div class="desc">Uit het tabblad Verpleegkundige inzet. Staaf = nodig bij de ${mLabel()}-bezetting (rood = meer dan ingepland), streepje = ingepland rooster, snorhaar = nodig bij mediaan tot maximale bezetting.</div></div></div>
+        <div class="chart-box"><canvas id="ch-nurse" role="img" aria-label="Verpleegkundigen nodig en ingepland"></canvas></div>
+        <div class="legend"><span><i class="sw" style="background:var(--nurse)"></i>Nodig (${mLabel()})</span><span><i class="sw" style="background:var(--crit)"></i>Tekort</span><span><i class="dia"></i>Ingepland</span><span><i class="wh"></i>Mediaan – max</span><span class="sep"></span><span class="key">${cfgOf(unitId).shifts.map(s => `<b>${esc(shiftShort(s))}</b> ${esc(s.label)}`).join(' ')}</span></div>
       </section>
       <section class="panel stagger">
         <div class="panel-head"><div><h2>Bezetting tegen capaciteit</h2><div class="desc"><b>Bezetting</b> = aantal patiënten in de dienst (hoogste kwartier, ${mLabel()}). <b>Capaciteit</b> = ingeplande verpleegkundigen × norm (patiënten per vpk), uit Verpleegkundige inzet.</div></div></div>
@@ -3096,11 +3171,11 @@ function viewOverview(el, frame) {
   monthChart($('#ch-month'), frame, monthly(frame), beds);
 }
 
-// Eén uur-rij onder de daggrafiek: per uur gemiddeld en drukste kwartier.
+// Eén uur-rij onder de daggrafiek: per uur de norm en het drukste kwartier.
 function hourStrip(P) {
   return `<div class="hour-strip" role="table" aria-label="Bezetting per uur">${P.map(p => {
     const cls = p.total == null ? 'na' : p.max > p.beds ? 'over' : p.max >= p.beds ? 'full' : '';
-    return `<div class="hs ${cls}" title="${pad2(p.h)}:00–${pad2((p.h + 1) % 24)}:00 · gemiddeld ${fmt(p.total)} · kwartieren ${p.qs.map(v => (v == null ? '—' : fmt(v, 0))).join(' / ')} · ${p.beds} bedden"><span>${pad2(p.h)}</span><b>${p.total == null ? '—' : fmt(p.total, p.total % 1 ? 1 : 0)}</b><em>max ${p.max == null ? '—' : fmt(p.max, 0)}</em></div>`;
+    return `<div class="hs ${cls}" title="${pad2(p.h)}:00–${pad2((p.h + 1) % 24)}:00 · ${mLabel()} ${fmt(p.total)} · kwartieren ${p.qs.map(v => (v == null ? '—' : fmt(v, 0))).join(' / ')} · ${p.beds} bedden"><span>${pad2(p.h)}</span><b>${p.total == null ? '—' : fmt(p.total, p.total % 1 ? 1 : 0)}</b><em>max ${p.max == null ? '—' : fmt(p.max, 0)}</em></div>`;
   }).join('')}</div>`;
 }
 function dayDetailChart(canvas, frame, tl) {
@@ -3130,7 +3205,7 @@ function dayDetailChart(canvas, frame, tl) {
           filter: it => it.dataset.label !== 'P10',
           callbacks: {
             title: it => { const p = P[it[0].dataIndex]; return `${fmtDay(p.ds)} · ${pad2(p.h)}:00–${pad2((p.h + 1) % 24)}:00`; },
-            label: it => { const p = P[it.dataIndex]; if (it.dataset.label === 'P95') return ` Normaal voor deze weekdag: ${fmt(p.lo, 0)}–${fmt(p.hi, 0)}`; if (it.dataset.label === 'Open bedden') return ` Open bedden: ${p.beds}`; return ` ${it.dataset.label}: ${fmt(it.raw)} gemiddeld`; },
+            label: it => { const p = P[it.dataIndex]; if (it.dataset.label === 'P95') return ` Normaal voor deze weekdag: ${fmt(p.lo, 0)}–${fmt(p.hi, 0)}`; if (it.dataset.label === 'Open bedden') return ` Open bedden: ${p.beds}`; return ` ${it.dataset.label}: ${fmt(it.raw)}`; },
             footer: it => { const p = P[it[0].dataIndex]; if (p.total == null) return 'Geen data'; return [`Kwartieren: ${p.qs.map(v => fmt(v, 0)).join(' · ')}`, p.max > p.beds ? `Drukste kwartier ${fmt(p.max - p.beds, 0)} boven de ${p.beds} bedden` : `${fmt(p.beds - p.max, 0)} bedden vrij op het drukste kwartier`]; },
           },
         },
@@ -3183,7 +3258,7 @@ function timelineChart(canvas, frame, tl) {
   const ds = [
     ...frame.comps.map((comp, ci) => ({ label: comp.label, data: P.map(p => p.parts[ci]), borderColor: colorOf(comp), backgroundColor: alpha(colorOf(comp), 0.88), borderWidth: 0, pointRadius: 0, fill: ci ? '-1' : 'origin', stepped: g === 'dag' || g === 'week' ? 'before' : false, tension: fine ? 0 : 0.2, stack: 'a', order: 3, spanGaps: false })),
     { label: 'Open bedden', data: P.map(p => p.beds), borderColor: c.ink, borderWidth: 1.5, borderDash: [5, 4], pointRadius: 0, stepped: 'middle', fill: false, stack: 'beds', order: 1 },
-    { label: 'Boven de bedden', data: P.map(p => (p.total == null ? null : Math.max(p.max ?? p.total, p.beds))), borderWidth: 0, pointRadius: 0, fill: { target: frame.comps.length, above: alpha(c.crit, 0.45), below: 'transparent' }, stepped: fine ? 'before' : false, stack: 'over', order: 2 },
+    { label: 'Boven de bedden', data: P.map(p => (p.total == null ? null : Math.max(p.max ?? p.total, p.beds))), borderWidth: 0, pointRadius: 0, fill: { target: frame.comps.length, above: alpha(c.crit, 0.82), below: 'transparent' }, stepped: fine ? 'before' : false, stack: 'over', order: 2 },
   ];
   if (fine) {
     ds.push({ label: 'P95', data: P.map(p => p.hi), borderColor: alpha(c.series[1], 0.7), borderWidth: 1, pointRadius: 0, tension: 0.3, fill: '+1', backgroundColor: alpha(c.series[1], 0.14), stack: 'b1', order: 6 });
@@ -3240,13 +3315,13 @@ function brushChart(canvas, frame, tl) {
   const from = all.findIndex(d => d.ds >= tl.w.start); let to = all.findIndex(d => d.ds > tl.end); if (to < 0) to = all.length; to -= 1;
   mkChart(canvas, {
     type: 'line',
-    data: { labels: all.map(d => d.ds), datasets: [{ label: 'Gemiddeld per dag', data: all.map(d => mean(d.total)), borderColor: c.series[0], borderWidth: 1, backgroundColor: alpha(c.series[0], 0.18), fill: 'origin', pointRadius: 0, tension: 0.2 }] },
+    data: { labels: all.map(d => d.ds), datasets: [{ label: 'Per dag', data: all.map(d => { const st = stats(d.total); return st ? mv(st) : null; }), borderColor: c.series[0], borderWidth: 1, backgroundColor: alpha(c.series[0], 0.18), fill: 'origin', pointRadius: 0, tension: 0.2 }] },
     options: {
       animation: false,
       onClick: (ev, _els, chart) => { const i = Math.round(chart.scales.x.getValueForPixel(ev.x)); const d = all[Math.max(0, Math.min(all.length - 1, i))]; if (d) setTimeout(() => { stopPlay(); S.zoomFrom = null; S.win.start = alignStart(d.ds, S.win.gran); const y = window.scrollY; render(); window.scrollTo({ top: y }); }, 0); },
       onHover: (ev, _e, chart) => { chart.canvas.style.cursor = 'pointer'; },
       scales: { x: { grid: { display: false }, border: { color: c.axis }, ticks: { autoSkip: false, maxRotation: 0, font: { size: 10 }, callback: (v, i) => (all[i].ds.slice(5) === '01-01' ? all[i].ds.slice(0, 4) : '') } }, y: { display: false, beginAtZero: true } },
-      plugins: { brush: { from, to }, tooltip: { callbacks: { title: it => fmtDay(all[it[0].dataIndex].ds) + ' ' + all[it[0].dataIndex].ds.slice(0, 4), label: it => ` Gemiddeld ${fmt(it.raw)} patiënten` } } },
+      plugins: { brush: { from, to }, tooltip: { callbacks: { title: it => fmtDay(all[it[0].dataIndex].ds) + ' ' + all[it[0].dataIndex].ds.slice(0, 4), label: it => ` ${mLabel()} ${fmt(it.raw)} patiënten` } } },
     },
   });
 }
@@ -3276,11 +3351,11 @@ const nowMarkerPlugin = {
   },
 };
 
-// Verpleegkundigen (nodig − ingepland) per weekdag × dienst — exact het advies uit
+// Verpleegkundigen nodig vs ingepland per weekdag × dienst — exact het advies uit
 // het tabblad Verpleegkundige inzet (zelfde diensten, normen, rooster en norm).
 function nurseCells(frame, unitId) {
   const cfg = cfgOf(unitId), sum = staffSummary(frame, unitId);
-  const profAvg = profileFor(frame, 'avg'), profMax = profileFor(frame, 'max');
+  const profAvg = profileFor(frame, 'p50'), profMax = profileFor(frame, 'max');
   const cells = [];
   WD_SHORT.forEach((label, wd) => {
     const lo = adviseDay(cfg.shifts, profAvg[wd], wd, cfg.minStaff).plan, hi = adviseDay(cfg.shifts, profMax[wd], wd, cfg.minStaff).plan;
@@ -3297,19 +3372,25 @@ function nurseLabels(cells, n) {
 }
 function nurseChart(canvas, frame, unitId) {
   const c = C(), { cells, n } = nurseCells(frame, unitId);
-  const vals = cells.map(x => x.need - x.plan);
-  const lim = Math.max(2, ...cells.map(x => Math.max(Math.abs(x.hi - x.plan), Math.abs(x.lo - x.plan), Math.abs(x.need - x.plan))));
+  const top = Math.max(2, ...cells.map(x => Math.max(x.hi, x.need, x.plan)));
   mkChart(canvas, {
-    type: 'bar',
-    data: { labels: nurseLabels(cells, n), datasets: [{ label: 'Nodig − ingepland', data: vals.map(v => (v === 0 ? 0.05 : v)), backgroundColor: c.nurse, borderSkipped: false, barPercentage: 0.5, categoryPercentage: 0.9 }] },
+    data: {
+      labels: nurseLabels(cells, n),
+      datasets: [
+        { type: 'bar', label: `Nodig (${mLabel()})`, data: cells.map(x => x.need), backgroundColor: cells.map(x => (x.need > x.plan ? c.crit : alpha(c.nurse, 0.85))), barPercentage: 0.6, categoryPercentage: 0.9, order: 2 },
+        { type: 'line', label: 'Ingepland', data: cells.map(x => x.plan), showLine: false, pointStyle: 'rectRot', pointRadius: 5.5, pointHoverRadius: 7, pointBorderWidth: 1.5, pointBorderColor: c.surface || '#fff', pointBackgroundColor: c.ink, order: 0 },
+      ],
+    },
     options: {
-      scales: { x: { grid: { display: false }, border: { display: false }, ticks: { maxRotation: 0, autoSkip: false } }, y: { min: -lim - 0.5, max: lim + 0.5, grid: { color: ctx => (ctx.tick.value === 0 ? c.axis : c.grid), lineWidth: ctx => (ctx.tick.value === 0 ? 1.5 : 1) }, border: { display: false }, ticks: { precision: 0 } } },
+      interaction: { mode: 'index', intersect: false },
+      scales: { x: { grid: { display: false }, border: { color: c.axis }, ticks: { maxRotation: 0, autoSkip: false } }, y: { beginAtZero: true, max: Math.ceil(top + 0.5), grid: { color: c.grid }, border: { display: false }, ticks: { precision: 0 }, title: { display: true, text: 'Verpleegkundigen', color: c.muted, font: { size: 11 } } } },
       plugins: {
-        whiskers: { data: cells.map(x => ({ lo: x.lo - x.plan, hi: x.hi - x.plan })) },
+        whiskers: { data: cells.map(x => ({ lo: x.lo, hi: x.hi })) },
         dayBands: { size: n },
         tooltip: { callbacks: {
           title: it => { const x = cells[it[0].dataIndex]; return `${WD_LONG[x.wd]} · ${x.s.label} (${shiftSpan(x.s)})`; },
-          label: it => { const x = cells[it.dataIndex]; return [` Nodig ${x.need} · ingepland ${x.plan} → ${x.need > x.plan ? `${x.need - x.plan} tekort` : x.need < x.plan ? `${x.plan - x.need} ruimte` : 'sluitend'}`, ` Nodig bij gem.–max bezetting: ${x.lo}–${x.hi}`, ` Norm ${fmtRatio(x.s.ratio)}`]; },
+          label: it => { const x = cells[it.dataIndex]; return it.datasetIndex === 0 ? ` Nodig bij ${mLabel()}: ${x.need} vpk` : ` Ingepland: ${x.plan} vpk`; },
+          footer: it => { const x = cells[it[0].dataIndex]; return [x.need > x.plan ? `${x.need - x.plan} vpk tekort` : x.need < x.plan ? `${x.plan - x.need} vpk ruimte` : 'Sluitend', `Bandbreedte mediaan–max bezetting: ${x.lo}–${x.hi} vpk · norm ${fmtRatio(x.s.ratio)}`]; },
         } },
       },
     },
@@ -3347,25 +3428,24 @@ function profileFor(frame, metric) {
 
 function shiftChart(canvas, frame, cells, beds) {
   const c = C();
-  const hiMax = Math.max(beds, ...cells.map(x => x.val || 0));
+  const hiMax = Math.max(beds, ...cells.map(x => (x.tot ? x.tot.max : 0)));
   mkChart(canvas, {
+    type: 'bar',
     data: {
       labels: cells.map(x => (narrow() ? (x.k === 'A' ? x.dayLabel : '') : x.k === 'A' ? ['A', x.dayLabel] : [x.k, ''])),
-      datasets: [
-        ...frame.comps.map(comp => ({ type: 'bar', label: comp.label, data: cells.map(x => x.parts[frame.comps.indexOf(comp)]), backgroundColor: colorOf(comp), stack: 's', barPercentage: 0.78, categoryPercentage: 0.9, order: 2 })),
-        { type: 'line', label: `${mLabel()} totaal`, data: cells.map(x => x.val), borderColor: c.ink, backgroundColor: c.ink, borderWidth: 2, pointRadius: 3, pointHoverRadius: 5, tension: 0.3, stack: 'norm', order: 1 },
-      ],
+      datasets: frame.comps.map((comp, ci) => ({ label: comp.label, data: cells.map(x => x.parts[ci]), backgroundColor: colorOf(comp), stack: 's', barPercentage: 0.78, categoryPercentage: 0.9 })),
     },
     options: {
       interaction: { mode: 'index', intersect: false },
       scales: { ...baseScales({ stacked: true, yMax: Math.ceil(hiMax + 1), yTitle: 'Patiënten' }) },
       plugins: {
+        whiskers: { data: cells.map(x => (x.tot ? { lo: x.val, hi: x.tot.max } : null)) },
         capLine: { value: beds, label: `${beds} open bedden` },
         dayBands: { size: 3 },
         tooltip: { callbacks: {
           title: items => `${cells[items[0].dataIndex].title} (${shiftTimes(cells[items[0].dataIndex].k)})`,
-          label: it => ` ${it.dataset.label}: ${fmt(it.raw)}${it.datasetIndex < frame.comps.length ? ' gemiddeld' : ''}`,
-          footer: items => { const x = cells[items[0].dataIndex]; return x.tot ? [`Gemiddeld totaal ${fmt(x.tot.avg)} · max ${fmt(x.tot.max, 0)}`, x.val > beds ? `${mLabel()} ${fmt(x.val - beds)} boven de ${beds} bedden` : `${mLabel()} binnen de ${beds} bedden`] : 'Geen data'; },
+          label: it => ` ${it.dataset.label}: ${fmt(it.raw)}`,
+          footer: items => { const x = cells[items[0].dataIndex]; return x.tot ? [`${mLabel()} totaal ${fmt(x.val)} · drukste kwartier ${fmt(x.tot.max, 0)}`, x.val > beds ? `${fmt(x.val - beds)} boven de ${beds} bedden` : `${fmt(beds - x.val)} bedden marge`] : 'Geen data'; },
         } },
       },
     },

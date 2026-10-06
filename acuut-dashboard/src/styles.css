@@ -20,8 +20,8 @@
   --good: #0a8a0a; --good-soft: #e5f4e5;
   --warn: #b77a00; --warn-soft: #fdf3dc;
   --crit: #c93535; --crit-soft: #fbe7e7;
-  /* Kleuren zoals het Slingeland-dashboard: marine (spoed/huidig), lichtblauw (electief/nieuw), daarna vlak gehouden tinten */
-  --s1: #1f3c6e; --s2: #5f9de6; --s3: #a9c9f1; --s4: #2a8c8c; --s5: #d09a1e; --s6: #a3367e; --s7: #6d7b93; --s8: #7a5fb0;
+  /* Stroomkleuren: acht duidelijk verschillende tinten, gevalideerd op kleurenblindheid (licht én donker) */
+  --s1: #2c63b5; --s2: #eb6834; --s3: #1baf7a; --s4: #7c5cc9; --s5: #e5a000; --s6: #d4508a; --s7: #4b8f2b; --s8: #178fb0;
   --gone: #c3c9d3; --nurse: #b0307a;
   --div-pos: #d03b3b; --div-neg: #2a78d6;
   --seq-0: #f1f6fd; --seq-1: #cde2fb; --seq-2: #9ec5f4; --seq-3: #6da7ec; --seq-4: #3987e5; --seq-5: #256abf; --seq-6: #184f95; --seq-7: #0d366b;
@@ -42,7 +42,7 @@
     --line: #262f3c; --line-strong: #364152; --accent: #7fa8ee; --accent-ink: #0c1118; --accent-soft: #1b2a44; --focus: #7fa8ee;
     --grid: #222a36; --axis: #3a4555;
     --good: #2bb52b; --good-soft: #13281a; --warn: #e3a51c; --warn-soft: #2d2410; --crit: #ec6a6a; --crit-soft: #351919;
-    --s1: #8fb6ef; --s2: #4b80cf; --s3: #2c5590; --s4: #2fa3a3; --s5: #d9a536; --s6: #d0589c; --s7: #8a98af; --s8: #9d85d6; --gone: #4a5361; --nurse: #d0589c;
+    --s1: #5b8fe0; --s2: #d95926; --s3: #199e70; --s4: #8a7ce0; --s5: #c98500; --s6: #d55181; --s7: #4f9d33; --s8: #2093b4; --gone: #4a5361; --nurse: #d0589c;
     --div-pos: #e66767; --div-neg: #3987e5;
     --seq-0: #16202d; --seq-1: #13294a; --seq-2: #173a68; --seq-3: #1c5cab; --seq-4: #2a78d6; --seq-5: #5598e7; --seq-6: #86b6ef; --seq-7: #cde2fb;
     --heat-0: #241a16; --heat-1: #4a2616; --heat-2: #7a3518; --heat-3: #b34a1d; --heat-4: #e06a33; --heat-5: #f6a27a;
@@ -54,7 +54,7 @@
   --line: #262f3c; --line-strong: #364152; --accent: #7fa8ee; --accent-ink: #0c1118; --accent-soft: #1b2a44; --focus: #7fa8ee;
   --grid: #222a36; --axis: #3a4555;
   --good: #2bb52b; --good-soft: #13281a; --warn: #e3a51c; --warn-soft: #2d2410; --crit: #ec6a6a; --crit-soft: #351919;
-  --s1: #8fb6ef; --s2: #4b80cf; --s3: #2c5590; --s4: #2fa3a3; --s5: #d9a536; --s6: #d0589c; --s7: #8a98af; --s8: #9d85d6; --gone: #4a5361; --nurse: #d0589c;
+  --s1: #5b8fe0; --s2: #d95926; --s3: #199e70; --s4: #8a7ce0; --s5: #c98500; --s6: #d55181; --s7: #4f9d33; --s8: #2093b4; --gone: #4a5361; --nurse: #d0589c;
   --div-pos: #e66767; --div-neg: #3987e5;
   --seq-0: #16202d; --seq-1: #13294a; --seq-2: #173a68; --seq-3: #1c5cab; --seq-4: #2a78d6; --seq-5: #5598e7; --seq-6: #86b6ef; --seq-7: #cde2fb;
   --heat-0: #241a16; --heat-1: #4a2616; --heat-2: #7a3518; --heat-3: #b34a1d; --heat-4: #e06a33; --heat-5: #f6a27a;
@@ -549,3 +549,29 @@ body.busy .appbar::after { opacity: 1; animation: slide 1.1s linear infinite; }
 .hs.na { opacity: .45; }
 @media (max-width: 760px) { .hour-strip { grid-template-columns: repeat(12, minmax(0, 1fr)); } }
 @media (prefers-reduced-motion: reduce) { .hero-chart.zoom-in { animation: fade 200ms ease both; } }
+.tag.warn { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
+
+/* Bedden-knopje bij een grafiek */
+.beds-btn { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 9px; border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--ink-2); font-size: 12px; cursor: pointer; transition: border-color .15s ease, color .15s ease, background-color .15s ease; }
+.beds-btn b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.beds-btn:hover:not(:disabled), .beds-btn.on { border-color: var(--accent); color: var(--accent); }
+.beds-btn.on svg:last-child { transform: rotate(180deg); }
+.beds-btn svg:last-child { transition: transform .2s ease; }
+.beds-btn:disabled { cursor: default; opacity: .8; }
+.beds-pop { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 16px; margin: 4px 0 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); animation: pop-in .18s ease-out; }
+.beds-pop label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--ink-2); }
+.beds-pop label em { font-style: normal; color: var(--muted); font-size: 11px; }
+.beds-pop .sep { width: 1px; align-self: stretch; background: var(--line); }
+.beds-pop .hint, .beds-pop .link-btn { align-self: center; font-size: 12px; }
+@keyframes pop-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .beds-pop { animation: none; } }
+.s-card-nums .main b { color: var(--accent); }
+.s-card-nums em { font-style: normal; font-size: 11px; color: var(--muted); }
+.tot-nums { padding: 10px 0 4px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.tot-nums b { font-size: 22px; }
+.tot-nums .warn b { color: var(--warn, #b7791f); }
+.tot-nums .crit b { color: var(--crit); }
+.s-card.total .s-card-head { align-items: center; }
+td.num.muted, th.num.muted { color: var(--muted); font-weight: 400; }
+@media (max-width: 640px) { .tot-nums { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.legend i.dia { width: 8px; height: 8px; background: var(--ink); transform: rotate(45deg); display: inline-block; margin: 0 2px; }

@@ -144,7 +144,7 @@ const SHIFT_INFO = {
 };
 
 const METRICS = {
-  avg:  { short: 'Gem.',  label: 'Gemiddeld',     desc: 'Gemiddelde bezetting over alle kwartieren' },
+  p90:  { short: 'P90',   label: 'P90',           desc: '90% van de kwartieren ligt op of onder deze waarde' },
   p95:  { short: 'P95',   label: 'P95',           desc: '95% van de kwartieren ligt op of onder deze waarde' },
   mu2s: { short: 'µ+2σ',  label: 'µ + 2σ',        desc: 'Gemiddelde plus twee standaarddeviaties (planningsnorm)' },
   max:  { short: 'Max',   label: 'Maximum',       desc: 'Hoogste gemeten bezetting' },

@@ -99,19 +99,26 @@ function parseGrid(grid) {
   });
   if (slotCols.length < 24) return null;
   const days = new Map();
+  const fixes = { neg: 0, examples: [] };
   for (let r = hr + 1; r < grid.length; r++) {
     const row = grid[r]; if (!row) continue;
     const ds = cellToDate(row[iDate]); if (!ds) continue;
     const arr = new Float32Array(96).fill(NaN);
     let any = false;
-    for (const { i, q } of slotCols) { const v = toNum(row[i]); if (!isNaN(v)) { arr[q] = v; any = true; } }
+    for (const { i, q } of slotCols) {
+      let v = toNum(row[i]);
+      if (isNaN(v)) continue;
+      // Een bezetting kan niet negatief zijn: zo'n waarde is een fout in de bron → 0.
+      if (v < 0) { v = 0; fixes.neg++; if (fixes.examples.length < 3) fixes.examples.push(`${ds} ${slotLabel(q)}`); }
+      arr[q] = v; any = true;
+    }
     if (!any) continue;
     // Ontbrekende kwartieren (bv. bestand met uurkolommen) opvullen met de vorige waarde.
     for (let q = 0; q < 96; q++) if (isNaN(arr[q])) arr[q] = q > 0 ? arr[q - 1] : 0;
     days.set(ds, arr);
   }
   if (!days.size) return null;
-  return { days };
+  return { days, fixes };
 }
 
 /* ── JDT SEH werkdruk: tabblad "JDT aantal" + "%" (vpk per uur) ───── */
@@ -136,7 +143,7 @@ function parseJDT(wb, fileName) {
   for (let r = h + 1; r < g.length; r++) {
     const row = g[r]; if (!row) continue;
     const ds = cellToDate(row[iDate]); if (!ds) continue;
-    days.push({ ds, wd: weekdayOf(ds), y: +ds.slice(0, 4), m: +ds.slice(5, 7), hours: hourCols.map(ci => { const v = toNum(row[ci]); return isNaN(v) ? null : v; }) });
+    days.push({ ds, wd: weekdayOf(ds), y: +ds.slice(0, 4), m: +ds.slice(5, 7), hours: hourCols.map(ci => { const v = toNum(row[ci]); return isNaN(v) ? null : Math.max(0, v); }) });
   }
   if (!days.length) throw new Error('Geen datumrijen gevonden in "JDT aantal".');
   days.sort((x, y) => (x.ds < y.ds ? -1 : 1));
@@ -198,20 +205,20 @@ function guessDataset(fileName) {
   return null;
 }
 
-function putStream(key, days, fileName, source) {
+function putStream(key, days, fileName, source, fixes) {
   const sorted = new Map([...days.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)));
-  STORE[key] = { kind: DS[key].kind, fileName, source, days: sorted };
+  STORE[key] = { kind: DS[key].kind, fileName, source, days: sorted, fixes: fixes || { neg: 0, examples: [] } };
   invalidateFrames();
 }
 function putJDT(res, source) {
   STORE.jdt = { kind: 'jdt', fileName: res.fileName, source, days: res.days, vpkBase: res.vpkBase };
 }
 let LOOSE_N = 0;
-function addLoose(days, fileName, source, name) {
+function addLoose(days, fileName, source, name, fixes) {
   const key = 'L' + (++LOOSE_N);
   const d = { key, kind: 'los', cat: 'LOS', role: 'basis', label: name || fileName.replace(/\.(xlsx|xlsm|xls|csv)$/i, '').slice(0, 40), long: 'Losse analyse · ' + fileName, file: fileName };
   DATASETS.push(d); DS[key] = d;
-  putStream(key, days, fileName, source);
+  putStream(key, days, fileName, source, fixes);
   return key;
 }
 function removeDataset(key) {

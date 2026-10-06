@@ -223,7 +223,7 @@ function tileHTML(d) {
     </div>
     <div class="tile-status">
       ${busy ? '<span class="spinner" aria-hidden="true"></span><span>Inlezen…</span>'
-        : st ? `<span class="ok-mark">${ICON.check}</span><span>${sum.n.toLocaleString('nl-NL')} dagen</span><span class="tag ${st.source === 'bestand' ? 'ok' : 'demo'}">${st.source}</span>
+        : st ? `<span class="ok-mark">${ICON.check}</span><span>${sum.n.toLocaleString('nl-NL')} dagen</span><span class="tag ${st.source === 'bestand' ? 'ok' : 'demo'}">${st.source}</span>${st.fixes && st.fixes.neg ? `<span class="tag warn" title="Voorbeelden: ${esc(st.fixes.examples.join(', '))}">${st.fixes.neg.toLocaleString('nl-NL')} negatieve waarden → 0</span>` : ''}
           <button class="link-btn danger" data-act="unload" data-arg="${d.key}">Verwijder</button>`
         : `<span class="muted">Klik of sleep een bestand</span>`}
     </div>
@@ -297,8 +297,8 @@ function setBusy(on) { document.body.classList.toggle('busy', on); }
 
 function storeResult(key, res, fileName, source) {
   if (key === 'jdt') { if (res.kind !== 'jdt') throw new Error('Dit is geen JDT-bestand (tabblad "JDT aantal" ontbreekt).'); putJDT(res, source); S.jdtVpk = null; }
-  else if (key === 'LOS') { if (res.kind !== 'grid') throw new Error('Een JDT-bestand kan geen losse analyse zijn.'); return addLoose(res.days, fileName, source); }
-  else { if (res.kind !== 'grid') throw new Error('Dit bestand is een JDT-bestand.'); putStream(key, res.days, fileName, source); }
+  else if (key === 'LOS') { if (res.kind !== 'grid') throw new Error('Een JDT-bestand kan geen losse analyse zijn.'); return addLoose(res.days, fileName, source, null, res.fixes); }
+  else { if (res.kind !== 'grid') throw new Error('Dit bestand is een JDT-bestand.'); putStream(key, res.days, fileName, source, res.fixes); }
   return key;
 }
 async function readFiles(files, forcedKey) {
@@ -306,19 +306,19 @@ async function readFiles(files, forcedKey) {
   if (forcedKey && forcedKey !== 'LOS') S.loading.add(forcedKey);
   setBusy(true); render();
   await new Promise(r => setTimeout(r, 30));
-  const done = [], failed = [];
+  const done = [], failed = [], fixedMsgs = [];
   S.justLoaded = new Set();
   for (const f of list) {
     try {
       const res = readWorkbook(new Uint8Array(await f.arrayBuffer()), f.name);
       const key = forcedKey || (res.kind === 'jdt' ? 'jdt' : guessDataset(f.name));
-      if (key) { const k = storeResult(key, res, f.name, 'bestand'); S.justLoaded.add(k); done.push(k); }
+      if (key) { const k = storeResult(key, res, f.name, 'bestand'); S.justLoaded.add(k); done.push(k); if (res.fixes && res.fixes.neg) fixedMsgs.push(`${f.name}: ${res.fixes.neg} negatieve waarden op 0 gezet`); }
       else S.unmatched.push({ fileName: f.name, res });
     } catch (e) { failed.push(`${f.name}: ${e.message}`); }
   }
   S.loading.clear(); setBusy(false); render();
   if (failed.length) toast(`Niet ingelezen — ${failed.join(' · ')}`);
-  else if (done.length) toast(`Ingelezen: ${done.map(k => (DS[k] ? DS[k].label : k)).join(', ')}`);
+  else if (done.length) toast(`Ingelezen: ${done.map(k => (DS[k] ? DS[k].label : k)).join(', ')}${fixedMsgs.length ? ' · Gecorrigeerd — ' + fixedMsgs.join(' · ') : ''}`);
   else if (S.unmatched.length) toast('Kies hieronder wat het bestand is.');
 }
 
@@ -436,6 +436,8 @@ document.addEventListener('click', e => {
     fcrange: () => { S.fcRange = arg; render(); },
     jdtpick: () => { S.jdtDate = arg; const y = window.scrollY; render(); window.scrollTo({ top: y }); },
     jdtday: () => { if (STORE.jdt) { const ds = STORE.jdt.days.map(d => d.ds); const i = ds.indexOf(S.jdtDate); S.jdtDate = ds[Math.max(0, Math.min(ds.length - 1, i + +arg))]; const y = window.scrollY; render(); window.scrollTo({ top: y }); } },
+    bedsedit: () => { S.bedsEdit = !S.bedsEdit; const y = window.scrollY; render(); window.scrollTo({ top: y }); },
+    bedsreset: () => { delete cfgOf(S.unit).bedsShift; saveSettings(); const y = window.scrollY; render(); window.scrollTo({ top: y }); },
     bandgran: () => { S.bandGran = arg; render(); },
     trendmode: () => { S.trendMode = arg; render(); },
     theme: toggleTheme,
@@ -500,6 +502,7 @@ function setValue(path, raw) {
     const c = cfgOf(S.unit);
     const num = () => +String(raw).replace(',', '.');
     if (parts[0] === 'beds') c.beds = Math.max(1, Math.round(num() || 1));
+    else if (parts[0] === 'bedsShift') { c.bedsShift = c.bedsShift || {}; const v = Math.max(0, Math.round(num() || 0)); if (v === c.beds) delete c.bedsShift[parts[1]]; else c.bedsShift[parts[1]] = v; }
     else if (parts[0] === 'minStaff') c.minStaff = Math.max(0, Math.round(num() || 0));
     else if (parts[0] === 'sh') {
       const sh = c.shifts[+parts[1]]; if (!sh) return;
@@ -526,6 +529,7 @@ function stepValue(path, delta) {
   else {
     const c = cfgOf(S.unit);
     if (parts[0] === 'beds') cur = c.beds;
+    else if (parts[0] === 'bedsShift') cur = c.bedsShift && c.bedsShift[parts[1]] != null ? c.bedsShift[parts[1]] : c.beds;
     else if (parts[0] === 'minStaff') cur = c.minStaff;
     else if (parts[0] === 'sh') {
       const sh = c.shifts[+parts[1]];
