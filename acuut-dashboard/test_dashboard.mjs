@@ -79,6 +79,11 @@ async function run(theme, width) {
     await checkWidth(`${u}/${v}`)
   }
   if (width >= 600) {
+    // filterbalk scrollt mee met de pagina en blijft niet boven de inhoud hangen
+    await page.evaluate(() => window.scrollTo(0, 1200))
+    const fTop = await page.evaluate(() => document.querySelector('.filters').getBoundingClientRect().top)
+    if (fTop > 0) errors.push('filterbalk blijft hangen bij scrollen: top ' + fTop)
+    await page.evaluate(() => window.scrollTo(0, 0))
     // Oudbouw: één reeks per afdeling, geen Stromen-tab
     await page.click('[data-act="unit"][data-arg="IC"]')
     const oud = await page.evaluate(() => ({ n: compsFor('IC').length, tab: !!document.querySelector('[data-act="view"][data-arg="stromen"]') }))

@@ -193,7 +193,7 @@ select, input[type="number"], input[type="time"] { background: var(--surface); b
 .tabs button.on { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
 
 .filters {
-  position: sticky; top: calc(53px + env(safe-area-inset-top, 0px)); z-index: 20;
+  position: relative; z-index: 20; /* scrollt mee met de pagina, blijft niet boven de grafieken hangen */
   display: flex; gap: 10px 22px; align-items: center; flex-wrap: wrap;
   padding: 10px 0; background: var(--bg); border-bottom: 1px solid var(--line); margin-bottom: 18px;
 }
