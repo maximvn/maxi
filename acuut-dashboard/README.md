@@ -13,6 +13,8 @@ worden bij het bouwen ingebouwd. Het dashboard verzint zelf nooit data.
 (map `vendor/`). Dubbelklik het of open het in Edge/Chrome/Firefox; er is geen
 internetverbinding of server nodig. Instellingen worden in de browser onthouden.
 `Acuut_Dashboard.html` is dezelfde app, maar laadt de bibliotheken en lettertypes van internet.
+Eigen bestanden inbouwen (worden bij openen automatisch geladen; niet in git):
+`DATA_DIR=/pad/naar/xlsx node build.js` → `Acuut_Dashboard_met_data.html`.
 Beide worden gemaakt met `node build.js`; `node test_offline.mjs` controleert de losse versie
 met al het netwerkverkeer geblokkeerd.
 
@@ -23,7 +25,9 @@ met al het netwerkverkeer geblokkeerd.
 2. **Data inladen** — alle bestanden van het huidige dashboard, per categorie als tegel
    (klik of sleep op een tegel, of sleep alles tegelijk op de dropzone):
    - bezetting: SEH 1.0 / 2.0 / 3.0, scenario's 1.1–1.3 (4/5/6 uur), kindergeneeskunde 4.0,
-     CCU 5.1 + scenario's 5.2–5.4, IC 6.1–6.5 (spoed, electief, recovery, totalen),
+     CCU/SCU/EHH 3.3 (electieve cardioversies) en 3.4 (spoed + electief excl. cardioversies),
+     EHH cardio 5.1 + scenario's 5.2–5.4 (voorheen "CCU cardio"; oude bestandsnamen worden nog herkend),
+     IC 6.1–6.5 (spoed, electief, recovery, totalen),
      SCU 7.1 + scenario's 7.2–7.4, EHH 8.1;
    - SEH-triage per urgentiekleur (rood, oranje, geel, groen, blauw, overige);
    - SEH-instroom (excl. radiologie / radiologie / totaal × inbehandeling / wachttijd);

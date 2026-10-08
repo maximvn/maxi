@@ -12,11 +12,11 @@ const files = ['config.js', 'data.js', 'charts.js', 'motion.js', 'app.js', 'view
 // Voorbeeldbestanden inlezen met dezelfde parser als het dashboard en compact opslaan:
 // per dataset de eerste datum + per dag 96 kwartierwaarden (gehele getallen 0–255) als base64.
 const api = new Function(src('config.js') + src('data.js') + '; return { readWorkbook, guessDataset };')()
+function embedDir(dir) {
 const samples = []
-const dir = path.join(__dirname, 'testdata')
 for (const f of fs.existsSync(dir) ? fs.readdirSync(dir).filter(x => /\.xlsx$/i.test(x)) : []) {
   const res = api.readWorkbook(new Uint8Array(fs.readFileSync(path.join(dir, f))), f)
-  const key = res.kind === 'grid' && api.guessDataset(f)
+  const key = res.kind === 'grid' && api.guessDataset(f.replace(/^[0-9a-f]{8}-/, ''))
   if (!key) continue
   const dates = [...res.days.keys()].sort()
   const bytes = new Uint8Array(dates.length * 96)
@@ -29,6 +29,9 @@ for (const f of fs.existsSync(dir) ? fs.readdirSync(dir).filter(x => /\.xlsx$/i.
   if (!ok) { console.warn('Niet ingebouwd (geen doorlopende gehele waarden): ' + f); continue }
   samples.push({ key, file: f, start: dates[0], n: dates.length, b64: Buffer.from(bytes).toString('base64') })
 }
+return samples
+}
+const samples = embedDir(path.join(__dirname, 'testdata'))
 const js = `const EMBEDDED_SAMPLES = ${JSON.stringify(samples)};\n` + files.map(src).join('\n')
 const out = src('shell.html')
   .replace('/*__CSS__*/', () => src('styles.css'))
@@ -44,6 +47,16 @@ const offline = out
   .replace(/<link rel="stylesheet" href="https:\/\/fonts\.googleapis\.com[^>]*>\n?/, '')
   .replace(/<script src="https:\/\/cdnjs\.cloudflare\.com\/ajax\/libs\/xlsx\/[^"]*"><\/script>/, () => `<script>/* SheetJS 0.18.5 (Apache-2.0) */\n${lib('xlsx-0.18.5.full.min.js')}</script>`)
   .replace(/<script src="https:\/\/cdnjs\.cloudflare\.com\/ajax\/libs\/Chart\.js\/[^"]*"><\/script>/, () => `<script>/* Chart.js 4.4.1 (MIT) */\n${lib('chart-4.4.1.umd.min.js')}</script>`)
+const offlineWith = data => offline.replace('const EMBEDDED_SAMPLES = ', () => `const EMBEDDED_DATA = ${JSON.stringify(data)};\nconst EMBEDDED_SAMPLES = `)
 if (/cdnjs|googleapis/.test(offline.slice(0, 4000))) throw new Error('Losstaande versie verwijst nog naar internet')
 fs.writeFileSync(path.join(__dirname, 'Acuut_Dashboard_offline.html'), offline)
 console.log(`Gebouwd: acuut-dashboard/Acuut_Dashboard_offline.html (${Math.round(offline.length / 1024)} kB, werkt zonder internet)`)
+
+// Optioneel: eigen (echte) bestanden inbouwen in een aparte, niet in git opgenomen versie
+// die ze bij het openen automatisch inlaadt:  DATA_DIR=/pad/naar/xlsx node build.js
+if (process.env.DATA_DIR) {
+  const data = embedDir(process.env.DATA_DIR).map(x => ({ ...x, file: x.file.replace(/^[0-9a-f]{8}-/, '') }))
+  const outFile = path.join(__dirname, 'Acuut_Dashboard_met_data.html')
+  fs.writeFileSync(outFile, offlineWith(data))
+  console.log(`Gebouwd: acuut-dashboard/Acuut_Dashboard_met_data.html met ${data.length} ingebouwde bestanden: ${data.map(x => x.key).join(', ')}`)
+}

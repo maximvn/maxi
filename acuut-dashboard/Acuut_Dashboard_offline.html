@@ -781,8 +781,9 @@ const CATS = {
   'SEH':      { label: 'Spoedeisende Hulp',  desc: 'Bezetting op de SEH: exclusief radiologie, alleen radiologie en totaal.' },
   'SEH-SC':   { label: "SEH-scenario's",     desc: 'SEH exclusief radiologie met een maximale verblijfsduur van 4, 5 of 6 uur.' },
   'KIND':     { label: 'Kindergeneeskunde',  desc: 'Kindergeneeskunde poli buiten kantooruren (NSEH).' },
-  'CCU':      { label: 'CCU / Cardiologie',  desc: 'Alle CCU- en cardiologiepatiënten gedurende de gehele opname.' },
-  'CCU-SC':   { label: "CCU-scenario's",     desc: 'CCU/cardiologie met een verblijfsduur van 4, 6 of 24 uur.' },
+  'CARDIO':   { label: 'CCU / SCU / EHH',    desc: 'CCU, SCU en EHH samen: electieve cardioversies (3.3) en spoed + electief exclusief cardioversies (3.4). Samen vormen ze het totaal.' },
+  'EHH-C':    { label: 'EHH cardio',         desc: 'EHH cardiologie — alle patiënten gedurende de gehele opname.' },
+  'EHH-SC':   { label: "EHH cardio-scenario's", desc: 'EHH cardio met een verblijfsduur van 4, 6 of 24 uur.' },
   'ICU':      { label: 'IC',                 desc: 'IC-bezetting per patiëntstroom (spoed, electief, recovery) en de totalen, inclusief SCU.' },
   'SCU':      { label: 'SCU',                desc: 'SCU — alle patiënten gedurende de gehele opname.' },
   'SCU-SC':   { label: "SCU-scenario's",     desc: 'SCU met een verblijfsduur van 4, 6 of 24 uur.' },
@@ -809,15 +810,20 @@ const DATASETS = [
     file: '3_0_SEH_totaal__alle_bezoeken_op_SEH_nu__analyse.xlsx' },
   { key: '4.0', kind: 'bez', cat: 'KIND', role: 'basis', label: 'Kindergeneeskunde', long: 'Kindergeneeskunde poli (NSEH)',
     file: '4_0_Kind_poli_NSEH_analyse.xlsx' },
-  // ── CCU ─────────────────────────────────────────────────────────────
-  { key: '5.1', kind: 'bez', cat: 'CCU', role: 'basis', label: 'CCU / Cardio', long: 'CCU / Cardiologie — alle patiënten',
-    file: '5_1_CCU_cardio_all_patienten.xlsx' },
-  { key: '5.2', kind: 'bez', cat: 'CCU-SC', role: 'scenario', of: '5.1', label: 'CCU — scenario 4 uur', long: 'CCU / Cardiologie — scenario 1, 4 uur',
-    file: '5_2_CCU_cardio_scenario_1_met_4_uur.xlsx' },
-  { key: '5.3', kind: 'bez', cat: 'CCU-SC', role: 'scenario', of: '5.1', label: 'CCU — scenario 6 uur', long: 'CCU / Cardiologie — scenario 2, 6 uur',
-    file: '5_3_CCU_cardio_scenario_2_met_6_uur.xlsx' },
-  { key: '5.4', kind: 'bez', cat: 'CCU-SC', role: 'scenario', of: '5.1', label: 'CCU — scenario 24 uur', long: 'CCU / Cardiologie — scenario 3, 24 uur',
-    file: '5_4_CCU_cardio_scenario_3_met_24_uur.xlsx' },
+  // ── CCU / SCU / EHH samen ───────────────────────────────────────────
+  { key: '3.3', kind: 'bez', cat: 'CARDIO', role: 'basis', label: 'Electieve cardioversies', long: 'CCU / SCU / EHH — electieve cardioversies',
+    file: '3_3_CCUSCUEHH_Input_rekenmodel_en_analyse_electieve_cardioversies.xlsx' },
+  { key: '3.4', kind: 'bez', cat: 'CARDIO', role: 'basis', label: 'Spoed + electief (excl. cardioversies)', short: 'Spoed + electief', long: 'CCU / SCU / EHH — spoed en electief, exclusief cardioversies',
+    file: '3_4_CCUSCUEHH_Input_rekenmodel_en_analyse_spoed_en_electief_excl_cardioversies.xlsx' },
+  // ── EHH cardio (voorheen als "CCU / Cardio" benoemd) ────────────────
+  { key: '5.1', kind: 'bez', cat: 'EHH-C', role: 'basis', label: 'EHH cardio', long: 'EHH cardio — alle patiënten',
+    file: '5_1_EHH_cardio_all_patienten.xlsx', alt: ['5_1_CCU_cardio_all_patienten.xlsx'] },
+  { key: '5.2', kind: 'bez', cat: 'EHH-SC', role: 'scenario', of: '5.1', label: 'EHH cardio — 4 uur', long: 'EHH cardio — scenario 1, 4 uur verblijfsduur',
+    file: '5_2_EHH_cardio_scenario_1_met_4_uur.xlsx', alt: ['5_2_CCU_cardio_scenario_1_met_4_uur.xlsx'] },
+  { key: '5.3', kind: 'bez', cat: 'EHH-SC', role: 'scenario', of: '5.1', label: 'EHH cardio — 6 uur', long: 'EHH cardio — scenario 2, 6 uur verblijfsduur',
+    file: '5_3_EHH_cardio_scenario_2_met_6_uur.xlsx', alt: ['5_3_CCU_cardio_scenario_2_met_6_uur.xlsx'] },
+  { key: '5.4', kind: 'bez', cat: 'EHH-SC', role: 'scenario', of: '5.1', label: 'EHH cardio — 24 uur', long: 'EHH cardio — scenario 3, 24 uur verblijfsduur',
+    file: '5_4_EHH_cardio_scenario_3_met_24_uur.xlsx', alt: ['5_4_CCU_cardio_scenario_3_met_24_uur.xlsx'] },
   // ── IC ──────────────────────────────────────────────────────────────
   { key: '6.1', kind: 'bez', cat: 'ICU', role: 'basis', label: 'Spoed', long: 'IC — spoedpatiënten, exclusief AI',
     file: '2_1_ICU_Input_rekenmodel_en_analyse_spoed_excl_AI.xlsx' },
@@ -880,11 +886,11 @@ const MODES = {
       { id: 'IC',  label: 'IC',  long: 'Intensive Care', beds: 10, ratio: { D: 2.5, A: 2.5, N: 3 }, plan: { D: 4, A: 4, N: 3 },
         cats: ['ICU', 'LOS'], defaults: ['6.1', '6.2', '6.3'], total: '6.4' },
       { id: 'CCU', label: 'CCU', long: 'CCU / SCU', beds: 8, ratio: { D: 2, A: 2, N: 3 }, plan: { D: 3, A: 3, N: 2 },
-        cats: ['CCU', 'CCU-SC', 'SCU', 'SCU-SC', 'LOS'], defaults: ['5.1', '7.1'] },
+        cats: ['CARDIO', 'SCU', 'SCU-SC', 'LOS'], defaults: ['3.4', '3.3'] },
       { id: 'SEH', label: 'SEH', long: 'Spoedeisende Hulp', beds: 18, ratio: { D: 3, A: 3, N: 4 }, plan: { D: 5, A: 5, N: 3 },
         cats: ['SEH', 'SEH-SC', 'KIND', 'TRIAGE', 'LOS'], defaults: ['1.0', '2.0', '4.0'], total: '3.0', extra: ['instroom', 'jdt'] },
       { id: 'EHH', label: 'EHH', long: 'Eerste Harthulp', beds: 5, ratio: { D: 3, A: 3, N: 4 }, plan: { D: 1, A: 1, N: 1 },
-        cats: ['EHH', 'LOS'], defaults: ['8.1'] },
+        cats: ['EHH-C', 'EHH-SC', 'EHH', 'CARDIO', 'LOS'], defaults: ['5.1'] },
     ],
   },
   nieuw: {
@@ -893,9 +899,9 @@ const MODES = {
     streams: true,
     units: [
       { id: 'AP', label: 'Acute Poort', long: 'Acute Poort — SEH, kinderen en EHH', beds: 23, ratio: { D: 3, A: 3, N: 4 }, plan: { D: 6, A: 6, N: 4 },
-        cats: ['SEH', 'SEH-SC', 'KIND', 'TRIAGE', 'EHH', 'CCU', 'CCU-SC', 'LOS'], defaults: ['1.0', '2.0', '4.0', '8.1'], extra: ['instroom', 'jdt'], from: ['SEH', 'EHH'] },
+        cats: ['SEH', 'SEH-SC', 'KIND', 'TRIAGE', 'EHH-C', 'EHH-SC', 'EHH', 'CARDIO', 'LOS'], defaults: ['1.0', '2.0', '4.0', '5.1'], extra: ['instroom', 'jdt'], from: ['SEH', 'EHH'] },
       { id: 'HF', label: 'Hotfloor', long: 'Hotfloor — IC + CCU + SCU', beds: 18, ratio: { D: 2.5, A: 2.5, N: 3 }, plan: { D: 7, A: 7, N: 5 },
-        cats: ['ICU', 'CCU', 'CCU-SC', 'SCU', 'SCU-SC', 'LOS'], defaults: ['6.1', '6.2', '6.3', '5.1', '7.1'], from: ['IC', 'CCU'] },
+        cats: ['ICU', 'CARDIO', 'SCU', 'SCU-SC', 'EHH-C', 'EHH-SC', 'LOS'], defaults: ['6.1', '6.2', '6.3', '3.4', '3.3'], from: ['IC', 'CCU'] },
     ],
   },
 };
@@ -1109,10 +1115,12 @@ function guessDataset(fileName) {
   // 1. exacte bestandsnaam uit het oorspronkelijke dashboard (langste prefix wint)
   let best = null;
   for (const d of DATASETS) {
-    const stem = normName(d.file);
-    if ((n === stem || n.startsWith(stem + '_')) && (!best || stem.length > normName(best.file).length)) best = d;
+    for (const f of [d.file, ...(d.alt || [])]) {
+      const stem = normName(f);
+      if ((n === stem || n.startsWith(stem + '_')) && (!best || stem.length > best.len)) best = { d, len: stem.length };
+    }
   }
-  if (best) return best.key;
+  if (best) return best.d.key;
   // 2. herkenning op trefwoorden voor hernoemde bestanden
   const has = re => re.test(n);
   if (has(/jdt/)) return 'jdt';
@@ -1131,7 +1139,9 @@ function guessDataset(fileName) {
     if (has(/recovery/)) return '6.3';
     if (has(/spoed/)) return '6.1';
   }
+  if (has(/cardioversie/)) return has(/excl/) ? '3.4' : '3.3';
   const sc = has(/24_uur/) ? 3 : has(/6_uur/) ? 2 : has(/(4|5)_uur/) ? 1 : 0;
+  if (has(/ehh.*cardio|cardio.*ehh/)) return ['5.1', '5.2', '5.3', '5.4'][sc];
   if (has(/scu/)) return ['7.1', '7.2', '7.3', '7.4'][sc];
   if (has(/ccu|cardio/)) return ['5.1', '5.2', '5.3', '5.4'][sc];
   if (has(/ehh|harthulp/)) return '8.1';
@@ -1774,6 +1784,8 @@ function overlapWarnings(keys) {
     if (d.role === 'scenario' && set.has(d.of)) out.push(`${d.label} is een variant van ${DS[d.of].label}`);
     if (d.role === 'triage') ['3.0', '1.0', '2.0'].filter(p => set.has(p)).forEach(p => out.push(`Triage-kleuren zijn een uitsplitsing van de SEH-bezetting en overlappen met ${DS[p].label}`));
   });
+  // CCU/SCU/EHH-bestanden bevatten ook de SCU- en EHH-patiënten
+  if (keys.some(k => DS[k].cat === 'CARDIO')) keys.filter(k => ['SCU', 'SCU-SC', 'EHH', 'EHH-C', 'EHH-SC'].includes(DS[k].cat)).forEach(k => out.push(`De CCU/SCU/EHH-bestanden (3.3/3.4) bevatten ook ${DS[k].label}`));
   const sc = keys.filter(k => DS[k].role === 'scenario');
   sc.forEach((a, i) => sc.slice(i + 1).forEach(b => { if (DS[a].of === DS[b].of) out.push(`${DS[a].label} en ${DS[b].label} zijn varianten van dezelfde stroom`); }));
   return [...new Set(out)];
@@ -1979,6 +1991,18 @@ async function readFiles(files, forcedKey) {
 
 // Laadt de meegeleverde DUMMY-bestanden (ingebouwd bij het bouwen). Er wordt
 // geen data verzonnen: wat niet in die bestanden zit, blijft leeg.
+// Ingebouwde bestanden (compact: per dag 96 gehele waarden) in de STORE zetten.
+function putEmbedded(list, source) {
+  for (const smp of list) {
+    const bin = atob(smp.b64), days = new Map();
+    for (let i = 0; i < smp.n; i++) {
+      const a = new Float32Array(96);
+      for (let q = 0; q < 96; q++) a[q] = bin.charCodeAt(i * 96 + q);
+      days.set(addDays(smp.start, i), a);
+    }
+    putStream(smp.key, days, smp.file, source);
+  }
+}
 async function loadSamples() {
   setBusy(true);
   await new Promise(r => setTimeout(r, 30));
@@ -2287,6 +2311,11 @@ function boot() {
   loadSettings();
   applyChartDefaults();
   Chart.register(revealPlugin, nowMarkerPlugin, fcEdgePlugin, brushPlugin, zoomHoverPlugin, whiskerPlugin, capLinePlugin, dayBandPlugin);
+  // Versie met ingebouwde eigen bestanden: die staan meteen klaar.
+  if (typeof EMBEDDED_DATA !== 'undefined' && EMBEDDED_DATA.length) {
+    putEmbedded(EMBEDDED_DATA, 'bestand');
+    setTimeout(() => toast(`${EMBEDDED_DATA.length} ingebouwde bestanden geladen: ${EMBEDDED_DATA.map(x => DS[x.key].long).join(' · ')}.`), 400);
+  }
   render({ enter: true });
 }
 

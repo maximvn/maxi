@@ -170,10 +170,12 @@ function guessDataset(fileName) {
   // 1. exacte bestandsnaam uit het oorspronkelijke dashboard (langste prefix wint)
   let best = null;
   for (const d of DATASETS) {
-    const stem = normName(d.file);
-    if ((n === stem || n.startsWith(stem + '_')) && (!best || stem.length > normName(best.file).length)) best = d;
+    for (const f of [d.file, ...(d.alt || [])]) {
+      const stem = normName(f);
+      if ((n === stem || n.startsWith(stem + '_')) && (!best || stem.length > best.len)) best = { d, len: stem.length };
+    }
   }
-  if (best) return best.key;
+  if (best) return best.d.key;
   // 2. herkenning op trefwoorden voor hernoemde bestanden
   const has = re => re.test(n);
   if (has(/jdt/)) return 'jdt';
@@ -192,7 +194,9 @@ function guessDataset(fileName) {
     if (has(/recovery/)) return '6.3';
     if (has(/spoed/)) return '6.1';
   }
+  if (has(/cardioversie/)) return has(/excl/) ? '3.4' : '3.3';
   const sc = has(/24_uur/) ? 3 : has(/6_uur/) ? 2 : has(/(4|5)_uur/) ? 1 : 0;
+  if (has(/ehh.*cardio|cardio.*ehh/)) return ['5.1', '5.2', '5.3', '5.4'][sc];
   if (has(/scu/)) return ['7.1', '7.2', '7.3', '7.4'][sc];
   if (has(/ccu|cardio/)) return ['5.1', '5.2', '5.3', '5.4'][sc];
   if (has(/ehh|harthulp/)) return '8.1';

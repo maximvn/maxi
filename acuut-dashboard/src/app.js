@@ -128,6 +128,8 @@ function overlapWarnings(keys) {
     if (d.role === 'scenario' && set.has(d.of)) out.push(`${d.label} is een variant van ${DS[d.of].label}`);
     if (d.role === 'triage') ['3.0', '1.0', '2.0'].filter(p => set.has(p)).forEach(p => out.push(`Triage-kleuren zijn een uitsplitsing van de SEH-bezetting en overlappen met ${DS[p].label}`));
   });
+  // CCU/SCU/EHH-bestanden bevatten ook de SCU- en EHH-patiënten
+  if (keys.some(k => DS[k].cat === 'CARDIO')) keys.filter(k => ['SCU', 'SCU-SC', 'EHH', 'EHH-C', 'EHH-SC'].includes(DS[k].cat)).forEach(k => out.push(`De CCU/SCU/EHH-bestanden (3.3/3.4) bevatten ook ${DS[k].label}`));
   const sc = keys.filter(k => DS[k].role === 'scenario');
   sc.forEach((a, i) => sc.slice(i + 1).forEach(b => { if (DS[a].of === DS[b].of) out.push(`${DS[a].label} en ${DS[b].label} zijn varianten van dezelfde stroom`); }));
   return [...new Set(out)];
@@ -333,6 +335,18 @@ async function readFiles(files, forcedKey) {
 
 // Laadt de meegeleverde DUMMY-bestanden (ingebouwd bij het bouwen). Er wordt
 // geen data verzonnen: wat niet in die bestanden zit, blijft leeg.
+// Ingebouwde bestanden (compact: per dag 96 gehele waarden) in de STORE zetten.
+function putEmbedded(list, source) {
+  for (const smp of list) {
+    const bin = atob(smp.b64), days = new Map();
+    for (let i = 0; i < smp.n; i++) {
+      const a = new Float32Array(96);
+      for (let q = 0; q < 96; q++) a[q] = bin.charCodeAt(i * 96 + q);
+      days.set(addDays(smp.start, i), a);
+    }
+    putStream(smp.key, days, smp.file, source);
+  }
+}
 async function loadSamples() {
   setBusy(true);
   await new Promise(r => setTimeout(r, 30));
@@ -641,5 +655,10 @@ function boot() {
   loadSettings();
   applyChartDefaults();
   Chart.register(revealPlugin, nowMarkerPlugin, fcEdgePlugin, brushPlugin, zoomHoverPlugin, whiskerPlugin, capLinePlugin, dayBandPlugin);
+  // Versie met ingebouwde eigen bestanden: die staan meteen klaar.
+  if (typeof EMBEDDED_DATA !== 'undefined' && EMBEDDED_DATA.length) {
+    putEmbedded(EMBEDDED_DATA, 'bestand');
+    setTimeout(() => toast(`${EMBEDDED_DATA.length} ingebouwde bestanden geladen: ${EMBEDDED_DATA.map(x => DS[x.key].long).join(' · ')}.`), 400);
+  }
   render({ enter: true });
 }
