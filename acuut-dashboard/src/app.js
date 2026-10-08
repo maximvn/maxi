@@ -465,7 +465,7 @@ document.addEventListener('click', e => {
     jdtday: () => { if (STORE.jdt) { const ds = STORE.jdt.days.map(d => d.ds); const i = ds.indexOf(S.jdtDate); S.jdtDate = ds[Math.max(0, Math.min(ds.length - 1, i + +arg))]; const y = window.scrollY; render(); window.scrollTo({ top: y }); } },
     mergeadd: () => { const M = mergeState().M; if (!M.ids.includes(arg)) M.ids.push(arg); M.cleared = false; M.stage = null; saveSettings(); const y = window.scrollY; render(); window.scrollTo({ top: y }); },
     mergedel: () => { const M = mergeState().M; M.ids.splice(+arg, 1); M.stage = null; M.comb = null; M.cleared = !M.ids.length; saveSettings(); const y = window.scrollY; render(); window.scrollTo({ top: y }); },
-    mergepreset: () => { const M = mergeState().M; M.ids = unitDef(arg).from.map(id => 'U:' + id); M.stage = null; M.stageBeds = {}; M.comb = cfgOf(arg).beds; saveSettings(); const y = window.scrollY; render(); window.scrollTo({ top: y }); },
+    mergepreset: () => { const M = mergeState().M; M.ids = [...unitDef(arg).from.map(id => 'U:' + id), ...(unitDef(arg).mergeExtra || []).filter(k => STORE[k]).map(k => 'D:' + k)]; M.stage = null; M.stageBeds = {}; M.comb = cfgOf(arg).beds; saveSettings(); const y = window.scrollY; render(); window.scrollTo({ top: y }); },
     mergestage: () => { mergeState().M.stage = +arg; const y = window.scrollY; render(); window.scrollTo({ top: y }); },
     mergeshow: () => { const M = mergeState().M; M.show = M.show || { max: true }; M.show[arg] = !M.show[arg]; saveSettings(); const y = window.scrollY; render(); window.scrollTo({ top: y }); },
     mergebedsreset: () => { const { M } = mergeState(); const last = M.ids.length - 1; if (+arg === last) M.comb = null; else if (M.stageBeds) delete M.stageBeds[+arg]; saveSettings(); const y = window.scrollY; render(); window.scrollTo({ top: y }); },
@@ -654,7 +654,7 @@ function boot() {
   try { const t = localStorage.getItem('acuut-dash-theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) { /* negeren */ }
   loadSettings();
   applyChartDefaults();
-  Chart.register(revealPlugin, nowMarkerPlugin, fcEdgePlugin, brushPlugin, zoomHoverPlugin, whiskerPlugin, capLinePlugin, dayBandPlugin);
+  Chart.register(revealPlugin, nowMarkerPlugin, fcEdgePlugin, markQPlugin, brushPlugin, zoomHoverPlugin, whiskerPlugin, capLinePlugin, dayBandPlugin);
   // Versie met ingebouwde eigen bestanden: die staan meteen klaar.
   if (typeof EMBEDDED_DATA !== 'undefined' && EMBEDDED_DATA.length) {
     putEmbedded(EMBEDDED_DATA, 'bestand');

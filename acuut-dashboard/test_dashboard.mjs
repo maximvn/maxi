@@ -84,6 +84,41 @@ async function run(theme, width) {
     const fTop = await page.evaluate(() => document.querySelector('.filters').getBoundingClientRect().top)
     if (fTop > 0) errors.push('filterbalk blijft hangen bij scrollen: top ' + fTop)
     await page.evaluate(() => window.scrollTo(0, 0))
+    // Consistentie tussen jaar / maand / week / dag (Nieuwbouw-achtig: meerdere stromen in Alle)
+    const cons = await page.evaluate(() => {
+      const unit = 'ALL', f = buildFrame(compsFor(unit), S.filter), bad = []
+      const save = { ...S.win }
+      const map = new Map(f.all.map(d => [d.ds, d]))
+      for (const ys of [f.all[0].ds.slice(0, 4), f.all[f.all.length - 1].ds.slice(0, 4)]) {
+        S.win = { gran: 'jaar', start: ys + '-01-01' }
+        for (const p of timeline(f, unit).pts) {
+          if (p.total == null) continue
+          const d = map.get(p.ds)
+          const sum = p.parts.reduce((a, b) => a + b, 0)
+          if (Math.abs(sum - p.total) > 1e-6) bad.push(`jaar ${p.ds}: som stromen ${sum} ≠ totaal ${p.total}`)
+          if (p.parts.some((v, ci) => v !== d.parts[ci][p.rq])) bad.push(`jaar ${p.ds}: stromen niet gelijk aan kwartier ${p.rq}`)
+          if (Math.abs(d.total[p.rq] - p.total) > 1e-6) bad.push(`jaar ${p.ds}: totaal niet gemeten`)
+          // zelfde dag in week-, maand- en dagweergave
+          S.win = { gran: 'week', start: alignStart(p.ds, 'week') }
+          const wk = timeline(f, unit).pts.find(x => x.ds === p.ds && x.q === p.rq)
+          if (!wk || Math.abs(wk.total - p.total) > 1e-6 || wk.parts.some((v, ci) => v !== p.parts[ci])) bad.push(`week ${p.ds} ${p.rq}: niet terug te vinden`)
+          S.win = { gran: 'dag', start: p.ds }
+          const dg = timeline(f, unit).pts
+          if (Math.max(...dg.map(x => x.max)) !== p.max) bad.push(`dag ${p.ds}: max ${Math.max(...dg.map(x => x.max))} ≠ jaar ${p.max}`)
+          const hr = dg[Math.floor(p.rq / 4)]
+          if (!hr.qs.includes(p.total)) bad.push(`dag ${p.ds}: kwartierwaarde ${p.total} niet in uur ${hr.h}`)
+          S.win = { gran: 'maand', start: p.ds.slice(0, 8) + '01' }
+          const mh = timeline(f, unit).pts.filter(x => x.ds === p.ds)
+          if (Math.max(...mh.map(x => x.max)) !== p.max) bad.push(`maand ${p.ds}: max verschilt`)
+          S.win = { gran: 'jaar', start: ys + '-01-01' }
+          if (bad.length > 5) break
+        }
+      }
+      S.win = save
+      return bad.slice(0, 6)
+    })
+    if (cons.length) errors.push('consistentie zoomniveaus: ' + cons.join(' | '))
+    if (await page.$('[data-act="unit"][data-arg="EHH"]')) errors.push('EHH staat nog als afdeling in de Oudbouw')
     // Oudbouw: één reeks per afdeling, geen Stromen-tab
     await page.click('[data-act="unit"][data-arg="IC"]')
     const oud = await page.evaluate(() => ({ n: compsFor('IC').length, tab: !!document.querySelector('[data-act="view"][data-arg="stromen"]') }))
@@ -266,14 +301,14 @@ async function run(theme, width) {
     await checkWidth('HF/rooster')
     await page.screenshot({ path: `${out}/11-roostersleutel-${tag}.png`, fullPage: true })
     if (await page.$('[data-act="view"][data-arg="rooster"]') === null) errors.push('tabblad roostersleutel ontbreekt')
-    // Samenvoegen: Acute Poort = SEH + EHH, daarna kindergeneeskunde erbij (3 stappen)
+    // Samenvoegen: Acute Poort = SEH + EHH cardio, daarna kindergeneeskunde erbij (3 stappen)
     await page.click('[data-act="view"][data-arg="samen"]')
     await page.click('[data-act="mergepreset"][data-arg="AP"]')
     await page.click('.merge-add summary')
     await page.click('[data-act="mergeadd"][data-arg="D:4.0"]')
     await page.waitForTimeout(900)
     const ms = await page.evaluate(() => ({ ids: S.merge.ids.join(','), cards: document.querySelectorAll('.st-card').length, rows: document.querySelectorAll('.fit-matrix:not(.week) .fm-row:not(.fm-hd)').length, comb: S.merge.comb }))
-    if (ms.ids !== 'U:SEH,U:EHH,D:4.0' || ms.cards !== 3 || ms.rows !== 5) errors.push('samenvoegen: ' + JSON.stringify(ms))
+    if (ms.ids !== 'U:SEH,D:5.1,D:4.0' || ms.cards !== 3 || ms.rows !== 5) errors.push('samenvoegen: ' + JSON.stringify(ms))
     await page.click('[data-act="step"][data-path="mcomb"][data-arg="1"]')
     if ((await page.evaluate(() => S.merge.comb)) !== ms.comb + 1) errors.push('bedden samen niet aanpasbaar')
     await page.click('[data-act="mergestage"][data-arg="1"]')

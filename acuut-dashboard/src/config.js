@@ -122,12 +122,10 @@ const MODES = {
     units: [
       { id: 'IC',  label: 'IC',  long: 'Intensive Care', beds: 10, ratio: { D: 2.5, A: 2.5, N: 3 }, plan: { D: 4, A: 4, N: 3 },
         cats: ['ICU', 'LOS'], defaults: ['6.1', '6.2', '6.3'], total: '6.4' },
-      { id: 'CCU', label: 'CCU', long: 'CCU / SCU', beds: 8, ratio: { D: 2, A: 2, N: 3 }, plan: { D: 3, A: 3, N: 2 },
-        cats: ['CARDIO', 'SCU', 'SCU-SC', 'LOS'], defaults: ['3.4', '3.3'] },
+      { id: 'CCU', label: 'CCU', long: 'CCU / SCU / EHH', beds: 8, ratio: { D: 2, A: 2, N: 3 }, plan: { D: 3, A: 3, N: 2 },
+        cats: ['CARDIO', 'SCU', 'SCU-SC', 'EHH-C', 'EHH-SC', 'EHH', 'LOS'], defaults: ['3.4', '3.3'] },
       { id: 'SEH', label: 'SEH', long: 'Spoedeisende Hulp', beds: 18, ratio: { D: 3, A: 3, N: 4 }, plan: { D: 5, A: 5, N: 3 },
         cats: ['SEH', 'SEH-SC', 'KIND', 'TRIAGE', 'LOS'], defaults: ['1.0', '2.0', '4.0'], total: '3.0', extra: ['instroom', 'jdt'] },
-      { id: 'EHH', label: 'EHH', long: 'Eerste Harthulp', beds: 5, ratio: { D: 3, A: 3, N: 4 }, plan: { D: 1, A: 1, N: 1 },
-        cats: ['EHH-C', 'EHH-SC', 'EHH', 'CARDIO', 'LOS'], defaults: ['5.1'] },
     ],
   },
   nieuw: {
@@ -136,7 +134,7 @@ const MODES = {
     streams: true,
     units: [
       { id: 'AP', label: 'Acute Poort', long: 'Acute Poort — SEH, kinderen en EHH', beds: 23, ratio: { D: 3, A: 3, N: 4 }, plan: { D: 6, A: 6, N: 4 },
-        cats: ['SEH', 'SEH-SC', 'KIND', 'TRIAGE', 'EHH-C', 'EHH-SC', 'EHH', 'CARDIO', 'LOS'], defaults: ['1.0', '2.0', '4.0', '5.1'], extra: ['instroom', 'jdt'], from: ['SEH', 'EHH'] },
+        cats: ['SEH', 'SEH-SC', 'KIND', 'TRIAGE', 'EHH-C', 'EHH-SC', 'EHH', 'CARDIO', 'LOS'], defaults: ['1.0', '2.0', '4.0', '5.1'], extra: ['instroom', 'jdt'], from: ['SEH'], mergeExtra: ['5.1'] },
       { id: 'HF', label: 'Hotfloor', long: 'Hotfloor — IC + CCU + SCU', beds: 18, ratio: { D: 2.5, A: 2.5, N: 3 }, plan: { D: 7, A: 7, N: 5 },
         cats: ['ICU', 'CARDIO', 'SCU', 'SCU-SC', 'EHH-C', 'EHH-SC', 'LOS'], defaults: ['6.1', '6.2', '6.3', '3.4', '3.3'], from: ['IC', 'CCU'] },
     ],

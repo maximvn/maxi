@@ -20,8 +20,8 @@ met al het netwerkverkeer geblokkeerd.
 
 ## Werkwijze
 
-1. **Omgeving** — Oudbouw (IC · CCU · SEH · EHH, elk eigen bedden en bemensing) of
-   Nieuwbouw (Acute Poort = SEH + EHH, Hotfloor = IC + CCU/SCU).
+1. **Omgeving** — Oudbouw (IC · CCU/SCU/EHH · SEH, elk eigen bedden en bemensing) of
+   Nieuwbouw (Acute Poort = SEH + EHH cardio, Hotfloor = IC + CCU/SCU).
 2. **Data inladen** — alle bestanden van het huidige dashboard, per categorie als tegel
    (klik of sleep op een tegel, of sleep alles tegelijk op de dropzone):
    - bezetting: SEH 1.0 / 2.0 / 3.0, scenario's 1.1–1.3 (4/5/6 uur), kindergeneeskunde 4.0,

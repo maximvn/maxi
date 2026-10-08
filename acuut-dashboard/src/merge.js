@@ -20,7 +20,7 @@ function mergeState() {
     // startpunt: de afdelingen van de gekozen Nieuwbouw-unit, of de huidige Oudbouw-afdeling
     const u = S.unit && S.unit !== 'ALL' ? unitDef(S.unit) : null;
     const pre = u && u.from ? u.from : u ? [u.id] : MODES.nieuw.units[1].from;
-    M.ids = pre.map(id => 'U:' + id).filter(id => cand.all.some(c => c.id === id));
+    M.ids = [...pre.map(id => 'U:' + id), ...((u && u.from ? u.mergeExtra : MODES.nieuw.units[1].mergeExtra) || []).map(k => 'D:' + k)].filter(id => cand.all.some(c => c.id === id));
   }
   const comps = M.ids.map((id, i) => { const c = cand.all.find(x => x.id === id); return { ...c, color: 's' + ((i % 8) + 1), beds: M.beds[id] != null ? M.beds[id] : c.beds }; });
   return { M, cand, comps };
@@ -82,7 +82,7 @@ function viewMerge(el) {
     <section class="panel stagger merge-builder">
       <div class="panel-head"><div><h2>Samenvoegen: past het als afdelingen of stromen samengaan?</h2>
         <div class="desc">Kies de bouwstenen in volgorde. <b>Stap 1</b> is de eerste alleen, <b>stap 2</b> de eerste twee samen, enzovoort. Per stap zie je elke bouwsteen apart, het totaal (per kwartier opgeteld) en of dat past in de bedden, volgens de gekozen norm (${mLabel()}). Weekdag-, periode- en normfilter hierboven gelden ook hier.</div></div>
-        <div class="set-row">${MODES.nieuw.units.filter(u => u.from).map(u => `<button class="btn small" data-act="mergepreset" data-arg="${u.id}" title="${esc(u.long)}">${esc(u.label)} = ${u.from.map(id => esc(unitDef(id).label)).join(' + ')}</button>`).join('')}</div>
+        <div class="set-row">${MODES.nieuw.units.filter(u => u.from).map(u => `<button class="btn small" data-act="mergepreset" data-arg="${u.id}" title="${esc(u.long)}">${esc(u.label)} = ${[...u.from.map(id => esc(unitDef(id).label)), ...(u.mergeExtra || []).map(k => esc(dsLabel(k)))].join(' + ')}</button>`).join('')}</div>
       </div>
       <div class="recipe">
         ${comps.map((c, i) => `${i ? '<span class="op">+</span>' : ''}<div class="rc" style="--c:var(--${c.color})">

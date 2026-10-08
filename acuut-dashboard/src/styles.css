@@ -697,3 +697,6 @@ td.num.muted, th.num.muted { color: var(--muted); font-weight: 400; }
 .metric-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 10px; }
 .metric-chips .f-label { margin-right: 4px; }
 .metric-chips .chip:disabled { opacity: 1; cursor: default; }
+.zoom-note { display: flex; gap: 10px; align-items: flex-start; margin: 4px 0 10px; padding: 10px 12px; border: 1px solid var(--line); border-left: 3px solid var(--ink); border-radius: 8px; background: var(--surface-2); font-size: 13px; color: var(--ink-2); }
+.zoom-note svg { width: 16px; height: 16px; flex: none; margin-top: 2px; }
+.zn-part { display: inline-flex; align-items: center; gap: 4px; margin-right: 8px; white-space: nowrap; }
