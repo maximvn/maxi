@@ -45,6 +45,23 @@ Wat er is veranderd:
   byte-voor-byte gelijk aan vóór de optimalisatie; de totale rekentijd ging van 50,6 s
   naar ~18 s, het zwaarste geval van 4,1 s naar 1,5 s.
 
+## Afwisselen kost nooit een patiënt — en levert toch geen blokken op (2.3)
+
+"Nieuw en controle afwisselen" stuurt de selectie (welke afspraken in welk spreekuur).
+Blijkt de week zónder die sturing meer in te plannen, dan wint die — zo blijft niemand
+liggen. Vóór 2.3 was dat alles-of-niets: één afspraak winst, en de hele week stond in
+blokken (kamer 1 alleen nieuw, kamer 2 alleen controle, kamer 3 alleen telefonisch)
+terwijl de schakelaar aan stond. Het leek alsof de regel "niet werkte".
+
+Nu volgt op de selectie een ruilstap per dag en dagdeel: afspraken van gelijke duur
+(of groepjes van gelijke minuten, bv. 3×20 tegen 4×15) worden tussen de kamers geruild
+tot elke kamer beide categorieën heeft, zo dicht mogelijk bij de verhouding van dat
+dagdeel. De minuten per kamer, de benutting en de restlijst veranderen daarbij niet;
+een eigen digitaal spreekuur blijft ongemoeid. Daarna zet de volgorde-stap ze om-en-om,
+ook de telefonische consulten onderling. Over de 137 referentierasters: 105 identiek,
+32 met minder spreekuren van één categorie (17 → 2 in de bundel-gevallen) bij gelijke
+restlijst, kamers en benutting.
+
 ## Behouden uit het origineel
 
 - **Licht, professioneel thema** (blauw/wit, Slingeland-stijl).

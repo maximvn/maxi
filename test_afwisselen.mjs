@@ -54,13 +54,23 @@ const R = await page.evaluate(()=>{
       } }
     return {spreekuren, ntp:r.ntp.length, melding:melding?melding.msg:null}
   }
-  const run=(cfgX,nrX,crX,extra)=>meet(window.__cr(cfgX,nrX,crX,M2,{...BASIS,...extra},{mode:'auto',kamers:4}))
+  const run=(cfgX,nrX,crX,extra,cap)=>meet(window.__cr(cfgX,nrX,crX,M2,{...BASIS,...extra},cap||{mode:'auto',kamers:4}))
+  // Derde case (uit een screenshot van de gebruiker): 3 vaste kamers, nieuw/controle
+  // plus telefonische varianten. Strikt afwisselen laat hier 1 afspraak méér liggen
+  // dan zonder sturing; de engine kiest dan terecht voor "iedereen ingepland", maar
+  // dat mag NIET betekenen dat elke kamer één categorie wordt (kamer 1 alleen nieuw,
+  // kamer 2 alleen controle, kamer 3 alleen telefonisch).
+  const nr3=[mk({afspraakcode:'NP',duur:20,percentage:60}),mk({afspraakcode:'NPT',duur:20,percentage:40,digitaal:true,modaliteit:'telefonisch'})]
+  const cr3=[mk({afspraakcode:'CP',duur:15,percentage:50}),mk({afspraakcode:'TC',duur:15,percentage:50,digitaal:true,modaliteit:'telefonisch'})]
+  const cfg3={newPat:100,ctrlPat:235,newCodes:2,ctrlCodes:2}
   return {
     praktijk: run(cfg,nr,cr,{}),
     praktijkZonderMix: run(cfg,nr,cr,{mixNC:false}),
     gelijk: run(cfg2,nr2,cr2,{}),
     gelijkZonderMix: run(cfg2,nr2,cr2,{mixNC:false}),
     blokken: run(cfg,nr,cr,{mixNC:false}),
+    krap: run(cfg3,nr3,cr3,{startNieuw:false},{mode:'vast',kamers:3}),
+    krapZonderMix: run(cfg3,nr3,cr3,{startNieuw:false,mixNC:false},{mode:'vast',kamers:3}),
   }
 })
 
@@ -121,6 +131,23 @@ const R = await page.evaluate(()=>{
   const puur=s.filter(x=>x.n===0||x.c===0)
   ok('met afwisselen UIT ontstaan er wél blokken (de keuze maakt verschil)',
     puur.length>0, `${puur.length} van ${s.length} spreekuren is één categorie`)
+}
+
+// ── 7. Krappe week met 3 vaste kamers: de terugval "iedereen ingepland" mag géén
+//      blokken opleveren — ruilen tussen kamers houdt het afwisselen overeind. ────
+{
+  const s=R.krap.spreekuren.filter(x=>x.tot>=2)
+  const puur=s.filter(x=>x.n===0||x.c===0)
+  ok('krappe week: de restlijst is niet langer dan zonder afwisselen',
+    R.krap.ntp<=R.krapZonderMix.ntp, `${R.krap.ntp} met, ${R.krapZonderMix.ntp} zonder`)
+  ok('krappe week: geen enkel spreekuur bestaat uit maar één categorie',
+    puur.length===0, `${puur.length} van ${s.length} spreekuren is één categorie`)
+  // Ruilen kan alleen bínnen een dagdeel (gelijke minuten); daarom meten we tegen de
+  // verhouding van dat dagdeel, niet van de hele week.
+  const perDd={}; s.forEach(x=>{ const k=x.di+x.key[0]; perDd[k]=perDd[k]||{n:0,tot:0}; perDd[k].n+=x.n; perDd[k].tot+=x.tot })
+  const scheef=s.filter(x=>{ const d=perDd[x.di+x.key[0]]; return Math.abs(x.n/x.tot-d.n/d.tot)>0.3 })
+  ok('krappe week: elk spreekuur zit bij de verhouding van zijn dagdeel in de buurt (±30pp)',
+    scheef.length===0, `${scheef.length} van ${s.length} wijkt meer dan 30pp af`)
 }
 
 console.log(log.join('\n'))

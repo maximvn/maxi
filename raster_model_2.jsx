@@ -1043,7 +1043,9 @@ function computeRasterInner(cfg,newRows,ctrlRows,m2,rules,capacity){
       // AS 1 — SPOED vooraan (dagdeel-gated). Digitaal staat los (AS 4).
       const spoedAan=rules.spoedFirst&&(rules.spoedDagdeel==='both'
         ||(rules.spoedDagdeel==='och'&&dd===0)||(rules.spoedDagdeel==='mid'&&dd===1))
-      const dig=room.filter(a=>a.digitaal)
+      // Ook de digitale consulten volgen de mix/kop-regels onderling, zodat een
+      // telefonisch nieuw-consult niet in een blokje naast de andere nieuwe staat.
+      const dig=ordenRomp(room.filter(a=>a.digitaal))
       let fys=room.filter(a=>!a.digitaal)
       let spoed=[]
       if(spoedAan){ spoed=fys.filter(a=>a.spoed); fys=fys.filter(a=>!a.spoed) }
@@ -2717,6 +2719,80 @@ function computeRasterInner(cfg,newRows,ctrlRows,m2,rules,capacity){
         telRedmiddel+=beste.mee.length
       }
     }
+
+    // FASE 2a — AFWISSELEN HERSTELLEN DOOR RUILEN TUSSEN KAMERS ────────────────
+    // De selectie (welke afspraken in welk spreekuur) stuurt op de mix, maar mag nooit
+    // een patiënt kosten: blijkt de week zonder mix-sturing méér in te plannen, dan
+    // wint die (zie de trapsgewijze terugval onderaan). Vóór deze stap betekende dat
+    // alles-of-niets: één afspraak winst, en de hele week stond in blokken — kamer 1
+    // alleen nieuw, kamer 2 alleen controle — terwijl de schakelaar "afwisselen" aan
+    // stond. Afwisselen is echter een kwestie van VOLGORDE en van VERDELING over de
+    // kamers van hetzelfde dagdeel; het hoeft de selectie niet te veranderen. Daarom
+    // ruilen we hier, per dag en dagdeel, afspraken van gelijke duur tussen kamers:
+    // de minuten per kamer blijven exact gelijk (benutting, band en restlijst
+    // veranderen niet), maar elke kamer krijgt beide categorieën, zo dicht mogelijk
+    // bij de weekverhouding. De volgorde-stap hierna zet ze daarna om-en-om.
+    const mixGeldtIn=dd=>!!rules.mixNC && ((rules.mixWaar||'both')==='both'
+      || (rules.mixWaar==='och'&&dd==='O') || (rules.mixWaar==='mid'&&dd==='M'))
+    const herverdeelCategorieen=rooms=>{
+      const ruilbaar=a=>!a._digSpreekuur && !a.overbook && !a.isFlex
+      // Kamers met een eigen digitaal spreekuur blijven ongemoeid (bewuste keuze).
+      const mee=rooms.map((arr,r)=>({r, arr, ok:Array.isArray(arr)&&arr.length>=2&&!arr.some(a=>a._digSpreekuur)}))
+      const actief=mee.filter(x=>x.ok)
+      if(actief.length<2) return
+      const nN=arr=>arr.filter(a=>a.category==='nieuw').length
+      let totN=0, tot=0; actief.forEach(x=>{ totN+=nN(x.arr); tot+=x.arr.length })
+      if(totN===0 || totN===tot) return           // maar één categorie op dit dagdeel
+      const ratio=totN/tot
+      const puur=arr=>{ const n=nN(arr); return n===0||n===arr.length }
+      const afw=arr=>Math.abs(nN(arr)/arr.length-ratio)
+      // Score van de hele verdeling: eerst zo min mogelijk pure kamers, dan zo dicht
+      // mogelijk bij de verhouding.
+      const score=()=>{ let p=0,d=0; actief.forEach(x=>{ if(puur(x.arr)) p++; d+=afw(x.arr) }); return p*10+d }
+      // Alle ruilen van gelijke duur: één-tegen-één, of een groepje tegen een groepje
+      // (bv. 3×20 tegen 4×15) — nooit meer dan 4 afspraken per kant.
+      const groepen=(arr,cat)=>{
+        const items=arr.map((a,i)=>({a,i})).filter(x=>ruilbaar(x.a)&&x.a.category===cat)
+        const uit=new Map()   // duur-som → [indices] (kleinste groep per som)
+        const n=items.length
+        const voeg=(idx,som)=>{ if(!uit.has(som)||uit.get(som).length>idx.length) uit.set(som,idx) }
+        for(let i=0;i<n;i++){ voeg([items[i].i],items[i].a.duur)
+          for(let j=i+1;j<n;j++){ const s2=items[i].a.duur+items[j].a.duur; voeg([items[i].i,items[j].i],s2)
+            for(let k=j+1;k<n;k++){ const s3=s2+items[k].a.duur; voeg([items[i].i,items[j].i,items[k].i],s3)
+              for(let l=k+1;l<n;l++) voeg([items[i].i,items[j].i,items[k].i,items[l].i],s3+items[l].a.duur) } } }
+        return uit
+      }
+      let huidig=score()
+      for(let ronde=0; ronde<60; ronde++){
+        let beste=null
+        for(const P of actief) for(const Q of actief){
+          if(P===Q) continue
+          // P geeft 'nieuw', krijgt 'controle' van Q (de andere richting komt via (Q,P)).
+          const gP=groepen(P.arr,'nieuw'), gQ=groepen(Q.arr,'controle')
+          gP.forEach((ip,som)=>{ const iq=gQ.get(som); if(!iq) return
+            // Proefruil: tel het effect op de score.
+            const pa=P.arr.slice(), qa=Q.arr.slice()
+            const geefP=ip.map(i=>P.arr[i]), geefQ=iq.map(i=>Q.arr[i])
+            ip.forEach((i,k)=>{ pa[i]=geefQ[k]!==undefined?geefQ[k]:null }); iq.forEach((i,k)=>{ qa[i]=geefP[k]!==undefined?geefP[k]:null })
+            // Ongelijke groepsgrootte: wat niet één-op-één past, achteraan bijvoegen.
+            const extraP=geefQ.slice(ip.length), extraQ=geefP.slice(iq.length)
+            const nP=pa.filter(Boolean).concat(extraP), nQ=qa.filter(Boolean).concat(extraQ)
+            const oudP=P.arr, oudQ=Q.arr
+            P.arr=nP; Q.arr=nQ
+            const sc=score()
+            P.arr=oudP; Q.arr=oudQ
+            if(sc<huidig-1e-9 && (!beste||sc<beste.sc)) beste={sc,P,Q,nP,nQ}
+          })
+        }
+        if(!beste) break
+        beste.P.arr=beste.nP; beste.Q.arr=beste.nQ; huidig=beste.sc
+      }
+      actief.forEach(x=>{ rooms[x.r]=x.arr })
+    }
+    ;[0,1,2,3,4].forEach(di=>{
+      if(!built[di]) return
+      DD.forEach(dd=>{ if(built[di][dd] && mixGeldtIn(dd)) herverdeelCategorieen(built[di][dd]) })
+    })
 
     // FASE 2b — VOLGORDE binnen elke kamer (ná structuur + selectie), zodat een omgeruilde
     // afspraak alsnog volgens de regels wordt geordend (bv. de 3 kortste vooraan).
