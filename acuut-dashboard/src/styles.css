@@ -471,7 +471,8 @@ body.busy .appbar::after { opacity: 1; animation: slide 1.1s linear infinite; }
 .band-box { position: relative; height: 170px; min-width: 0; }
 .band-box.big { height: 240px; }
 .band-box canvas { max-width: 100%; }
-.band-sw { width: 14px !important; height: 10px; border-radius: 2px; background: color-mix(in srgb, var(--s1) 22%, transparent); border-top: 1px solid color-mix(in srgb, var(--s1) 55%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--s1) 55%, transparent); }
+/* zelfde kleur als de bandvlakken in de grafieken (reeks 2, licht) */
+.band-sw { width: 14px !important; height: 10px; border-radius: 2px; background: color-mix(in srgb, var(--s2) 22%, transparent); border-top: 1px solid color-mix(in srgb, var(--s2) 60%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--s2) 60%, transparent); }
 
 /* ════ Afspelen ═════════════════════════════════════════════════════ */
 .btn.play { gap: 6px; }

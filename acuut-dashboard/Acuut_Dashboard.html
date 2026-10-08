@@ -481,7 +481,8 @@ body.busy .appbar::after { opacity: 1; animation: slide 1.1s linear infinite; }
 .band-box { position: relative; height: 170px; min-width: 0; }
 .band-box.big { height: 240px; }
 .band-box canvas { max-width: 100%; }
-.band-sw { width: 14px !important; height: 10px; border-radius: 2px; background: color-mix(in srgb, var(--s1) 22%, transparent); border-top: 1px solid color-mix(in srgb, var(--s1) 55%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--s1) 55%, transparent); }
+/* zelfde kleur als de bandvlakken in de grafieken (reeks 2, licht) */
+.band-sw { width: 14px !important; height: 10px; border-radius: 2px; background: color-mix(in srgb, var(--s2) 22%, transparent); border-top: 1px solid color-mix(in srgb, var(--s2) 60%, transparent); border-bottom: 1px solid color-mix(in srgb, var(--s2) 60%, transparent); }
 
 /* ════ Afspelen ═════════════════════════════════════════════════════ */
 .btn.play { gap: 6px; }
@@ -2562,8 +2563,8 @@ function stackChart(canvas, frame, ser, { big = false, beds = null } = {}) {
       labels: ser.labels,
       datasets: [
         ...frame.comps.map((comp, ci) => ({ label: comp.label, data: ser.parts[ci], borderColor: colorOf(comp), backgroundColor: alpha(colorOf(comp), 0.9), borderWidth: 0, pointRadius: 0, fill: ci ? '-1' : 'origin', tension: smooth, stack: 'a', order: 2 })),
-        { label: 'Maximum', data: ser.max, borderColor: alpha(c.series[1], 0.8), borderWidth: 1, pointRadius: 0, fill: '+1', backgroundColor: alpha(c.series[1], 0.16), tension: smooth, stack: 'm1', order: 5 },
-        { label: 'Minimum', data: ser.min, borderColor: alpha(c.series[1], 0.8), borderWidth: 1, pointRadius: 0, fill: false, tension: smooth, stack: 'm2', order: 6 },
+        { label: 'Hoogste kwartier alle samen', data: ser.max, borderColor: alpha(c.series[1], 0.8), borderWidth: 1, pointRadius: 0, fill: '+1', backgroundColor: alpha(c.series[1], 0.16), tension: smooth, stack: 'm1', order: 5 },
+        { label: 'Laagste kwartier alle samen', data: ser.min, borderColor: alpha(c.series[1], 0.8), borderWidth: 1, pointRadius: 0, fill: false, tension: smooth, stack: 'm2', order: 6 },
         ...(beds ? [{ label: 'Open bedden', data: ser.labels.map(() => beds), borderColor: c.ink, borderWidth: 1.5, borderDash: [5, 4], pointRadius: 0, fill: false, stack: 'beds', order: 1 }] : []),
       ],
     },
@@ -2593,8 +2594,8 @@ function totLineChart(canvas, frame, ser, own, beds) {
       datasets: [
         { label: 'Alle stromen opgeteld', data: ser.val, borderColor: c.ink, backgroundColor: c.ink, borderWidth: 3, pointRadius: 0, pointHoverRadius: 4, tension: smooth, cubicInterpolationMode: 'monotone', fill: false, order: 0 },
         ...frame.comps.map((comp, ci) => ({ label: comp.label, data: own[ci], borderColor: colorOf(comp), backgroundColor: colorOf(comp), borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, tension: smooth, cubicInterpolationMode: 'monotone', fill: false, order: 1 })),
-        { label: 'Maximum totaal', data: ser.max, borderColor: alpha(c.series[1], 0.5), borderWidth: 1, pointRadius: 0, fill: '+1', backgroundColor: alpha(c.series[1], 0.1), tension: smooth, order: 5 },
-        { label: 'Minimum totaal', data: ser.min, borderColor: alpha(c.series[1], 0.5), borderWidth: 1, pointRadius: 0, fill: false, tension: smooth, order: 6 },
+        { label: 'Hoogste kwartier alle samen', data: ser.max, borderColor: alpha(c.series[1], 0.5), borderWidth: 1, pointRadius: 0, fill: '+1', backgroundColor: alpha(c.series[1], 0.1), tension: smooth, order: 5 },
+        { label: 'Laagste kwartier alle samen', data: ser.min, borderColor: alpha(c.series[1], 0.5), borderWidth: 1, pointRadius: 0, fill: false, tension: smooth, order: 6 },
         { label: 'Open bedden', data: ser.labels.map(() => beds), borderColor: c.ink, borderWidth: 1.5, borderDash: [5, 4], pointRadius: 0, fill: false, order: 2 },
       ],
     },
@@ -2606,10 +2607,10 @@ function totLineChart(canvas, frame, ser, own, beds) {
         y: { beginAtZero: true, max: Math.ceil(Math.max(beds, ...ser.max.filter(v => v != null)) + 1), grid: { color: c.grid }, border: { display: false }, ticks: { precision: 0, maxTicksLimit: 7, font: { size: 10.5 } } },
       },
       plugins: { tooltip: {
-        filter: it => !/totaal$/.test(it.dataset.label) && it.dataset.label !== 'Open bedden',
+        filter: it => !/kwartier alle samen$/.test(it.dataset.label) && it.dataset.label !== 'Open bedden',
         callbacks: {
           label: it => ` ${it.dataset.label}: ${fmt(it.raw)}`,
-          footer: it => { const i = it[0].dataIndex; return [`Som van de losse ${mLabel()}'s: ${fmt(sumOwn[i])}`, `Bereik totaal: ${fmt(ser.min[i], 0)}–${fmt(ser.max[i], 0)} · ${beds} open bedden`]; },
+          footer: it => { const i = it[0].dataIndex; return [`Som van de losse ${mLabel()}'s: ${fmt(sumOwn[i])}`, `Roze vlak (alle samen): laagste ${fmt(ser.min[i], 0)} – hoogste ${fmt(ser.max[i], 0)} patiënten · ${beds} open bedden`]; },
         },
       } },
     },
@@ -2677,8 +2678,8 @@ function viewStreams(el, frame) {
       : [...new Set(frame.days.map(d => `${d.y}-${pad2(d.m)}`))].map(k => ({ slots: ALL_SLOTS, days: dd => dd.filter(d => `${d.y}-${pad2(d.m)}` === k) }));
     totWd = weekdayLines(frame, groups, 'total');
   }
-  const totDesc = tm === 'lijnen' ? `Elke gekleurde lijn is één ${kindWord} (zijn eigen ${mLabel()}); de <b>zwarte lijn</b> is alle ${kindWord === 'stroom' ? 'stromen' : 'afdelingen'} per kwartier opgeteld en daarvan de ${mLabel()}. Die is meestal lager dan de som van de losse lijnen, omdat ze niet allemaal tegelijk pieken (zie tooltip).`
-    : tm === 'stapel' ? `Het totaal (${mLabel()}) opgebouwd uit de ${kindWord === 'stroom' ? 'stromen' : 'afdelingen'} naar hun aandeel; het vlak erachter is min–max van het totaal.`
+  const totDesc = tm === 'lijnen' ? `Elke gekleurde lijn is één ${kindWord} (zijn eigen ${mLabel()}); de <b>zwarte lijn</b> is alle ${kindWord === 'stroom' ? 'stromen' : 'afdelingen'} per kwartier opgeteld en daarvan de ${mLabel()}. Het <b>roze vlak</b> hoort bij dat totaal: van het rustigste tot het drukste kwartier van alle ${kindWord === 'stroom' ? 'stromen' : 'afdelingen'} samen (niet van één ${kindWord}). Die is meestal lager dan de som van de losse lijnen, omdat ze niet allemaal tegelijk pieken (zie tooltip).`
+    : tm === 'stapel' ? `Het totaal (${mLabel()}) opgebouwd uit de ${kindWord === 'stroom' ? 'stromen' : 'afdelingen'} naar hun aandeel; het roze vlak erachter loopt van het rustigste tot het drukste kwartier van het totaal (alle ${kindWord === 'stroom' ? 'stromen' : 'afdelingen'} samen).`
     : `Het totaal (${mLabel()}), één lijn per weekdag in de selectie. Weekend gestippeld.`;
   const nums = st => `<div class="s-card-nums"><div class="main"><span>${mLabel()}</span><b>${fmt(mv(st))}</b></div><div><span>Max</span><b>${fmt(st.max, 0)}</b></div><div><span>Mediaan</span><b>${fmt(st.p50, 0)}</b></div><div><span>Min</span><b>${fmt(st.min, 0)}</b></div></div>`;
   // Alle samen: norm, drukste kwartier, tijd boven de bedden en het drukste moment van de week.
@@ -2701,7 +2702,7 @@ function viewStreams(el, frame) {
         <div><h2>Bandbreedte per ${kindWord}</h2><div class="desc">Elke ${kindWord} in een eigen grafiek ${granLbl}: het vlak loopt van minimum tot maximum, de dikke lijn is de gekozen norm (${mLabel()}).${multi ? ` Bovenaan alle ${kindWord === 'stroom' ? 'stromen' : 'afdelingen'} samen: de norm van het totaal, opgebouwd uit de ${kindWord === 'stroom' ? 'stromen' : 'afdelingen'}.` : ''}</div></div>
         <div class="seg small" role="group" aria-label="Indeling" data-ind="bandgran">${[['hour', 'Per uur'], ['weekday', 'Per weekdag'], ['month', 'Per maand']].map(([v, l]) => `<button class="${gran === v ? 'on' : ''}" data-act="bandgran" data-arg="${v}">${l}</button>`).join('')}</div>
       </div>
-      <div class="legend" style="margin-top:8px"><span><i class="sw band-sw"></i>Min – max</span><span><i class="ln solid" style="border-color:var(--ink);border-top-width:3px"></i>${METRICS[S.metric].label}</span></div>
+      <div class="legend" style="margin-top:8px"><span><i class="sw" style="background:color-mix(in srgb, var(--ink) 12%, transparent)"></i>Vlak in elke kaart = laagste – hoogste kwartier van díe ${kindWord} (in zijn eigen kleur)</span><span><i class="ln solid" style="border-color:var(--ink);border-top-width:3px"></i>${METRICS[S.metric].label}</span></div>
     </section>
     <div class="stream-cards">
       ${multi ? `<div class="s-card total stagger">
@@ -2709,7 +2710,7 @@ function viewStreams(el, frame) {
         ${typeof bedsPanel === 'function' ? bedsPanel(S.unit) : ''}
         ${totNums}
         <div class="tot-mode"><div class="desc">${totDesc}</div>${modeSeg('tot', totOpts, 'Weergave alle samen')}</div>
-        ${tm === 'weekdag' ? wdLegendHTML(totWd, '<span><i class="ln"></i>Open bedden</span>') : `<div class="legend" style="margin:0">${tm === 'lijnen' ? '<span><i class="ln solid" style="border-color:var(--ink);border-top-width:3px"></i><b>Alle samen</b></span>' : ''}${comps.map(c => tm === 'lijnen' ? `<span><i class="ln solid" style="border-color:${cssColor(c)};border-top-width:2px"></i>${esc(c.label)}</span>` : `<span><i class="sw" style="background:${cssColor(c)}"></i>${esc(c.label)}</span>`).join('')}<span><i class="sw band-sw"></i>Min – max totaal</span><span><i class="ln"></i>Open bedden</span></div>`}
+        ${tm === 'weekdag' ? wdLegendHTML(totWd, '<span><i class="ln"></i>Open bedden</span>') : `<div class="legend" style="margin:0">${tm === 'lijnen' ? '<span><i class="ln solid" style="border-color:var(--ink);border-top-width:3px"></i><b>Alle samen</b></span>' : ''}${comps.map(c => tm === 'lijnen' ? `<span><i class="ln solid" style="border-color:${cssColor(c)};border-top-width:2px"></i>${esc(c.label)}</span>` : `<span><i class="sw" style="background:${cssColor(c)}"></i>${esc(c.label)}</span>`).join('')}<span><i class="sw band-sw"></i>Roze vlak: bereik van alle ${kindWord === 'stroom' ? 'stromen' : 'afdelingen'} samen (laagste – hoogste kwartier)</span><span><i class="ln"></i>Open bedden</span></div>`}
         <div class="band-box big"><canvas id="band-total" role="img" aria-label="Bandbreedte alle stromen samen"></canvas></div>
       </div>` : ''}
       ${comps.map((c, ci) => `<button class="s-card stagger ${ci === fi ? 'on' : ''}" data-act="focus" data-arg="${c.id}" aria-pressed="${ci === fi}">
@@ -2730,7 +2731,7 @@ function viewStreams(el, frame) {
           <div class="seg small" role="group" aria-label="Trendweergave" data-ind="trendmode">${[['stroom', 'Per ' + kindWord], ['samen', 'Samen']].map(([v, l]) => `<button class="${S.trendMode === v ? 'on' : ''}" data-act="trendmode" data-arg="${v}">${l}</button>`).join('')}</div>
         </div>
         <div class="chart-box"><canvas id="ch-strend" role="img" aria-label="Trend per maand"></canvas></div>
-        ${legendHTML(comps, S.trendMode === 'samen' ? `<span><i class="sw band-sw"></i>Min–max totaal</span>` : '')}
+        ${legendHTML(comps, S.trendMode === 'samen' ? `<span><i class="sw band-sw"></i>Roze vlak: bereik van alle ${kindWord === 'stroom' ? 'stromen' : 'afdelingen'} samen (laagste – hoogste kwartier)</span>` : '')}
       </section>
     </div>
     <section class="panel stagger" style="margin-top:16px">
