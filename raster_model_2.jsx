@@ -3,6 +3,7 @@ import * as XLSX from 'xlsx'
 import {fkBerekenAdvies,FK_PRESETS,fkNieuweKamer,fkNieuweCode,fkStandaardRegels,fkWeekAantal,fkSnap,fkParseCodes,fkParseKamers,
   fkControleerKwalificaties,fkCodeLabel,FK_DD_NAAM} from './functiekamers.js'
 import {analyseerVraag,antwoordVoor,beantwoordStatus,kennisPerCategorie,zoekKennis,VOORBEELDVRAGEN,KENNIS} from './assistent.js'
+import {maakEngineClient} from './engineClient.js'
 
 // Maak een echte, downloadbare URL van een XLSX-workbook. We gebruiken een Blob
 // + object-URL i.p.v. een data:-URI: grote data:-URI's worden door sommige
@@ -869,511 +870,14 @@ const VrijPaneel=({vrij,onKlaar,kleur=C.primary})=>{
 }
 
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
-export default function RasterTool(){
-  const [active,setActive]=useState(0)
-  const [now,setNow]=useState(new Date())
-  useEffect(()=>{ const t=setInterval(()=>setNow(new Date()),1000); return()=>clearInterval(t) },[])
-  const [visited,setVisited]=useState(new Set([0]))
-  const [m1Mode,setM1Mode]=useState(null)
-  const [m1Section,setM1Section]=useState(1)
-  const [cfg,setCfg]=useState({newPat:10,ctrlPat:20,newCodes:2,ctrlCodes:3})
-  const [poli,setPoli]=useState({naam:'',specialisme:''})   // vrij invulbare poli-identiteit
-  // ── PLANMODUS ─────────────────────────────────────────────────────────────
-  // 'poli'    = spreekkamers die onderling gelijk zijn (nieuw/controle, de bestaande engine)
-  // 'functie' = functiekamers met kwalificaties: welke onderzoekscode mag in welke kamer,
-  //             hoe vaak per week, en de tool adviseert per kamer welke dagdelen open moeten.
-  const [modus,setModus]=useState('poli')
-  const [fk,setFk]=useState(()=>({kamers:[],codes:[],regels:fkStandaardRegels(),preset:'',badge:null,open:null,mode:null,sectie:1}))
-  // Capaciteitsbasis: 'auto' = groeit vrij; 'vast' = begrensd tot het gekozen aantal kamers
-  const [capacity,setCapacity]=useState({mode:'auto',kamers:3})
-  const [newRows,setNewRows]=useState([])
-  const [ctrlRows,setCtrlRows]=useState([])
-  const [importBadge,setImportBadge]=useState(null)
-  const [m2,setM2]=useState({ochStart:'08:30',ochEnd:'12:00',midStart:'13:00',midEnd:'16:30',
-    avondOn:false,avondStart:'17:00',avondEnd:'20:00',verAvond:0,
-    verOch:50,benutting:85,days:{ma:20,di:20,wo:20,do:20,vr:20},
-    ddDagen:{O:{...DEF_DD_DAGEN.O},M:{...DEF_DD_DAGEN.M},A:{...DEF_DD_DAGEN.A}}})
-  const [rules,setRules]=useState({
-    spoedFirst:false,         // spoed-afspraken vormen een blok vooraan (nooit op restlijst)
-    startNieuw:false,         // spreekuur opent met een NIEUWE afspraak
-    startControle:false,      // spreekuur opent met een CONTROLE afspraak
-    mixNC:true,               // nieuw en controle afwisselen (gemengde volgorde) — standaard aan
-    digitalMode:'spread', flexMode:'end',
-    digitalSlots:[],          // waar de eigen digitale spreekuren vallen: [{di,dd}] · leeg = automatisch
-    kamerVerdeling:'dagdeel', // 'dagdeel' = kamer voor kamer afronden (och→mid→volgende kamer) | 'gelijk'
-    restDag:'uit',            // 'uit' | 'auto' | 'ma'..'vr' — restvraag samenvoegen op één dag
-    restOpruimen:true,        // spreekuren onder de minimumbezetting sluiten i.p.v. half-leeg laten draaien
-    minBezetting:75,          // een spreekuur gaat alléén open bij minimaal dit bezettingspercentage
-    // ── BEREIK per regel: 'both' (ochtend + middag) | 'och' | 'mid' ─────────────
-    // Elke regel is expliciet gekaderd in WELK dagdeel hij geldt, zodat de engine
-    // nooit zelf hoeft te raden of iets voor de ochtend, de middag of allebei bedoeld is.
-    spoedDagdeel:'both',      // in welk dagdeel geldt spoed-eerst
-    startNieuwWaar:'both',    // in welk dagdeel opent het spreekuur met een nieuwe afspraak
-    startControleWaar:'both', // in welk dagdeel opent het spreekuur met een controle afspraak
-    mixWaar:'both',           // in welk dagdeel wordt nieuw/controle afgewisseld
-    digitalWaar:'both',       // in welk dagdeel geldt de gekozen digitaal-plaatsing
-    flexWaar:'both',          // in welk dagdeel geldt de gekozen flex-verdeling
-    flexNoFirstMin:60,        // geen verspreide flex in de eerste N minuten van een spreekuur
-    flexBlokMin:10,           // grootte van één verspreid flexblokje (5/10/15/20 min)
-    digitalEndMinutes:30,     // breedte van het digitale eindvenster (digitalMode='end')
-  })
-  const [selDay,setSelDay]=useState(0)
-  const [raster,setRaster]=useState(null)
-  const [calZoom,setCalZoom]=useState(3.0) // px per minute, range 1.5–6
-  const [viewMode,setViewMode]=useState('dag') // 'dag' | 'week' (multi-dynamisch overzicht)
-  // Inklapbare rasterpanelen (minimaliseren/maximaliseren)
-  // Begeleide intake ("assistent"): stapsgewijze vragen met keuze-opties die de hele
-  // configuratie invullen. Volledig deterministisch — elk antwoord zet gewoon een
-  // instelling; er wordt niets "bedacht". {stap, ant, klaar}
-  const [wiz,setWiz]=useState(null)
-  const [openPanels,setOpenPanels]=useState({kpi:true,analyse:true,capaciteit:true})
-  // Alles wat je niet hoeft te zien om te beginnen staat standaard dicht.
-  const [toonGeav,setToonGeav]=useState(false)
-  const togglePanel=k=>setOpenPanels(p=>({...p,[k]:!p[k]}))
-  const [drag,setDrag]=useState(null)
-  const [showExport,setShowExport]=useState(false)
-  const [showReset,setShowReset]=useState(false)
-  const [showFullReset,setShowFullReset]=useState(false)
-  const [expName,setExpName]=useState('slingeland_raster')
-  const [expOk,setExpOk]=useState(false)
-  const [exporting,setExporting]=useState(false)
-  const [exportLink,setExportLink]=useState(null) // {wb, href, basis, filename}
-  const [dlMelding,setDlMelding]=useState(null)   // uitkomst van opslaan via de gedeelde pagina
-  const [tplLink,setTplLink]=useState(null)       // voorbeeld-Excel {href, filename}
-  const calRef=useRef(null)
-  const fileRef=useRef(null)
-  // Zodra de gedeelde pagina de download-mogelijkheid vrijgeeft, opnieuw tekenen zodat
-  // de exportknop de viewer-route toont in plaats van een (daar inerte) downloadlink.
-  const [,dlTick]=useState(0)
-  useEffect(()=>{ let aan=true; viewerDownloadsKlaar.then(()=>{ if(aan) dlTick(t=>t+1) }); return ()=>{aan=false} },[])
-
-  useEffect(()=>{
-    const l=document.createElement('link')
-    l.href='https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap'
-    l.rel='stylesheet'; document.head.appendChild(l)
-  },[])
-
-  // ── Pointer-based drag, free-positioning + resize (reliable in sandbox) ──────
-  // dragItem = {mode:'move'|'new'|'resize-top'|'resize-bot', appt, fromDay, fromSlot, palette, grabOffsetMin}
-  const [dragItem,setDragItem]=useState(null)
-  const [dragOver,setDragOver]=useState(null) // {day, slot} | {slot:'ntp'}
-  const dragItemRef=useRef(null)
-  dragItemRef.current=dragItem
-  const gridGeomRef=useRef(null)
-  const ghostRef=useRef(null)        // direct-DOM ghost (for 'new' from palette)
-  const startPosRef=useRef({x:0,y:0})
-  const lastSlotRef=useRef(null)
-  const liveLocRef=useRef(null)      // current live location of the block being moved
-  const [roomNames,setRoomNames]=useState({})   // {roomIndex: 'spreekuur naam'}
-  // Wisselen van planmodus — vanuit de zijbalk én vanuit de balk boven het raster.
-  const wisselModus=v=>{
-    if(v===modus) return
-    setModus(v); setSelDay(0)
-    setActive(1); setVisited(p=>new Set([...p,1]))
-  }
-  const fkLaadPresetRef=useRef(null)
-  // Naam van een kolom: in de functiekamer-modus de echte kamer (A1.213), anders "Kamer n" of de eigen naam.
-  const fkActieveKamers=(fk.kamers||[]).filter(k=>k.actief!==false)
-  const kamerNaam=r=> (modus==='functie'&&fkActieveKamers[r]) ? (fkActieveKamers[r].naam||`Kamer ${r+1}`) : (roomNames[r]??`Kamer ${r+1}`)
-  const [addMenu,setAddMenu]=useState(null)      // {room} when the + menu is open
-
-  // Start a drag/resize
-  const startDrag=(e,item)=>{
-    e.preventDefault(); e.stopPropagation()
-    const cx=e.touches?e.touches[0].clientX:e.clientX
-    const cy=e.touches?e.touches[0].clientY:e.clientY
-    startPosRef.current={x:cx,y:cy}
-    lastSlotRef.current=null
-    // For move: record where in the block you grabbed (so it doesn't jump), and its live location
-    if(item.mode==='move'){
-      if(item.fromSlot==='ntp'){
-        // NTP item has no grid position — placed on drop, shown via ghost
-        item.grabOffsetMin=0
-        liveLocRef.current=null
-      } else {
-        const g=gridGeomRef.current
-        const rect=e.currentTarget.getBoundingClientRect()
-        item.grabOffsetMin=g?Math.max(0,(cy-rect.top)/g.PXMIN):0
-        liveLocRef.current={day:item.fromDay,slot:item.fromSlot,id:item.appt.id,start:item.appt.start}
-      }
-    }
-    setDragItem(item)
-  }
-
-  const yToTime=(clientY, bodyEl)=>{
-    const g=gridGeomRef.current; if(!g||!bodyEl||!g.regions) return null
-    const rect=bodyEl.getBoundingClientRect()
-    const y=clientY-rect.top
-    // Find the region whose y-band contains y (clamp into nearest otherwise)
-    let best=g.regions[0]
-    for(const r of g.regions){
-      const yEnd=r.y0+(r.end-r.start)*g.PXMIN
-      if(y>=r.y0-1 && y<=yEnd+g.pauseH){ best=r; if(y<=yEnd) break }
-    }
-    // Klem binnen het dagdeel: de grijze marges vóór en ná zijn gesloten, daar
-    // kan niets naartoe gesleept worden.
-    const rt=best.start + Math.max(0,(y-best.y0))/g.PXMIN
-    return Math.max(best.start, Math.min(best.end, rt))
-  }
-  const snap5=t=>Math.round(t/5)*5
-
-  // Live-move the block to a new slot/start within the grid (realtime, as you drag)
-  const liveMove=(targetDay,targetSlot,targetStart)=>{
-    const loc=liveLocRef.current; if(!loc) return
-    setRaster(prev=>{
-      if(!prev) return prev
-      const nxt=JSON.parse(JSON.stringify(prev))
-      const fromArr=nxt.days[loc.day]?.[loc.slot]; if(!fromArr) return prev
-      const idx=fromArr.findIndex(a=>a.id===loc.id); if(idx<0) return prev
-      const appt=fromArr[idx]
-      const dur=appt.duur||15
-      const ddp=targetSlot[0]
-      const dd=ddp==='o'?0:ddp==='m'?1:2
-      const room=parseInt(targetSlot.slice(1))
-      const sessStart=ddp==='o'?nxt.ochStart:ddp==='m'?nxt.midStart:nxt.avondStart
-      const sessEnd=ddp==='o'?nxt.ochEnd:ddp==='m'?nxt.midEnd:nxt.avondEnd
-      let st=Math.max(sessStart,Math.min(targetStart,sessEnd-dur))
-      st=snap5(st)
-      // no change? skip
-      if(loc.slot===targetSlot && loc.day===targetDay && appt.start===st) return prev
-      fromArr.splice(idx,1)
-      const moved={...appt,dagdeel:dd,room,start:st,end:st+dur,edited:true}
-      if(!nxt.days[targetDay]) nxt.days[targetDay]={}
-      if(!nxt.days[targetDay][targetSlot]) nxt.days[targetDay][targetSlot]=[]
-      nxt.days[targetDay][targetSlot].push(moved)
-      nxt.days[targetDay][targetSlot].sort((a,b)=>(a.start||0)-(b.start||0))
-      return nxt
-    })
-    liveLocRef.current={day:targetDay,slot:targetSlot,id:loc.id,start:targetStart}
-  }
-
-  useEffect(()=>{
-    if(!dragItem) return
-    if(ghostRef.current){
-      ghostRef.current.style.left=(startPosRef.current.x+14)+'px'
-      ghostRef.current.style.top=(startPosRef.current.y+8)+'px'
-    }
-    const onMove=e=>{
-      const cx=e.touches?e.touches[0].clientX:e.clientX
-      const cy=e.touches?e.touches[0].clientY:e.clientY
-      if(ghostRef.current){
-        ghostRef.current.style.left=(cx+14)+'px'
-        ghostRef.current.style.top=(cy+8)+'px'
-      }
-      const el=document.elementFromPoint(cx,cy)
-      const zone=el&&el.closest?el.closest('[data-slotkey]'):null
-      const item=dragItemRef.current
-      const key=zone?zone.dataset.slotkey:null
-      if(key!==lastSlotRef.current){
-        lastSlotRef.current=key
-        if(zone){
-          const slot=zone.dataset.slotkey
-          setDragOver(slot==='ntp'?{slot:'ntp'}:{day:+zone.dataset.day,slot})
-        } else setDragOver(null)
-      }
-      // LIVE MOVE — reposition the actual block in the grid as you drag (grid items only)
-      if(item&&item.mode==='move'&&item.fromSlot!=='ntp'&&zone){
-        const slot=zone.dataset.slotkey
-        if(slot!=='ntp'){
-          const day=+zone.dataset.day
-          const bodyEl=zone.closest('[data-roombody]')||document.querySelector(`[data-roombody="${day}_${slot}"]`)
-          const t=yToTime(cy,bodyEl)
-          if(t!=null) liveMove(day,slot,snap5(t-(item.grabOffsetMin||0)))
-        }
-      }
-      // Live resize feedback
-      if(item&&(item.mode==='resize-top'||item.mode==='resize-bot')){
-        const bodyEl=document.querySelector(`[data-roombody="${item.fromDay}_${item.fromSlot}"]`)
-        const t=yToTime(cy,bodyEl)
-        if(t!=null) doResize(item,snap5(t))
-      }
-    }
-    const onUp=e=>{
-      const cx=(e.changedTouches?e.changedTouches[0].clientX:e.clientX)
-      const cy=(e.changedTouches?e.changedTouches[0].clientY:e.clientY)
-      const item=dragItemRef.current
-      if(item&&(item.mode==='new'||(item.mode==='move'&&item.fromSlot==='ntp'))){
-        // 'new' from palette OR an item dragged out of "Nog te plannen": place where dropped
-        const el=document.elementFromPoint(cx,cy)
-        const zone=el&&el.closest?el.closest('[data-slotkey]'):null
-        if(zone){
-          const slot=zone.dataset.slotkey
-          if(slot==='ntp') dropTo('ntp',null)
-          else {
-            const bodyEl=zone.closest('[data-roombody]')||document.querySelector(`[data-roombody="${zone.dataset.day}_${slot}"]`)
-            const t=yToTime(cy,bodyEl)
-            dropTo({day:+zone.dataset.day,slot}, t!=null?snap5(t):null)
-          }
-        }
-      } else if(item&&item.mode==='move'){
-        // Grid item already live-placed; only handle drop back to NTP
-        const el=document.elementFromPoint(cx,cy)
-        const zone=el&&el.closest?el.closest('[data-slotkey]'):null
-        if(zone&&zone.dataset.slotkey==='ntp') dropTo('ntp',null)
-      }
-      setDragItem(null); setDragOver(null); lastSlotRef.current=null; liveLocRef.current=null
-    }
-    window.addEventListener('mousemove',onMove)
-    window.addEventListener('mouseup',onUp)
-    window.addEventListener('touchmove',onMove,{passive:false})
-    window.addEventListener('touchend',onUp)
-    return()=>{
-      window.removeEventListener('mousemove',onMove)
-      window.removeEventListener('mouseup',onUp)
-      window.removeEventListener('touchmove',onMove)
-      window.removeEventListener('touchend',onUp)
-    }
-  },[dragItem])
-
-  // Resize an appointment or flex block in place
-  const doResize=(item,t)=>{
-    setRaster(prev=>{
-      if(!prev) return prev
-      const nxt=JSON.parse(JSON.stringify(prev))
-      const arr=nxt.days[item.fromDay]?.[item.fromSlot]; if(!arr) return prev
-      const it=arr.find(a=>a.id===item.appt.id); if(!it) return prev
-      if(item.mode==='resize-bot'){
-        const ne=Math.max(it.start+5,t)
-        it.end=ne; it.duur=ne-it.start
-      } else {
-        const ns=Math.min(it.end-5,t)
-        it.start=ns; it.duur=it.end-ns
-      }
-      it.edited=true
-      return nxt
-    })
-  }
-
-  // Move/add an appointment to a target slot at a given start time
-  const dropTo=(target,startMin)=>{
-    const item=dragItemRef.current
-    if(!item) return
-    setRaster(prev=>{
-      if(!prev) return prev
-      const nxt=JSON.parse(JSON.stringify(prev))
-      let appt
-      if(item.mode==='move'){
-        if(item.fromSlot==='ntp'){
-          const i=nxt.ntp.findIndex(a=>a.id===item.appt.id)
-          if(i>=0){appt=nxt.ntp[i];nxt.ntp.splice(i,1)}
-        } else {
-          const arr=nxt.days[item.fromDay]?.[item.fromSlot]
-          if(arr){const i=arr.findIndex(a=>a.id===item.appt.id);if(i>=0){appt=arr[i];arr.splice(i,1)}}
-        }
-      } else if(item.mode==='new'){
-        const p=item.palette
-        appt={id:'man_'+Math.random().toString(36).slice(2,9),code:p.code,description:p.label,
-          duur:p.duur,digitaal:p.digitaal,modaliteit:p.modaliteit||(p.digitaal?'telefonisch':'fysiek'),
-          spoed:false,category:p.category,ci:p.ci??0,edited:true,manual:true}
-      }
-      if(!appt) return nxt
-      const dur=appt.duur||15
-      if(target==='ntp'){
-        delete appt.start; delete appt.end; appt.edited=true; nxt.ntp.push(appt)
-      } else {
-        const {day,slot}=target
-        const ddp=slot[0]
-        const dd=ddp==='o'?0:ddp==='m'?1:2
-        const room=parseInt(slot.slice(1))
-        const sessStart=ddp==='o'?nxt.ochStart:ddp==='m'?nxt.midStart:nxt.avondStart
-        const sessEnd=ddp==='o'?nxt.ochEnd:ddp==='m'?nxt.midEnd:nxt.avondEnd
-        let st=startMin!=null?(startMin-(item.grabOffsetMin||0)):sessStart
-        st=Math.max(sessStart,Math.min(st,sessEnd-dur))
-        st=snap5(st)
-        appt={...appt,dagdeel:dd,room,start:st,end:st+dur,edited:true}
-        if(!nxt.days[day]) nxt.days[day]={}
-        if(!nxt.days[day][slot]) nxt.days[day][slot]=[]
-        nxt.days[day][slot].push(appt)
-        // keep sorted by start
-        nxt.days[day][slot].sort((a,b)=>(a.start||0)-(b.start||0))
-      }
-      return nxt
-    })
-  }
-
-  // ══ EEN HEEL DAGDEEL VERPLAATSEN (bezettingskaart) ═════════════════════════
-  // Je pakt in de bezettingskaart één vak vast — dat is één kamer, op één dag, in
-  // één dagdeel — en zet het op een andere plek neer. Staat daar al een spreekuur,
-  // dan RUILEN de twee van plek; is het leeg, dan verhuist het spreekuur gewoon.
-  // De afspraken worden op de nieuwe plek opnieuw achter elkaar gezet vanaf de
-  // begintijd van dat dagdeel, zodat de agenda meteen klopt. Past er door een korter
-  // dagdeel iets niet meer, dan komt dat op "nog te plannen" — nooit stilzwijgend weg.
-  const [kaartDrag,setKaartDrag]=useState(null)   // {di,room,dd} dat je vasthoudt
-  const [kaartOver,setKaartOver]=useState(null)   // {di,room,dd} waar je boven zweeft
-  const slotKeyVan=(room,dd)=>(dd===0?'o':dd===1?'m':'a')+room
-  const verplaatsDagdeel=useCallback((van,naar)=>{
-    if(!van||!naar) return
-    if(van.di===naar.di&&van.room===naar.room&&van.dd===naar.dd) return
-    setRaster(prev=>{
-      if(!prev) return prev
-      const nxt=JSON.parse(JSON.stringify(prev))
-      const kv=slotKeyVan(van.room,van.dd), kn=slotKeyVan(naar.room,naar.dd)
-      if(!nxt.days[van.di]) return prev
-      const bron=[...(nxt.days[van.di][kv]||[])]
-      if(!bron.some(a=>!a.isFlex)) return prev        // een leeg vak valt niets te verplaatsen
-      if(!nxt.days[naar.di]) nxt.days[naar.di]={}
-      const doelArr=[...(nxt.days[naar.di][kn]||[])]
-      const grens=dd=>dd===0?[nxt.ochStart,nxt.ochEnd]
-        :dd===1?[nxt.midStart,nxt.midEnd]:[nxt.avondStart,nxt.avondEnd]
-      const kwijt=[]
-      // Zet de afspraken op de nieuwe plek weer netjes achter elkaar vanaf de
-      // begintijd van dat dagdeel; flexblokken schuiven gewoon mee in het ritme.
-      const herleg=(arr,dd,room)=>{
-        const [s0,s1]=grens(dd)
-        const uit=[]; let t=s0
-        arr.slice().sort((a,b)=>(a.start||0)-(b.start||0)).forEach(a=>{
-          const d=a.duur||15
-          if(t+d>s1+0.01){ if(!a.isFlex) kwijt.push(a); return }
-          uit.push({...a,start:t,end:t+d,dagdeel:dd,room,edited:true})
-          t+=d
-        })
-        return uit
-      }
-      nxt.days[naar.di][kn]=herleg(bron,naar.dd,naar.room)
-      nxt.days[van.di][kv]=herleg(doelArr,van.dd,van.room)
-      if(kwijt.length){ nxt.ntp=[...(nxt.ntp||[]),
-        ...kwijt.map(a=>{ const b={...a,edited:true}; delete b.start; delete b.end; return b })] }
-      nxt._handmatig=true
-      return nxt
-    })
-  },[])
-
-  // ── SLEPEN MET DE MUIS/VINGER (niet via HTML5 drag-and-drop) ────────────────
-  // Een <button> met draggable="true" start in de praktijk lang niet altijd een
-  // HTML5-sleep: browsers geven de eigen knop-afhandeling voorrang, en op touch
-  // gebeurt er helemaal niets. Daarom volgen we hier dezelfde aanpak als het
-  // slepen van losse afspraken in het raster: pointer-events, zelf bijhouden, en
-  // het doelvak opzoeken met elementFromPoint. Dat werkt met muis én touch, en in
-  // elke browser.
-  const kaartBron=useRef(null)      // {di,room,dd,x0,y0,actief}
-  const kaartOverRef=useRef(null)
-  const kaartNetGesleept=useRef(false)
-  const [kaartGhost,setKaartGhost]=useState(null)   // {x,y,label}
-  const kaartPak=(e,di,room,dd,leeg,label)=>{
-    if(leeg||e.button===2) return
-    kaartBron.current={di,room,dd,x0:e.clientX,y0:e.clientY,actief:false,label}
-  }
-  useEffect(()=>{
-    const celVan=el=>{ let n=el
-      while(n&&n!==document.body){ if(n.dataset&&n.dataset.kaartcel) return n.dataset.kaartcel; n=n.parentElement }
-      return null }
-    const move=e=>{
-      const b=kaartBron.current; if(!b) return
-      if(!b.actief){
-        // Pas slepen na een paar pixels — anders wordt elke klik een sleep.
-        if(Math.abs(e.clientX-b.x0)+Math.abs(e.clientY-b.y0)<6) return
-        b.actief=true; setKaartDrag({di:b.di,room:b.room,dd:b.dd})
-      }
-      e.preventDefault()
-      setKaartGhost({x:e.clientX,y:e.clientY,label:b.label})
-      const k=celVan(document.elementFromPoint(e.clientX,e.clientY))
-      if(k){
-        const [di,room,dd]=k.split('-').map(Number)
-        const zelf=(di===b.di&&room===b.room&&dd===b.dd)
-        const t=zelf?null:{di,room,dd}
-        kaartOverRef.current=t; setKaartOver(t)
-      } else { kaartOverRef.current=null; setKaartOver(null) }
-    }
-    const los=()=>{
-      const b=kaartBron.current
-      if(b&&b.actief){
-        kaartNetGesleept.current=true
-        setTimeout(()=>{ kaartNetGesleept.current=false },0)
-        if(kaartOverRef.current) verplaatsDagdeel({di:b.di,room:b.room,dd:b.dd}, kaartOverRef.current)
-      }
-      kaartBron.current=null; kaartOverRef.current=null
-      setKaartDrag(null); setKaartOver(null); setKaartGhost(null)
-    }
-    window.addEventListener('pointermove',move,{passive:false})
-    window.addEventListener('pointerup',los)
-    window.addEventListener('pointercancel',los)
-    return ()=>{ window.removeEventListener('pointermove',move)
-      window.removeEventListener('pointerup',los); window.removeEventListener('pointercancel',los) }
-  },[verplaatsDagdeel])
-
-  const deleteAppt=(day,slot,id)=>{
-    setRaster(prev=>{
-      if(!prev) return prev
-      const nxt=JSON.parse(JSON.stringify(prev))
-      if(slot==='ntp'){const i=nxt.ntp.findIndex(a=>a.id===id);if(i>=0)nxt.ntp.splice(i,1)}
-      else {const arr=nxt.days[day]?.[slot];if(arr){const i=arr.findIndex(a=>a.id===id);if(i>=0)arr.splice(i,1)}}
-      return nxt
-    })
-  }
-
-  // Add an appointment (from a code) or a manual flex block to a room's morning session,
-  // placed right after the last real appointment. The trailing auto-flex is recomputed to fit.
-  const addToRoom=(day,room,item)=>{
-    setRaster(prev=>{
-      if(!prev) return prev
-      const nxt=JSON.parse(JSON.stringify(prev))
-      const slot='o'+room
-      if(!nxt.days[day]) nxt.days[day]={}
-      const arr=nxt.days[day][slot]||(nxt.days[day][slot]=[])
-      const sessStart=nxt.ochStart, sessEnd=nxt.ochEnd
-      // keep manual flex; drop the auto trailing flex so we can recompute it
-      const keep=arr.filter(a=>!(a.isFlex&&!a.manual))
-      let lastEnd=sessStart
-      keep.filter(a=>!a.isFlex).forEach(a=>{ lastEnd=Math.max(lastEnd, a.end) })
-      const dur=Math.max(5,item.flex?(item.duur||15):(item.duur||15))
-      const start=Math.min(lastEnd, sessEnd-dur)
-      if(item.flex){
-        keep.push({id:'flexman_'+Math.random().toString(36).slice(2,8),isFlex:true,manual:true,
-          dagdeel:0,room,start,end:start+dur,duur:dur,code:'Flex',
-          description:'Flexblok (handmatig)',category:'flex',
-          _why:['Handmatig toegevoegd flexblok.']})
-      } else {
-        keep.push({id:'man_'+Math.random().toString(36).slice(2,8),
-          code:item.afspraakcode||item.code||'AFSPR',description:item.omschrijving||item.description||'Afspraak',
-          duur:dur,digitaal:item.digitaal||false,spoed:item.spoed||false,onzeker:item.onzeker||'gemiddeld',
-          category:item.category,ci:item.ci??0,dagdeel:0,room,start,end:start+dur,edited:true,manual:true,
-          _why:['Handmatig toegevoegd aan dit spreekuur.']})
-      }
-      keep.sort((a,b)=>(a.start||0)-(b.start||0))
-      // recompute trailing auto-flex from the end of the last item to the session end
-      const realEnd=Math.max(sessStart,...keep.filter(a=>!(a.isFlex&&!a.manual)).map(a=>a.end||sessStart))
-      const rest=sessEnd-realEnd
-      if(rest>=5) keep.push({id:'flex_o_'+room+'_'+realEnd+'_'+Math.random().toString(36).slice(2,5),
-        isFlex:true,dagdeel:0,room,start:realEnd,end:sessEnd,duur:rest,code:'Flex',
-        description:'Flexruimte / buffer',category:'flex'})
-      nxt.days[day][slot]=keep
-      return nxt
-    })
-    setAddMenu(null)
-  }
-
-  const addRoom=()=>setRaster(prev=>{
-    if(!prev) return prev
-    const nxt=JSON.parse(JSON.stringify(prev))
-    const r=nxt.numRooms
-    Object.keys(nxt.days).forEach(d=>{ if(nxt.days[d]){nxt.days[d]['o'+r]=[];nxt.days[d]['m'+r]=[];if(nxt.avondOn)nxt.days[d]['a'+r]=[]} })
-    nxt.numRooms=r+1
-    return nxt
-  })
-  const removeRoom=()=>setRaster(prev=>{
-    if(!prev||prev.numRooms<=1) return prev
-    const nxt=JSON.parse(JSON.stringify(prev))
-    const r=nxt.numRooms-1
-    Object.keys(nxt.days).forEach(d=>{
-      if(!nxt.days[d]) return
-      ;['o'+r,'m'+r,'a'+r].forEach(sl=>{(nxt.days[d][sl]||[]).filter(a=>!a.isFlex).forEach(a=>nxt.ntp.push({...a,day:+d}));delete nxt.days[d][sl]})
-    })
-    nxt.numRooms=r
-    return nxt
-  })
-
-  const nav=idx=>{
-    if(idx===3) doGenerate()
-    setActive(idx); setVisited(p=>new Set([...p,idx]))
-  }
-
-
-
-  // ── SCHEDULING ENGINE — pure functie zodat de solver 'm herhaald kan aanroepen ─
-  // Elk slot = (dag, dagdeel, kamer). Flex = ongebruikte capaciteit binnen de
-  // benuttingsgrens. De parameters schaduwen de state, zodat de solver met
-  // afwijkende (rules/benutting/kamers)-configuraties kan doorrekenen.
-  const computeRaster=useCallback((cfg,newRows,ctrlRows,m2,rules,capacity)=>{
+// ═══ DE PLAN-ENGINE — zuivere functie, los van React ═══════════════════════
+// Dezelfde invoer geeft altijd dezelfde uitkomst, en de functie raakt geen DOM en
+// geen component-state aan. Daardoor kan hij in een Web Worker draaien (zie
+// entry.jsx en engineClient.js): de interface blijft bedienbaar terwijl er wordt
+// gerekend, en elke wijziging wordt altijd doorgerekend — ook halverwege een vorige.
+// Symbolen voor de knapzak-samensteller (componeer): totalen per combinatie.
+const CMB_TOT=Symbol('cmbTot'), CMB_STRAF=Symbol('cmbStraf')
+function computeRasterInner(cfg,newRows,ctrlRows,m2,rules,capacity){
     const ochStart=toMin(m2.ochStart), ochEnd=toMin(m2.ochEnd)
     const midStart=toMin(m2.midStart), midEnd=toMin(m2.midEnd)
     const ochDur=ochEnd-ochStart, midDur=midEnd-midStart
@@ -2081,9 +1585,25 @@ export default function RasterTool(){
           const kand=rest.filter(a=>a.ddOpties.includes(s.dd)&&s.used+a.duur<=U+0.01)
           if(!kand.length) return null
           // Score: afstand tot het slotdoel + (bij afwisselen) de scheefheid van de mix.
-          const score=a=>Math.abs(s.used+a.duur-doelS)
-            +(mixSel(s.dd)?MIX_SCHAAL()*mixStraf(s,a):0)
-          const beste=kand.reduce((x,y)=>score(y)<score(x)?y:x)
+          // PRESTATIE: de score hangt alleen af van de duur en de categorie van een
+          // kandidaat, niet van de kandidaat zelf. De mix-straf wordt daarom één keer
+          // per categorie bepaald, en elke (duur, categorie)-groep wordt één keer
+          // gescoord — de eerste kandidaat van de winnende groep is precies dezelfde
+          // afspraak die de volledige vergelijking zou kiezen.
+          const mixAan=mixSel(s.dd)
+          let strafN=0, strafC=0
+          if(mixAan){ const sch=MIX_SCHAAL()
+            strafN=sch*mixStraf(s,{category:'nieuw'}); strafC=sch*mixStraf(s,{category:'controle'}) }
+          let beste=null, besteSc=Infinity
+          const gezien=new Set()
+          for(const a of kand){
+            const nieuwC=a.category==='nieuw'
+            const g=a.duur*2+(nieuwC?1:0)
+            if(gezien.has(g)) continue
+            gezien.add(g)
+            const sc=Math.abs(s.used+a.duur-doelS)+(mixAan?(nieuwC?strafN:strafC):0)
+            if(sc<besteSc){ besteSc=sc; beste=a }
+          }
           let zelfdeDuur=kand.filter(a=>a.duur===beste.duur)
           const spoed=rules.spoedFirst?zelfdeDuur.filter(a=>a.spoed):[]
           if(spoed.length && s.items.filter(a=>a.spoed).length===0) zelfdeDuur=spoed
@@ -2118,17 +1638,23 @@ export default function RasterTool(){
             if(a.category==='nieuw') availN[d]=(availN[d]||0)+1; else availC[d]=(availC[d]||0)+1 })
           const doeRatio=mixSel(s.dd)
           // Hoe goed is de nieuw/controle-mix die deze duur-combinatie kán halen?
+          // PRESTATIE: de totalen (tot/minN/maxN) van een combinatie groeien mee bij
+          // elke uitbreiding en staan onder een symbool op het object (Object.entries
+          // ziet ze niet, de spread kopieert ze wél — daarom wordt de bewaarde straf
+          // bij elke nieuwe kandidaat expliciet gewist). De straf wordt één keer per
+          // combinatie bepaald en bewaard. Dit was de duurste lus van de hele engine:
+          // miljoenen keren per raster alle duren opnieuw optellen.
+          const rdS=doelRatioVan(s)
           const mixVanCombi=combi=>{
-            let minN=0, maxN=0, tot=0
-            Object.entries(combi).forEach(([d,k])=>{ tot+=k
-              minN+=Math.max(0, k-(availC[d]||0)); maxN+=Math.min(k, availN[d]||0) })
-            if(!tot) return {tot:0, haalbaarN:0, straf:0}
-            const rd=doelRatioVan(s)
-            const wens=Math.min(Math.round(rd*tot), s.capN!=null?s.capN:Infinity)
-            const haalbaarN=Math.max(minN, Math.min(maxN, wens))
-            let straf=Math.abs(haalbaarN/tot - rd)+puurStraf(haalbaarN,tot)
+            if(combi[CMB_STRAF]) return combi[CMB_STRAF]
+            const t=combi[CMB_TOT]
+            const tot=t?t.tot:0
+            if(!tot) return (combi[CMB_STRAF]={tot:0, haalbaarN:0, straf:0})
+            const wens=Math.min(Math.round(rdS*tot), s.capN!=null?s.capN:Infinity)
+            const haalbaarN=Math.max(t.minN, Math.min(t.maxN, wens))
+            let straf=Math.abs(haalbaarN/tot - rdS)+puurStraf(haalbaarN,tot)
             if(s.capN!=null && haalbaarN>s.capN) straf+=0.5*(haalbaarN-s.capN)
-            return {tot, haalbaarN, straf}
+            return (combi[CMB_STRAF]={tot, haalbaarN, straf})
           }
           // BELANGRIJK: per som bewaren we niet zomaar de EERSTE combinatie. De duren
           // worden van lang naar kort verwerkt, dus "eerste" betekende altijd de
@@ -2140,9 +1666,12 @@ export default function RasterTool(){
           duren.forEach(d=>{
             const nieuw=new Map(herkomst)
             herkomst.forEach((combi,som)=>{
+              const basis=combi[CMB_TOT]||{tot:0,minN:0,maxN:0}
               for(let k=1;k<=aantal[d];k++){
                 const ns=som+k*d; if(ns>maxSom) break
-                const kandidaat={...combi,[d]:k}
+                const kandidaat={...combi,[d]:k,
+                  [CMB_TOT]:{tot:basis.tot+k, minN:basis.minN+Math.max(0,k-(availC[d]||0)), maxN:basis.maxN+Math.min(k,availN[d]||0)},
+                  [CMB_STRAF]:null}
                 if(!nieuw.has(ns)){ nieuw.set(ns,kandidaat); continue }
                 if(!doeRatio) continue
                 if(mixVanCombi(kandidaat).straf < mixVanCombi(nieuw.get(ns)).straf)
@@ -2536,7 +2065,11 @@ export default function RasterTool(){
       // het bundelen naar een verdeling die de drempelregel daarna weer afbrak.
       const meet=di=>{
         const pool=grouped[di]||[]
-        if(!pool.length) return {n:0, lastAppts:[], frac:1, over:0, verlies:0}
+        // Een open dag zónder afspraken (bv. codes die alleen op andere dagen mogen,
+        // of nog geen gegevens) telt gewoon mee als lege dag — met dezelfde velden
+        // als een gevulde dag, anders struikelt het weekbrede meten hieronder erover
+        // en viel het hele raster stil zodra een rest-dag was ingesteld.
+        if(!pool.length) return {n:0, lastAppts:[], frac:1, over:0, verlies:0, perDdN:{}, restItems:[]}
         const res=vulDag(di, pool)
         const odd=openDdOf(di)
         const {R,rest}=pasMinBezettingToe(res.perDd, odd)
@@ -3418,6 +2951,7 @@ export default function RasterTool(){
     })
     maxRooms = capMode==='vast' ? Math.max(1,maxParallel) : Math.max(1,compactMax)
     res.numRooms = maxRooms   // was vóór de compactie vastgelegd; nu de echte breedte
+    res.capacity.used = Math.max(1, compactMax)   // het aantal kamers dat écht draait
 
     ;[0,1,2,3,4].forEach(di=>{
       if(!built[di]){ res.days[di]=null; return }
@@ -3874,7 +3408,7 @@ export default function RasterTool(){
       // wisselt overal af, dan is er niets te verbeteren. De lus stopt bovendien zodra
       // dat bereikt is, dus meestal kost dit één extra doorrekening in plaats van twee.
       if(!perfect(res) || (wilCluster && digN(res)===0)) for(const kracht of [0.4, 0]){
-        const alt=computeRaster(cfg,newRows,ctrlRows,m2,{...rules,__mixKracht:kracht},capacity)
+        const alt=computeRasterEngine(cfg,newRows,ctrlRows,m2,{...rules,__mixKracht:kracht},capacity)
         if(!alt) continue
         // Een eigen digitaal spreekuur is een expliciete keuze; die mag het soepeler
         // mengen nooit stilletjes opofferen.
@@ -3883,9 +3417,10 @@ export default function RasterTool(){
         if(perfect(beste)) break
       }
       if(beste!==res){
-        beste.notices=[...(beste.notices||[]),{level:'info',rule:'Nieuw en controle afwisselen',
+        // Nooit het (gedeelde, gememoriseerde) resultaat zelf aanpassen: kopie met eigen meldingen.
+        beste={...beste, notices:[...(beste.notices||[]),{level:'info',rule:'Nieuw en controle afwisselen',
           msg:`Strikt afwisselen zou hier ${res.ntp.length} afspra${res.ntp.length===1?'ak':'ken'} op de restlijst laten staan (tegen ${beste.ntp.length} nu). De sturing op afwisselen is daarom ${besteKracht>0?'iets soepeler':'losgelaten'}, zodat er zo min mogelijk mensen ongepland blijven.`,
-          fix:'Wil je tóch strikt afwisselen, dan lukt dat met een kamer erbij, ruimere spreekuurtijden of consultduren die beter op elkaar passen.'}]
+          fix:'Wil je tóch strikt afwisselen, dan lukt dat met een kamer erbij, ruimere spreekuurtijden of consultduren die beter op elkaar passen.'}]}
         return beste
       }
     }
@@ -3905,16 +3440,20 @@ export default function RasterTool(){
       // Anders verloor je het telefonische spreekuur aan een regel die daar niet over gaat.
       let houd=res
       if(rules.mixNC && rules.__mixKracht==null && res.ntp.length) for(const kracht of [0.5,0]){
-        const alt=computeRaster(cfg,newRows,ctrlRows,m2,{...rules,__mixKracht:kracht},capacity)
+        const alt=computeRasterEngine(cfg,newRows,ctrlRows,m2,{...rules,__mixKracht:kracht},capacity)
         if(alt && alt.digPlan && alt.digPlan.gepland.length>0 && alt.ntp.length<houd.ntp.length) houd=alt
         if(!houd.ntp.length) break
       }
-      const spread=computeRaster(cfg,newRows,ctrlRows,m2,{...rules,digitalMode:'spread',__zonderCluster:true},capacity)
+      // Verspreiden wint alleen als het STRIKT minder laat liggen — staat er bij
+      // clusteren al niets op de restlijst, dan valt er niets te winnen en slaan we
+      // die volledige doorrekening over.
+      const spread=houd.ntp.length>0
+        ? computeRasterEngine(cfg,newRows,ctrlRows,m2,{...rules,digitalMode:'spread',__zonderCluster:true},capacity)
+        : null
       if(spread && spread.ntp.length < houd.ntp.length){
-        spread.notices=[...(spread.notices||[]),{level:'info',rule:'Digitale consulten',
+        return {...spread, notices:[...(spread.notices||[]),{level:'info',rule:'Digitale consulten',
           msg:`Een eigen digitaal spreekuur zou hier ${houd.ntp.length} afspra${houd.ntp.length===1?'ak':'ken'} op de restlijst laten staan (tegen ${spread.ntp.length} bij verspreiden). De telefonische consulten zijn daarom over de gewone spreekuren verspreid, zodat er niemand ongepland blijft.`,
-          fix:'Wil je tóch een apart telefonisch spreekuur, dan lukt dat met meer kamers, een andere dagverdeling, of een hogere/lagere benutting.'}]
-        return spread
+          fix:'Wil je tóch een apart telefonisch spreekuur, dan lukt dat met meer kamers, een andere dagverdeling, of een hogere/lagere benutting.'}]}
       }
     }
     // ── AFWISSELEN MAG NOOIT EEN PATIËNT KOSTEN ───────────────────────────────
@@ -3930,25 +3469,599 @@ export default function RasterTool(){
     // anders uitpakken. Daarom rekenen we de week ook zónder bundelen door en
     // houden we die als er méér afspraken ingepland raken. Zo is de belofte hard,
     // niet bij benadering.
-    if(restDagGebundeld>0 && !rules.__zonderBundel){
-      const zonder=computeRaster(cfg,newRows,ctrlRows,m2,
+    if(restDagGebundeld>0 && !rules.__zonderBundel && res.ntp.length>0){
+      const zonder=computeRasterEngine(cfg,newRows,ctrlRows,m2,
         {...rules, restDag:'uit', __zonderBundel:true}, capacity)
       if(zonder && zonder.ntp.length<res.ntp.length){
-        zonder.notices=[...(zonder.notices||[]),{level:'info',rule:'Restvraag bundelen',
+        return {...zonder, notices:[...(zonder.notices||[]),{level:'info',rule:'Restvraag bundelen',
           msg:`Bundelen liet ${res.ntp.length} afspraken op de restlijst staan tegen ${zonder.ntp.length} zonder bundelen. Het raster is daarom zonder bundelen opgebouwd.`,
-          fix:'Bundelen loont hier niet; met een andere restdag of meer kamers kan dat anders liggen.'}]
-        return zonder
+          fix:'Bundelen loont hier niet; met een andere restdag of meer kamers kan dat anders liggen.'}]}
       }
     }
     return res
+}
+// Memo per top-aanroep: de engine rekent varianten door (zonder bundelen, verspreid
+// i.p.v. geclusterd, soepeler afwisselen) en die varianten roepen elkaar weer aan.
+// Twee paden komen daarbij geregeld op exact dezelfde instellingen uit; die worden
+// nu één keer berekend. De cache leeft alleen binnen één aanroep van buitenaf.
+const engineSleutel=rules=>JSON.stringify(rules,(k,v)=>{
+  if(k==='__cache') return undefined
+  if(v&&typeof v==='object'&&!Array.isArray(v)) return Object.keys(v).sort().reduce((a,kk)=>{ a[kk]=v[kk]; return a },{})
+  return v })
+export function computeRasterEngine(cfg,newRows,ctrlRows,m2,rules,capacity){
+  const top=!(rules&&rules.__cache)
+  const r2=top?{...rules,__cache:new Map()}:rules
+  const cache=r2.__cache
+  const key=engineSleutel(r2)
+  if(cache.has(key)) return cache.get(key)
+  // Gememoriseerde resultaten worden gedeeld; wie er een melding aan toevoegt,
+  // maakt daarom eerst een kopie (zie de varianten hierboven).
+  const res=computeRasterInner(cfg,newRows,ctrlRows,m2,r2,capacity)
+  cache.set(key,res)
+  return res
+}
+// Zuivere meting van een raster — gebruikt door de optimiser (ook in de worker,
+// zodat alleen de cijfers terugkomen en niet 70 volledige rasters).
+export const meetRasterPuur=r=>{
+  let placed=0, kamerDagen=0
+  ;[0,1,2,3,4].forEach(di=>{ const s=r.days[di]; if(!s) return
+    const rooms=new Set()
+    Object.entries(s).forEach(([k,arr])=>{ if((arr||[]).some(a=>!a.isFlex&&!a.overbook)) rooms.add(k.slice(1)) })
+    kamerDagen+=rooms.size
+    Object.values(s).forEach(arr=>(arr||[]).forEach(a=>{ if(!a.isFlex) placed++ }))
+  })
+  return {placed, ntp:r.ntp.length, kamerDagen,
+    benut:(r.kpi&&r.kpi.week.benutting)||0, spreiding:(r.kpi&&r.kpi.week.spreiding)||0,
+    issues:((r.kpi&&r.kpi.issues)||[]).length}
+}
+// De rekenaars die de engine-client kent — identiek in de worker en in de
+// synchrone terugval (zie engineClient.js en entry.jsx).
+export const ENGINE_RUNNERS={
+  poli: args=>computeRasterEngine(...args),
+  functie: args=>fkBerekenAdvies(args[0]),
+  meet: r=>meetRasterPuur(r),
+}
+const ENGINE=maakEngineClient({runners:ENGINE_RUNNERS,
+  scriptBron:()=>(typeof window!=='undefined'&&window.__POLIRASTER_SCRIPT)||null})
+
+export default function RasterTool(){
+  const [active,setActive]=useState(0)
+  const [now,setNow]=useState(new Date())
+  useEffect(()=>{ const t=setInterval(()=>setNow(new Date()),1000); return()=>clearInterval(t) },[])
+  const [visited,setVisited]=useState(new Set([0]))
+  const [m1Mode,setM1Mode]=useState(null)
+  const [m1Section,setM1Section]=useState(1)
+  const [cfg,setCfg]=useState({newPat:10,ctrlPat:20,newCodes:2,ctrlCodes:3})
+  const [poli,setPoli]=useState({naam:'',specialisme:''})   // vrij invulbare poli-identiteit
+  // ── PLANMODUS ─────────────────────────────────────────────────────────────
+  // 'poli'    = spreekkamers die onderling gelijk zijn (nieuw/controle, de bestaande engine)
+  // 'functie' = functiekamers met kwalificaties: welke onderzoekscode mag in welke kamer,
+  //             hoe vaak per week, en de tool adviseert per kamer welke dagdelen open moeten.
+  const [modus,setModus]=useState('poli')
+  const [fk,setFk]=useState(()=>({kamers:[],codes:[],regels:fkStandaardRegels(),preset:'',badge:null,open:null,mode:null,sectie:1}))
+  // Capaciteitsbasis: 'auto' = groeit vrij; 'vast' = begrensd tot het gekozen aantal kamers
+  const [capacity,setCapacity]=useState({mode:'auto',kamers:3})
+  const [newRows,setNewRows]=useState([])
+  const [ctrlRows,setCtrlRows]=useState([])
+  const [importBadge,setImportBadge]=useState(null)
+  const [m2,setM2]=useState({ochStart:'08:30',ochEnd:'12:00',midStart:'13:00',midEnd:'16:30',
+    avondOn:false,avondStart:'17:00',avondEnd:'20:00',verAvond:0,
+    verOch:50,benutting:85,days:{ma:20,di:20,wo:20,do:20,vr:20},
+    ddDagen:{O:{...DEF_DD_DAGEN.O},M:{...DEF_DD_DAGEN.M},A:{...DEF_DD_DAGEN.A}}})
+  const [rules,setRules]=useState({
+    spoedFirst:false,         // spoed-afspraken vormen een blok vooraan (nooit op restlijst)
+    startNieuw:false,         // spreekuur opent met een NIEUWE afspraak
+    startControle:false,      // spreekuur opent met een CONTROLE afspraak
+    mixNC:true,               // nieuw en controle afwisselen (gemengde volgorde) — standaard aan
+    digitalMode:'spread', flexMode:'end',
+    digitalSlots:[],          // waar de eigen digitale spreekuren vallen: [{di,dd}] · leeg = automatisch
+    kamerVerdeling:'dagdeel', // 'dagdeel' = kamer voor kamer afronden (och→mid→volgende kamer) | 'gelijk'
+    restDag:'uit',            // 'uit' | 'auto' | 'ma'..'vr' — restvraag samenvoegen op één dag
+    restOpruimen:true,        // spreekuren onder de minimumbezetting sluiten i.p.v. half-leeg laten draaien
+    minBezetting:75,          // een spreekuur gaat alléén open bij minimaal dit bezettingspercentage
+    // ── BEREIK per regel: 'both' (ochtend + middag) | 'och' | 'mid' ─────────────
+    // Elke regel is expliciet gekaderd in WELK dagdeel hij geldt, zodat de engine
+    // nooit zelf hoeft te raden of iets voor de ochtend, de middag of allebei bedoeld is.
+    spoedDagdeel:'both',      // in welk dagdeel geldt spoed-eerst
+    startNieuwWaar:'both',    // in welk dagdeel opent het spreekuur met een nieuwe afspraak
+    startControleWaar:'both', // in welk dagdeel opent het spreekuur met een controle afspraak
+    mixWaar:'both',           // in welk dagdeel wordt nieuw/controle afgewisseld
+    digitalWaar:'both',       // in welk dagdeel geldt de gekozen digitaal-plaatsing
+    flexWaar:'both',          // in welk dagdeel geldt de gekozen flex-verdeling
+    flexNoFirstMin:60,        // geen verspreide flex in de eerste N minuten van een spreekuur
+    flexBlokMin:10,           // grootte van één verspreid flexblokje (5/10/15/20 min)
+    digitalEndMinutes:30,     // breedte van het digitale eindvenster (digitalMode='end')
+  })
+  const [selDay,setSelDay]=useState(0)
+  const [raster,setRaster]=useState(null)
+  const [calZoom,setCalZoom]=useState(3.0) // px per minute, range 1.5–6
+  const [viewMode,setViewMode]=useState('dag') // 'dag' | 'week' (multi-dynamisch overzicht)
+  // Inklapbare rasterpanelen (minimaliseren/maximaliseren)
+  // Begeleide intake ("assistent"): stapsgewijze vragen met keuze-opties die de hele
+  // configuratie invullen. Volledig deterministisch — elk antwoord zet gewoon een
+  // instelling; er wordt niets "bedacht". {stap, ant, klaar}
+  const [wiz,setWiz]=useState(null)
+  const [openPanels,setOpenPanels]=useState({kpi:true,analyse:true,capaciteit:true})
+  // Alles wat je niet hoeft te zien om te beginnen staat standaard dicht.
+  const [toonGeav,setToonGeav]=useState(false)
+  const togglePanel=k=>setOpenPanels(p=>({...p,[k]:!p[k]}))
+  const [drag,setDrag]=useState(null)
+  const [showExport,setShowExport]=useState(false)
+  const [showReset,setShowReset]=useState(false)
+  const [showFullReset,setShowFullReset]=useState(false)
+  const [expName,setExpName]=useState('slingeland_raster')
+  const [expOk,setExpOk]=useState(false)
+  const [exporting,setExporting]=useState(false)
+  const [exportLink,setExportLink]=useState(null) // {wb, href, basis, filename}
+  const [dlMelding,setDlMelding]=useState(null)   // uitkomst van opslaan via de gedeelde pagina
+  const [tplLink,setTplLink]=useState(null)       // voorbeeld-Excel {href, filename}
+  const calRef=useRef(null)
+  const fileRef=useRef(null)
+  // Zodra de gedeelde pagina de download-mogelijkheid vrijgeeft, opnieuw tekenen zodat
+  // de exportknop de viewer-route toont in plaats van een (daar inerte) downloadlink.
+  const [,dlTick]=useState(0)
+  useEffect(()=>{ let aan=true; viewerDownloadsKlaar.then(()=>{ if(aan) dlTick(t=>t+1) }); return ()=>{aan=false} },[])
+
+  useEffect(()=>{
+    const l=document.createElement('link')
+    l.href='https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap'
+    l.rel='stylesheet'; document.head.appendChild(l)
   },[])
 
-  // Eén bouwfunctie voor beide modi: de poli-engine of het functiekamer-advies.
-  const bouwRaster=useCallback(()=> modus==='functie'
-    ? fkBerekenAdvies({kamers:fk.kamers,codes:fk.codes,m2,regels:fk.regels})
-    : computeRaster(cfg,newRows,ctrlRows,m2,rules,capacity)
-  ,[modus,fk.kamers,fk.codes,fk.regels,cfg,newRows,ctrlRows,m2,rules,capacity,computeRaster])
-  const doGenerate=useCallback(()=>{ setRaster(bouwRaster()) },[bouwRaster])
+  // ── Pointer-based drag, free-positioning + resize (reliable in sandbox) ──────
+  // dragItem = {mode:'move'|'new'|'resize-top'|'resize-bot', appt, fromDay, fromSlot, palette, grabOffsetMin}
+  const [dragItem,setDragItem]=useState(null)
+  const [dragOver,setDragOver]=useState(null) // {day, slot} | {slot:'ntp'}
+  const dragItemRef=useRef(null)
+  dragItemRef.current=dragItem
+  const gridGeomRef=useRef(null)
+  const ghostRef=useRef(null)        // direct-DOM ghost (for 'new' from palette)
+  const startPosRef=useRef({x:0,y:0})
+  const lastSlotRef=useRef(null)
+  const liveLocRef=useRef(null)      // current live location of the block being moved
+  const [roomNames,setRoomNames]=useState({})   // {roomIndex: 'spreekuur naam'}
+  // Wisselen van planmodus — vanuit de zijbalk én vanuit de balk boven het raster.
+  const wisselModus=v=>{
+    if(v===modus) return
+    setModus(v); setSelDay(0)
+    setActive(1); setVisited(p=>new Set([...p,1]))
+  }
+  const fkLaadPresetRef=useRef(null)
+  // Naam van een kolom: in de functiekamer-modus de echte kamer (A1.213), anders "Kamer n" of de eigen naam.
+  const fkActieveKamers=(fk.kamers||[]).filter(k=>k.actief!==false)
+  const kamerNaam=r=> (modus==='functie'&&fkActieveKamers[r]) ? (fkActieveKamers[r].naam||`Kamer ${r+1}`) : (roomNames[r]??`Kamer ${r+1}`)
+  const [addMenu,setAddMenu]=useState(null)      // {room} when the + menu is open
+
+  // Start a drag/resize
+  const startDrag=(e,item)=>{
+    e.preventDefault(); e.stopPropagation()
+    const cx=e.touches?e.touches[0].clientX:e.clientX
+    const cy=e.touches?e.touches[0].clientY:e.clientY
+    startPosRef.current={x:cx,y:cy}
+    lastSlotRef.current=null
+    // For move: record where in the block you grabbed (so it doesn't jump), and its live location
+    if(item.mode==='move'){
+      if(item.fromSlot==='ntp'){
+        // NTP item has no grid position — placed on drop, shown via ghost
+        item.grabOffsetMin=0
+        liveLocRef.current=null
+      } else {
+        const g=gridGeomRef.current
+        const rect=e.currentTarget.getBoundingClientRect()
+        item.grabOffsetMin=g?Math.max(0,(cy-rect.top)/g.PXMIN):0
+        liveLocRef.current={day:item.fromDay,slot:item.fromSlot,id:item.appt.id,start:item.appt.start}
+      }
+    }
+    setDragItem(item)
+  }
+
+  const yToTime=(clientY, bodyEl)=>{
+    const g=gridGeomRef.current; if(!g||!bodyEl||!g.regions) return null
+    const rect=bodyEl.getBoundingClientRect()
+    const y=clientY-rect.top
+    // Find the region whose y-band contains y (clamp into nearest otherwise)
+    let best=g.regions[0]
+    for(const r of g.regions){
+      const yEnd=r.y0+(r.end-r.start)*g.PXMIN
+      if(y>=r.y0-1 && y<=yEnd+g.pauseH){ best=r; if(y<=yEnd) break }
+    }
+    // Klem binnen het dagdeel: de grijze marges vóór en ná zijn gesloten, daar
+    // kan niets naartoe gesleept worden.
+    const rt=best.start + Math.max(0,(y-best.y0))/g.PXMIN
+    return Math.max(best.start, Math.min(best.end, rt))
+  }
+  const snap5=t=>Math.round(t/5)*5
+
+  // Live-move the block to a new slot/start within the grid (realtime, as you drag)
+  const liveMove=(targetDay,targetSlot,targetStart)=>{
+    const loc=liveLocRef.current; if(!loc) return
+    setRaster(prev=>{
+      if(!prev) return prev
+      const nxt=JSON.parse(JSON.stringify(prev))
+      const fromArr=nxt.days[loc.day]?.[loc.slot]; if(!fromArr) return prev
+      const idx=fromArr.findIndex(a=>a.id===loc.id); if(idx<0) return prev
+      const appt=fromArr[idx]
+      const dur=appt.duur||15
+      const ddp=targetSlot[0]
+      const dd=ddp==='o'?0:ddp==='m'?1:2
+      const room=parseInt(targetSlot.slice(1))
+      const sessStart=ddp==='o'?nxt.ochStart:ddp==='m'?nxt.midStart:nxt.avondStart
+      const sessEnd=ddp==='o'?nxt.ochEnd:ddp==='m'?nxt.midEnd:nxt.avondEnd
+      let st=Math.max(sessStart,Math.min(targetStart,sessEnd-dur))
+      st=snap5(st)
+      // no change? skip
+      if(loc.slot===targetSlot && loc.day===targetDay && appt.start===st) return prev
+      fromArr.splice(idx,1)
+      const moved={...appt,dagdeel:dd,room,start:st,end:st+dur,edited:true}
+      if(!nxt.days[targetDay]) nxt.days[targetDay]={}
+      if(!nxt.days[targetDay][targetSlot]) nxt.days[targetDay][targetSlot]=[]
+      nxt.days[targetDay][targetSlot].push(moved)
+      nxt.days[targetDay][targetSlot].sort((a,b)=>(a.start||0)-(b.start||0))
+      return nxt
+    })
+    liveLocRef.current={day:targetDay,slot:targetSlot,id:loc.id,start:targetStart}
+  }
+
+  useEffect(()=>{
+    if(!dragItem) return
+    if(ghostRef.current){
+      ghostRef.current.style.left=(startPosRef.current.x+14)+'px'
+      ghostRef.current.style.top=(startPosRef.current.y+8)+'px'
+    }
+    const onMove=e=>{
+      const cx=e.touches?e.touches[0].clientX:e.clientX
+      const cy=e.touches?e.touches[0].clientY:e.clientY
+      if(ghostRef.current){
+        ghostRef.current.style.left=(cx+14)+'px'
+        ghostRef.current.style.top=(cy+8)+'px'
+      }
+      const el=document.elementFromPoint(cx,cy)
+      const zone=el&&el.closest?el.closest('[data-slotkey]'):null
+      const item=dragItemRef.current
+      const key=zone?zone.dataset.slotkey:null
+      if(key!==lastSlotRef.current){
+        lastSlotRef.current=key
+        if(zone){
+          const slot=zone.dataset.slotkey
+          setDragOver(slot==='ntp'?{slot:'ntp'}:{day:+zone.dataset.day,slot})
+        } else setDragOver(null)
+      }
+      // LIVE MOVE — reposition the actual block in the grid as you drag (grid items only)
+      if(item&&item.mode==='move'&&item.fromSlot!=='ntp'&&zone){
+        const slot=zone.dataset.slotkey
+        if(slot!=='ntp'){
+          const day=+zone.dataset.day
+          const bodyEl=zone.closest('[data-roombody]')||document.querySelector(`[data-roombody="${day}_${slot}"]`)
+          const t=yToTime(cy,bodyEl)
+          if(t!=null) liveMove(day,slot,snap5(t-(item.grabOffsetMin||0)))
+        }
+      }
+      // Live resize feedback
+      if(item&&(item.mode==='resize-top'||item.mode==='resize-bot')){
+        const bodyEl=document.querySelector(`[data-roombody="${item.fromDay}_${item.fromSlot}"]`)
+        const t=yToTime(cy,bodyEl)
+        if(t!=null) doResize(item,snap5(t))
+      }
+    }
+    const onUp=e=>{
+      const cx=(e.changedTouches?e.changedTouches[0].clientX:e.clientX)
+      const cy=(e.changedTouches?e.changedTouches[0].clientY:e.clientY)
+      const item=dragItemRef.current
+      if(item&&(item.mode==='new'||(item.mode==='move'&&item.fromSlot==='ntp'))){
+        // 'new' from palette OR an item dragged out of "Nog te plannen": place where dropped
+        const el=document.elementFromPoint(cx,cy)
+        const zone=el&&el.closest?el.closest('[data-slotkey]'):null
+        if(zone){
+          const slot=zone.dataset.slotkey
+          if(slot==='ntp') dropTo('ntp',null)
+          else {
+            const bodyEl=zone.closest('[data-roombody]')||document.querySelector(`[data-roombody="${zone.dataset.day}_${slot}"]`)
+            const t=yToTime(cy,bodyEl)
+            dropTo({day:+zone.dataset.day,slot}, t!=null?snap5(t):null)
+          }
+        }
+      } else if(item&&item.mode==='move'){
+        // Grid item already live-placed; only handle drop back to NTP
+        const el=document.elementFromPoint(cx,cy)
+        const zone=el&&el.closest?el.closest('[data-slotkey]'):null
+        if(zone&&zone.dataset.slotkey==='ntp') dropTo('ntp',null)
+      }
+      setDragItem(null); setDragOver(null); lastSlotRef.current=null; liveLocRef.current=null
+    }
+    window.addEventListener('mousemove',onMove)
+    window.addEventListener('mouseup',onUp)
+    window.addEventListener('touchmove',onMove,{passive:false})
+    window.addEventListener('touchend',onUp)
+    return()=>{
+      window.removeEventListener('mousemove',onMove)
+      window.removeEventListener('mouseup',onUp)
+      window.removeEventListener('touchmove',onMove)
+      window.removeEventListener('touchend',onUp)
+    }
+  },[dragItem])
+
+  // Resize an appointment or flex block in place
+  const doResize=(item,t)=>{
+    setRaster(prev=>{
+      if(!prev) return prev
+      const nxt=JSON.parse(JSON.stringify(prev))
+      const arr=nxt.days[item.fromDay]?.[item.fromSlot]; if(!arr) return prev
+      const it=arr.find(a=>a.id===item.appt.id); if(!it) return prev
+      if(item.mode==='resize-bot'){
+        const ne=Math.max(it.start+5,t)
+        it.end=ne; it.duur=ne-it.start
+      } else {
+        const ns=Math.min(it.end-5,t)
+        it.start=ns; it.duur=it.end-ns
+      }
+      it.edited=true
+      return nxt
+    })
+  }
+
+  // Move/add an appointment to a target slot at a given start time
+  const dropTo=(target,startMin)=>{
+    const item=dragItemRef.current
+    if(!item) return
+    setRaster(prev=>{
+      if(!prev) return prev
+      const nxt=JSON.parse(JSON.stringify(prev))
+      let appt
+      if(item.mode==='move'){
+        if(item.fromSlot==='ntp'){
+          const i=nxt.ntp.findIndex(a=>a.id===item.appt.id)
+          if(i>=0){appt=nxt.ntp[i];nxt.ntp.splice(i,1)}
+        } else {
+          const arr=nxt.days[item.fromDay]?.[item.fromSlot]
+          if(arr){const i=arr.findIndex(a=>a.id===item.appt.id);if(i>=0){appt=arr[i];arr.splice(i,1)}}
+        }
+      } else if(item.mode==='new'){
+        const p=item.palette
+        appt={id:'man_'+Math.random().toString(36).slice(2,9),code:p.code,description:p.label,
+          duur:p.duur,digitaal:p.digitaal,modaliteit:p.modaliteit||(p.digitaal?'telefonisch':'fysiek'),
+          spoed:false,category:p.category,ci:p.ci??0,edited:true,manual:true}
+      }
+      if(!appt) return nxt
+      const dur=appt.duur||15
+      if(target==='ntp'){
+        delete appt.start; delete appt.end; appt.edited=true; nxt.ntp.push(appt)
+      } else {
+        const {day,slot}=target
+        const ddp=slot[0]
+        const dd=ddp==='o'?0:ddp==='m'?1:2
+        const room=parseInt(slot.slice(1))
+        const sessStart=ddp==='o'?nxt.ochStart:ddp==='m'?nxt.midStart:nxt.avondStart
+        const sessEnd=ddp==='o'?nxt.ochEnd:ddp==='m'?nxt.midEnd:nxt.avondEnd
+        let st=startMin!=null?(startMin-(item.grabOffsetMin||0)):sessStart
+        st=Math.max(sessStart,Math.min(st,sessEnd-dur))
+        st=snap5(st)
+        appt={...appt,dagdeel:dd,room,start:st,end:st+dur,edited:true}
+        if(!nxt.days[day]) nxt.days[day]={}
+        if(!nxt.days[day][slot]) nxt.days[day][slot]=[]
+        nxt.days[day][slot].push(appt)
+        // keep sorted by start
+        nxt.days[day][slot].sort((a,b)=>(a.start||0)-(b.start||0))
+      }
+      return nxt
+    })
+  }
+
+  // ══ EEN HEEL DAGDEEL VERPLAATSEN (bezettingskaart) ═════════════════════════
+  // Je pakt in de bezettingskaart één vak vast — dat is één kamer, op één dag, in
+  // één dagdeel — en zet het op een andere plek neer. Staat daar al een spreekuur,
+  // dan RUILEN de twee van plek; is het leeg, dan verhuist het spreekuur gewoon.
+  // De afspraken worden op de nieuwe plek opnieuw achter elkaar gezet vanaf de
+  // begintijd van dat dagdeel, zodat de agenda meteen klopt. Past er door een korter
+  // dagdeel iets niet meer, dan komt dat op "nog te plannen" — nooit stilzwijgend weg.
+  const [kaartDrag,setKaartDrag]=useState(null)   // {di,room,dd} dat je vasthoudt
+  const [kaartOver,setKaartOver]=useState(null)   // {di,room,dd} waar je boven zweeft
+  const slotKeyVan=(room,dd)=>(dd===0?'o':dd===1?'m':'a')+room
+  const verplaatsDagdeel=useCallback((van,naar)=>{
+    if(!van||!naar) return
+    if(van.di===naar.di&&van.room===naar.room&&van.dd===naar.dd) return
+    setRaster(prev=>{
+      if(!prev) return prev
+      const nxt=JSON.parse(JSON.stringify(prev))
+      const kv=slotKeyVan(van.room,van.dd), kn=slotKeyVan(naar.room,naar.dd)
+      if(!nxt.days[van.di]) return prev
+      const bron=[...(nxt.days[van.di][kv]||[])]
+      if(!bron.some(a=>!a.isFlex)) return prev        // een leeg vak valt niets te verplaatsen
+      if(!nxt.days[naar.di]) nxt.days[naar.di]={}
+      const doelArr=[...(nxt.days[naar.di][kn]||[])]
+      const grens=dd=>dd===0?[nxt.ochStart,nxt.ochEnd]
+        :dd===1?[nxt.midStart,nxt.midEnd]:[nxt.avondStart,nxt.avondEnd]
+      const kwijt=[]
+      // Zet de afspraken op de nieuwe plek weer netjes achter elkaar vanaf de
+      // begintijd van dat dagdeel; flexblokken schuiven gewoon mee in het ritme.
+      const herleg=(arr,dd,room)=>{
+        const [s0,s1]=grens(dd)
+        const uit=[]; let t=s0
+        arr.slice().sort((a,b)=>(a.start||0)-(b.start||0)).forEach(a=>{
+          const d=a.duur||15
+          if(t+d>s1+0.01){ if(!a.isFlex) kwijt.push(a); return }
+          uit.push({...a,start:t,end:t+d,dagdeel:dd,room,edited:true})
+          t+=d
+        })
+        return uit
+      }
+      nxt.days[naar.di][kn]=herleg(bron,naar.dd,naar.room)
+      nxt.days[van.di][kv]=herleg(doelArr,van.dd,van.room)
+      if(kwijt.length){ nxt.ntp=[...(nxt.ntp||[]),
+        ...kwijt.map(a=>{ const b={...a,edited:true}; delete b.start; delete b.end; return b })] }
+      nxt._handmatig=true
+      return nxt
+    })
+  },[])
+
+  // ── SLEPEN MET DE MUIS/VINGER (niet via HTML5 drag-and-drop) ────────────────
+  // Een <button> met draggable="true" start in de praktijk lang niet altijd een
+  // HTML5-sleep: browsers geven de eigen knop-afhandeling voorrang, en op touch
+  // gebeurt er helemaal niets. Daarom volgen we hier dezelfde aanpak als het
+  // slepen van losse afspraken in het raster: pointer-events, zelf bijhouden, en
+  // het doelvak opzoeken met elementFromPoint. Dat werkt met muis én touch, en in
+  // elke browser.
+  const kaartBron=useRef(null)      // {di,room,dd,x0,y0,actief}
+  const kaartOverRef=useRef(null)
+  const kaartNetGesleept=useRef(false)
+  const [kaartGhost,setKaartGhost]=useState(null)   // {x,y,label}
+  const kaartPak=(e,di,room,dd,leeg,label)=>{
+    if(leeg||e.button===2) return
+    kaartBron.current={di,room,dd,x0:e.clientX,y0:e.clientY,actief:false,label}
+  }
+  useEffect(()=>{
+    const celVan=el=>{ let n=el
+      while(n&&n!==document.body){ if(n.dataset&&n.dataset.kaartcel) return n.dataset.kaartcel; n=n.parentElement }
+      return null }
+    const move=e=>{
+      const b=kaartBron.current; if(!b) return
+      if(!b.actief){
+        // Pas slepen na een paar pixels — anders wordt elke klik een sleep.
+        if(Math.abs(e.clientX-b.x0)+Math.abs(e.clientY-b.y0)<6) return
+        b.actief=true; setKaartDrag({di:b.di,room:b.room,dd:b.dd})
+      }
+      e.preventDefault()
+      setKaartGhost({x:e.clientX,y:e.clientY,label:b.label})
+      const k=celVan(document.elementFromPoint(e.clientX,e.clientY))
+      if(k){
+        const [di,room,dd]=k.split('-').map(Number)
+        const zelf=(di===b.di&&room===b.room&&dd===b.dd)
+        const t=zelf?null:{di,room,dd}
+        kaartOverRef.current=t; setKaartOver(t)
+      } else { kaartOverRef.current=null; setKaartOver(null) }
+    }
+    const los=()=>{
+      const b=kaartBron.current
+      if(b&&b.actief){
+        kaartNetGesleept.current=true
+        setTimeout(()=>{ kaartNetGesleept.current=false },0)
+        if(kaartOverRef.current) verplaatsDagdeel({di:b.di,room:b.room,dd:b.dd}, kaartOverRef.current)
+      }
+      kaartBron.current=null; kaartOverRef.current=null
+      setKaartDrag(null); setKaartOver(null); setKaartGhost(null)
+    }
+    window.addEventListener('pointermove',move,{passive:false})
+    window.addEventListener('pointerup',los)
+    window.addEventListener('pointercancel',los)
+    return ()=>{ window.removeEventListener('pointermove',move)
+      window.removeEventListener('pointerup',los); window.removeEventListener('pointercancel',los) }
+  },[verplaatsDagdeel])
+
+  const deleteAppt=(day,slot,id)=>{
+    setRaster(prev=>{
+      if(!prev) return prev
+      const nxt=JSON.parse(JSON.stringify(prev))
+      if(slot==='ntp'){const i=nxt.ntp.findIndex(a=>a.id===id);if(i>=0)nxt.ntp.splice(i,1)}
+      else {const arr=nxt.days[day]?.[slot];if(arr){const i=arr.findIndex(a=>a.id===id);if(i>=0)arr.splice(i,1)}}
+      return nxt
+    })
+  }
+
+  // Add an appointment (from a code) or a manual flex block to a room's morning session,
+  // placed right after the last real appointment. The trailing auto-flex is recomputed to fit.
+  const addToRoom=(day,room,item)=>{
+    setRaster(prev=>{
+      if(!prev) return prev
+      const nxt=JSON.parse(JSON.stringify(prev))
+      const slot='o'+room
+      if(!nxt.days[day]) nxt.days[day]={}
+      const arr=nxt.days[day][slot]||(nxt.days[day][slot]=[])
+      const sessStart=nxt.ochStart, sessEnd=nxt.ochEnd
+      // keep manual flex; drop the auto trailing flex so we can recompute it
+      const keep=arr.filter(a=>!(a.isFlex&&!a.manual))
+      let lastEnd=sessStart
+      keep.filter(a=>!a.isFlex).forEach(a=>{ lastEnd=Math.max(lastEnd, a.end) })
+      const dur=Math.max(5,item.flex?(item.duur||15):(item.duur||15))
+      const start=Math.min(lastEnd, sessEnd-dur)
+      if(item.flex){
+        keep.push({id:'flexman_'+Math.random().toString(36).slice(2,8),isFlex:true,manual:true,
+          dagdeel:0,room,start,end:start+dur,duur:dur,code:'Flex',
+          description:'Flexblok (handmatig)',category:'flex',
+          _why:['Handmatig toegevoegd flexblok.']})
+      } else {
+        keep.push({id:'man_'+Math.random().toString(36).slice(2,8),
+          code:item.afspraakcode||item.code||'AFSPR',description:item.omschrijving||item.description||'Afspraak',
+          duur:dur,digitaal:item.digitaal||false,spoed:item.spoed||false,onzeker:item.onzeker||'gemiddeld',
+          category:item.category,ci:item.ci??0,dagdeel:0,room,start,end:start+dur,edited:true,manual:true,
+          _why:['Handmatig toegevoegd aan dit spreekuur.']})
+      }
+      keep.sort((a,b)=>(a.start||0)-(b.start||0))
+      // recompute trailing auto-flex from the end of the last item to the session end
+      const realEnd=Math.max(sessStart,...keep.filter(a=>!(a.isFlex&&!a.manual)).map(a=>a.end||sessStart))
+      const rest=sessEnd-realEnd
+      if(rest>=5) keep.push({id:'flex_o_'+room+'_'+realEnd+'_'+Math.random().toString(36).slice(2,5),
+        isFlex:true,dagdeel:0,room,start:realEnd,end:sessEnd,duur:rest,code:'Flex',
+        description:'Flexruimte / buffer',category:'flex'})
+      nxt.days[day][slot]=keep
+      return nxt
+    })
+    setAddMenu(null)
+  }
+
+  const addRoom=()=>setRaster(prev=>{
+    if(!prev) return prev
+    const nxt=JSON.parse(JSON.stringify(prev))
+    const r=nxt.numRooms
+    Object.keys(nxt.days).forEach(d=>{ if(nxt.days[d]){nxt.days[d]['o'+r]=[];nxt.days[d]['m'+r]=[];if(nxt.avondOn)nxt.days[d]['a'+r]=[]} })
+    nxt.numRooms=r+1
+    return nxt
+  })
+  const removeRoom=()=>setRaster(prev=>{
+    if(!prev||prev.numRooms<=1) return prev
+    const nxt=JSON.parse(JSON.stringify(prev))
+    const r=nxt.numRooms-1
+    Object.keys(nxt.days).forEach(d=>{
+      if(!nxt.days[d]) return
+      ;['o'+r,'m'+r,'a'+r].forEach(sl=>{(nxt.days[d][sl]||[]).filter(a=>!a.isFlex).forEach(a=>nxt.ntp.push({...a,day:+d}));delete nxt.days[d][sl]})
+    })
+    nxt.numRooms=r
+    return nxt
+  })
+
+  const nav=idx=>{
+    // Het raster is altijd al (of wordt al) doorgerekend door de live-sync; alleen
+    // als er nog niets is, zetten we de berekening hier expliciet in gang.
+    if(idx===3 && !raster) doGenerate()
+    setActive(idx); setVisited(p=>new Set([...p,idx]))
+  }
+
+
+
+  // ── SCHEDULING ENGINE — pure functie zodat de solver 'm herhaald kan aanroepen ─
+  // Elk slot = (dag, dagdeel, kamer). Flex = ongebruikte capaciteit binnen de
+  // benuttingsgrens. De parameters schaduwen de state, zodat de solver met
+  // afwijkende (rules/benutting/kamers)-configuraties kan doorrekenen.
+  // Dunne wrapper om de zuivere engine, zodat bestaande aanroepen ongewijzigd blijven.
+  const computeRaster=useCallback((cfg,newRows,ctrlRows,m2,rules,capacity)=>computeRasterEngine(cfg,newRows,ctrlRows,m2,rules,capacity),[])
+
+  // Eén rekenopdracht voor beide modi: de poli-engine of het functiekamer-advies.
+  // De opdracht gaat naar de engine-client, die hem buiten de UI-thread uitvoert.
+  const bouwJob=useCallback(()=> modus==='functie'
+    ? {type:'functie',args:[{kamers:fk.kamers,codes:fk.codes,m2,regels:fk.regels}]}
+    : {type:'poli',args:[cfg,newRows,ctrlRows,m2,rules,capacity]}
+  ,[modus,fk.kamers,fk.codes,fk.regels,cfg,newRows,ctrlRows,m2,rules,capacity])
+  // Synchrone variant (UI-thread) — voor tests en als directe terugval.
+  const bouwRaster=useCallback(()=>ENGINE.rekenSync(bouwJob()),[bouwJob])
+  // ── ALTIJD LIVE ─────────────────────────────────────────────────────────────
+  // Elke wijziging in gegevens, tijden, regels of capaciteit zet een berekening in
+  // gang in de worker. Een generatieteller zorgt dat alleen de uitkomst van de
+  // LAATSTE stand op het scherm komt; oudere uitkomsten worden genegeerd. Een
+  // fout (of een afgebroken berekening) wordt zichtbaar gemeld, met één knop om
+  // het opnieuw te proberen — het raster blijft nooit stil "hangen".
+  const [liveBezig,setLiveBezig]=useState(false)   // toont "bijwerken…/bijgewerkt"
+  const [liveFout,setLiveFout]=useState(null)
+  const liveGen=useRef(0)
+  const rekenLive=useCallback(()=>{
+    const gen=++liveGen.current
+    setLiveBezig(true); setLiveFout(null)
+    return ENGINE.berekenLaatste('live',bouwJob()).then(r=>{
+      if(gen!==liveGen.current||r==null) return null
+      setRaster(r); setLiveBezig(false); return r
+    }).catch(e=>{
+      if(gen!==liveGen.current) return null
+      setLiveBezig(false); setLiveFout(String((e&&e.message)||e)); return null
+    })
+  },[bouwJob])
+  const doGenerate=useCallback(()=>{ rekenLive() },[rekenLive])
 
   // ── DELIBERATE HERBOUW MET ZICHTBARE UITKOMST ──────────────────────────────
   // De live-sync rekent elke wijziging al direct door, maar een subtiele
@@ -3958,13 +4071,12 @@ export default function RasterTool(){
   // aanpassing is verwerkt. Precies zoals de assistent: analyseren → resultaat tonen.
   const [herbouwToast,setHerbouwToast]=useState(null)
   const herbouwNu=useCallback((gaNaarRaster)=>{
-    const r=bouwRaster()
-    setRaster(r)
+    if(gaNaarRaster){ setActive(3); setVisited(p=>new Set([...p,3])) }
+    rekenLive().then(r=>{ if(!r) return
     if(r.fk){
       const sv=r.fk.samenvatting
       setHerbouwToast({ntp:r.ntp.length,
         msg:`Rasteradvies opnieuw opgebouwd: ${sv.dagdelenOpen} van ${sv.dagdelenBeschikbaar} dagdelen open over ${r.fk.advies.length} kamers, dekking ${sv.dekking}%. ${r.ntp.length?`${r.ntp.length} onderzoek(en) op de restlijst.`:'Alles ingepland.'}`})
-      if(gaNaarRaster){ setActive(3); setVisited(p=>new Set([...p,3])) }
       return
     }
     const DAY_KORT=['ma','di','wo','do','vr']
@@ -3980,8 +4092,8 @@ export default function RasterTool(){
       ntp:r.ntp.length,
       msg:`Raster opnieuw opgebouwd op basis van je huidige instellingen.${digTekst?' '+digTekst:''} ${r.ntp.length?`${r.ntp.length} afspraak/afspraken op de restlijst.`:'Alles ingepland.'}`
     })
-    if(gaNaarRaster){ setActive(3); setVisited(p=>new Set([...p,3])) }
-  },[bouwRaster,rules])
+    })
+  },[rekenLive,rules])
   useEffect(()=>{ if(!herbouwToast) return; const t=setTimeout(()=>setHerbouwToast(null),6000); return ()=>clearTimeout(t) },[herbouwToast])
 
   // ══ SCENARIO-OPTIMISER ══════════════════════════════════════════════════════
@@ -3991,6 +4103,7 @@ export default function RasterTool(){
   // staan zoals jij ze hebt gekozen — dat zijn inhoudelijke keuzes, geen rekenknoppen.
   // Wél rekenen we per voorkeursregel uit wat hij kost, zodat je die afweging ziet.
   const [optim,setOptim]=useState(null)
+  const optimBatchRef=useRef(null)
   // ── GEHEUGEN: wat heeft deze gebruiker eerder gekozen? ──────────────────────
   const [mem,setMem]=useState(()=>memLees())
   const [toonAfgewezen,setToonAfgewezen]=useState(false)
@@ -4029,18 +4142,7 @@ export default function RasterTool(){
   const wisGeheugen=useCallback(()=>{ memSchrijf({...LEEG_MEM}); setMem({...LEEG_MEM}) },[])
   const scenGeheugen=useCallback((k,spec)=>
     mem.scenarios.find(s=>s.spec===specKey(spec)&&s.sleutel===scenSleutel(k)),[mem])
-  const meetRaster=useCallback(r=>{
-    let placed=0, kamerDagen=0
-    ;[0,1,2,3,4].forEach(di=>{ const s=r.days[di]; if(!s) return
-      const rooms=new Set()
-      Object.entries(s).forEach(([k,arr])=>{ if((arr||[]).some(a=>!a.isFlex&&!a.overbook)) rooms.add(k.slice(1)) })
-      kamerDagen+=rooms.size
-      Object.values(s).forEach(arr=>(arr||[]).forEach(a=>{ if(!a.isFlex) placed++ }))
-    })
-    return {placed, ntp:r.ntp.length, kamerDagen,
-      benut:(r.kpi&&r.kpi.week.benutting)||0, spreiding:(r.kpi&&r.kpi.week.spreiding)||0,
-      issues:((r.kpi&&r.kpi.issues)||[]).length}
-  },[])
+  const meetRaster=meetRasterPuur
   // Doelfuncties — expliciet, zodat je zelf bepaalt wat "het beste" betekent.
   //  plannen — zo min mogelijk op de restlijst (desnoods een kamer meer)
   //  kamers  — zo min mogelijk kamer-dagen (desnoods iets op de restlijst)
@@ -4059,23 +4161,20 @@ export default function RasterTool(){
       ['startControle','Starten met een controle afspraak'],['mixNC','Nieuw en controle afwisselen']]
       .filter(([k])=>rules[k]).map(([k,l])=>({k,l}))
     setOptim({bezig:true, voortgang:0, totaal:kand.length+voorkeur.length, doel, resultaten:null, kosten:null})
-    const res=[], kosten=[]
-    let i=0, j=0
-    const huidigM=meetRaster(computeRaster(cfg,newRows,ctrlRows,m2,rules,capacity))
-    const stap=()=>{
-      const t0=(typeof performance!=='undefined'?performance.now():0)
-      while(i<kand.length && ((typeof performance!=='undefined'?performance.now():0)-t0)<45){
-        const k=kand[i++]
-        try{ res.push({k, m:meetRaster(computeRaster(cfg,newRows,ctrlRows,m2,{...rules,...k},capacity))}) }catch(e){}
-      }
-      if(i>=kand.length){
-        while(j<voorkeur.length && ((typeof performance!=='undefined'?performance.now():0)-t0)<45){
-          const v=voorkeur[j++]
-          try{ kosten.push({...v, m:meetRaster(computeRaster(cfg,newRows,ctrlRows,m2,{...rules,[v.k]:false},capacity))}) }catch(e){}
-        }
-      }
-      setOptim(o=>o&&({...o, voortgang:i+j}))
-      if(i<kand.length || j<voorkeur.length){ setTimeout(stap,0); return }
+    // Alle scenario's gaan als één batch naar een eigen worker: de UI blijft vrij,
+    // het live-raster blijft reageren, en alleen de metingen komen terug.
+    const job=(r)=>({type:'poli',args:[cfg,newRows,ctrlRows,m2,r,capacity],meet:true})
+    const jobs=[job(rules), ...kand.map(k=>job({...rules,...k})), ...voorkeur.map(v=>job({...rules,[v.k]:false}))]
+    if(optimBatchRef.current!=null) ENGINE.annuleer(optimBatchRef.current)
+    const h=ENGINE.berekenBatch(jobs,(n)=>setOptim(o=>o&&o.bezig?({...o, voortgang:Math.max(0,Math.min(n-1,kand.length+voorkeur.length))}):o))
+    optimBatchRef.current=h.id
+    h.promise.then(uit=>{
+      if(optimBatchRef.current!==h.id) return
+      optimBatchRef.current=null
+      const huidigM=uit[0]&&uit[0].ok?uit[0].res:null
+      const res=[], kosten=[]
+      kand.forEach((k,i)=>{ const u=uit[1+i]; if(u&&u.ok) res.push({k, m:u.res}) })
+      voorkeur.forEach((v,i)=>{ const u=uit[1+kand.length+i]; if(u&&u.ok) kosten.push({...v, m:u.res}) })
       // Rangschikken + ontdubbelen op identieke uitkomst. De minimumbezetting is JOUW
       // beleidskeuze, geen rekenknop: de hoofdlijst houdt jouw drempel aan. Levert een
       // ándere drempel aantoonbaar meer op, dan tonen we dat apart als afweging — nooit
@@ -4112,9 +4211,12 @@ export default function RasterTool(){
       }
       setOptim({bezig:false, voortgang:kand.length+voorkeur.length, totaal:kand.length+voorkeur.length,
         doel, resultaten:top, alt, verborgen, gewoonte, spec, drempel:huidigeDrempel, huidig:huidigM, kosten})
-    }
-    setTimeout(stap,0)
-  },[cfg,newRows,ctrlRows,m2,rules,capacity,computeRaster,meetRaster,mem,poli.specialisme])
+    }).catch(e=>{
+      if(optimBatchRef.current!==h.id) return
+      optimBatchRef.current=null
+      setOptim(o=>o&&({...o, bezig:false, fout:String((e&&e.message)||e)}))
+    })
+  },[cfg,newRows,ctrlRows,m2,rules,capacity,mem,poli.specialisme])
   // ══ BIJSTUREN — de tool gaat met jouw losse opdracht aan de slag ════════════
   // Een opdracht ("dinsdag ook inplannen", "kamer 3 op maandag naar 85%") wordt
   // omgezet in een reeks KANDIDAAT-instellingen. Elke kandidaat wordt echt
@@ -4123,6 +4225,7 @@ export default function RasterTool(){
   // voorstel mét de cijfers vóór er iets verandert — er wordt nooit stilzwijgend
   // aan je raster gesleuteld.
   const [bijstuur,setBijstuur]=useState(null) // {bezig} | {op, voorstel, huidig}
+  const bijstuurBatchRef=useRef(null)
   const dagShare=useCallback((dagIdx,aan)=>{
     // Verdeel de weekvraag opnieuw over de dagen die meedraaien.
     const keys=WEEKDAY_KEYS
@@ -4369,25 +4472,33 @@ export default function RasterTool(){
     // gespreksboom stelt eerst een vervolgvraag.
     if(op.type==='onderwerp'||op.type==='onbekend'){ setBijstuur({op}); return }
     setBijstuur({bezig:true, op})
-    setTimeout(()=>{
-      const huidigR=computeRaster(cfg,newRows,ctrlRows,m2,rules,capacity)
-      const huidig={doel:meetDoel(huidigR,op), alg:meetRaster(huidigR)}
-      const kand=bouwKandidaten(op)
+    // De kandidaten worden als batch in een eigen worker doorgerekend; de meting
+    // op het doel gebeurt hier, zodra de volledige rasters terug zijn.
+    const kand=bouwKandidaten(op)
+    const jobs=[{type:'poli',args:[cfg,newRows,ctrlRows,m2,rules,capacity]},
+      ...kand.map(k=>({type:'poli',args:[k.st.cfg,k.st.newRows,k.st.ctrlRows,k.st.m2,k.st.rules,k.st.capacity]}))]
+    if(bijstuurBatchRef.current!=null) ENGINE.annuleer(bijstuurBatchRef.current)
+    const h=ENGINE.berekenBatch(jobs)
+    bijstuurBatchRef.current=h.id
+    h.promise.then(uit=>{
+      if(bijstuurBatchRef.current!==h.id) return
+      bijstuurBatchRef.current=null
+      const huidigR=uit[0]&&uit[0].ok?uit[0].res:null
+      const huidig={doel:meetDoel(huidigR,op), alg:huidigR?meetRaster(huidigR):null}
       const uitkomsten=[]
-      kand.forEach(k=>{
-        try{
-          const r=computeRaster(k.st.cfg,k.st.newRows,k.st.ctrlRows,k.st.m2,k.st.rules,k.st.capacity)
-          uitkomsten.push({...k, doel:meetDoel(r,op), alg:meetRaster(r)})
-        }catch(e){}
-      })
+      kand.forEach((k,i)=>{ const u=uit[1+i]; if(u&&u.ok) uitkomsten.push({...k, doel:meetDoel(u.res,op), alg:meetRaster(u.res)}) })
       // Eerst wie het doel haalt; daarbinnen zo min mogelijk restlijst en kamer-dagen.
       const gesorteerd=uitkomsten.slice().sort((a,b)=>
         (a.doel&&a.doel.gehaald?0:1)-(b.doel&&b.doel.gehaald?0:1)
         || (op.type==='strak' ? (((a.doel&&a.doel.waarde)||0)-((b.doel&&b.doel.waarde)||0)) : 0)
         || a.alg.ntp-b.alg.ntp || a.alg.kamerDagen-b.alg.kamerDagen)
       setBijstuur({op, huidig, kandidaten:gesorteerd, keuze:0, bezig:false})
-    },30)
-  },[cfg,newRows,ctrlRows,m2,rules,capacity,computeRaster,meetDoel,meetRaster,bouwKandidaten])
+    }).catch(e=>{
+      if(bijstuurBatchRef.current!==h.id) return
+      bijstuurBatchRef.current=null
+      setBijstuur({op, bezig:false, kandidaten:[], fout:String((e&&e.message)||e)})
+    })
+  },[cfg,newRows,ctrlRows,m2,rules,capacity,meetDoel,meetRaster,bouwKandidaten])
   const pasVoorstelToe=useCallback(k=>{
     if(k.st.m2!==m2) setM2(k.st.m2)
     if(k.st.rules!==rules) setRules(k.st.rules)
@@ -4458,6 +4569,15 @@ export default function RasterTool(){
   // bloot zodat elke regel-combinatie headless gevalideerd kan worden.
   useEffect(()=>{ if(typeof window!=='undefined'){ window.__cr=(a,b,c,d,e,f)=>computeRaster(a,b,c,d,e,f) } },[computeRaster])
   useEffect(()=>{ if(typeof window!=='undefined'){
+    window.__engine=()=>({...ENGINE.info(), liveBezig, liveFout})
+    window.__rekenLive=rekenLive
+    window.__rekenSync=()=>ENGINE.rekenSync(bouwJob())
+    window.__active=()=>active
+    window.__nav=nav
+    window.__setRules=setRules
+    window.__setCfg=setCfg
+  } },[liveBezig,liveFout,rekenLive,active,bouwJob])
+  useEffect(()=>{ if(typeof window!=='undefined'){
     window.__fk=(kamers,codes,m2x,regels)=>fkBerekenAdvies({kamers,codes,m2:m2x||m2,regels})
     window.__fkPresets=FK_PRESETS
     window.__setModus=setModus
@@ -4485,25 +4605,25 @@ export default function RasterTool(){
       return laag }
   },[m2,rules,raster])
 
-  // ENGINE 2.0 — live sync (gedebounced): zodra er een raster is, wordt élke
-  // wijziging in gegevens/tijden/regels/capaciteit doorgerekend. De debounce
-  // voorkomt dat het snelle slepen aan een schuif de engine laat vastlopen; de
-  // TRAILING-edge garandeert dat er ALTIJD op de laatste waarde wordt herrekend,
-  // zodat de uitkomst nooit op een oude stand blijft hangen.
-  const hasRasterRef=useRef(false)
-  useEffect(()=>{ hasRasterRef.current=!!raster },[raster])
-  const [liveBezig,setLiveBezig]=useState(false)   // toont "bijwerken…/bijgewerkt"
+  // ENGINE 2.0 — live sync (gedebounced): élke wijziging in gegevens/tijden/
+  // regels/capaciteit wordt doorgerekend — ook direct bij het openen en ook nadat
+  // het raster is gewist (import, reset). Vroeger sloeg de live-sync over zolang er
+  // geen raster was; na een import of reset leek de tool dan te "stoppen" tot je
+  // zelf op Genereer klikte. Nu is er altijd een actuele uitkomst onderweg.
+  // De debounce voorkomt dat het snelle slepen aan een schuif een lawine aan
+  // berekeningen geeft; de TRAILING-edge garandeert dat er ALTIJD op de laatste
+  // waarde wordt herrekend. Het rekenen zelf gebeurt in de worker (zie
+  // engineClient.js), dus de knoppen blijven ondertussen bedienbaar.
   useEffect(()=>{
-    if(!hasRasterRef.current) return
     setLiveBezig(true)
-    const id=setTimeout(()=>{ try{ doGenerate() }catch(e){ console.error(e) } setLiveBezig(false) },80)
+    const id=setTimeout(()=>{ rekenLive() },120)
     return ()=>clearTimeout(id)
-  },[doGenerate])
-  // auto-start: genereer bij openen zodat de studio direct leeft
-  const bootRef=useRef(false)
-  useEffect(()=>{
-    if(!bootRef.current){ bootRef.current=true; doGenerate() }
-  },[])
+  },[rekenLive])
+  // De worker alvast starten, zodat de eerste berekening niet op de start wacht.
+  useEffect(()=>{ ENGINE.warmOp() },[])
+  // Status van de rekenengine (worker of synchroon) — zichtbaar voor tests en in de UI.
+  const [engineStatus,setEngineStatus]=useState(()=>ENGINE.info())
+  useEffect(()=>ENGINE.opStatus(setEngineStatus),[])
 
   const handleFullReset=()=>{
     setActive(0); setVisited(new Set([0]))
@@ -6310,9 +6430,18 @@ export default function RasterTool(){
         <div style={{animation:'fadeIn 0.18s ease'}}>
           {renderProg()}
           <div style={{padding:'60px 40px',textAlign:'center',background:C.white,borderRadius:12,border:`1px solid ${C.border}`}}>
-            <div style={{fontSize:48,marginBottom:16}}>⚡</div>
-            <div style={{fontWeight:700,color:C.primary,fontSize:17,marginBottom:8}}>Raster nog niet gegenereerd</div>
-            <Btn onClick={doGenerate} style={{fontSize:14,padding:'11px 28px'}}>⚡ Genereer raster nu</Btn>
+            <div style={{fontSize:48,marginBottom:16}}>{liveFout?'⚠️':'⚡'}</div>
+            {liveFout ? (<>
+              <div style={{fontWeight:700,color:'#9A2A1A',fontSize:17,marginBottom:8}}>Doorrekenen is niet gelukt</div>
+              <div style={{fontSize:13,color:C.muted,marginBottom:16,maxWidth:520,margin:'0 auto 16px'}}>{liveFout}</div>
+              <Btn onClick={doGenerate} style={{fontSize:14,padding:'11px 28px'}}>↻ Opnieuw proberen</Btn>
+            </>) : liveBezig ? (<>
+              <div style={{fontWeight:700,color:C.primary,fontSize:17,marginBottom:8}}>Raster wordt berekend…</div>
+              <div style={{fontSize:13,color:C.muted}}>De engine rekent je gegevens en regels door; dit duurt meestal minder dan een seconde.</div>
+            </>) : (<>
+              <div style={{fontWeight:700,color:C.primary,fontSize:17,marginBottom:8}}>Raster nog niet gegenereerd</div>
+              <Btn onClick={doGenerate} style={{fontSize:14,padding:'11px 28px'}}>⚡ Genereer raster nu</Btn>
+            </>)}
           </div>
         </div>
       )
@@ -6752,13 +6881,15 @@ export default function RasterTool(){
               <span style={{fontWeight:700,fontSize:12,color:C.primary,minWidth:30,textAlign:'center'}}>{Math.round(calZoom/3*100)}%</span>
               <button onClick={()=>setCalZoom(z=>Math.min(7,+(z+0.5).toFixed(1)))} style={{width:22,height:22,borderRadius:5,border:`1px solid ${C.border}`,background:C.white,cursor:'pointer',fontWeight:700,color:C.primary}}>+</button>
             </div>
-            <div title="Het raster past zich automatisch aan zodra je een instelling of planregel wijzigt."
-              style={{display:'flex',alignItems:'center',gap:6,padding:'5px 10px',borderRadius:8,
-                background:liveBezig?'#FEF6E0':'#EAF4E0',border:`1px solid ${liveBezig?'#F0C840':'#98CC70'}`,
-                fontSize:11,fontWeight:700,color:liveBezig?'#7A5000':'#2A5018',transition:'all 0.2s'}}>
-              <span style={{width:8,height:8,borderRadius:'50%',background:liveBezig?'#E0A020':'#3AAE4E',
+            <div title={liveFout?`Doorrekenen mislukt: ${liveFout} — klik om het opnieuw te proberen.`
+                :`Het raster past zich automatisch aan zodra je een instelling of planregel wijzigt.${engineStatus.modus==='worker'?' Het rekenen gebeurt op de achtergrond, zodat de tool blijft reageren.':''}`}
+              onClick={liveFout?doGenerate:undefined}
+              style={{display:'flex',alignItems:'center',gap:6,padding:'5px 10px',borderRadius:8,cursor:liveFout?'pointer':'default',
+                background:liveFout?'#FBE9E6':liveBezig?'#FEF6E0':'#EAF4E0',border:`1px solid ${liveFout?'#E0A090':liveBezig?'#F0C840':'#98CC70'}`,
+                fontSize:11,fontWeight:700,color:liveFout?'#9A2A1A':liveBezig?'#7A5000':'#2A5018',transition:'all 0.2s'}}>
+              <span style={{width:8,height:8,borderRadius:'50%',background:liveFout?'#D04030':liveBezig?'#E0A020':'#3AAE4E',
                 display:'inline-block'}}/>
-              {liveBezig?'bijwerken…':'live — bijgewerkt'}
+              {liveFout?'mislukt — opnieuw proberen':liveBezig?'bijwerken…':'live — bijgewerkt'}
             </div>
             <button onClick={()=>herbouwNu(false)}
               title="Analyseer de huidige gegevens en instellingen opnieuw en bouw het raster ermee op"
@@ -7192,6 +7323,12 @@ export default function RasterTool(){
                     border:`1px solid ${optim&&optim.doel===o.v?C.primary:C.border}`,opacity:optim&&optim.bezig?0.6:1}}>{o.l}</button>
               ))}
             </div>
+            {optim&&!optim.bezig&&optim.fout&&(
+              <div style={{marginTop:10,padding:'9px 12px',borderRadius:9,background:'#FBE9E6',border:'1px solid #E0A090',color:'#9A2A1A',fontSize:12,display:'flex',alignItems:'center',gap:10}}>
+                <span>⚠️ Doorrekenen van de scenario's is niet gelukt: {optim.fout}</span>
+                <button onClick={()=>startOptimiser(optim.doel)} style={{marginLeft:'auto',padding:'5px 11px',borderRadius:8,border:'1px solid #E0A090',background:C.white,cursor:'pointer',fontSize:11.5,fontWeight:700,color:'#9A2A1A'}}>↻ Opnieuw</button>
+              </div>
+            )}
             {optim&&optim.bezig&&(
               <div style={{height:6,background:C.surface2,borderRadius:4,overflow:'hidden',marginTop:10}}>
                 <div style={{height:'100%',width:`${Math.round(optim.voortgang/Math.max(1,optim.totaal)*100)}%`,
@@ -8713,7 +8850,7 @@ export default function RasterTool(){
           </div>
           <div style={{textAlign:'center',lineHeight:1.1}}>
             <div style={{fontSize:11,fontWeight:800,color:'#EAF6FB',letterSpacing:'-0.01em'}}>PoliRaster</div>
-            <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:7.5,color:'#7FD4C0',letterSpacing:'0.18em'}}>STUDIO 2.2</div>
+            <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:7.5,color:'#7FD4C0',letterSpacing:'0.18em'}}>STUDIO 2.3</div>
           </div>
         </div>
         {/* Planmodus: poli-spreekuren of functiekamers */}
@@ -8822,7 +8959,7 @@ export default function RasterTool(){
           borderBottom:`1px solid ${C.border}`,padding:'9px 22px',display:'flex',alignItems:'center',gap:14}}>
           <div style={{fontSize:13,fontWeight:700,color:C.text,letterSpacing:'-0.01em'}}>
             PoliRaster <span style={{fontFamily:"'Newsreader',Georgia,serif",fontStyle:'italic',color:C.primary}}>Studio</span>
-            <span style={{fontSize:8.5,fontWeight:700,color:C.primary,verticalAlign:'super',marginLeft:2}}>2.2</span>
+            <span style={{fontSize:8.5,fontWeight:700,color:C.primary,verticalAlign:'super',marginLeft:2}}>2.3</span>
           </div>
           <span style={{width:1,height:20,background:C.border}}/>
           {/* Planmodus — ook hier, zodat de functiekamer-modus niet te missen is */}
@@ -9201,6 +9338,12 @@ export default function RasterTool(){
 
                     {b&&b.bezig&&(
                       <div style={{marginTop:16,fontSize:12.5,color:C.muted}}>Ik reken de mogelijkheden door…</div>
+                    )}
+                    {b&&!b.bezig&&b.fout&&(
+                      <div style={{marginTop:16,padding:'10px 12px',borderRadius:9,background:'#FBE9E6',border:'1px solid #E0A090',color:'#9A2A1A',fontSize:12.5}}>
+                        ⚠️ Het doorrekenen is niet gelukt: {b.fout}{' '}
+                        <button onClick={()=>zoekVoorstel(b.op)} style={{marginLeft:8,padding:'4px 10px',borderRadius:7,border:'1px solid #E0A090',background:C.white,cursor:'pointer',fontSize:11.5,fontWeight:700,color:'#9A2A1A'}}>↻ Opnieuw</button>
+                      </div>
                     )}
                     {b&&!b.bezig&&b.kandidaten&&wiz.laatsteLezing&&(
                       <div style={{marginTop:12,fontSize:11.5,color:C.muted,fontStyle:'italic'}}>{wiz.laatsteLezing}</div>

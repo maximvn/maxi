@@ -1,12 +1,49 @@
-# PoliRaster Studio 2.2
+# PoliRaster Studio 2.3
 
 Doorontwikkeling van de originele PoliRaster-tool — **op hetzelfde fundament**, niet
 een vervanging. De sterke punten van het origineel zijn behouden en er zijn gerichte
 2.0-verbeteringen op gebouwd.
 
-Bestanden: `raster_model_2.jsx` (React-component, `xlsx` als enige dependency) en `functiekamers.js`
-(de engine en de voorbeeldset voor de functiekamer-modus).
+Bestanden: `raster_model_2.jsx` (React-component, `xlsx` als enige dependency), `functiekamers.js`
+(de engine en de voorbeeldset voor de functiekamer-modus), `assistent.js` (kennisbank en vraaganalyse)
+en `engineClient.js` (de rekenengine buiten de UI-thread, zie "Altijd live").
 Losse, klikbare versie: `dist/polimodel.html` (alles ingebundeld, direct in de browser te openen).
+
+## Altijd live — rekenen buiten de UI-thread (nieuw in 2.3)
+
+Het raster volgt élke wijziging in gegevens, tijden, regels of capaciteit — ook direct
+bij het openen, ook na een import of een reset. Dat was al de bedoeling, maar in de
+praktijk "stopte" de tool soms:
+
+- **De live-sync sloeg over zolang er geen raster was.** Na een import of reset bleef het
+  raster leeg tot je zelf op *Genereer* klikte, en voelde het wisselen tussen modules
+  inconsistent.
+- **Een rekenfout werd stil genegeerd.** Met een rest-dag ingesteld struikelde de engine over
+  een open dag zonder afspraken (bv. codes die alleen op andere dagen mogen, of nog geen
+  gegevens). De fout verdween in de console en het raster bleef op de oude stand staan:
+  het leek alsof de regel "niet werkte".
+- **Alles rekende op de UI-thread.** Een zware week (clusteren + bundelen, honderden
+  patiënten) kostte 4–5 seconden waarin geen knop reageerde; de optimiser (70 scenario's)
+  vermenigvuldigde dat.
+
+Wat er is veranderd:
+
+- **Web Worker.** Dezelfde bundel draait óók als worker (`entry.jsx` herkent de context);
+  `engineClient.js` stuurt elke berekening daarheen. Eén vaste worker voor het live-raster,
+  een eigen worker per batch (optimiser, bijsturen) zodat een lange reeks scenario's het
+  live-raster nooit blokkeert. Werkt vanaf één HTML-bestand (Blob-worker) en vanaf een
+  los script (`src`). Geen worker mogelijk → zelfde API, synchroon op de UI-thread.
+- **Alleen de laatste stand telt.** Snel drie keer klikken geeft één raster: dat van de
+  laatste stand. Een generatieteller negeert verlate uitkomsten.
+- **Zichtbare fouten, nooit stil hangen.** Een rekenfout of afgebroken berekening (waakhond)
+  verschijnt als melding met *Opnieuw proberen* — bij het live-raster, de optimiser én de
+  assistent.
+- **Engine 3× sneller, met identieke uitkomst.** De duurste lus (de mix-DP in het
+  samenstellen van een spreekuur) telt incrementeel in plaats van steeds opnieuw; de
+  categorie-keuze per duur wordt één keer gescoord; varianten die elkaar aanroepen delen een
+  memo per aanroep. Over 137 referentierasters (gouden handtekeningen) is de uitkomst
+  byte-voor-byte gelijk aan vóór de optimalisatie; de totale rekentijd ging van 50,6 s
+  naar ~18 s, het zwaarste geval van 4,1 s naar 1,5 s.
 
 ## Behouden uit het origineel
 
@@ -399,4 +436,5 @@ node test_digitaal.mjs     # eigen digitaal spreekuur + bundelen zonder scheve w
 node test_efficient.mjs    # nooit restlijst terwijl er een dagdeel vrij staat
 node test_functiekamers.mjs # functiekamers: kwalificaties, apparaat, koppeling, advies en de modus-schakelaar
 node test_kennis.mjs       # assistent: vraaganalyse, kennisbank, statusvragen, wedervragen
+node test_live.mjs         # altijd live: worker, echte schakelaars, snel wisselen, module-hoppen, zware week blijft bedienbaar
 ```
