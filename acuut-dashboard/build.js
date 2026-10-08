@@ -1,5 +1,6 @@
 // Bundelt src/ tot één zelfstandig HTML-bestand: Acuut_Dashboard.html
-// (Chart.js en SheetJS komen van cdnjs; al het andere zit erin).
+// (Chart.js en SheetJS komen van cdnjs; al het andere zit erin), plus
+// Acuut_Dashboard_offline.html met ook de bibliotheken erin (werkt zonder internet).
 // De DUMMY-bestanden uit testdata/ worden ingebouwd, zodat "Laad voorbeeld"
 // ook werkt als het dashboard los of als gedeelde pagina wordt geopend.
 const fs = require('fs')
@@ -34,3 +35,15 @@ const out = src('shell.html')
   .replace('/*__JS__*/', () => js)
 fs.writeFileSync(path.join(__dirname, 'Acuut_Dashboard.html'), out)
 console.log(`Gebouwd: acuut-dashboard/Acuut_Dashboard.html (${Math.round(out.length / 1024)} kB, ${samples.length} voorbeeldbestanden ingebouwd)`)
+
+// Losstaande versie: Chart.js en SheetJS in het bestand zelf, geen internet nodig
+// (lettertypes vallen terug op de systeemlettertypes).
+const lib = f => fs.readFileSync(path.join(__dirname, 'vendor', f), 'utf8').replace(/<\/script/gi, '<\\/script')
+const offline = out
+  .replace(/<link rel="preconnect"[^>]*>\n?/g, '')
+  .replace(/<link rel="stylesheet" href="https:\/\/fonts\.googleapis\.com[^>]*>\n?/, '')
+  .replace(/<script src="https:\/\/cdnjs\.cloudflare\.com\/ajax\/libs\/xlsx\/[^"]*"><\/script>/, () => `<script>/* SheetJS 0.18.5 (Apache-2.0) */\n${lib('xlsx-0.18.5.full.min.js')}</script>`)
+  .replace(/<script src="https:\/\/cdnjs\.cloudflare\.com\/ajax\/libs\/Chart\.js\/[^"]*"><\/script>/, () => `<script>/* Chart.js 4.4.1 (MIT) */\n${lib('chart-4.4.1.umd.min.js')}</script>`)
+if (/cdnjs|googleapis/.test(offline.slice(0, 4000))) throw new Error('Losstaande versie verwijst nog naar internet')
+fs.writeFileSync(path.join(__dirname, 'Acuut_Dashboard_offline.html'), offline)
+console.log(`Gebouwd: acuut-dashboard/Acuut_Dashboard_offline.html (${Math.round(offline.length / 1024)} kB, werkt zonder internet)`)

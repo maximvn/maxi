@@ -7,6 +7,15 @@ Open `Acuut_Dashboard.html` direct in de browser (Chart.js en SheetJS komen van 
 De knop *Laad voorbeeld (DUMMY IC)* laadt de twee DUMMY-bestanden uit `testdata/`; die
 worden bij het bouwen ingebouwd. Het dashboard verzint zelf nooit data.
 
+## Losse versie (zonder Claude, zonder internet)
+
+`Acuut_Dashboard_offline.html` is één bestand met alles erin, ook Chart.js en SheetJS
+(map `vendor/`). Dubbelklik het of open het in Edge/Chrome/Firefox; er is geen
+internetverbinding of server nodig. Instellingen worden in de browser onthouden.
+`Acuut_Dashboard.html` is dezelfde app, maar laadt de bibliotheken en lettertypes van internet.
+Beide worden gemaakt met `node build.js`; `node test_offline.mjs` controleert de losse versie
+met al het netwerkverkeer geblokkeerd.
+
 ## Werkwijze
 
 1. **Omgeving** — Oudbouw (IC · CCU · SEH · EHH, elk eigen bedden en bemensing) of
