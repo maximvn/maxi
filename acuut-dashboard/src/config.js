@@ -159,6 +159,7 @@ const VIEWS = [
   { id: 'vpk',       label: 'Verpleegkundige inzet' },
   { id: 'prognose',  label: 'Prognose' },
   { id: 'rooster',   label: 'Roostersleutel', nieuw: true },
+  { id: 'samen',     label: 'Samenvoegen' },
   { id: 'instroom',  label: 'Instroom', extra: 'instroom' },
   { id: 'jdt',       label: 'JDT werkdruk', extra: 'jdt' },
 ];

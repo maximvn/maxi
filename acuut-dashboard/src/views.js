@@ -215,7 +215,7 @@ function dashScreen() {
       ${views.map(v => `<button role="tab" aria-selected="${S.view === v.id}" class="${S.view === v.id ? 'on' : ''}" data-act="view" data-arg="${v.id}">${v.label}</button>`).join('')}
     </nav>
     ${extraView ? '' : `<div class="filters">
-      ${streamGroup}
+      ${S.view === 'samen' ? '' : streamGroup}
       <div class="f-group"><span class="f-label">Periode</span>
         <select data-filter="year" id="f-year" aria-label="Jaar"><option value="all">Alle jaren</option>${years.map(y => `<option value="${y}" ${String(y) === String(S.filter.year) ? 'selected' : ''}>${y}</option>`).join('')}</select>
         <select data-filter="months" id="f-months" aria-label="Seizoen of kwartaal">
@@ -235,6 +235,7 @@ function renderView() {
   const el = $('#view');
   if (S.view === 'instroom') return viewInstroom(el);
   if (S.view === 'jdt') return viewJDT(el);
+  if (S.view === 'samen') return viewMerge(el);
   const frame = currentFrame();
   if (!frame || !frame.days.length) {
     const noData = !frame;

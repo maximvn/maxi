@@ -55,6 +55,14 @@ worden bij het bouwen ingebouwd. Het dashboard verzint zelf nooit data.
      heroverwegen). Per dienst vult het team het verwachte tekort en een toelichting in (bewaard in
      de browser). Export naar Excel voor alle weekdagen, en "Overnemen als rooster" zet de sleutel
      in Verpleegkundige inzet.
+   - **Samenvoegen** (overal) — bouw stap voor stap een nieuwe afdeling op uit Oudbouw-afdelingen
+     en/of losse stromen, met bedden per bouwsteen en bedden samen (presets: Hotfloor = IC + CCU,
+     Acute Poort = SEH + EHH). Per stap een kaart (past / past niet, piek, bedden, nodig); per uur
+     elke bouwsteen als lijn plus het totaal met min–max, µ+2σ, gemiddelde, de gekozen norm en de
+     som van de losse normen (het effect van samenvoegen), rode banden waar het niet past.
+     "Past het?"-matrix per uur (bouwstenen en stappen) en per weekdag × uur, kerncijfers
+     (gem., mediaan, P90, P95, µ+2σ, max, min, bedden nodig, uren niet passend, tijd boven bedden)
+     en alle cijfers per uur. Alles exporteerbaar via "Exporteer tabellen".
    - **Instroom** en **JDT werkdruk** (SEH en Acute Poort).
 
 Alle grafieken volgen de gekozen norm (P90/P95/µ+2σ/Max); het gemiddelde is nergens de

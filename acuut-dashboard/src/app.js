@@ -59,7 +59,7 @@ const ICON = {
 
 /* ── Persistente instellingen (alleen gemak; werkt ook zonder) ─────── */
 function saveSettings() {
-  try { localStorage.setItem('acuut-dash-v2', JSON.stringify({ cfg: S.cfg, shifts: SHIFT_INFO, metric: S.metric, fteHours: S.fteHours, sel: S.sel, team: S.team })); } catch (e) { /* geen opslag beschikbaar */ }
+  try { localStorage.setItem('acuut-dash-v2', JSON.stringify({ cfg: S.cfg, shifts: SHIFT_INFO, metric: S.metric, fteHours: S.fteHours, sel: S.sel, team: S.team, merge: S.merge })); } catch (e) { /* geen opslag beschikbaar */ }
 }
 function loadSettings() {
   try {
@@ -67,6 +67,7 @@ function loadSettings() {
     if (raw.cfg) S.cfg = raw.cfg;
     if (raw.sel) S.sel = raw.sel;
     if (raw.team) S.team = raw.team;
+    if (raw.merge) S.merge = raw.merge;
     if (raw.shifts) SHIFT_KEYS.forEach(k => raw.shifts[k] && Object.assign(SHIFT_INFO[k], { start: raw.shifts[k].start, end: raw.shifts[k].end }));
     if (raw.metric && METRICS[raw.metric]) S.metric = raw.metric;
     if (raw.fteHours) S.fteHours = raw.fteHours;
@@ -448,6 +449,11 @@ document.addEventListener('click', e => {
     fcrange: () => { S.fcRange = arg; render(); },
     jdtpick: () => { S.jdtDate = arg; const y = window.scrollY; render(); window.scrollTo({ top: y }); },
     jdtday: () => { if (STORE.jdt) { const ds = STORE.jdt.days.map(d => d.ds); const i = ds.indexOf(S.jdtDate); S.jdtDate = ds[Math.max(0, Math.min(ds.length - 1, i + +arg))]; const y = window.scrollY; render(); window.scrollTo({ top: y }); } },
+    mergeadd: () => { const M = mergeState().M; if (!M.ids.includes(arg)) M.ids.push(arg); M.cleared = false; M.stage = null; saveSettings(); const y = window.scrollY; render(); window.scrollTo({ top: y }); },
+    mergedel: () => { const M = mergeState().M; M.ids.splice(+arg, 1); M.stage = null; M.comb = null; M.cleared = !M.ids.length; saveSettings(); const y = window.scrollY; render(); window.scrollTo({ top: y }); },
+    mergepreset: () => { const M = mergeState().M; M.ids = unitDef(arg).from.map(id => 'U:' + id); M.stage = null; M.comb = cfgOf(arg).beds; saveSettings(); const y = window.scrollY; render(); window.scrollTo({ top: y }); },
+    mergestage: () => { mergeState().M.stage = +arg; const y = window.scrollY; render(); window.scrollTo({ top: y }); },
+    mergecombreset: () => { mergeState().M.comb = null; saveSettings(); const y = window.scrollY; render(); window.scrollTo({ top: y }); },
     rosterwd: () => { S.rosterWd = +arg; const y = window.scrollY; render(); window.scrollTo({ top: y }); },
     rosterexport: () => exportRoster(),
     rosterapply: () => applyRoster(),
@@ -509,6 +515,14 @@ document.addEventListener('drop', e => {
 // Paden als "beds", "minStaff", "sh.2.ratio", "sh.0.plan.3", "sh.1.start", "fteHours", "jdtvpk.7".
 function setValue(path, raw) {
   const parts = path.split('.');
+  if (parts[0] === 'mbeds' || parts[0] === 'mcomb') {
+    // samenvoegen: bedden per bouwsteen (mbeds.<index>) of samen (mcomb)
+    const { M, comps } = mergeState(), v = Math.max(0, Math.round(+String(raw).replace(',', '.') || 0));
+    if (parts[0] === 'mcomb') M.comb = v; else if (comps[+parts[1]]) M.beds[comps[+parts[1]].id] = v;
+    saveSettings();
+    const y = window.scrollY; render(); window.scrollTo({ top: y });
+    return;
+  }
   if (parts[0] === 'team' || parts[0] === 'teamnote') {
     // inschatting team: team.<weekdag>.<dienst> (aantal vpk) of teamnote.<weekdag>.<dienst> (tekst)
     const t = ((S.team[S.unit] = S.team[S.unit] || {})[parts[1]] = S.team[S.unit][parts[1]] || {});
@@ -550,6 +564,7 @@ function stepValue(path, delta) {
   const parts = path.split('.');
   let cur, step = 1;
   if (parts[0] === 'jdtvpk') { if (parts[1] === 'all') return setValue(path, String(delta)); cur = S.jdtVpk[+parts[1]]; }
+  else if (parts[0] === 'mbeds' || parts[0] === 'mcomb') { const { M, comps } = mergeState(); cur = parts[0] === 'mcomb' ? (M.comb != null ? M.comb : comps.reduce((a, c) => a + (c.beds || 0), 0)) : (comps[+parts[1]] || {}).beds || 0; }
   else if (parts[0] === 'team') cur = ((((S.team[S.unit] || {})[parts[1]]) || {})[parts[2]] || {}).n || 0;
   else {
     const c = cfgOf(S.unit);
