@@ -699,6 +699,11 @@ td.num.muted, th.num.muted { color: var(--muted); font-weight: 400; }
 .merge-table tr.sel td { background: color-mix(in srgb, var(--ink) 4%, transparent); }
 .merge-hours .sw { display: inline-block; vertical-align: middle; }
 .merge-add summary svg { width: 15px; height: 15px; flex: none; }
+.merge-bedset { display: inline-flex; align-items: center; gap: 8px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 12px; color: var(--ink-2); }
+.merge-bedset .link-btn { padding: 2px 4px; font-size: 12px; }
+.metric-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 10px; }
+.metric-chips .f-label { margin-right: 4px; }
+.metric-chips .chip:disabled { opacity: 1; cursor: default; }
 
 </style>
 <script>/* SheetJS 0.18.5 (Apache-2.0) */
@@ -2092,8 +2097,10 @@ document.addEventListener('click', e => {
     jdtday: () => { if (STORE.jdt) { const ds = STORE.jdt.days.map(d => d.ds); const i = ds.indexOf(S.jdtDate); S.jdtDate = ds[Math.max(0, Math.min(ds.length - 1, i + +arg))]; const y = window.scrollY; render(); window.scrollTo({ top: y }); } },
     mergeadd: () => { const M = mergeState().M; if (!M.ids.includes(arg)) M.ids.push(arg); M.cleared = false; M.stage = null; saveSettings(); const y = window.scrollY; render(); window.scrollTo({ top: y }); },
     mergedel: () => { const M = mergeState().M; M.ids.splice(+arg, 1); M.stage = null; M.comb = null; M.cleared = !M.ids.length; saveSettings(); const y = window.scrollY; render(); window.scrollTo({ top: y }); },
-    mergepreset: () => { const M = mergeState().M; M.ids = unitDef(arg).from.map(id => 'U:' + id); M.stage = null; M.comb = cfgOf(arg).beds; saveSettings(); const y = window.scrollY; render(); window.scrollTo({ top: y }); },
+    mergepreset: () => { const M = mergeState().M; M.ids = unitDef(arg).from.map(id => 'U:' + id); M.stage = null; M.stageBeds = {}; M.comb = cfgOf(arg).beds; saveSettings(); const y = window.scrollY; render(); window.scrollTo({ top: y }); },
     mergestage: () => { mergeState().M.stage = +arg; const y = window.scrollY; render(); window.scrollTo({ top: y }); },
+    mergeshow: () => { const M = mergeState().M; M.show = M.show || { max: true }; M.show[arg] = !M.show[arg]; saveSettings(); const y = window.scrollY; render(); window.scrollTo({ top: y }); },
+    mergebedsreset: () => { const { M } = mergeState(); const last = M.ids.length - 1; if (+arg === last) M.comb = null; else if (M.stageBeds) delete M.stageBeds[+arg]; saveSettings(); const y = window.scrollY; render(); window.scrollTo({ top: y }); },
     mergecombreset: () => { mergeState().M.comb = null; saveSettings(); const y = window.scrollY; render(); window.scrollTo({ top: y }); },
     rosterwd: () => { S.rosterWd = +arg; const y = window.scrollY; render(); window.scrollTo({ top: y }); },
     rosterexport: () => exportRoster(),
@@ -2156,6 +2163,11 @@ document.addEventListener('drop', e => {
 // Paden als "beds", "minStaff", "sh.2.ratio", "sh.0.plan.3", "sh.1.start", "fteHours", "jdtvpk.7".
 function setValue(path, raw) {
   const parts = path.split('.');
+  if (parts[0] === 'mstage') {
+    const { M } = mergeState(); M.stageBeds = M.stageBeds || {};
+    M.stageBeds[+parts[1]] = Math.max(0, Math.round(+String(raw).replace(',', '.') || 0));
+    saveSettings(); const y = window.scrollY; render(); window.scrollTo({ top: y }); return;
+  }
   if (parts[0] === 'mbeds' || parts[0] === 'mcomb') {
     // samenvoegen: bedden per bouwsteen (mbeds.<index>) of samen (mcomb)
     const { M, comps } = mergeState(), v = Math.max(0, Math.round(+String(raw).replace(',', '.') || 0));
@@ -2205,6 +2217,7 @@ function stepValue(path, delta) {
   const parts = path.split('.');
   let cur, step = 1;
   if (parts[0] === 'jdtvpk') { if (parts[1] === 'all') return setValue(path, String(delta)); cur = S.jdtVpk[+parts[1]]; }
+  else if (parts[0] === 'mstage') { const { M, comps } = mergeState(); const i = +parts[1]; cur = (M.stageBeds || {})[i] != null ? M.stageBeds[i] : comps.slice(0, i + 1).reduce((a, c) => a + (c.beds || 0), 0); }
   else if (parts[0] === 'mbeds' || parts[0] === 'mcomb') { const { M, comps } = mergeState(); cur = parts[0] === 'mcomb' ? (M.comb != null ? M.comb : comps.reduce((a, c) => a + (c.beds || 0), 0)) : (comps[+parts[1]] || {}).beds || 0; }
   else if (parts[0] === 'team') cur = ((((S.team[S.unit] || {})[parts[1]]) || {})[parts[2]] || {}).n || 0;
   else {
@@ -4620,14 +4633,15 @@ function mergeAnalysis(frame, comps, M) {
   const stages = Array.from({ length: n }, (_, i) => {
     const cis = Array.from({ length: i + 1 }, (_, j) => j);
     const last = i === n - 1;
-    const beds = last && M.comb != null ? M.comb : sumBeds(i + 1);
+    const own = last ? M.comb : (M.stageBeds || {})[i];
+    const beds = own != null ? own : sumBeds(i + 1);
     const hours = HOUR_SLOTS.map(sl => stats(collectSum(days, sl, cis)));
     const all = stats(collectSum(days, ALL_SLOTS, cis));
     const norm = hours.map(st => (st ? mv(st) : null));
     const over = norm.map(v => v != null && beds > 0 && v > beds);
     let qOver = 0; if (all && beds > 0) for (const v of all.sorted) if (v > beds) qOver++;
     const need = Math.ceil(Math.max(0, ...norm.filter(v => v != null)) - 1e-9);
-    return { i, cis, label: comps.slice(0, i + 1).map(c => c.label).join(' + '), beds, hours, all, norm, over, overH: over.filter(Boolean).length, pctOver: all && beds > 0 ? qOver / all.n * 100 : null, need };
+    return { i, cis, sum: sumBeds(i + 1), fixed: own != null, label: comps.slice(0, i + 1).map(c => c.label).join(' + '), beds, hours, all, norm, over, overH: over.filter(Boolean).length, pctOver: all && beds > 0 ? qOver / all.n * 100 : null, need };
   });
   const single = comps.map((c, ci) => {
     const hours = HOUR_SLOTS.map(sl => stats(collect(days, sl, ci)));
@@ -4641,8 +4655,20 @@ function mergeAnalysis(frame, comps, M) {
 
 const fitCls = (v, beds) => (v == null || !(beds > 0) ? 'na' : v > beds ? 'no' : v > beds - 1 ? 'tight' : 'ok');
 
+// Welke maten van "samen" in de grafiek staan (de gekozen norm staat er altijd in).
+const MERGE_SHOW = [['p90', 'P90'], ['p95', 'P95'], ['mu2s', 'µ+2σ'], ['max', 'Max'], ['band', 'Bereik min–max'], ['avg', 'Gemiddelde'], ['loose', 'Som losse']];
+const MERGE_STYLE = {
+  p90: { color: c => c.series[3], dash: [6, 3], sw: 'ln', css: 'border-color:var(--s4)' },
+  p95: { color: c => c.series[0], dash: [6, 3], sw: 'ln', css: 'border-color:var(--s1)' },
+  mu2s: { color: c => c.ink2, dash: [6, 4], sw: 'ln', css: 'border-color:var(--ink-2)' },
+  max: { color: c => c.series[1], dash: [], sw: 'ln solid', css: 'border-color:var(--s2);border-top-width:2px' },
+  avg: { color: c => c.muted, dash: [1, 3], sw: 'ln', css: 'border-color:var(--muted);border-top-style:dotted' },
+  band: { sw: 'sw band-sw', css: '' },
+  loose: { sw: 'ln', css: 'border-color:var(--muted)' },
+};
 function viewMerge(el) {
   const { M, cand, comps } = mergeState();
+  const show = M.show || (M.show = { max: true });
   const warn = overlapWarnings([...new Set(comps.flatMap(c => c.streams))]);
   const picker = `
     <section class="panel stagger merge-builder">
@@ -4701,10 +4727,14 @@ function viewMerge(el) {
 
     <section class="panel stagger">
       <div class="panel-head"><div><h2>${esc(st.label)} · per uur van de dag</h2>
-        <div class="desc">Gekleurde lijnen = elke bouwsteen apart (${mLabel()}). Zwart = <b>samen</b> (per kwartier opgeteld, ${mLabel()}), met het vlak van <b>min tot max</b> en de lijnen voor <b>µ+2σ</b> en <b>gemiddelde</b>. De grijze stippellijn is de som van de losse ${mLabel()}'s: het verschil met zwart is wat samenvoegen oplevert. Rode banden = uren waarin het samen niet past in ${st.beds} bedden.</div></div>
-        <div class="seg small" role="group" aria-label="Stap" data-ind="mstage">${A.stages.map((s, i) => `<button class="${i === si ? 'on' : ''}" data-act="mergestage" data-arg="${i}">Stap ${i + 1}</button>`).join('')}</div></div>
+        <div class="desc">Gekleurde lijnen = elke bouwsteen apart (${mLabel()}). Zwart = <b>samen</b>: alle bouwstenen per kwartier opgeteld, ${mLabel()}${show.max && S.metric !== 'max' ? '; oranje = het drukste kwartier (Max) van dat totaal' : ''}. Kies hieronder welke maten je nog meer wilt zien. Rode banden = uren waarin ${mLabel()} samen niet past in ${st.beds} bedden. De norm wijzig je bovenaan (Norm).</div></div>
+        <div class="set-row">
+          <div class="seg small" role="group" aria-label="Stap" data-ind="mstage">${A.stages.map((s, i) => `<button class="${i === si ? 'on' : ''}" data-act="mergestage" data-arg="${i}">Stap ${i + 1}</button>`).join('')}</div>
+          <div class="merge-bedset"><span>Bedden ${A.stages.length > 1 ? `stap ${si + 1}` : ''}</span>${stepper(si === last ? 'mcomb' : `mstage.${si}`, st.beds, `Bedden stap ${si + 1}`)}${st.fixed ? `<button class="link-btn" data-act="mergebedsreset" data-arg="${si}" title="Terug naar de som van de bouwstenen">som (${st.sum})</button>` : `<span class="hint">= som bouwstenen</span>`}</div>
+        </div></div>
+      <div class="metric-chips" role="group" aria-label="Maten in de grafiek"><span class="f-label">Toon samen</span>${MERGE_SHOW.map(([k, l]) => { const fixedOn = k === S.metric; const on = fixedOn || show[k]; return `<button class="chip ${on ? 'on' : 'off'}" data-act="mergeshow" data-arg="${k}" aria-pressed="${on}" ${fixedOn ? 'disabled title="Gekozen norm: altijd zichtbaar"' : ''}>${l}${fixedOn ? ' · norm' : ''}</button>`; }).join('')}</div>
       <div class="chart-box tall"><canvas id="ch-merge" role="img" aria-label="Bouwstenen en samen per uur"></canvas></div>
-      <div class="legend">${comps.slice(0, si + 1).map(c => `<span><i class="ln solid" style="border-color:var(--${c.color});border-top-width:2px"></i>${esc(c.label)}</span>`).join('')}<span><i class="ln solid" style="border-color:var(--ink);border-top-width:3px"></i><b>Samen ${mLabel()}</b></span><span><i class="sw band-sw"></i>Samen min–max</span><span><i class="ln" style="border-color:var(--ink-2)"></i>Samen µ+2σ</span><span><i class="ln" style="border-color:var(--muted);border-top-style:dotted"></i>Samen gemiddeld</span><span><i class="ln" style="border-color:var(--muted)"></i>Som losse ${mLabel()}'s</span><span><i class="ln"></i>Bedden</span></div>
+      <div class="legend">${comps.slice(0, si + 1).map(c => `<span><i class="ln solid" style="border-color:var(--${c.color});border-top-width:2px"></i>${esc(c.label)} (${mLabel()})</span>`).join('')}<span><i class="ln solid" style="border-color:var(--ink);border-top-width:3px"></i><b>Samen ${mLabel()}</b></span>${MERGE_SHOW.filter(([k]) => k !== S.metric && show[k]).map(([k, l]) => `<span><i class="${MERGE_STYLE[k].sw}" style="${MERGE_STYLE[k].css}"></i>${k === 'band' ? 'Samen bereik (laagste – hoogste kwartier)' : k === 'loose' ? `Som losse ${mLabel()}'s` : 'Samen ' + l}</span>`).join('')}<span><i class="ln"></i>Bedden (${st.beds})</span></div>
     </section>
 
     <section class="panel stagger" style="margin-top:16px">
@@ -4747,17 +4777,17 @@ function viewMerge(el) {
   // hoofdgrafiek
   const H = st.hours;
   const sumLoose = HOUR_SLOTS.map((_, h) => A.single.slice(0, si + 1).reduce((a, s) => a + (s.norm[h] || 0), 0));
-  const top = Math.ceil(Math.max(st.beds, ...H.map(x => (x ? x.max : 0)), ...sumLoose) + 1);
+  const top = Math.ceil(Math.max(st.beds, ...st.norm.filter(v => v != null), ...(show.max || show.band ? H.map(x => (x ? x.max : 0)) : []), ...(show.loose ? sumLoose : []), ...comps.slice(0, si + 1).flatMap((_, i) => A.single[i].norm.filter(v => v != null))) + 1);
   mkChart($('#ch-merge'), {
     type: 'line',
     data: { labels: HOUR_SLOTS.map((_, h) => `${pad2(h)}:00`), datasets: [
-      { label: 'Samen max', data: H.map(x => x && x.max), borderColor: alpha(c.series[1], 0.5), borderWidth: 1, pointRadius: 0, tension: 0.3, cubicInterpolationMode: 'monotone', fill: '+1', backgroundColor: alpha(c.series[1], 0.12), order: 9 },
-      { label: 'Samen min', data: H.map(x => x && x.min), borderColor: alpha(c.series[1], 0.5), borderWidth: 1, pointRadius: 0, tension: 0.3, cubicInterpolationMode: 'monotone', fill: false, order: 9 },
-      ...comps.slice(0, si + 1).map((cp, i) => ({ label: cp.label, data: A.single[i].norm, borderColor: tok(cp.color), backgroundColor: tok(cp.color), borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, tension: 0.3, cubicInterpolationMode: 'monotone', fill: false, order: 3 })),
+      ...(show.band ? [
+        { label: 'Samen bereik', data: H.map(x => x && x.max), borderWidth: 0, pointRadius: 0, tension: 0.3, cubicInterpolationMode: 'monotone', fill: '+1', backgroundColor: alpha(c.series[1], 0.12), order: 9 },
+        { label: 'Samen min', data: H.map(x => x && x.min), borderWidth: 0, pointRadius: 0, tension: 0.3, cubicInterpolationMode: 'monotone', fill: false, order: 9 }] : []),
+      ...comps.slice(0, si + 1).map((cp, i) => ({ label: `${cp.label} (${mLabel()})`, data: A.single[i].norm, borderColor: tok(cp.color), backgroundColor: tok(cp.color), borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, tension: 0.3, cubicInterpolationMode: 'monotone', fill: false, order: 3 })),
       { label: `Samen ${mLabel()}`, data: st.norm, borderColor: c.ink, backgroundColor: c.ink, borderWidth: 3.5, pointRadius: 0, pointHoverRadius: 5, tension: 0.3, cubicInterpolationMode: 'monotone', fill: false, order: 0 },
-      { label: 'Samen µ+2σ', data: H.map(x => x && x.mu2s), borderColor: c.ink2, borderWidth: 1.5, borderDash: [6, 4], pointRadius: 0, tension: 0.3, cubicInterpolationMode: 'monotone', fill: false, order: 1 },
-      { label: 'Samen gemiddeld', data: H.map(x => x && x.avg), borderColor: c.muted, borderWidth: 1.5, borderDash: [1, 3], pointRadius: 0, tension: 0.3, cubicInterpolationMode: 'monotone', fill: false, order: 2 },
-      { label: `Som losse ${mLabel()}'s`, data: sumLoose, borderColor: alpha(c.muted, 0.8), borderWidth: 1.25, borderDash: [4, 4], pointRadius: 0, tension: 0.3, cubicInterpolationMode: 'monotone', fill: false, order: 4 },
+      ...MERGE_SHOW.filter(([k]) => k !== S.metric && show[k] && !['band', 'loose'].includes(k)).map(([k, l]) => ({ label: `Samen ${l}`, data: H.map(x => x && x[k]), borderColor: MERGE_STYLE[k].color(c), backgroundColor: MERGE_STYLE[k].color(c), borderWidth: k === 'max' ? 2.25 : 1.5, borderDash: MERGE_STYLE[k].dash, pointRadius: 0, pointHoverRadius: 4, tension: 0.3, cubicInterpolationMode: 'monotone', fill: false, order: 1 })),
+      ...(show.loose ? [{ label: `Som losse ${mLabel()}'s`, data: sumLoose, borderColor: alpha(c.muted, 0.8), borderWidth: 1.25, borderDash: [4, 4], pointRadius: 0, tension: 0.3, cubicInterpolationMode: 'monotone', fill: false, order: 4 }] : []),
       { label: 'Bedden', data: HOUR_SLOTS.map(() => st.beds), borderColor: c.ink, borderWidth: 1.5, borderDash: [8, 4], pointRadius: 0, fill: false, order: 5 },
     ] },
     options: {
@@ -4766,8 +4796,9 @@ function viewMerge(el) {
       plugins: {
         tooltip: {
           filter: it => !['Samen min', 'Bedden'].includes(it.dataset.label),
+          itemSort: (a, b) => (b.raw ?? -1) - (a.raw ?? -1),
           callbacks: {
-            label: it => (it.dataset.label === 'Samen max' ? ` Samen min–max: ${fmt(H[it.dataIndex].min, 0)}–${fmt(H[it.dataIndex].max, 0)}` : ` ${it.dataset.label}: ${fmt(it.raw)}`),
+            label: it => (it.dataset.label === 'Samen bereik' ? ` Samen bereik: ${fmt(H[it.dataIndex].min, 0)}–${fmt(H[it.dataIndex].max, 0)}` : ` ${it.dataset.label}: ${fmt(it.raw)}`),
             footer: it => { const h = it[0].dataIndex, v = st.norm[h]; return v == null ? '' : v > st.beds ? `Past niet: ${fmt(v - st.beds)} boven ${st.beds} bedden` : `Past: ${fmt(st.beds - v)} bedden marge`; },
           },
         },

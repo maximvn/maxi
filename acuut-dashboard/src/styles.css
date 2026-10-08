@@ -692,3 +692,8 @@ td.num.muted, th.num.muted { color: var(--muted); font-weight: 400; }
 .merge-table tr.sel td { background: color-mix(in srgb, var(--ink) 4%, transparent); }
 .merge-hours .sw { display: inline-block; vertical-align: middle; }
 .merge-add summary svg { width: 15px; height: 15px; flex: none; }
+.merge-bedset { display: inline-flex; align-items: center; gap: 8px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 12px; color: var(--ink-2); }
+.merge-bedset .link-btn { padding: 2px 4px; font-size: 12px; }
+.metric-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 10px; }
+.metric-chips .f-label { margin-right: 4px; }
+.metric-chips .chip:disabled { opacity: 1; cursor: default; }
