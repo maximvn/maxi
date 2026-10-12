@@ -1,3 +1,49 @@
+# Radiologie Rasterplanner 2.0
+
+Nieuwe, zelfstandige planner voor de radiologie (MOBD): van invoerlijst naar sessierooster en
+planraster per kamer. Gebouwd op basis van het document *AI script – Aanpassingen 28-09-2026*.
+
+- Bron: `src2/` (React, `xlsx` als enige dependency), entry `entry2.jsx`.
+- Klikbaar bestand: **`dist/radiologie_rasterplanner_2.html`** — alles ingebundeld, direct in de browser te openen.
+- Bouwen: `npm run build:rp2` · Testen: `npm run test:rp2` (planmotor, importers op de echte invoerlijsten, export-rondreis).
+- Voorbeeldinvoer: `voorbeelden/Invoerlijst 1 - Kamers en sessies.xlsx` en `voorbeelden/Invoerlijst 2 - Verrichtingen en plangroepen.xlsx`.
+
+## Wat de 2.0 doet
+
+**Voorblad** — Nieuw raster ontwerpen, bestaand raster aanpassen (Excel met herstelblad of .json), doorgaan
+waar je gebleven was (autosave in de browser) en een voorbeeld (jaarplan 2027) verkennen.
+
+**Stap 1 · Modaliteiten en kamers** — *Invoerlijst 1* inladen (Kamer, Modaliteit, Kameromschrijving,
+Benuttingspercentage, Sessieduur, Aantal sessies regulier/reductie, Gemiddeld aantal afspraken). Elke
+modaliteit krijgt een eigen kleur; klik op een modaliteit en stel per kamer naam, start-/eindtijd per
+dagdeel, beschikbare dagen en benuttingspercentage in. Vooraf ingevuld, daarna handmatig aanpasbaar.
+
+**Stap 2 · Sessierooster** — Omschrijving, type (reguliere week / reductieweek / anders), periode vanaf/tot.
+Weektabel ma–zo × dagdeel met per modaliteit de kamers als kolommen. Rechts het aantal te plannen sessies
+per kamer (uit Invoerlijst 1, afhankelijk van het roostertype). Sessies toevoegen met **+**, slepen,
+dupliceren, verwijderen of automatisch vullen. Klik op een modaliteit in de kop om stap 3 te openen.
+
+**Stap 3.1 · Plangroepen** — *Invoerlijst 2* inladen (werkbladen Plangroepen en Verrichtingen; kamers worden op
+naam gekoppeld). Per plangroep: aantal per week, duur, kamer(s), planmoment (vrij in dagdelen of specifiek
+dag + dagdeel), contrast, aanvrager, urgentie. Verrichtingen zijn als referentie per plangroep zichtbaar.
+
+**Stap 3.2 · Basisstructuur en planregels** — per kamer: flexibele tijd met het uitgangspunt uit Invoerlijst 1
+(benutting % ⇄ minuten per sessie) en drie combineerbare opties (vast tijdstip, einde van de sessie, x minuten
+per interval), live teruggerekend naar % flex en benutting; groepering (gespreid / wave); planmethodieken
+(korte afspraken eerst, eerste afspraak dubbel) met volgorde. Kamerbinding uit 3.1 is altijd leidend.
+
+**Stap 3.3 · Ontwerpen planraster** — Voorstelraster door AI, zelf ontwerpen (leeg template) of leegmaken.
+Per kamer (knoppen) de week ma–vr (weekend verschijnt als er sessies zijn):
+- *Weergave 1 · Globaal*: sessies uit stap 2 (wijzigen synchroniseert terug), plangroepen per sessie met
+  tellers, foutmelding bij een plangroep op een niet-toegestane kamer/dag/dagdeel, benutting per sessie in %
+  en minuten, en de balans ingepland / te plannen (bijv. 11 / 12).
+- *Weergave 2 · Detail*: tijd per 10 minuten, afspraken en flexblokken slepen, flexblokken verlengen/inkorten,
+  verwijderen of toevoegen; sleep naar een kamerknop om van kamer te wisselen; prullenbak om te verwijderen.
+- Export: één Excel met een **werkblad per kamer** (weekdagen horizontaal, tijd verticaal), sessierooster,
+  capaciteit & overzicht, stamgegevens en een `_rasterdata`-herstelblad.
+
+---
+
 # PoliRaster Studio 2.1
 
 Doorontwikkeling van de originele PoliRaster-tool — **op hetzelfde fundament**, niet

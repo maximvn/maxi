@@ -1,7 +1,7 @@
 // Bundles React + ReactDOM + xlsx + raster_model_2.jsx into one self-contained
 // HTML file (dist/polimodel.html) that can be opened directly in a browser.
-const esbuild = require('esbuild')
-const fs = require('fs')
+import esbuild from 'esbuild'
+import fs from 'node:fs'
 
 async function main() {
   const result = await esbuild.build({
