@@ -5,6 +5,13 @@ import {fkBerekenAdvies,FK_PRESETS,fkNieuweKamer,fkNieuweCode,fkStandaardRegels,
 import {analyseerVraag,antwoordVoor,beantwoordStatus,kennisPerCategorie,zoekKennis,VOORBEELDVRAGEN,KENNIS} from './assistent.js'
 import {maakEngineClient} from './engineClient.js'
 
+// ═══ SIMPELE VARIANT ═════════════════════════════════════════════════════════
+// Dezelfde tool, zonder de assistent: geen Assistent-knop in het menu, geen
+// "Vraag de assistent" bij het raster en geen bijstuur-opdrachten vanuit de
+// bezettingskaart. De engine, de regels, de optimiser en de export zijn identiek.
+// De bouw zet de vlag in de pagina (zie build.js: dist/polimodel-simpel.html).
+const SIMPEL=typeof window!=='undefined' && !!window.__POLIRASTER_SIMPEL
+
 // Maak een echte, downloadbare URL van een XLSX-workbook. We gebruiken een Blob
 // + object-URL i.p.v. een data:-URI: grote data:-URI's worden door sommige
 // browsers geweigerd en top-level navigatie ernaartoe wordt in een afgeschermde
@@ -6933,7 +6940,7 @@ export default function RasterTool(){
           </div>
           <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
             {/* De assistent staat hier, bij het raster zelf — niet weggestopt in een menu. */}
-            <button onClick={()=>{ if(modus==='functie'){ setOpenPanels(p=>({...p,fkAdvies:true})); window.scrollTo({top:0,behavior:'smooth'}); return } setBijstuur(null); setWiz({modus:'bijsturen'})}}
+            {(!SIMPEL||modus==='functie')&&<button onClick={()=>{ if(modus==='functie'){ setOpenPanels(p=>({...p,fkAdvies:true})); window.scrollTo({top:0,behavior:'smooth'}); return } setBijstuur(null); setWiz({modus:'bijsturen'})}}
               title={modus==='functie'?"Het rasteradvies per functiekamer staat bovenaan — in gewone taal, met de toewijzing en de regels":"Zeg in gewone taal wat er anders moet — de tool rekent het door en laat het je eerst zien"}
               style={{display:'flex',alignItems:'center',gap:7,padding:'8px 15px',borderRadius:11,border:'none',
                 cursor:'pointer',fontSize:12.5,fontWeight:700,color:'#fff',
@@ -6942,7 +6949,7 @@ export default function RasterTool(){
               onMouseEnter={e=>{e.currentTarget.style.transform='translateY(-1px)';e.currentTarget.style.boxShadow='0 6px 18px rgba(28,110,164,0.38)'}}
               onMouseLeave={e=>{e.currentTarget.style.transform='none';e.currentTarget.style.boxShadow='0 4px 14px rgba(28,110,164,0.3)'}}>
               {modus==='functie'?'✨ Toon het rasteradvies':'✨ Vraag de assistent'}
-            </button>
+            </button>}
             <div style={{display:'flex',padding:2,background:C.surface2,border:`1px solid ${C.border}`,borderRadius:9}}>
               {[{v:'dag',l:'Dag'},{v:'week',l:'Week'}].map(o=>(
                 <button key={o.v} onClick={()=>setViewMode(o.v)}
@@ -7145,7 +7152,7 @@ export default function RasterTool(){
                   `${modus==='functie'?kamerNaam(room):'K'+(room+1)} · ${DAY_ABBR[di]} ${DD_INFO[dd].kort}${leeg?'':` · ${c.appts} afspr`}`)}
                 onClick={()=>{
                   if(kaartNetGesleept.current) return
-                  if(modus==='functie'){ setSelDay(di); setViewMode('dag'); return }
+                  if(modus==='functie'||SIMPEL){ setSelDay(di); setViewMode('dag'); return }
                   const t= leeg
                     ? `op ${DAGS_NL[di]} staan geen afspraken, graag ${DAGS_NL[di]} ook inplannen`
                     : `kamer ${room+1} op ${DAGS_NL[di]} staat op ${c.pct}% bezetting, ik wil richting ${doel}%`
@@ -7271,10 +7278,10 @@ export default function RasterTool(){
                       background:`repeating-linear-gradient(45deg,${C.surface2},${C.surface2} 3px,${C.white} 3px,${C.white} 6px)`}}/>geen spreekuur
                   </span>
                   <span style={{fontSize:10.5,color:C.muted,marginLeft:'auto'}}>
-                    <b style={{color:C.primary}}>sleep</b> een vak naar een andere dag of kamer om het spreekuur te verplaatsen · <b>klik</b> om bij te sturen</span>
+                    <b style={{color:C.primary}}>sleep</b> een vak naar een andere dag of kamer om het spreekuur te verplaatsen · <b>klik</b> om {SIMPEL?'die dag te openen':'bij te sturen'}</span>
                 </div>
                 {/* wat springt eruit — met een directe opdracht aan de assistent */}
-                {(legeDagen.length>0||onderDrempel.length>0)&&(
+                {!SIMPEL&&(legeDagen.length>0||onderDrempel.length>0)&&(
                   <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:10}}>
                     {modus==='poli'&&legeDagen.map(({di,reden})=>(
                       <button key={'d'+di} title={reden.lang} onClick={()=>{
@@ -8926,7 +8933,7 @@ export default function RasterTool(){
           </div>
           <div style={{textAlign:'center',lineHeight:1.1}}>
             <div style={{fontSize:11,fontWeight:800,color:'#EAF6FB',letterSpacing:'-0.01em'}}>PoliRaster</div>
-            <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:7.5,color:'#7FD4C0',letterSpacing:'0.18em'}}>STUDIO 2.3</div>
+            <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:7.5,color:'#7FD4C0',letterSpacing:'0.18em'}}>{SIMPEL?'STUDIO 2.3 · SIMPEL':'STUDIO 2.3'}</div>
           </div>
         </div>
         {/* Planmodus: poli-spreekuren of functiekamers */}
@@ -8938,8 +8945,8 @@ export default function RasterTool(){
                 background:modus===o.v?'#39C6AC':'transparent',color:modus===o.v?'#04120D':'rgba(255,255,255,0.7)'}}>{o.l}</button>
           ))}
         </div>
-        {/* Begeleide intake — stelt vragen en zet de hele planning klaar */}
-        <button onClick={()=>{ if(modus==='functie'){ setBijstuur(null); setWiz({modus:'bijsturen'}); return } setWiz(raster?{modus:'kies'}:{modus:'intake',stap:0,ant:{}}) }}
+        {/* Begeleide intake — stelt vragen en zet de hele planning klaar (niet in de simpele variant) */}
+        {!SIMPEL&&<button onClick={()=>{ if(modus==='functie'){ setBijstuur(null); setWiz({modus:'bijsturen'}); return } setWiz(raster?{modus:'kies'}:{modus:'intake',stap:0,ant:{}}) }}
           title="Assistent — de hele opzet doorlopen, of dit raster bijsturen met een opdracht in gewone taal"
           style={{display:'flex',alignItems:'center',justifyContent:'center',gap:6,marginBottom:12,
             padding:'10px 6px',borderRadius:12,border:'1px solid rgba(93,214,188,0.45)',cursor:'pointer',
@@ -8948,7 +8955,7 @@ export default function RasterTool(){
           onMouseEnter={e=>e.currentTarget.style.background='linear-gradient(135deg,rgba(93,214,188,0.4),rgba(28,110,164,0.4))'}
           onMouseLeave={e=>e.currentTarget.style.background='linear-gradient(135deg,rgba(93,214,188,0.24),rgba(28,110,164,0.24))'}>
           ✨ Assistent
-        </button>
+        </button>}
         {/* stappen */}
         <div style={{display:'flex',flexDirection:'column',gap:6,flex:1}}>
           {RAIL.map((r,i)=>{

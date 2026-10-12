@@ -428,6 +428,15 @@ Per poli wordt lokaal (in de browser) onthouden wat je doet. Zichtbaar, uitlegba
 - Het paneel **📚 Geheugen** onder het raster toont alles wat er is geleerd, per onderdeel
   wisbaar en met één knop volledig te legen.
 
+## Simpele variant — zonder assistent
+
+`dist/polimodel-simpel.html` is dezelfde tool met dezelfde engine, regels, optimiser en
+export, maar zonder de assistent: geen Assistent-knop in het menu, geen "Vraag de
+assistent" bij het raster en geen bijstuur-opdrachten vanuit de bezettingskaart (een
+klik op een vak opent die dag). `build.js` zet daarvoor de vlag
+`window.__POLIRASTER_SIMPEL=true` in de pagina; `raster_model_2.jsx` leest die vlag
+(`SIMPEL`) en laat de assistent-ingangen weg. Beide varianten komen uit één bundel.
+
 ## Losse HTML-versie bouwen
 
 `dist/polimodel.html` is volledig zelfstandig (React + xlsx ingebundeld) en opent direct
@@ -438,7 +447,8 @@ npm install
 npm run build
 ```
 
-`build.js` bundelt `entry.jsx` met esbuild en injecteert het in `html-shell.html`.
+`build.js` bundelt `entry.jsx` met esbuild en injecteert het in `html-shell.html`; het
+schrijft `dist/polimodel.html` én `dist/polimodel-simpel.html`.
 
 ## Tests
 

@@ -18,6 +18,12 @@ async function main() {
   fs.mkdirSync('dist', { recursive: true })
   fs.writeFileSync('dist/polimodel.html', shell.replace('__BUNDLE__', () => bundle))
   console.log('Built dist/polimodel.html (' + bundle.length + ' bytes of JS)')
+  // Simpele variant: dezelfde bundel, met de vlag die de assistent weglaat.
+  const simpel = shell
+    .replace('<title>PoliRaster Studio</title>', '<title>PoliRaster Studio — Simpel</title>')
+    .replace('<script>\n__BUNDLE__', () => '<script>window.__POLIRASTER_SIMPEL=true</script>\n<script>\n' + bundle)
+  fs.writeFileSync('dist/polimodel-simpel.html', simpel)
+  console.log('Built dist/polimodel-simpel.html')
 }
 
 main().catch(err => { console.error(err); process.exit(1) })
