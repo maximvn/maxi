@@ -44,7 +44,7 @@ test('applyInvoerlijst1 bouwt modaliteiten/kamers met unieke kleuren en standaar
   assert.equal(new Set(state.modaliteiten.map((m) => m.kleur)).size, 9)
   assert.equal(state.kamers.length, 15)
   const ct1 = state.kamers.find((k) => k.naam === 'CT 1')
-  assert.equal(ct1.dagdelen.ochtend.eind, '12:00'); assert.equal(ct1.dagdelen.middag.eind, '17:00')
+  assert.equal(ct1.dagdelen.ochtend.start, '08:30'); assert.equal(ct1.dagdelen.ochtend.eind, '12:30'); assert.equal(ct1.dagdelen.middag.start, '13:00'); assert.equal(ct1.dagdelen.middag.eind, '17:00')
   const b1 = state.kamers.find((k) => k.naam === 'Bucky 1')
   assert.equal(b1.benutting, 85); assert.equal(b1.sessiesRegulier, 0)
   // opnieuw importeren behoudt ids

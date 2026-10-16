@@ -27,7 +27,7 @@ export const iconForModality = (naam) => {
 }
 
 export const DEFAULT_DAGDELEN = () => ({
-  ochtend: { start: '08:00', eind: '12:00', dagen: { ma: true, di: true, wo: true, do: true, vr: true, za: false, zo: false } },
+  ochtend: { start: '08:30', eind: '12:30', dagen: { ma: true, di: true, wo: true, do: true, vr: true, za: false, zo: false } },
   middag:  { start: '13:00', eind: '17:00', dagen: { ma: true, di: true, wo: true, do: true, vr: true, za: false, zo: false } },
   avond:   { start: '17:30', eind: '21:30', dagen: { ma: false, di: false, wo: false, do: false, vr: false, za: false, zo: false } },
 })

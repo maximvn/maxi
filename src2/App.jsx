@@ -26,6 +26,14 @@ export const readWorkbook = (file) => new Promise((res, rej) => {
   r.readAsArrayBuffer(file)
 })
 
+// Eerdere versies gebruikten 08:00–12:00 als standaardochtend; nu 08:30–12:30. Kamers die nog exact op de
+// oude standaard staan en nog geen ochtendsessies hebben, schuiven mee.
+const migreer = (st) => {
+  if (!st || !Array.isArray(st.kamers)) return st
+  const metSessies = new Set((st.rooster?.sessies || []).filter((x) => x.dagdeel === 'ochtend').map((x) => x.kamerId))
+  return { ...st, kamers: st.kamers.map((k) => (k.dagdelen?.ochtend?.start === '08:00' && k.dagdelen.ochtend.eind === '12:00' && !metSessies.has(k.id) ? { ...k, dagdelen: { ...k.dagdelen, ochtend: { ...k.dagdelen.ochtend, start: '08:30', eind: '12:30' } } } : k)) }
+}
+
 const VIEWS = ['home', 'stap1', 'stap2', 'stap31', 'stap32', 'stap33']
 const NEXT = { stap1: 'stap2', stap2: 'stap31', stap31: 'stap32', stap32: 'stap33' }
 const PREV = { stap2: 'stap1', stap31: 'stap2', stap32: 'stap31', stap33: 'stap32' }
@@ -36,7 +44,7 @@ function Shell() {
   useEffect(() => { document.documentElement.dataset.theme = theme }, [theme])
   useEffect(() => { if (!document.querySelector('link[data-fonts]')) { const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = FONTS; l.dataset.fonts = '1'; document.head.appendChild(l) } }, [])
 
-  const [state, setStateRaw] = useState(() => { try { const s = localStorage.getItem(LS_KEY); return s ? JSON.parse(s) : emptyState() } catch { return emptyState() } })
+  const [state, setStateRaw] = useState(() => { try { const s = localStorage.getItem(LS_KEY); return s ? migreer(JSON.parse(s)) : emptyState() } catch { return emptyState() } })
   const [ui, setUi] = useState(() => { try { const s = localStorage.getItem(LS_UI); return s ? JSON.parse(s) : {} } catch { return {} } })
   const [view, setView] = useState(() => (ui.view && ui.view !== 'home' && state.kamers?.length ? 'home' : 'home'))
   const [modId, setModIdRaw] = useState(ui.modId || null)
@@ -238,23 +246,35 @@ function ExportModal({ state, onClose, toast }) {
   const [link, setLink] = useState(null)
   const [busy, setBusy] = useState(false)
   const kamersMetSessies = state.kamers.filter((k) => E.kamerSessies(state, k.id).length)
+  // Download via Blob + object-URL: werkt ook bij grote bestanden en in browsers die data-URL's blokkeren.
+  const download = (blob, filename) => {
+    const href = URL.createObjectURL(blob)
+    const a = document.createElement('a'); a.href = href; a.download = filename; a.rel = 'noopener'; a.style.display = 'none'
+    document.body.appendChild(a); a.click()
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(href) }, 60000)
+    return href
+  }
   const maak = () => {
     setBusy(true)
     setTimeout(() => {
       try {
         const wb = bouwWerkboek(XLSX, state)
-        const b64 = XLSX.write(wb, { bookType: 'xlsx', type: 'base64' })
-        setLink({ href: 'data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,' + b64, filename: naam + '.xlsx', sheets: wb.SheetNames.length })
+        const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+        const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+        const filename = (naam.trim() || 'radiologie_rasterplanner') + '.xlsx'
+        const href = download(blob, filename)
+        setLink({ href, filename, sheets: wb.SheetNames.length, kb: Math.round(blob.size / 1024) })
+        toast(`${filename} wordt gedownload (${wb.SheetNames.length} werkbladen).`, 'ok')
       } catch (e) { toast('Export mislukt: ' + e.message, 'error', 7000) } finally { setBusy(false) }
     }, 30)
   }
   const json = () => {
     const blob = new Blob([JSON.stringify({ ...state, exportDate: new Date().toISOString() }, null, 1)], { type: 'application/json' })
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = naam + '.json'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000)
+    download(blob, (naam.trim() || 'radiologie_rasterplanner') + '.json')
   }
   return (
     <Modal title="Exporteren" sub="Eén Excel-werkboek met een werkblad per kamer (weekdagen horizontaal, tijd verticaal), het sessierooster, het capaciteitsoverzicht, de stamgegevens en een herstelblad om later verder te werken." onClose={onClose}
-      footer={<><Btn variant="ghost" icon="file" onClick={json}>Ook als .json</Btn><div className="grow" /><Btn onClick={onClose}>Sluiten</Btn>{!link ? <Btn variant="primary" icon="sheet" onClick={maak} disabled={busy}>{busy ? 'Bezig…' : 'Genereer Excel'}</Btn> : <a className="btn primary" href={link.href} download={link.filename}><Icon name="download" size={16} />Download .xlsx</a>}</>}>
+      footer={<><Btn variant="ghost" icon="file" onClick={json}>Ook als .json</Btn><div className="grow" /><Btn onClick={onClose}>Sluiten</Btn><Btn variant="primary" icon={link ? 'download' : 'sheet'} onClick={maak} disabled={busy}>{busy ? 'Bezig…' : link ? 'Opnieuw downloaden' : 'Genereer en download Excel'}</Btn></>}>
       <div className="col" style={{ gap: 14 }}>
         <Field label="Bestandsnaam"><div className="row"><Input value={naam} onChange={(e) => setNaam(e.target.value)} /><span className="muted small">.xlsx</span></div></Field>
         <div className="card pad" style={{ padding: 14, background: 'var(--surface-2)' }}>
@@ -266,7 +286,7 @@ function ExportModal({ state, onClose, toast }) {
             <div className="row"><Icon name="db" size={13} className="muted" /><span>_rasterdata — hersteldata voor "Bestaand raster aanpassen"</span></div>
           </div>
         </div>
-        {link && <div className="banner ok"><Icon name="ok" size={15} /><div>Bestand gereed ({link.sheets} werkbladen). Klik op <b>Download</b>.</div></div>}
+        {link && <div className="banner ok"><Icon name="ok" size={15} /><div>Download gestart: <b>{link.filename}</b> ({link.sheets} werkbladen, {link.kb} kB). Zie je geen bestand verschijnen? <a href={link.href} download={link.filename}>Klik dan hier</a> of open dit HTML-bestand buiten een ingesloten voorbeeld, rechtstreeks in Chrome of Edge — ingesloten voorbeelden blokkeren downloads.</div></div>}
       </div>
     </Modal>
   )

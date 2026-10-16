@@ -74,7 +74,7 @@ export function flexUitgangspunt(kamer, sessieduur) {
   const duur = sessieduur || kamer.sessieduur || 240
   const doelBenutting = kamer.benutting ?? 85
   const doelFlex = Math.round((duur * (100 - doelBenutting)) / 100 * 10) / 10
-  const proef = { start: '08:00', eind: fmt(8 * 60 + duur) }
+  const proef = { start: '08:30', eind: fmt(8 * 60 + 30 + duur) }
   const blokken = materializeFlex(proef, planregelsVan(kamer).flexRules)
   const ingesteld = sum(blokken, (b) => b.end - b.start)
   const flexPct = duur > 0 ? Math.round((ingesteld / duur) * 1000) / 10 : 0

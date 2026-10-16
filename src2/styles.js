@@ -276,7 +276,8 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 .timepair input{width:74px;text-align:center}
 
 /* ------------------------------------------------------------------ sessierooster (stap 2) */
-.weektable{border:1px solid var(--line);border-radius:var(--r-3);background:var(--surface);overflow:auto;position:relative}
+.weektable{border:1px solid var(--line);border-radius:var(--r-3);background:var(--surface);overflow:auto;position:relative;max-height:calc(100vh - 230px);min-height:360px;overscroll-behavior-x:contain;scrollbar-gutter:stable}
+.weektable::-webkit-scrollbar{height:12px;width:12px}.weektable::-webkit-scrollbar-thumb{background:var(--line-strong);border-radius:8px;border:3px solid var(--surface)}.weektable::-webkit-scrollbar-track{background:var(--surface)}
 .weektable table{border-collapse:separate;border-spacing:0;min-width:100%}
 .weektable th,.weektable td{border-right:1px solid var(--line-2);border-bottom:1px solid var(--line-2)}
 .weektable th{position:sticky;top:0;background:var(--surface-2);z-index:3;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:8px 10px;text-align:center;white-space:nowrap}
@@ -285,10 +286,11 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 .weektable th.mod span{display:inline-flex;align-items:center;gap:6px}
 .weektable th.kamer{top:34px;font-size:11.5px;letter-spacing:0;text-transform:none;color:var(--ink);font-weight:600;background:var(--surface)}
 .weektable th.kamer small{display:block;color:var(--muted);font-weight:500;font-size:10.5px}
-.weektable td.lbl{position:sticky;left:0;background:var(--surface);z-index:2;font-size:12px;font-weight:600;color:var(--ink-2);padding:0 12px;white-space:nowrap;min-width:92px}
+.weektable td.lbl{position:sticky;left:0;background:var(--surface);z-index:2;font-size:12px;font-weight:600;color:var(--ink-2);padding:0 12px;white-space:nowrap;min-width:92px;width:92px;box-sizing:border-box}
+.weektable td.lbl.dd{left:92px;box-shadow:4px 0 8px -6px rgba(0,0,0,.18)}
 .weektable td.lbl.day{font-family:var(--font-display);font-weight:700;color:var(--ink);background:var(--surface-2);vertical-align:top;padding-top:8px}
 .weektable td.lbl.dd{color:var(--muted);font-weight:600;font-size:11px;letter-spacing:.06em;text-transform:uppercase}
-.weektable th.corner{left:0;z-index:4}
+.weektable th.corner{left:0;z-index:4;min-width:184px;box-shadow:4px 0 8px -6px rgba(0,0,0,.18)}
 .weektable tr.dagstart td{border-top:2px solid var(--line)}
 .weektable tr.wknd td.lbl{color:var(--faint)}
 .cell{min-width:118px;height:44px;padding:3px;position:relative;vertical-align:top;transition:background var(--t-fast)}
@@ -363,7 +365,9 @@ select.input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 
 /* ------------------------------------------------------------------ planraster (3.3) */
 .rasterbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 14px;border-radius:14px;background:var(--surface);border:1px solid var(--line);box-shadow:var(--shadow-1);position:sticky;top:calc(var(--topbar) + 10px);z-index:20}
-.layout-33{display:grid;grid-template-columns:1fr 320px;gap:18px;align-items:start}
+.layout-33{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:18px;align-items:start}
+.layout-33>div{min-width:0}
+.globaal,.detail{overflow:auto}
 .side{position:sticky;top:calc(var(--topbar) + 76px);display:flex;flex-direction:column;gap:12px;max-height:calc(100vh - var(--topbar) - 90px);overflow:auto;padding-right:2px}
 .balans{display:flex;flex-direction:column;gap:6px}
 .balrow{display:grid;grid-template-columns:10px 1fr auto;gap:9px;align-items:center;padding:7px 10px;border-radius:10px;background:var(--surface);border:1px solid var(--line-2);cursor:grab;transition:all var(--t-fast) var(--ease)}

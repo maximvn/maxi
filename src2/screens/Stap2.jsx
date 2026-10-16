@@ -58,6 +58,8 @@ export default function Stap2({ state, setState, nav, setModId, toast }) {
   })
 
   const editS = edit && state.rooster.sessies.find((s) => s.id === edit)
+  const tabelRef = React.useRef(null)
+  const scrollTabel = (d) => tabelRef.current?.scrollBy({ left: d * Math.max(300, tabelRef.current.clientWidth * 0.6), behavior: 'smooth' })
 
   return (
     <>
@@ -69,30 +71,30 @@ export default function Stap2({ state, setState, nav, setModId, toast }) {
         </div>
       </div>
 
-      <div className="card pad" style={{ display: 'grid', gridTemplateColumns: '1.6fr 1.2fr auto auto', gap: 16, alignItems: 'end', marginBottom: 16 }}>
-        <Field label="Omschrijving sessierooster"><Input value={r.omschrijving} onChange={(e) => updR({ omschrijving: e.target.value })} placeholder="bijv. Sessierooster radiologie Q1 2027" /></Field>
-        <Field label="Type sessierooster">
+      <div className="card pad" style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-end', marginBottom: 16 }}>
+        <Field label="Omschrijving sessierooster" style={{ flex: '2 1 280px' }}><Input value={r.omschrijving} onChange={(e) => updR({ omschrijving: e.target.value })} placeholder="bijv. Sessierooster radiologie Q1 2027" /></Field>
+        <Field label="Type sessierooster" style={{ flex: '1 1 360px' }}>
           <div className="row wrap">
             <Seg value={r.type} onChange={(v) => updR({ type: v })} options={[{ v: 'regulier', l: 'Reguliere week' }, { v: 'reductie', l: 'Reductieweek' }, { v: 'anders', l: 'Anders' }]} />
             {r.type === 'anders' && <Input className="sm" style={{ width: 180 }} placeholder="namelijk…" value={r.typeAnders} onChange={(e) => updR({ typeAnders: e.target.value })} />}
           </div>
         </Field>
-        <Field label="Periode vanaf"><Input type="date" className="sm mono" value={r.vanaf} onChange={(e) => updR({ vanaf: e.target.value })} /></Field>
-        <Field label="Periode tot (optioneel)"><Input type="date" className="sm mono" value={r.tot} min={r.vanaf || undefined} onChange={(e) => updR({ tot: e.target.value })} /></Field>
+        <Field label="Periode vanaf" style={{ flex: '0 1 170px' }}><Input type="date" className="sm mono" value={r.vanaf} onChange={(e) => updR({ vanaf: e.target.value })} /></Field>
+        <Field label="Periode tot (optioneel)" style={{ flex: '0 1 170px' }}><Input type="date" className="sm mono" value={r.tot} min={r.vanaf || undefined} onChange={(e) => updR({ tot: e.target.value })} /></Field>
       </div>
 
       {!alleKamers.length ? <Empty icon="calendar" title="Nog geen kamers" action={<Btn onClick={() => nav('stap1')} icon="arrowL">Naar stap 1</Btn>}>Lees eerst Invoerlijst 1 in of voeg kamers toe bij stap 1.</Empty> : (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: 16, alignItems: 'start' }}>
-          <div className="col" style={{ gap: 10 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 300px', gap: 16, alignItems: 'start' }}>
+          <div className="col" style={{ gap: 10, minWidth: 0 }}>
             <div className="row between wrap">
               <div className="row"><Chip tone={state.rooster.sessies.length >= doelTotaal && doelTotaal ? 'ok' : 'soft'}>{state.rooster.sessies.length} / {doelTotaal} sessies</Chip><span className="small muted">{r.type === 'reductie' ? 'reductieweek' : 'reguliere week'} als doel</span></div>
-              <div className="row"><Btn size="sm" icon="wand" onClick={vul}>Vul automatisch vanuit invoerlijst</Btn><Btn size="sm" variant="ghost" icon="eraser" onClick={leeg} disabled={!state.rooster.sessies.length}>Leegmaken</Btn></div>
+              <div className="row"><Btn size="sm" icon="wand" onClick={vul}>Vul automatisch vanuit invoerlijst</Btn><Btn size="sm" variant="ghost" icon="eraser" onClick={leeg} disabled={!state.rooster.sessies.length}>Leegmaken</Btn><span style={{ width: 1, height: 22, background: 'var(--line)' }} /><IconBtn icon="chevL" title="Kamers naar links" onClick={() => scrollTabel(-1)} /><IconBtn icon="chevR" title="Kamers naar rechts" onClick={() => scrollTabel(1)} /></div>
             </div>
-            <div className="weektable">
+            <div className="weektable" ref={tabelRef}>
               <table>
                 <thead>
                   <tr>
-                    <th className="corner" rowSpan={2} style={{ textAlign: 'left' }}>Week</th>
+                    <th className="corner" rowSpan={2} colSpan={2} style={{ textAlign: 'left' }}>Week</th>
                     {kamersPerMod.map(({ mod, kamers }) => <th key={mod.id} className="mod" colSpan={kamers.length} style={{ '--tint': paletFor(mod.kleur).bg, '--tint-soft': paletFor(mod.kleur).soft }} onClick={() => { setModId(mod.id); nav('stap31') }} title={`Open het planraster van ${mod.naam} (stap 3)`}><span><Icon name={iconForModality(mod.naam)} size={13} />{mod.naam}<Icon name="external" size={11} /></span></th>)}
                   </tr>
                   <tr>
