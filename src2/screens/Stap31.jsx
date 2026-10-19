@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react'
 import { Icon, Btn, IconBtn, Field, Input, Num, Seg, Chip, Dropzone, Empty, Banner } from '../ui.jsx'
-import { paletFor, iconForModality, newPlangroep } from '../data.js'
+import { paletFor, iconForModality, newPlangroep, URGENTIES, urgentieInfo } from '../data.js'
 import { DAGEN, DAG_KORT, DAGDELEN, DAGDEEL_LABEL, sum, norm } from '../util.js'
 import * as E from '../engine.js'
 
@@ -96,7 +96,7 @@ export default function Stap31({ state, setState, nav, mod, modId, setModId, imp
                       <div className="ph" onClick={() => setOpen((o) => { const n = new Set(o); n.has(p.id) ? n.delete(p.id) : n.add(p.id); return n })}>
                         <Icon name={isOpen ? 'chevD' : 'chevR'} size={15} className="muted" />
                         <span className="sw">{(p.naam || '?').replace(/^(CT|MRI|Echo|Bucky)\s*/i, '').slice(0, 2).toUpperCase()}</span>
-                        <div className="truncate"><div className="row"><b className="truncate" style={{ fontSize: 13.5 }}>{p.naam || <span className="faint">Naam van de plangroep…</span>}</b>{p.urgentie && <Chip size="sm" tone={/spoed/i.test(p.urgentie) ? 'danger' : /semi/i.test(p.urgentie) ? 'warn' : 'soft'}>{p.urgentie}</Chip>}{probleem && <Chip size="sm" tone="danger">{probleem}</Chip>}</div>
+                        <div className="truncate"><div className="row"><b className="truncate" style={{ fontSize: 13.5 }}>{p.naam || <span className="faint">Naam van de plangroep…</span>}</b>{p.urgentie && <Chip size="sm" tone={urgentieInfo(p.urgentie)?.tone || 'soft'} title={urgentieInfo(p.urgentie) ? `Planperiode: ${urgentieInfo(p.urgentie).periode}` : 'Urgentie uit invoerlijst (geen vaste categorie)'}>{p.urgentie}</Chip>}{probleem && <Chip size="sm" tone="danger">{probleem}</Chip>}</div>
                           <div className="small muted truncate" style={{ marginTop: 2 }}>{p.aantal}/week · {p.duur} min · {kamerNamen.length ? kamerNamen.join(', ') : 'Alle kamers'} · {moment}{p.contrast ? ` · ${p.contrast}` : ''}{p.aanvrager ? ` · ${p.aanvrager}` : ''}</div></div>
                         <div className="row" onClick={(e) => e.stopPropagation()}><Chip tone="accent" className="mono">{(p.aantal || 0) * (p.duur || 0)} min/wk</Chip>{ver.length > 0 && <Chip tone="soft" size="sm" title={ver.map((v) => `${v.code} ${v.omschrijving}`).join('\n')}>{ver.length} verr.</Chip>}<IconBtn icon="trash" className="danger" title="Plangroep verwijderen" onClick={() => del(p.id)} /></div>
                       </div>
@@ -110,7 +110,13 @@ export default function Stap31({ state, setState, nav, mod, modId, setModId, imp
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }} className="full">
                             <Field label="Met / zonder contrast"><Input className="sm" value={p.contrast} onChange={(e) => upd(p.id, { contrast: e.target.value })} placeholder="Met / zonder" /></Field>
                             <Field label="Type aanvrager"><Input className="sm" value={p.aanvrager} onChange={(e) => upd(p.id, { aanvrager: e.target.value })} /></Field>
-                            <Field label="Urgentie"><Input className="sm" value={p.urgentie} onChange={(e) => upd(p.id, { urgentie: e.target.value })} placeholder="Regulier / Semi-spoed / Spoed" list="urg" /><datalist id="urg"><option>Regulier</option><option>Semi-spoed</option><option>Spoed</option></datalist></Field>
+                            <Field label="Urgentie" help={urgentieInfo(p.urgentie) ? `Planperiode: ${urgentieInfo(p.urgentie).periode}` : p.urgentie ? 'Niet-standaard waarde uit de invoerlijst — kies een vaste categorie' : undefined}>
+                              <select className="input sm" value={p.urgentie} onChange={(e) => upd(p.id, { urgentie: e.target.value })}>
+                                <option value="">— kies —</option>
+                                {URGENTIES.map((u) => <option key={u.key} value={u.key}>{u.label}{u.sub ? ` (${u.sub})` : ''} · {u.periode}</option>)}
+                                {p.urgentie && !urgentieInfo(p.urgentie) && <option value={p.urgentie}>{p.urgentie} (uit invoerlijst)</option>}
+                              </select>
+                            </Field>
                           </div>
                           <Field label="Kamer(s) waarop gepland mag worden" help="Geen selectie = alle kamers van deze modaliteit. Dit is leidend in het planraster." className="full">
                             <div className="row wrap">{kamers.map((k) => <button type="button" key={k.id} className={`togglechip tint ${(p.kamerIds || []).includes(k.id) ? 'on' : ''}`} style={{ '--tint': pal.bg }} onClick={() => toggleKamer(p.id, k.id)}>{k.naam}{k.omschrijving && <span style={{ opacity: .7, fontWeight: 500 }}>· {k.omschrijving}</span>}</button>)}{!kamers.length && <span className="small muted">geen kamers</span>}</div>

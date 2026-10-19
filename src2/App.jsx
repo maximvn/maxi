@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import * as XLSX from 'xlsx'
 import { CSS } from './styles.js'
-import { Icon, Btn, IconBtn, Modal, Field, Input, ToastProvider, useToast, DragProvider, Chip, useLocal } from './ui.jsx'
+import { Icon, Btn, IconBtn, Modal, Field, Input, ToastProvider, useToast, DragProvider, ConfirmProvider, Chip, useLocal, Banner } from './ui.jsx'
 import { emptyState, STAPPEN, paletFor, VOORBEELD_INVOERLIJST_1, VOORBEELD_VERRIJKING, VOORBEELD_PLANGROEPEN, VOORBEELD_VERRICHTINGEN } from './data.js'
 import { parseInvoerlijst1, applyInvoerlijst1, parseInvoerlijst2, applyInvoerlijst2, parseHerstel } from './importers.js'
 import * as E from './engine.js'
@@ -244,6 +244,7 @@ function Shell() {
 function ExportModal({ state, onClose, toast }) {
   const [naam, setNaam] = useState(() => (state.rooster.omschrijving || 'radiologie_rasterplanner').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_') || 'radiologie_rasterplanner')
   const [link, setLink] = useState(null)
+  const ingesloten = (() => { try { return window.self !== window.top } catch { return true } })()
   const [busy, setBusy] = useState(false)
   const kamersMetSessies = state.kamers.filter((k) => E.kamerSessies(state, k.id).length)
   // Download via Blob + object-URL: werkt ook bij grote bestanden en in browsers die data-URL's blokkeren.
@@ -276,6 +277,7 @@ function ExportModal({ state, onClose, toast }) {
     <Modal title="Exporteren" sub="Eén Excel-werkboek met een werkblad per kamer (weekdagen horizontaal, tijd verticaal), het sessierooster, het capaciteitsoverzicht, de stamgegevens en een herstelblad om later verder te werken." onClose={onClose}
       footer={<><Btn variant="ghost" icon="file" onClick={json}>Ook als .json</Btn><div className="grow" /><Btn onClick={onClose}>Sluiten</Btn><Btn variant="primary" icon={link ? 'download' : 'sheet'} onClick={maak} disabled={busy}>{busy ? 'Bezig…' : link ? 'Opnieuw downloaden' : 'Genereer en download Excel'}</Btn></>}>
       <div className="col" style={{ gap: 14 }}>
+        {ingesloten && <Banner type="warn">Deze tool draait nu in een ingesloten weergave (bijvoorbeeld een voorbeeldvenster). Downloads worden daar meestal geblokkeerd. Sla het HTML-bestand op en open het rechtstreeks in Chrome of Edge; je werk blijft bewaard via de autosave zolang je dezelfde browser gebruikt, of neem het mee via "Ook als .json".</Banner>}
         <Field label="Bestandsnaam"><div className="row"><Input value={naam} onChange={(e) => setNaam(e.target.value)} /><span className="muted small">.xlsx</span></div></Field>
         <div className="card pad" style={{ padding: 14, background: 'var(--surface-2)' }}>
           <div className="eyebrow" style={{ marginBottom: 8 }}>Inhoud</div>
@@ -294,5 +296,5 @@ function ExportModal({ state, onClose, toast }) {
 
 export default function App() {
   useEffect(() => { if (!document.getElementById('rp2-css')) { const s = document.createElement('style'); s.id = 'rp2-css'; s.textContent = CSS; document.head.appendChild(s) } }, [])
-  return <ToastProvider><DragProvider><Shell /></DragProvider></ToastProvider>
+  return <ToastProvider><ConfirmProvider><DragProvider><Shell /></DragProvider></ConfirmProvider></ToastProvider>
 }

@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
-import { Icon, Btn, IconBtn, Chip, Empty, Banner, Seg, Ring, Bar, Modal, useDrag, Kpi } from '../ui.jsx'
+import { Icon, Btn, IconBtn, Chip, Empty, Banner, Seg, Ring, Bar, Modal, useDrag, Kpi, useConfirm } from '../ui.jsx'
 import { paletFor, iconForModality } from '../data.js'
 import { DAG_LABEL, DAG_KORT, DAGDEEL_LABEL, toMin, fmt, sum, clamp, snap } from '../util.js'
 import * as E from '../engine.js'
@@ -19,6 +19,7 @@ const pgColor = (pal, idx) => {
 
 export default function Stap33({ state, setState, mod, modId, setModId, toast, openExport }) {
   const { drag, startDrag } = useDrag()
+  const confirm = useConfirm()
   const kamers = mod ? E.modKamers(state, mod.id) : []
   const [kamerId, setKamerId] = useState(null)
   const kamer = kamers.find((k) => k.id === kamerId) || kamers[0] || null
@@ -49,17 +50,18 @@ export default function Stap33({ state, setState, mod, modId, setModId, toast, o
   const removeAppt = (sessieId, apptId) => { setState((s) => E.verwijderAfspraak(s, sessieId, apptId)); setSelAppt(null) }
   const moveAppt = (van, apptId, naar, t) => { let err; setState((s) => { const r = E.verplaatsAfspraak(s, van, apptId, naar, t); err = r.error; return r.state }); setTimeout(() => err && fout(err, naar), 0) }
 
-  const voorstel = () => {
+  const voorstel = async () => {
     if (!modSess.length) { toast('Er zijn nog geen sessies voor deze modaliteit in het sessierooster (stap 2).', 'warn'); return }
+    if (!pgs.length) { toast(`Er zijn nog geen plangroepen voor ${mod.naam}. Voeg ze toe bij stap 3.1; het raster bevat nu alleen de flexblokken uit de planregels.`, 'warn', 7000) }
     const heeft = modSess.some((s) => E.getEntry(state.plan, s.id).appts.length)
-    if (heeft && !window.confirm(`Het huidige raster van ${mod.naam} wordt vervangen door een nieuw voorstel. Doorgaan?`)) return
+    if (heeft && !(await confirm({ title: 'Nieuw voorstel maken?', msg: `Het huidige raster van ${mod.naam} (${sum(modSess, (s) => E.getEntry(state.plan, s.id).appts.length)} afspraken) wordt vervangen door een nieuw voorstel op basis van de huidige plangroepen en planregels. Met Ctrl+Z kun je terug.`, okLabel: 'Voorstel maken', icon: 'sparkles' }))) return
     let r
     setState((s) => { r = E.voorstel(s, mod.id); return r.state })
     setTimeout(() => { if (!r) return; setMeldingen(r.meldingen); const ok = r.meldingen.find((m) => m.type === 'ok'); toast(ok ? ok.msg : 'Voorstelraster gemaakt — zie de meldingen rechts.', ok ? 'ok' : 'warn', 5000) }, 0)
   }
-  const leeg = (vraag = true) => {
-    if (vraag && modSess.some((s) => E.getEntry(state.plan, s.id).appts.length) && !window.confirm(`Alle afspraken in het raster van ${mod.naam} verwijderen? De sessies en flexregels blijven staan.`)) return
-    setState((s) => E.leegModaliteit(s, mod.id)); setMeldingen([]); toast('Raster leeggemaakt — lege sessies met flexblokken volgens de planregels.', 'ok')
+  const leeg = async (vraag = true, titel = 'Raster leegmaken?') => {
+    if (vraag && modSess.some((s) => E.getEntry(state.plan, s.id).appts.length) && !(await confirm({ title: titel, msg: `Alle afspraken in het raster van ${mod.naam} worden verwijderd. De sessies blijven staan en krijgen de flexblokken uit de planregels. Met Ctrl+Z kun je terug.`, okLabel: 'Leegmaken', danger: true, icon: 'eraser' }))) return
+    setState((s) => E.leegModaliteit(s, mod.id)); setMeldingen([]); toast('Raster leeggemaakt — lege sessies met flexblokken volgens de planregels. Vul nu zelf de plangroepen in.', 'ok')
   }
 
   // ---- drag & drop
@@ -160,7 +162,7 @@ export default function Stap33({ state, setState, mod, modId, setModId, toast, o
         <>
           <div className="rasterbar">
             <Btn variant="primary" icon="sparkles" onClick={voorstel}>Voorstelraster door AI</Btn>
-            <Btn icon="grid" onClick={() => leeg(true)} title="Lege sessies met flexblokken volgens de planregels; vul zelf de plangroepen in">Zelf raster ontwerpen (leeg template)</Btn>
+            <Btn icon="grid" onClick={() => leeg(true, 'Zelf ontwerpen vanaf een leeg template?')} title="Lege sessies met flexblokken volgens de planregels; vul zelf de plangroepen in">Zelf raster ontwerpen (leeg template)</Btn>
             <Btn variant="ghost" icon="eraser" onClick={() => leeg(true)} title="Het gehele raster van deze modaliteit leegmaken en opnieuw beginnen">Raster leegmaken</Btn>
             <span className="sep" style={{ width: 1, height: 24, background: 'var(--line)' }} />
             <Seg accent value={weergave} onChange={setWeergave} options={[{ v: 'globaal', l: 'Weergave 1 · Globaal', icon: 'layers' }, { v: 'detail', l: 'Weergave 2 · Detail', icon: 'grid' }]} />

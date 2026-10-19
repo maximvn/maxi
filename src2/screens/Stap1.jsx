@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react'
-import { Icon, Btn, IconBtn, Field, Input, Num, TimeInput, Chip, Dropzone, Empty, Banner, Ring } from '../ui.jsx'
+import { Icon, Btn, IconBtn, Field, Input, Num, TimeInput, Chip, Dropzone, Empty, Banner, Ring, useConfirm } from '../ui.jsx'
 import { paletFor, iconForModality, newKamer, DEFAULT_DAGDELEN } from '../data.js'
 import { DAGEN, DAG_KORT, DAGDELEN, DAGDEEL_LABEL, fmtDate, toMin, uid, sum } from '../util.js'
 import * as E from '../engine.js'
@@ -9,6 +9,7 @@ const DD_COLOR = { ochtend: '#1D5FB8', middag: '#0F766E', avond: '#C77D1A' }
 export default function Stap1({ state, setState, nav, modId, setModId, importInvoerlijst1, laadVoorbeeld, toast, busy }) {
   const [open, setOpen] = useState(() => new Set())
   const [nieuweMod, setNieuweMod] = useState('')
+  const confirm = useConfirm()
   const mods = state.modaliteiten
   const mod = mods.find((m) => m.id === modId)
   const kamers = mod ? E.modKamers(state, mod.id) : []
@@ -22,10 +23,10 @@ export default function Stap1({ state, setState, nav, modId, setModId, importInv
     setState((s) => ({ ...s, kamers: [...s.kamers, k] }))
     setOpen((o) => new Set([...o, k.id]))
   }
-  const delKamer = (id) => {
+  const delKamer = async (id) => {
     const k = state.kamers.find((x) => x.id === id)
     const n = E.kamerSessies(state, id).length
-    if (n && !window.confirm(`${k.naam} heeft ${n} sessies in het sessierooster. Kamer en sessies verwijderen?`)) return
+    if (!(await confirm({ title: `${k.naam} verwijderen?`, msg: n ? `${k.naam} heeft ${n} sessies in het sessierooster. De kamer, de sessies en de ingeplande afspraken worden verwijderd.` : `De kamer ${k.naam} wordt verwijderd.`, okLabel: 'Verwijderen', danger: true, icon: 'trash' }))) return
     setState((s) => {
       const ids = new Set(s.rooster.sessies.filter((x) => x.kamerId === id).map((x) => x.id))
       const plan = Object.fromEntries(Object.entries(s.plan).filter(([sid]) => !ids.has(sid)))
@@ -41,10 +42,10 @@ export default function Stap1({ state, setState, nav, modId, setModId, importInv
     setState((s) => ({ ...s, modaliteiten: [...s.modaliteiten, m] }))
     setNieuweMod(''); setModId(m.id)
   }
-  const delMod = (id) => {
+  const delMod = async (id) => {
     const m = mods.find((x) => x.id === id)
     const n = E.modKamers(state, id).length
-    if (!window.confirm(`Modaliteit ${m.naam}${n ? ` met ${n} kamers, bijbehorende sessies en plangroepen` : ''} verwijderen?`)) return
+    if (!(await confirm({ title: `Modaliteit ${m.naam} verwijderen?`, msg: n ? `${m.naam} heeft ${n} kamers. De kamers, bijbehorende sessies, plangroepen en afspraken worden verwijderd.` : `De modaliteit ${m.naam} wordt verwijderd.`, okLabel: 'Verwijderen', danger: true, icon: 'trash' }))) return
     setState((s) => {
       const kIds = new Set(s.kamers.filter((k) => k.modId === id).map((k) => k.id))
       const sIds = new Set(s.rooster.sessies.filter((x) => kIds.has(x.kamerId)).map((x) => x.id))

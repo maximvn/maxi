@@ -1,11 +1,12 @@
 import React, { useState, useMemo } from 'react'
-import { Icon, Btn, IconBtn, Field, Input, Seg, Chip, Empty, Banner, Modal, TimeInput, useDrag } from '../ui.jsx'
+import { Icon, Btn, IconBtn, Field, Input, Seg, Chip, Empty, Banner, Modal, TimeInput, useDrag, useConfirm } from '../ui.jsx'
 import { paletFor, iconForModality } from '../data.js'
 import { DAGEN, DAG_LABEL, DAG_KORT, DAGDELEN, DAGDEEL_LABEL, toMin, fmt, sum } from '../util.js'
 import * as E from '../engine.js'
 
 export default function Stap2({ state, setState, nav, setModId, toast }) {
   const { drag, startDrag } = useDrag()
+  const confirm = useConfirm()
   const [edit, setEdit] = useState(null) // sessie-id
   const [selKamer, setSelKamer] = useState(null)
   const r = state.rooster
@@ -42,7 +43,7 @@ export default function Stap2({ state, setState, nav, setModId, toast }) {
     setState((s) => { res = E.vulSessierooster(s); return res.state })
     setTimeout(() => { if (!res) return; res.toegevoegd ? toast(`${res.toegevoegd} sessies toegevoegd op basis van de invoerlijst (${r.type === 'reductie' ? 'reductieweek' : 'reguliere week'}).`, 'ok') : toast('Alle kamers met een doelaantal hebben al sessies — niets toegevoegd.', 'info'); res.waarschuwingen.forEach((w) => toast(w, 'warn', 8000)) }, 0)
   }
-  const leeg = () => { if (window.confirm('Alle sessies uit het sessierooster verwijderen? Ook de ingeplande afspraken vervallen.')) setState((s) => ({ ...s, rooster: { ...s.rooster, sessies: [] }, plan: {} })) }
+  const leeg = async () => { if (await confirm({ title: 'Sessierooster leegmaken?', msg: 'Alle sessies uit het sessierooster worden verwijderd. Ook de ingeplande afspraken vervallen.', okLabel: 'Leegmaken', danger: true, icon: 'eraser' })) setState((s) => ({ ...s, rooster: { ...s.rooster, sessies: [] }, plan: {} })) }
 
   const dropCell = (el) => {
     const [, kamerId, dag, dagdeel] = el.dataset.drop.split('|')

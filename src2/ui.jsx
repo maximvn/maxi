@@ -205,6 +205,26 @@ export const ToastProvider = ({ children }) => {
   )
 }
 
+// ------------------------------------------------------------------ bevestigen (eigen venster; window.confirm is in ingesloten weergaven geblokkeerd)
+const ConfirmCtx = createContext(async () => true)
+export const useConfirm = () => useContext(ConfirmCtx)
+export const ConfirmProvider = ({ children }) => {
+  const [q, setQ] = useState(null)
+  const vraag = useCallback((opts) => new Promise((resolve) => setQ({ ...(typeof opts === 'string' ? { msg: opts } : opts), resolve })), [])
+  const sluit = (v) => { q?.resolve(v); setQ(null) }
+  return (
+    <ConfirmCtx.Provider value={vraag}>
+      {children}
+      {q && (
+        <Modal title={q.title || 'Weet je het zeker?'} onClose={() => sluit(false)}
+          footer={<><Btn onClick={() => sluit(false)}>{q.cancelLabel || 'Annuleren'}</Btn><Btn variant="primary" icon={q.icon} style={q.danger ? { background: 'var(--danger)', borderColor: 'var(--danger)' } : undefined} onClick={() => sluit(true)} autoFocus>{q.okLabel || 'Ja, doorgaan'}</Btn></>}>
+          <p style={{ fontSize: 13.5, lineHeight: 1.5 }}>{q.msg}</p>
+        </Modal>
+      )}
+    </ConfirmCtx.Provider>
+  )
+}
+
 // ------------------------------------------------------------------ drag & drop (pointer-gebaseerd)
 // Een draggable roept startDrag(e, payload) aan. payload = { ghost: <node>, onDrop(el, pos), onHover?(el), data }.
 // Droptargets zijn elementen met data-drop="<id>" (plus eigen data-attributen). over-status via useDragState().

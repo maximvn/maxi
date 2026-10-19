@@ -38,6 +38,29 @@ export const DEFAULT_PLANREGELS = () => ({
   flexRules: [],
 })
 
+// Vaste urgentiecategorieën (met planperiode). De 'key' wordt opgeslagen; 'label' en 'periode' worden getoond.
+export const URGENTIES = [
+  { key: 'Acuut/z.s.m.', label: 'Acuut/z.s.m.', periode: 'Nu', tone: 'danger' },
+  { key: 'Spoed', label: 'Spoed', sub: 'Moet dezelfde dag / eerst beschikbare spoedplek', periode: '< 12 uur', tone: 'danger' },
+  { key: 'Semi-spoed', label: 'Semi-spoed', sub: 'Zo mogelijk dezelfde dag, anders de volgende dag', periode: '> 12 uur & < 24 uur', tone: 'warn' },
+  { key: 'Korte termijn (1 week)', label: 'Korte termijn', sub: 'Binnen één week', periode: '> 24 uur & < 1 week', tone: 'info' },
+  { key: 'Korte termijn (2 weken)', label: 'Korte termijn', sub: 'Binnen twee weken', periode: '> 1 week & < 2 weken', tone: 'info' },
+  { key: 'Regulier', label: 'Regulier', periode: 'Vanaf 2 weken', tone: 'soft' },
+]
+export const urgentieInfo = (key) => URGENTIES.find((u) => u.key === key) || null
+// Vrije tekst (bijv. uit een invoerlijst) naar een vaste categorie; onbekende tekst blijft staan.
+export const normaliseerUrgentie = (tekst) => {
+  const t = String(tekst || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  if (!t.trim()) return ''
+  if (/acuut|z\.?s\.?m|direct|nu\b/.test(t)) return 'Acuut/z.s.m.'
+  if (/semi/.test(t)) return 'Semi-spoed'
+  if (/spoed|urgent|<\s*12/.test(t)) return 'Spoed'
+  if (/2\s*we(e)?k|twee\s*we(e)?k|14\s*dag/.test(t)) return 'Korte termijn (2 weken)'
+  if (/korte?\s*termijn|1\s*week|een\s*week|7\s*dag|binnen.*week/.test(t)) return 'Korte termijn (1 week)'
+  if (/regulier|electief|normaal|routine/.test(t)) return 'Regulier'
+  return String(tekst).trim()
+}
+
 export const METHODEN = {
   shortFirst: { label: 'Starten met relatief korte afspraken', desc: 'Binnen elke sessie worden de kortere afspraken eerst ingepland (Shortest Processing Time). Dit verkort de gemiddelde wachttijd en geeft een rustige start.' },
   bailyWelch: { label: 'Eerste afspraak dubbel boeken', desc: 'De eerste twee afspraken van een sessie starten tegelijk (Bailey-Welch). Compenseert no-shows en startvertraging; de tweede patiënt vult het gat op.' },
@@ -136,7 +159,7 @@ export const VOORBEELD_VERRIJKING = {
 // Voorbeeldplangroepen (vorm van "Invoerlijst 2 — Plangroepen").
 export const VOORBEELD_PLANGROEPEN = [
   // CT — kamer CT 1 (spoed) en CT 2 (electief)
-  { plangroep: 'C-/C+ Acuut (z.s.m.) en spoed (<12 uur)', kamer: 'CT 1', contrast: 'Met / zonder', aanvrager: 'SEH / kliniek', urgentie: 'Spoed', aantal: 30, duur: 20 },
+  { plangroep: 'C-/C+ Acuut (z.s.m.) en spoed (<12 uur)', kamer: 'CT 1', contrast: 'Met / zonder', aanvrager: 'SEH / kliniek', urgentie: 'Acuut/z.s.m.', aantal: 30, duur: 20 },
   { plangroep: 'CT Hersenen zonder contrast', kamer: 'CT 1', contrast: 'Zonder', aanvrager: 'Neurologie / SEH', urgentie: 'Regulier', aantal: 25, duur: 15 },
   { plangroep: 'CT Wervelkolom / skelet', kamer: 'CT 1', contrast: 'Zonder', aanvrager: 'Orthopedie / SEH', urgentie: 'Regulier', aantal: 20, duur: 15 },
   { plangroep: 'CT-geleide punctie / drainage', kamer: 'CT 1', contrast: 'Zonder', aanvrager: 'Interventie', urgentie: 'Semi-spoed', aantal: 5, duur: 45, specifiek: ['ma|middag', 'wo|middag', 'vr|middag'] },

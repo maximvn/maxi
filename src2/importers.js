@@ -1,7 +1,7 @@
 // Inlezen van "Invoerlijst 1 - Kamers en sessies" en "Invoerlijst 2 - Verrichtingen en plangroepen".
 // Werkt op een SheetJS-werkboek, zodat dezelfde code in de browser en in de tests draait.
 import { norm, excelDateToIso, uid, fmt, toMin, DAGEN, DAGDELEN } from './util.js'
-import { newKamer, newPlangroep, DEFAULT_DAGDELEN, paletFor } from './data.js'
+import { newKamer, newPlangroep, DEFAULT_DAGDELEN, paletFor, normaliseerUrgentie } from './data.js'
 
 const aoa = (XLSX, ws) => XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true })
 const isEmpty = (v) => v == null || (typeof v === 'string' && v.trim() === '')
@@ -278,7 +278,7 @@ export function applyInvoerlijst2(state, parsed, opties = {}) {
       kamerIds: kamerIds.length ? kamerIds : base.kamerIds || [],
       contrast: row.contrast || base.contrast || '',
       aanvrager: row.aanvrager || base.aanvrager || '',
-      urgentie: row.urgentie || base.urgentie || '',
+      urgentie: normaliseerUrgentie(row.urgentie) || base.urgentie || '',
       opm: row.opm || base.opm || '',
       planmoment: Object.keys(slots).length ? 'specifiek' : base.planmoment || 'vrij',
       slots: Object.keys(slots).length ? slots : base.slots || {},
