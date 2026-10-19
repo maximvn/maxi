@@ -4,9 +4,12 @@ Doorontwikkeling van de originele PoliRaster-tool — **op hetzelfde fundament**
 een vervanging. De sterke punten van het origineel zijn behouden en er zijn gerichte
 2.0-verbeteringen op gebouwd.
 
-Bestanden: `raster_model_2.jsx` (React-component, `xlsx` als enige dependency), `functiekamers.js`
-(de engine en de voorbeeldset voor de functiekamer-modus), `assistent.js` (kennisbank en vraaganalyse)
-en `engineClient.js` (de rekenengine buiten de UI-thread, zie "Altijd live").
+De bron staat in `frontend/` (Vite-project, zie `frontend/README.md`): `src/App.jsx` (de
+React-component), `src/engine/` (de poli-engine `poli.js`, `functiekamers.js`, de engine-client
+`client.js` en de Web Worker), `src/assistent/assistent.js` (kennisbank en vraaganalyse), `src/lib/`
+(zuivere helpers) en `src/ui/` (kleuren en kleine bouwstenen). De wortelbestanden
+`raster_model_2.jsx`, `functiekamers.js`, `assistent.js` en `engineClient.js` zijn dunne
+doorgeefluiken naar die bron, zodat `build.js` en de tests blijven werken.
 Losse, klikbare versie: `dist/polimodel.html` (alles ingebundeld, direct in de browser te openen).
 
 ## Altijd live — rekenen buiten de UI-thread (nieuw in 2.3)
@@ -28,8 +31,10 @@ praktijk "stopte" de tool soms:
 
 Wat er is veranderd:
 
-- **Web Worker.** Dezelfde bundel draait óók als worker (`entry.jsx` herkent de context);
-  `engineClient.js` stuurt elke berekening daarheen. Eén vaste worker voor het live-raster,
+- **Web Worker.** In het Vite-project is de worker een eigen bestand
+  (`frontend/src/engine/engine.worker.js`); in de losse HTML-bestanden draait dezelfde bundel
+  óók als worker (`entry.jsx` herkent de context). De engine-client
+  (`frontend/src/engine/client.js`) stuurt elke berekening daarheen. Eén vaste worker voor het live-raster,
   een eigen worker per batch (optimiser, bijsturen) zodat een lange reeks scenario's het
   live-raster nooit blokkeert. Werkt vanaf één HTML-bestand (Blob-worker) en vanaf een
   los script (`src`). Geen worker mogelijk → zelfde API, synchroon op de UI-thread.
@@ -434,8 +439,9 @@ Per poli wordt lokaal (in de browser) onthouden wat je doet. Zichtbaar, uitlegba
 export, maar zonder de assistent: geen Assistent-knop in het menu, geen "Vraag de
 assistent" bij het raster en geen bijstuur-opdrachten vanuit de bezettingskaart (een
 klik op een vak opent die dag). `build.js` zet daarvoor de vlag
-`window.__POLIRASTER_SIMPEL=true` in de pagina; `raster_model_2.jsx` leest die vlag
-(`SIMPEL`) en laat de assistent-ingangen weg. Beide varianten komen uit één bundel.
+`window.__POLIRASTER_SIMPEL=true` in de pagina; `frontend/src/App.jsx` leest die vlag
+(`SIMPEL`, in het Vite-project `VITE_POLIRASTER_SIMPEL`) en laat de assistent-ingangen weg.
+Beide varianten komen uit één bundel.
 
 ## Python-backend (rekenkern in Python)
 
@@ -443,8 +449,8 @@ De rekenkern bestaat ook als Python-pakket in `backend/` (zie `backend/README.md
 `backend/ARCHITECTUUR.md` en `backend/DOCUMENTATIE.md`). Het pakket `poliraster` levert
 `bereken_raster` (poli-engine) en `bereken_functiekamers` (functiekamer-engine), modulair
 per fase en per module gedocumenteerd. `backend/server.py` (FastAPI) biedt die functies aan
-via een API en serveert `dist/polimodel-api.html`: dezelfde frontend, maar het rekenen
-gebeurt op de server. De JavaScript-engine blijft de referentie: 226 pariteitscases
+via een API en serveert de frontend (`frontend/dist/`, gebouwd met `VITE_POLIRASTER_API=''`,
+anders `dist/polimodel-api.html`): dezelfde frontend, maar het rekenen gebeurt op de server. De JavaScript-engine blijft de referentie: 226 pariteitscases
 (`backend/tests/pariteit/`) bewijzen dat Python exact hetzelfde raster geeft.
 
 ```
@@ -454,18 +460,40 @@ python server.py            # http://127.0.0.1:8000  (frontend + API)
 python -m pytest tests -q   # 255 tests, waaronder de 226 pariteitscases
 ```
 
+## Frontend als Vite-project (`frontend/`)
+
+De bron van de interface staat in `frontend/src/` en bouwt als gewoon React-project:
+
+```
+cd frontend
+npm install
+npm run dev                      # ontwikkelserver, /api → backend/server.py
+npm run build                    # frontend/dist/ (rekenen in de browser)
+npm run build -- --mode api      # rekenen op de Python-backend; server.py serveert frontend/dist/
+npm run build -- --mode simpel   # zonder assistent
+node test_vite_build.mjs         # browsercontrole: worker-modus én http-modus
+```
+
+Zie `frontend/README.md` voor de mappenstructuur, de vlaggen en de tests.
+
 ## Losse HTML-versie bouwen
 
 `dist/polimodel.html` is volledig zelfstandig (React + xlsx ingebundeld) en opent direct
-in de browser. Opnieuw bouwen na een wijziging aan `raster_model_2.jsx`:
+in de browser — ook via `file://`, wat de Playwright-tests in de hoofdmap gebruiken. De bron
+is dezelfde als die van het Vite-project (`frontend/src/`); de wortelbestanden
+`raster_model_2.jsx`, `functiekamers.js`, `assistent.js`, `engineClient.js` en `entry.jsx` zijn
+dunne doorgeefluiken daarnaartoe. Opnieuw bouwen na een wijziging in `frontend/src/`:
 
 ```
-npm install
-npm run build
+npm install                      # in de hoofdmap (esbuild, playwright) …
+(cd frontend && npm install)     # … en in frontend/ (react, react-dom, xlsx)
+npm run build                    # = node build.js
 ```
 
 `build.js` bundelt `entry.jsx` met esbuild en injecteert het in `html-shell.html`; het
-schrijft `dist/polimodel.html` én `dist/polimodel-simpel.html`.
+schrijft `dist/polimodel.html`, `dist/polimodel-simpel.html` (vlag `window.__POLIRASTER_SIMPEL`)
+en `dist/polimodel-api.html` (vlag `window.__POLIRASTER_API=''`). Dezelfde vlaggen heten in
+het Vite-project `VITE_POLIRASTER_SIMPEL` en `VITE_POLIRASTER_API`.
 
 ## Tests
 

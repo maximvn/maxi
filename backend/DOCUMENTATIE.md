@@ -163,7 +163,7 @@ Overboekte afspraken tellen als geplaatst maar openen geen kamer-dag (zoals Java
 - `POST /api/raster` `{cfg,newRows,ctrlRows,m2,rules,capacity,trace?}` → raster-JSON
 - `POST /api/functiekamers` `{kamers,codes,m2,regels,trace?}` → raster-JSON
 - `POST /api/batch` `{jobs:[{type,args,meet?,trace?}]}` → `{uit:[{ok:true,res}|{ok:false,err}]}` — één mislukte job maakt de batch niet stuk
-- `GET /` → `dist/polimodel-api.html`, anders een korte uitleg hoe je bouwt
+- `GET /` → `frontend/dist/index.html` (+ `/assets/*`) als de Vite-build er is, anders `dist/polimodel-api.html`, anders een korte uitleg hoe je bouwt
 
 **Fouten.** HTTP 200 met `{ok:false, fout:'Type: tekst', type, spoor:[stacktrace-regels]}`; de stacktrace
 staat ook in de serverlog. Een kapotte JSON-body of een body die velden mist geeft een `ValueError`
@@ -174,7 +174,8 @@ met een leesbare tekst. `NaN`/`Infinity` in uitvoer worden `null` (zoals `JSON.s
 
 **Waar kan het misgaan.** `engines.poli:false` → de poli-port ontbreekt nog; `/api/raster` geeft dan `ok:false`
 met de importfout. `type:'KeyError'`/`'TypeError'` → de body heeft een andere vorm dan de frontend stuurt;
-`spoor` wijst de regel aan. `/` toont de uitleg → eerst `node build.js` in de hoofdmap.
+`spoor` wijst de regel aan. `/` toont de uitleg → eerst bouwen: `cd frontend && VITE_POLIRASTER_API='' npm run build`
+(of `node build.js` in de hoofdmap).
 
 **Tests.** `tests/test_server.py` (TestClient): health, functiekamers (ook `trace`), batch (gewone job, `meet`,
 onbekend type), foutpaden, `/`, en de poli-endpoint (overgeslagen zolang de poli-engine ontbreekt).
@@ -183,15 +184,17 @@ functiekamer-advies via Python is berekend en gelijk is aan de synchrone JavaScr
 
 ---
 
-## Frontend-koppeling (`../engineClient.js`, `../build.js`)
+## Frontend-koppeling (`../frontend/src/engine/client.js`, `../build.js`)
 
-`engineClient.js` kent naast `worker` en `sync` de modus **`http`**: staat `window.__POLIRASTER_API`
-(string; basis-URL, `''` = zelfde herkomst), dan gaan `bereken(job)` naar `/api/raster` of
+De engine-client (`frontend/src/engine/client.js`; `../engineClient.js` is een doorgeefluik) kent naast
+`worker` en `sync` de modus **`http`**: is de optie `api` een string (basis-URL, `''` = zelfde herkomst;
+`App.jsx` leest `import.meta.env.VITE_POLIRASTER_API`, terugval `window.__POLIRASTER_API`), dan gaan `bereken(job)` naar `/api/raster` of
 `/api/functiekamers` en `berekenBatch(jobs, onVoortgang)` naar `/api/batch` (voortgang bij start en
 einde; de server streamt niet). `info()` geeft `modus:'http'` en `bron` = de URL. Netwerkfouten en
 `ok:false` worden een `Error` met de servertekst (de `liveFout`-banner toont die); er is géén stille
-terugval op de worker. `rekenSync` blijft JavaScript. `build.js` maakt `dist/polimodel-api.html`
-met de vlag en de titel "PoliRaster Studio — Python-backend".
+terugval op de worker. `rekenSync` blijft JavaScript. `cd frontend && VITE_POLIRASTER_API='' npm run build`
+maakt de Vite-build voor de server; `build.js` maakt daarnaast `dist/polimodel-api.html` met de
+window-vlag. Beide dragen de titel "PoliRaster Studio — Python-backend".
 
 ---
 

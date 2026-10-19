@@ -31,7 +31,7 @@ python server.py                      # start uvicorn zelf; --host / --port of P
 
 Daarna:
 
-- `http://127.0.0.1:8000/` — de tool (als `dist/polimodel-api.html` is gebouwd, zie hieronder)
+- `http://127.0.0.1:8000/` — de tool (als `frontend/dist/` of `dist/polimodel-api.html` is gebouwd, zie hieronder)
 - `GET  /api/health` → `{ok:true, versie, engines:{poli, functie}}`
 - `POST /api/raster` met `{cfg,newRows,ctrlRows,m2,rules,capacity,trace?}` → raster-JSON (poli)
 - `POST /api/functiekamers` met `{kamers,codes,m2,regels,trace?}` → raster-JSON (functiekamers)
@@ -42,13 +42,16 @@ frontend ze in de live-banner toont. CORS staat open.
 
 ## De frontend draaien: drie manieren
 
-De frontend wordt gebouwd met `cd .. && node build.js`; dat levert drie bestanden in `dist/`:
+De bron van de frontend staat in `../frontend/src/` (Vite-project, zie `../frontend/README.md`).
+Voor deze server bouw je haar met `cd ../frontend && npm install && VITE_POLIRASTER_API='' npm run build`;
+dat levert `frontend/dist/` (index.html + assets), dat `server.py` op `/` serveert. Daarnaast levert
+`cd .. && node build.js` drie losse, zelfstandige HTML-bestanden in `dist/` (zelfde bron):
 
 | Bestand | Rekenen gebeurt | Wanneer |
 |---|---|---|
 | `dist/polimodel.html` | in de browser, in een Web Worker (terugval: synchroon) | los bestand, dubbelklikken volstaat; geen server nodig |
 | `dist/polimodel.html` als **artifact** / gehost HTML | idem, in de browser | delen via een link; de pagina is zelfstandig |
-| `dist/polimodel-api.html` via `server.py` op `/` | op de **Python-backend** (`engineClient.js`, modus `http`) | wie de Python-rekenkern wil gebruiken of debuggen |
+| `frontend/dist/` (of anders `dist/polimodel-api.html`) via `server.py` op `/` | op de **Python-backend** (`frontend/src/engine/client.js`, modus `http`) | wie de Python-rekenkern wil gebruiken of debuggen |
 
 De api-variant is dezelfde bundel met één regel ervoor: `window.__POLIRASTER_API=''`
 (basis-URL; `''` = dezelfde herkomst als de pagina). Staat die vlag, dan gaan alle
@@ -100,7 +103,8 @@ De valkuilen (afronden, sleutelvolgorde, sorteren als tekst, `||`) staan in
    regel; de volledige stacktrace staat ook in de serverlog.
 4. **Afwijking van JavaScript**: `python -m tests.pariteit.vergelijk --vol "<casenaam>"` toont het
    eerste pad dat verschilt (bv. `.days.0.o1[3].start`); vergelijk daarna het `spoor` van beide kanten.
-   Een kopie van `functiekamers.js` of `raster_model_2.jsx` in een scratchmap mag je met
-   `console.log` instrumenteren en opnieuw bundelen om tussenresultaten van JavaScript te zien.
+   Een kopie van `frontend/src/engine/functiekamers.js` of `frontend/src/engine/poli.js` in een
+   scratchmap mag je met `console.log` instrumenteren en opnieuw bundelen om tussenresultaten van
+   JavaScript te zien.
 5. **De tool toont "Python-backend niet bereikbaar"**: de server draait niet op de herkomst van de
    pagina; start `server.py` en open de tool via `http://127.0.0.1:8000/` (niet als `file://`).

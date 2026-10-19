@@ -5,8 +5,10 @@ Wat doet dit onderdeel
 De frontend (React) kan haar rekenwerk op drie manieren laten doen: in een Web Worker,
 synchroon in de pagina, of via deze server. Deze server neemt dezelfde "jobs" aan als
 ``engineClient.js`` in de browser maakt en geeft precies hetzelfde raster-JSON terug als
-de JavaScript-engine. Daarnaast serveert hij de gebouwde frontend met de vlag
-``window.__POLIRASTER_API=''`` (``dist/polimodel-api.html``), zodat één adres volstaat.
+de JavaScript-engine. Daarnaast serveert hij de gebouwde frontend, zodat één adres volstaat:
+bij voorkeur de Vite-build ``frontend/dist/`` (gebouwd met ``VITE_POLIRASTER_API=''``, zie
+``frontend/README.md``), anders het losse bestand ``dist/polimodel-api.html`` met de vlag
+``window.__POLIRASTER_API=''``.
 
 Eindpunten
 ----------
@@ -14,7 +16,8 @@ Eindpunten
 - ``POST /api/raster``        body ``{cfg,newRows,ctrlRows,m2,rules,capacity,trace?}`` → raster-JSON (poli-engine)
 - ``POST /api/functiekamers`` body ``{kamers,codes,m2,regels,trace?}`` → raster-JSON (functiekamer-engine)
 - ``POST /api/batch``         body ``{jobs:[{type:'poli'|'functie', args:[...], meet?:bool}]}`` → ``{uit:[{ok,res|err}]}``
-- ``GET  /``                  → ``dist/polimodel-api.html`` als dat bestaat, anders een korte uitleg.
+- ``GET  /``                  → ``frontend/dist/index.html`` (+ ``/assets/*``) als die build er is,
+                                anders ``dist/polimodel-api.html`` als dat bestaat, anders een korte uitleg.
 
 Fouten komen terug als HTTP 200 met ``{ok:false, fout, type, spoor}`` (``spoor`` = de
 stacktrace als lijst regels), zodat de frontend ze in de live-banner toont; de volledige
@@ -32,7 +35,8 @@ Waar kan het misgaan en hoe zie je dat
   ``POST /api/raster`` geeft dan ``ok:false`` met de importfout als ``fout``.
 - ``ok:false`` met ``type:'KeyError'`` of ``'TypeError'``: de body mist een veld of heeft een andere vorm
   dan de frontend stuurt; ``spoor`` wijst de regel aan.
-- ``GET /`` toont de uitleg in plaats van de tool: bouw eerst ``node build.js`` in de hoofdmap.
+- ``GET /`` toont de uitleg in plaats van de tool: bouw eerst de frontend
+  (``cd frontend && VITE_POLIRASTER_API='' npm run build``, of ``node build.js`` in de hoofdmap).
 """
 from __future__ import annotations
 
@@ -49,6 +53,7 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
 
 HIER = Path(__file__).resolve().parent
 sys.path.insert(0, str(HIER))
@@ -60,7 +65,9 @@ logging.basicConfig(level=os.environ.get("POLIRASTER_LOG", "INFO").upper(),
                     format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("poliraster.server")
 
-FRONTEND = HIER.parent / "dist" / "polimodel-api.html"
+FRONTEND = HIER.parent / "dist" / "polimodel-api.html"          # losse HTML-variant (build.js)
+VITE_DIST = HIER.parent / "frontend" / "dist"                     # Vite-build (frontend/, VITE_POLIRASTER_API='')
+VITE_INDEX = VITE_DIST / "index.html"
 
 app = FastAPI(title="PoliRaster Studio — Python-backend", version=poliraster.__version__)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -202,19 +209,28 @@ async def api_batch(request: Request) -> Response:
 UITLEG = """<!doctype html><meta charset="utf-8"><title>PoliRaster Studio — Python-backend</title>
 <body style="font-family:system-ui,sans-serif;max-width:640px;margin:48px auto;line-height:1.5;color:#222">
 <h1>PoliRaster Studio — Python-backend</h1>
-<p>De rekenserver draait, maar de frontend is nog niet gebouwd. Bouw haar in de hoofdmap van de repo:</p>
-<pre style="background:#f4f4f2;padding:12px;border-radius:6px">cd ..  &amp;&amp;  node build.js</pre>
-<p>Daarna staat <code>dist/polimodel-api.html</code> klaar en wordt die hier op <code>/</code> getoond.</p>
+<p>De rekenserver draait, maar de frontend is nog niet gebouwd. Bouw haar vanuit de hoofdmap van de repo:</p>
+<pre style="background:#f4f4f2;padding:12px;border-radius:6px">cd ../frontend  &amp;&amp;  npm install  &amp;&amp;  VITE_POLIRASTER_API='' npm run build</pre>
+<p>Daarna staat <code>frontend/dist/</code> klaar en wordt die hier op <code>/</code> getoond
+(de losse variant <code>dist/polimodel-api.html</code> uit <code>node build.js</code> werkt ook).</p>
 <p>API: <a href="/api/health">/api/health</a>, <code>POST /api/raster</code>, <code>POST /api/functiekamers</code>, <code>POST /api/batch</code>.</p>
 </body>"""
 
 
 @app.get("/")
 def frontend() -> Response:
-    """De gebouwde frontend met de http-vlag, of een korte uitleg hoe je die bouwt."""
+    """De gebouwde frontend (Vite-build, anders het losse HTML-bestand), of een korte uitleg hoe je die bouwt."""
+    if VITE_INDEX.exists():
+        return FileResponse(str(VITE_INDEX), media_type="text/html")
     if FRONTEND.exists():
         return FileResponse(str(FRONTEND), media_type="text/html")
     return HTMLResponse(UITLEG)
+
+
+# De Vite-build verwijst vanuit index.html naar ./assets/… (scripts, de engine-worker).
+# Alleen aankoppelen als de build er is; de /api-routes hierboven gaan altijd voor.
+if (VITE_DIST / "assets").is_dir():
+    app.mount("/assets", StaticFiles(directory=str(VITE_DIST / "assets")), name="assets")
 
 
 def main(argv: list[str] | None = None) -> None:

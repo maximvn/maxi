@@ -1,5 +1,7 @@
-// Bundles React + ReactDOM + xlsx + raster_model_2.jsx into one self-contained
-// HTML file (dist/polimodel.html) that can be opened directly in a browser.
+// Bundelt React + ReactDOM + xlsx + de tool (bron: frontend/src/, via entry.jsx) met
+// esbuild tot zelfstandige HTML-bestanden in dist/ die direct in de browser openen
+// (ook via file://). De Vite-build (frontend/dist/) is de "gewone" webversie; deze
+// losse bestanden zijn er voor de artifact, het dubbelklik-gebruik en de file://-tests.
 const esbuild = require('esbuild')
 const fs = require('fs')
 
@@ -11,6 +13,9 @@ async function main() {
     format: 'iife',
     define: { 'process.env.NODE_ENV': '"production"' },
     loader: { '.jsx': 'jsx' },
+    // App.jsx leest bouwvlaggen uit import.meta.env (Vite); in deze iife-bundel is
+    // import.meta leeg en gelden de window.__POLIRASTER_*-vlaggen uit de pagina.
+    logOverride: { 'empty-import-meta': 'silent' },
     write: false,
   })
   const bundle = result.outputFiles[0].text

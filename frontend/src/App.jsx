@@ -1,0 +1,6574 @@
+import React, { useState, useMemo, useCallback, useRef, useEffect } from "react"
+import * as XLSX from 'xlsx'
+import {fkBerekenAdvies,FK_PRESETS,fkNieuweKamer,fkNieuweCode,fkStandaardRegels,fkWeekAantal,fkSnap,fkParseCodes,fkParseKamers,
+  fkControleerKwalificaties,fkCodeLabel,FK_DD_NAAM} from './engine/functiekamers.js'
+import {analyseerVraag,antwoordVoor,beantwoordStatus,kennisPerCategorie,zoekKennis,VOORBEELDVRAGEN,KENNIS} from './assistent/assistent.js'
+import {maakEngineClient} from './engine/client.js'
+import {computeRasterEngine,meetRasterPuur} from './engine/poli.js'
+import {ENGINE_RUNNERS} from './engine/runners.js'
+import {toMin,toTime,clamp,DAYS,DAY_ABBR,WEEKDAY_KEYS,DAGS_NL,DEF_DD_DAGEN,ddDagenVan} from './lib/tijd.js'
+import {PLAN_INFO,TOGGLE_KEYS,RADIO_KEYS,MODULES} from './lib/planregels.js'
+import {defaultRow,starterRow,mkRow,SPEC_PRESETS,SPECIALISMEN,MODALITEITEN,modInfo} from './lib/presets.js'
+import {wbNaarHref,viewerDownloadsKlaar,kanViewerOpslaan,wbNaarCsv,wbNaarEenCsv,viewerOpslaanXlsx,viewerOpslaan,
+  SPREEKUUR_KOLOMMEN,SPREEKUUR_VOORBEELD,parseSpreekuurRows} from './lib/excel.js'
+import {MEM_KEY,LEEG_MEM,memLees,memSchrijf,scenSleutel,INTAKE_LABELS,specKey,datumKort} from './lib/geheugen.js'
+import {DD_INFO,celMeting,dagMeting,bandKleur} from './lib/meting.js'
+import {parseOpdracht,VRAAGBOOM,opdrachtOmschrijving} from './lib/opdracht.js'
+import {C,NEW_PALETTE,CTRL_PALETTE,BUF_COLOR,FK_PALETTE,FLEX_COLOR,FLEX_STRIPE} from './ui/kleuren.js'
+import {Btn,Card,Lbl,H2,H3,Tip,IBtn,NumStepper} from './ui/basis.jsx'
+import {OpdrachtInvoer} from './ui/OpdrachtInvoer.jsx'
+import {VrijPaneel} from './ui/VrijPaneel.jsx'
+
+// ═══ BOUWVLAGGEN ═════════════════════════════════════════════════════════════
+// Vite leest ze uit de omgeving (VITE_POLIRASTER_SIMPEL, VITE_POLIRASTER_API; zie
+// frontend/README.md en .env.*); de losse HTML-bestanden uit build.js zetten ze als
+// window.__POLIRASTER_SIMPEL / window.__POLIRASTER_API in de pagina. De window-vlag
+// is de terugval, zodat beide bouwwijzen hetzelfde gedrag geven.
+const BOUW_ENV=(typeof import.meta!=='undefined'&&import.meta.env)||{}
+const vlagAan=v=>typeof v==='string'&&v!==''&&v!=='0'&&v.toLowerCase()!=='false'
+
+// ═══ SIMPELE VARIANT ═════════════════════════════════════════════════════════
+// Dezelfde tool, zonder de assistent: geen Assistent-knop in het menu, geen
+// "Vraag de assistent" bij het raster en geen bijstuur-opdrachten vanuit de
+// bezettingskaart. De engine, de regels, de optimiser en de export zijn identiek.
+// De bouw zet de vlag in de pagina (zie build.js: dist/polimodel-simpel.html).
+const SIMPEL=vlagAan(BOUW_ENV.VITE_POLIRASTER_SIMPEL) || (typeof window!=='undefined' && !!window.__POLIRASTER_SIMPEL)
+// Basis-URL van de Python-backend ('' = dezelfde herkomst); null = rekenen in de browser.
+const API_VLAG=typeof BOUW_ENV.VITE_POLIRASTER_API==='string' ? BOUW_ENV.VITE_POLIRASTER_API
+  : (typeof window!=='undefined'&&typeof window.__POLIRASTER_API==='string') ? window.__POLIRASTER_API : null
+export const BOUWVLAGGEN={SIMPEL, API:API_VLAG}
+
+// De engine-client: één voor de hele tool, aangemaakt bij het laden van de module.
+//  • maakWorker — Vite bundelt engine/engine.worker.js als aparte worker (ook in `npm run dev`).
+//  • scriptBron — terugval voor de losse HTML-bestanden (build.js): dezelfde bundel als Blob-worker.
+const ENGINE=maakEngineClient({runners:ENGINE_RUNNERS, api:API_VLAG,
+  maakWorker:()=>new Worker(new URL('./engine/engine.worker.js', import.meta.url), {type:'module'}),
+  scriptBron:()=>(typeof window!=='undefined'&&window.__POLIRASTER_SCRIPT)||null})
+
+export default function RasterTool(){
+  const [active,setActive]=useState(0)
+  const [now,setNow]=useState(new Date())
+  useEffect(()=>{ const t=setInterval(()=>setNow(new Date()),1000); return()=>clearInterval(t) },[])
+  const [visited,setVisited]=useState(new Set([0]))
+  const [m1Mode,setM1Mode]=useState(null)
+  const [m1Section,setM1Section]=useState(1)
+  const [cfg,setCfg]=useState({newPat:10,ctrlPat:20,newCodes:2,ctrlCodes:3})
+  const [poli,setPoli]=useState({naam:'',specialisme:''})   // vrij invulbare poli-identiteit
+  // ── PLANMODUS ─────────────────────────────────────────────────────────────
+  // 'poli'    = spreekkamers die onderling gelijk zijn (nieuw/controle, de bestaande engine)
+  // 'functie' = functiekamers met kwalificaties: welke onderzoekscode mag in welke kamer,
+  //             hoe vaak per week, en de tool adviseert per kamer welke dagdelen open moeten.
+  const [modus,setModus]=useState('poli')
+  const [fk,setFk]=useState(()=>({kamers:[],codes:[],regels:fkStandaardRegels(),preset:'',badge:null,open:null,mode:null,sectie:1}))
+  // Capaciteitsbasis: 'auto' = groeit vrij; 'vast' = begrensd tot het gekozen aantal kamers
+  const [capacity,setCapacity]=useState({mode:'auto',kamers:3})
+  const [newRows,setNewRows]=useState([])
+  const [ctrlRows,setCtrlRows]=useState([])
+  const [importBadge,setImportBadge]=useState(null)
+  const [m2,setM2]=useState({ochStart:'08:30',ochEnd:'12:00',midStart:'13:00',midEnd:'16:30',
+    avondOn:false,avondStart:'17:00',avondEnd:'20:00',verAvond:0,
+    verOch:50,benutting:85,days:{ma:20,di:20,wo:20,do:20,vr:20},
+    ddDagen:{O:{...DEF_DD_DAGEN.O},M:{...DEF_DD_DAGEN.M},A:{...DEF_DD_DAGEN.A}}})
+  const [rules,setRules]=useState({
+    spoedFirst:false,         // spoed-afspraken vormen een blok vooraan (nooit op restlijst)
+    startNieuw:false,         // spreekuur opent met een NIEUWE afspraak
+    startControle:false,      // spreekuur opent met een CONTROLE afspraak
+    mixNC:true,               // nieuw en controle afwisselen (gemengde volgorde) — standaard aan
+    digitalMode:'spread', flexMode:'end',
+    digitalSlots:[],          // waar de eigen digitale spreekuren vallen: [{di,dd}] · leeg = automatisch
+    kamerVerdeling:'dagdeel', // 'dagdeel' = kamer voor kamer afronden (och→mid→volgende kamer) | 'gelijk'
+    restDag:'uit',            // 'uit' | 'auto' | 'ma'..'vr' — restvraag samenvoegen op één dag
+    restOpruimen:true,        // spreekuren onder de minimumbezetting sluiten i.p.v. half-leeg laten draaien
+    minBezetting:75,          // een spreekuur gaat alléén open bij minimaal dit bezettingspercentage
+    // ── BEREIK per regel: 'both' (ochtend + middag) | 'och' | 'mid' ─────────────
+    // Elke regel is expliciet gekaderd in WELK dagdeel hij geldt, zodat de engine
+    // nooit zelf hoeft te raden of iets voor de ochtend, de middag of allebei bedoeld is.
+    spoedDagdeel:'both',      // in welk dagdeel geldt spoed-eerst
+    startNieuwWaar:'both',    // in welk dagdeel opent het spreekuur met een nieuwe afspraak
+    startControleWaar:'both', // in welk dagdeel opent het spreekuur met een controle afspraak
+    mixWaar:'both',           // in welk dagdeel wordt nieuw/controle afgewisseld
+    digitalWaar:'both',       // in welk dagdeel geldt de gekozen digitaal-plaatsing
+    flexWaar:'both',          // in welk dagdeel geldt de gekozen flex-verdeling
+    flexNoFirstMin:60,        // geen verspreide flex in de eerste N minuten van een spreekuur
+    flexBlokMin:10,           // grootte van één verspreid flexblokje (5/10/15/20 min)
+    digitalEndMinutes:30,     // breedte van het digitale eindvenster (digitalMode='end')
+  })
+  const [selDay,setSelDay]=useState(0)
+  const [raster,setRaster]=useState(null)
+  const [calZoom,setCalZoom]=useState(3.0) // px per minute, range 1.5–6
+  const [viewMode,setViewMode]=useState('dag') // 'dag' | 'week' (multi-dynamisch overzicht)
+  // Inklapbare rasterpanelen (minimaliseren/maximaliseren)
+  // Begeleide intake ("assistent"): stapsgewijze vragen met keuze-opties die de hele
+  // configuratie invullen. Volledig deterministisch — elk antwoord zet gewoon een
+  // instelling; er wordt niets "bedacht". {stap, ant, klaar}
+  const [wiz,setWiz]=useState(null)
+  const [openPanels,setOpenPanels]=useState({kpi:true,analyse:true,capaciteit:true})
+  // Alles wat je niet hoeft te zien om te beginnen staat standaard dicht.
+  const [toonGeav,setToonGeav]=useState(false)
+  const togglePanel=k=>setOpenPanels(p=>({...p,[k]:!p[k]}))
+  const [drag,setDrag]=useState(null)
+  const [showExport,setShowExport]=useState(false)
+  const [showReset,setShowReset]=useState(false)
+  const [showFullReset,setShowFullReset]=useState(false)
+  const [expName,setExpName]=useState('slingeland_raster')
+  const [expOk,setExpOk]=useState(false)
+  const [exporting,setExporting]=useState(false)
+  const [exportLink,setExportLink]=useState(null) // {wb, href, basis, filename}
+  const [dlMelding,setDlMelding]=useState(null)   // uitkomst van opslaan via de gedeelde pagina
+  const [tplLink,setTplLink]=useState(null)       // voorbeeld-Excel {href, filename}
+  const calRef=useRef(null)
+  const fileRef=useRef(null)
+  // Zodra de gedeelde pagina de download-mogelijkheid vrijgeeft, opnieuw tekenen zodat
+  // de exportknop de viewer-route toont in plaats van een (daar inerte) downloadlink.
+  const [,dlTick]=useState(0)
+  useEffect(()=>{ let aan=true; viewerDownloadsKlaar.then(()=>{ if(aan) dlTick(t=>t+1) }); return ()=>{aan=false} },[])
+
+  useEffect(()=>{
+    const l=document.createElement('link')
+    l.href='https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap'
+    l.rel='stylesheet'; document.head.appendChild(l)
+  },[])
+
+  // ── Pointer-based drag, free-positioning + resize (reliable in sandbox) ──────
+  // dragItem = {mode:'move'|'new'|'resize-top'|'resize-bot', appt, fromDay, fromSlot, palette, grabOffsetMin}
+  const [dragItem,setDragItem]=useState(null)
+  const [dragOver,setDragOver]=useState(null) // {day, slot} | {slot:'ntp'}
+  const dragItemRef=useRef(null)
+  dragItemRef.current=dragItem
+  const gridGeomRef=useRef(null)
+  const ghostRef=useRef(null)        // direct-DOM ghost (for 'new' from palette)
+  const startPosRef=useRef({x:0,y:0})
+  const lastSlotRef=useRef(null)
+  const liveLocRef=useRef(null)      // current live location of the block being moved
+  const [roomNames,setRoomNames]=useState({})   // {roomIndex: 'spreekuur naam'}
+  // Wisselen van planmodus — vanuit de zijbalk én vanuit de balk boven het raster.
+  const wisselModus=v=>{
+    if(v===modus) return
+    setModus(v); setSelDay(0)
+    setActive(1); setVisited(p=>new Set([...p,1]))
+  }
+  const fkLaadPresetRef=useRef(null)
+  // Naam van een kolom: in de functiekamer-modus de echte kamer (A1.213), anders "Kamer n" of de eigen naam.
+  const fkActieveKamers=(fk.kamers||[]).filter(k=>k.actief!==false)
+  const kamerNaam=r=> (modus==='functie'&&fkActieveKamers[r]) ? (fkActieveKamers[r].naam||`Kamer ${r+1}`) : (roomNames[r]??`Kamer ${r+1}`)
+  const [addMenu,setAddMenu]=useState(null)      // {room} when the + menu is open
+
+  // Start a drag/resize
+  const startDrag=(e,item)=>{
+    e.preventDefault(); e.stopPropagation()
+    const cx=e.touches?e.touches[0].clientX:e.clientX
+    const cy=e.touches?e.touches[0].clientY:e.clientY
+    startPosRef.current={x:cx,y:cy}
+    lastSlotRef.current=null
+    // For move: record where in the block you grabbed (so it doesn't jump), and its live location
+    if(item.mode==='move'){
+      if(item.fromSlot==='ntp'){
+        // NTP item has no grid position — placed on drop, shown via ghost
+        item.grabOffsetMin=0
+        liveLocRef.current=null
+      } else {
+        const g=gridGeomRef.current
+        const rect=e.currentTarget.getBoundingClientRect()
+        item.grabOffsetMin=g?Math.max(0,(cy-rect.top)/g.PXMIN):0
+        liveLocRef.current={day:item.fromDay,slot:item.fromSlot,id:item.appt.id,start:item.appt.start}
+      }
+    }
+    setDragItem(item)
+  }
+
+  const yToTime=(clientY, bodyEl)=>{
+    const g=gridGeomRef.current; if(!g||!bodyEl||!g.regions) return null
+    const rect=bodyEl.getBoundingClientRect()
+    const y=clientY-rect.top
+    // Find the region whose y-band contains y (clamp into nearest otherwise)
+    let best=g.regions[0]
+    for(const r of g.regions){
+      const yEnd=r.y0+(r.end-r.start)*g.PXMIN
+      if(y>=r.y0-1 && y<=yEnd+g.pauseH){ best=r; if(y<=yEnd) break }
+    }
+    // Klem binnen het dagdeel: de grijze marges vóór en ná zijn gesloten, daar
+    // kan niets naartoe gesleept worden.
+    const rt=best.start + Math.max(0,(y-best.y0))/g.PXMIN
+    return Math.max(best.start, Math.min(best.end, rt))
+  }
+  const snap5=t=>Math.round(t/5)*5
+
+  // Live-move the block to a new slot/start within the grid (realtime, as you drag)
+  const liveMove=(targetDay,targetSlot,targetStart)=>{
+    const loc=liveLocRef.current; if(!loc) return
+    setRaster(prev=>{
+      if(!prev) return prev
+      const nxt=JSON.parse(JSON.stringify(prev))
+      const fromArr=nxt.days[loc.day]?.[loc.slot]; if(!fromArr) return prev
+      const idx=fromArr.findIndex(a=>a.id===loc.id); if(idx<0) return prev
+      const appt=fromArr[idx]
+      const dur=appt.duur||15
+      const ddp=targetSlot[0]
+      const dd=ddp==='o'?0:ddp==='m'?1:2
+      const room=parseInt(targetSlot.slice(1))
+      const sessStart=ddp==='o'?nxt.ochStart:ddp==='m'?nxt.midStart:nxt.avondStart
+      const sessEnd=ddp==='o'?nxt.ochEnd:ddp==='m'?nxt.midEnd:nxt.avondEnd
+      let st=Math.max(sessStart,Math.min(targetStart,sessEnd-dur))
+      st=snap5(st)
+      // no change? skip
+      if(loc.slot===targetSlot && loc.day===targetDay && appt.start===st) return prev
+      fromArr.splice(idx,1)
+      const moved={...appt,dagdeel:dd,room,start:st,end:st+dur,edited:true}
+      if(!nxt.days[targetDay]) nxt.days[targetDay]={}
+      if(!nxt.days[targetDay][targetSlot]) nxt.days[targetDay][targetSlot]=[]
+      nxt.days[targetDay][targetSlot].push(moved)
+      nxt.days[targetDay][targetSlot].sort((a,b)=>(a.start||0)-(b.start||0))
+      return nxt
+    })
+    liveLocRef.current={day:targetDay,slot:targetSlot,id:loc.id,start:targetStart}
+  }
+
+  useEffect(()=>{
+    if(!dragItem) return
+    if(ghostRef.current){
+      ghostRef.current.style.left=(startPosRef.current.x+14)+'px'
+      ghostRef.current.style.top=(startPosRef.current.y+8)+'px'
+    }
+    const onMove=e=>{
+      const cx=e.touches?e.touches[0].clientX:e.clientX
+      const cy=e.touches?e.touches[0].clientY:e.clientY
+      if(ghostRef.current){
+        ghostRef.current.style.left=(cx+14)+'px'
+        ghostRef.current.style.top=(cy+8)+'px'
+      }
+      const el=document.elementFromPoint(cx,cy)
+      const zone=el&&el.closest?el.closest('[data-slotkey]'):null
+      const item=dragItemRef.current
+      const key=zone?zone.dataset.slotkey:null
+      if(key!==lastSlotRef.current){
+        lastSlotRef.current=key
+        if(zone){
+          const slot=zone.dataset.slotkey
+          setDragOver(slot==='ntp'?{slot:'ntp'}:{day:+zone.dataset.day,slot})
+        } else setDragOver(null)
+      }
+      // LIVE MOVE — reposition the actual block in the grid as you drag (grid items only)
+      if(item&&item.mode==='move'&&item.fromSlot!=='ntp'&&zone){
+        const slot=zone.dataset.slotkey
+        if(slot!=='ntp'){
+          const day=+zone.dataset.day
+          const bodyEl=zone.closest('[data-roombody]')||document.querySelector(`[data-roombody="${day}_${slot}"]`)
+          const t=yToTime(cy,bodyEl)
+          if(t!=null) liveMove(day,slot,snap5(t-(item.grabOffsetMin||0)))
+        }
+      }
+      // Live resize feedback
+      if(item&&(item.mode==='resize-top'||item.mode==='resize-bot')){
+        const bodyEl=document.querySelector(`[data-roombody="${item.fromDay}_${item.fromSlot}"]`)
+        const t=yToTime(cy,bodyEl)
+        if(t!=null) doResize(item,snap5(t))
+      }
+    }
+    const onUp=e=>{
+      const cx=(e.changedTouches?e.changedTouches[0].clientX:e.clientX)
+      const cy=(e.changedTouches?e.changedTouches[0].clientY:e.clientY)
+      const item=dragItemRef.current
+      if(item&&(item.mode==='new'||(item.mode==='move'&&item.fromSlot==='ntp'))){
+        // 'new' from palette OR an item dragged out of "Nog te plannen": place where dropped
+        const el=document.elementFromPoint(cx,cy)
+        const zone=el&&el.closest?el.closest('[data-slotkey]'):null
+        if(zone){
+          const slot=zone.dataset.slotkey
+          if(slot==='ntp') dropTo('ntp',null)
+          else {
+            const bodyEl=zone.closest('[data-roombody]')||document.querySelector(`[data-roombody="${zone.dataset.day}_${slot}"]`)
+            const t=yToTime(cy,bodyEl)
+            dropTo({day:+zone.dataset.day,slot}, t!=null?snap5(t):null)
+          }
+        }
+      } else if(item&&item.mode==='move'){
+        // Grid item already live-placed; only handle drop back to NTP
+        const el=document.elementFromPoint(cx,cy)
+        const zone=el&&el.closest?el.closest('[data-slotkey]'):null
+        if(zone&&zone.dataset.slotkey==='ntp') dropTo('ntp',null)
+      }
+      setDragItem(null); setDragOver(null); lastSlotRef.current=null; liveLocRef.current=null
+    }
+    window.addEventListener('mousemove',onMove)
+    window.addEventListener('mouseup',onUp)
+    window.addEventListener('touchmove',onMove,{passive:false})
+    window.addEventListener('touchend',onUp)
+    return()=>{
+      window.removeEventListener('mousemove',onMove)
+      window.removeEventListener('mouseup',onUp)
+      window.removeEventListener('touchmove',onMove)
+      window.removeEventListener('touchend',onUp)
+    }
+  },[dragItem])
+
+  // Resize an appointment or flex block in place
+  const doResize=(item,t)=>{
+    setRaster(prev=>{
+      if(!prev) return prev
+      const nxt=JSON.parse(JSON.stringify(prev))
+      const arr=nxt.days[item.fromDay]?.[item.fromSlot]; if(!arr) return prev
+      const it=arr.find(a=>a.id===item.appt.id); if(!it) return prev
+      if(item.mode==='resize-bot'){
+        const ne=Math.max(it.start+5,t)
+        it.end=ne; it.duur=ne-it.start
+      } else {
+        const ns=Math.min(it.end-5,t)
+        it.start=ns; it.duur=it.end-ns
+      }
+      it.edited=true
+      return nxt
+    })
+  }
+
+  // Move/add an appointment to a target slot at a given start time
+  const dropTo=(target,startMin)=>{
+    const item=dragItemRef.current
+    if(!item) return
+    setRaster(prev=>{
+      if(!prev) return prev
+      const nxt=JSON.parse(JSON.stringify(prev))
+      let appt
+      if(item.mode==='move'){
+        if(item.fromSlot==='ntp'){
+          const i=nxt.ntp.findIndex(a=>a.id===item.appt.id)
+          if(i>=0){appt=nxt.ntp[i];nxt.ntp.splice(i,1)}
+        } else {
+          const arr=nxt.days[item.fromDay]?.[item.fromSlot]
+          if(arr){const i=arr.findIndex(a=>a.id===item.appt.id);if(i>=0){appt=arr[i];arr.splice(i,1)}}
+        }
+      } else if(item.mode==='new'){
+        const p=item.palette
+        appt={id:'man_'+Math.random().toString(36).slice(2,9),code:p.code,description:p.label,
+          duur:p.duur,digitaal:p.digitaal,modaliteit:p.modaliteit||(p.digitaal?'telefonisch':'fysiek'),
+          spoed:false,category:p.category,ci:p.ci??0,edited:true,manual:true}
+      }
+      if(!appt) return nxt
+      const dur=appt.duur||15
+      if(target==='ntp'){
+        delete appt.start; delete appt.end; appt.edited=true; nxt.ntp.push(appt)
+      } else {
+        const {day,slot}=target
+        const ddp=slot[0]
+        const dd=ddp==='o'?0:ddp==='m'?1:2
+        const room=parseInt(slot.slice(1))
+        const sessStart=ddp==='o'?nxt.ochStart:ddp==='m'?nxt.midStart:nxt.avondStart
+        const sessEnd=ddp==='o'?nxt.ochEnd:ddp==='m'?nxt.midEnd:nxt.avondEnd
+        let st=startMin!=null?(startMin-(item.grabOffsetMin||0)):sessStart
+        st=Math.max(sessStart,Math.min(st,sessEnd-dur))
+        st=snap5(st)
+        appt={...appt,dagdeel:dd,room,start:st,end:st+dur,edited:true}
+        if(!nxt.days[day]) nxt.days[day]={}
+        if(!nxt.days[day][slot]) nxt.days[day][slot]=[]
+        nxt.days[day][slot].push(appt)
+        // keep sorted by start
+        nxt.days[day][slot].sort((a,b)=>(a.start||0)-(b.start||0))
+      }
+      return nxt
+    })
+  }
+
+  // ══ EEN HEEL DAGDEEL VERPLAATSEN (bezettingskaart) ═════════════════════════
+  // Je pakt in de bezettingskaart één vak vast — dat is één kamer, op één dag, in
+  // één dagdeel — en zet het op een andere plek neer. Staat daar al een spreekuur,
+  // dan RUILEN de twee van plek; is het leeg, dan verhuist het spreekuur gewoon.
+  // De afspraken worden op de nieuwe plek opnieuw achter elkaar gezet vanaf de
+  // begintijd van dat dagdeel, zodat de agenda meteen klopt. Past er door een korter
+  // dagdeel iets niet meer, dan komt dat op "nog te plannen" — nooit stilzwijgend weg.
+  const [kaartDrag,setKaartDrag]=useState(null)   // {di,room,dd} dat je vasthoudt
+  const [kaartOver,setKaartOver]=useState(null)   // {di,room,dd} waar je boven zweeft
+  const slotKeyVan=(room,dd)=>(dd===0?'o':dd===1?'m':'a')+room
+  const verplaatsDagdeel=useCallback((van,naar)=>{
+    if(!van||!naar) return
+    if(van.di===naar.di&&van.room===naar.room&&van.dd===naar.dd) return
+    setRaster(prev=>{
+      if(!prev) return prev
+      const nxt=JSON.parse(JSON.stringify(prev))
+      const kv=slotKeyVan(van.room,van.dd), kn=slotKeyVan(naar.room,naar.dd)
+      if(!nxt.days[van.di]) return prev
+      const bron=[...(nxt.days[van.di][kv]||[])]
+      if(!bron.some(a=>!a.isFlex)) return prev        // een leeg vak valt niets te verplaatsen
+      if(!nxt.days[naar.di]) nxt.days[naar.di]={}
+      const doelArr=[...(nxt.days[naar.di][kn]||[])]
+      const grens=dd=>dd===0?[nxt.ochStart,nxt.ochEnd]
+        :dd===1?[nxt.midStart,nxt.midEnd]:[nxt.avondStart,nxt.avondEnd]
+      const kwijt=[]
+      // Zet de afspraken op de nieuwe plek weer netjes achter elkaar vanaf de
+      // begintijd van dat dagdeel; flexblokken schuiven gewoon mee in het ritme.
+      const herleg=(arr,dd,room)=>{
+        const [s0,s1]=grens(dd)
+        const uit=[]; let t=s0
+        arr.slice().sort((a,b)=>(a.start||0)-(b.start||0)).forEach(a=>{
+          const d=a.duur||15
+          if(t+d>s1+0.01){ if(!a.isFlex) kwijt.push(a); return }
+          uit.push({...a,start:t,end:t+d,dagdeel:dd,room,edited:true})
+          t+=d
+        })
+        return uit
+      }
+      nxt.days[naar.di][kn]=herleg(bron,naar.dd,naar.room)
+      nxt.days[van.di][kv]=herleg(doelArr,van.dd,van.room)
+      if(kwijt.length){ nxt.ntp=[...(nxt.ntp||[]),
+        ...kwijt.map(a=>{ const b={...a,edited:true}; delete b.start; delete b.end; return b })] }
+      nxt._handmatig=true
+      return nxt
+    })
+  },[])
+
+  // ── SLEPEN MET DE MUIS/VINGER (niet via HTML5 drag-and-drop) ────────────────
+  // Een <button> met draggable="true" start in de praktijk lang niet altijd een
+  // HTML5-sleep: browsers geven de eigen knop-afhandeling voorrang, en op touch
+  // gebeurt er helemaal niets. Daarom volgen we hier dezelfde aanpak als het
+  // slepen van losse afspraken in het raster: pointer-events, zelf bijhouden, en
+  // het doelvak opzoeken met elementFromPoint. Dat werkt met muis én touch, en in
+  // elke browser.
+  const kaartBron=useRef(null)      // {di,room,dd,x0,y0,actief}
+  const kaartOverRef=useRef(null)
+  const kaartNetGesleept=useRef(false)
+  const [kaartGhost,setKaartGhost]=useState(null)   // {x,y,label}
+  const kaartPak=(e,di,room,dd,leeg,label)=>{
+    if(leeg||e.button===2) return
+    kaartBron.current={di,room,dd,x0:e.clientX,y0:e.clientY,actief:false,label}
+  }
+  useEffect(()=>{
+    const celVan=el=>{ let n=el
+      while(n&&n!==document.body){ if(n.dataset&&n.dataset.kaartcel) return n.dataset.kaartcel; n=n.parentElement }
+      return null }
+    const move=e=>{
+      const b=kaartBron.current; if(!b) return
+      if(!b.actief){
+        // Pas slepen na een paar pixels — anders wordt elke klik een sleep.
+        if(Math.abs(e.clientX-b.x0)+Math.abs(e.clientY-b.y0)<6) return
+        b.actief=true; setKaartDrag({di:b.di,room:b.room,dd:b.dd})
+      }
+      e.preventDefault()
+      setKaartGhost({x:e.clientX,y:e.clientY,label:b.label})
+      const k=celVan(document.elementFromPoint(e.clientX,e.clientY))
+      if(k){
+        const [di,room,dd]=k.split('-').map(Number)
+        const zelf=(di===b.di&&room===b.room&&dd===b.dd)
+        const t=zelf?null:{di,room,dd}
+        kaartOverRef.current=t; setKaartOver(t)
+      } else { kaartOverRef.current=null; setKaartOver(null) }
+    }
+    const los=()=>{
+      const b=kaartBron.current
+      if(b&&b.actief){
+        kaartNetGesleept.current=true
+        setTimeout(()=>{ kaartNetGesleept.current=false },0)
+        if(kaartOverRef.current) verplaatsDagdeel({di:b.di,room:b.room,dd:b.dd}, kaartOverRef.current)
+      }
+      kaartBron.current=null; kaartOverRef.current=null
+      setKaartDrag(null); setKaartOver(null); setKaartGhost(null)
+    }
+    window.addEventListener('pointermove',move,{passive:false})
+    window.addEventListener('pointerup',los)
+    window.addEventListener('pointercancel',los)
+    return ()=>{ window.removeEventListener('pointermove',move)
+      window.removeEventListener('pointerup',los); window.removeEventListener('pointercancel',los) }
+  },[verplaatsDagdeel])
+
+  const deleteAppt=(day,slot,id)=>{
+    setRaster(prev=>{
+      if(!prev) return prev
+      const nxt=JSON.parse(JSON.stringify(prev))
+      if(slot==='ntp'){const i=nxt.ntp.findIndex(a=>a.id===id);if(i>=0)nxt.ntp.splice(i,1)}
+      else {const arr=nxt.days[day]?.[slot];if(arr){const i=arr.findIndex(a=>a.id===id);if(i>=0)arr.splice(i,1)}}
+      return nxt
+    })
+  }
+
+  // Add an appointment (from a code) or a manual flex block to a room's morning session,
+  // placed right after the last real appointment. The trailing auto-flex is recomputed to fit.
+  const addToRoom=(day,room,item)=>{
+    setRaster(prev=>{
+      if(!prev) return prev
+      const nxt=JSON.parse(JSON.stringify(prev))
+      const slot='o'+room
+      if(!nxt.days[day]) nxt.days[day]={}
+      const arr=nxt.days[day][slot]||(nxt.days[day][slot]=[])
+      const sessStart=nxt.ochStart, sessEnd=nxt.ochEnd
+      // keep manual flex; drop the auto trailing flex so we can recompute it
+      const keep=arr.filter(a=>!(a.isFlex&&!a.manual))
+      let lastEnd=sessStart
+      keep.filter(a=>!a.isFlex).forEach(a=>{ lastEnd=Math.max(lastEnd, a.end) })
+      const dur=Math.max(5,item.flex?(item.duur||15):(item.duur||15))
+      const start=Math.min(lastEnd, sessEnd-dur)
+      if(item.flex){
+        keep.push({id:'flexman_'+Math.random().toString(36).slice(2,8),isFlex:true,manual:true,
+          dagdeel:0,room,start,end:start+dur,duur:dur,code:'Flex',
+          description:'Flexblok (handmatig)',category:'flex',
+          _why:['Handmatig toegevoegd flexblok.']})
+      } else {
+        keep.push({id:'man_'+Math.random().toString(36).slice(2,8),
+          code:item.afspraakcode||item.code||'AFSPR',description:item.omschrijving||item.description||'Afspraak',
+          duur:dur,digitaal:item.digitaal||false,spoed:item.spoed||false,onzeker:item.onzeker||'gemiddeld',
+          category:item.category,ci:item.ci??0,dagdeel:0,room,start,end:start+dur,edited:true,manual:true,
+          _why:['Handmatig toegevoegd aan dit spreekuur.']})
+      }
+      keep.sort((a,b)=>(a.start||0)-(b.start||0))
+      // recompute trailing auto-flex from the end of the last item to the session end
+      const realEnd=Math.max(sessStart,...keep.filter(a=>!(a.isFlex&&!a.manual)).map(a=>a.end||sessStart))
+      const rest=sessEnd-realEnd
+      if(rest>=5) keep.push({id:'flex_o_'+room+'_'+realEnd+'_'+Math.random().toString(36).slice(2,5),
+        isFlex:true,dagdeel:0,room,start:realEnd,end:sessEnd,duur:rest,code:'Flex',
+        description:'Flexruimte / buffer',category:'flex'})
+      nxt.days[day][slot]=keep
+      return nxt
+    })
+    setAddMenu(null)
+  }
+
+  const addRoom=()=>setRaster(prev=>{
+    if(!prev) return prev
+    const nxt=JSON.parse(JSON.stringify(prev))
+    const r=nxt.numRooms
+    Object.keys(nxt.days).forEach(d=>{ if(nxt.days[d]){nxt.days[d]['o'+r]=[];nxt.days[d]['m'+r]=[];if(nxt.avondOn)nxt.days[d]['a'+r]=[]} })
+    nxt.numRooms=r+1
+    return nxt
+  })
+  const removeRoom=()=>setRaster(prev=>{
+    if(!prev||prev.numRooms<=1) return prev
+    const nxt=JSON.parse(JSON.stringify(prev))
+    const r=nxt.numRooms-1
+    Object.keys(nxt.days).forEach(d=>{
+      if(!nxt.days[d]) return
+      ;['o'+r,'m'+r,'a'+r].forEach(sl=>{(nxt.days[d][sl]||[]).filter(a=>!a.isFlex).forEach(a=>nxt.ntp.push({...a,day:+d}));delete nxt.days[d][sl]})
+    })
+    nxt.numRooms=r
+    return nxt
+  })
+
+  const nav=idx=>{
+    // Het raster is altijd al (of wordt al) doorgerekend door de live-sync; alleen
+    // als er nog niets is, zetten we de berekening hier expliciet in gang.
+    if(idx===3 && !raster) doGenerate()
+    setActive(idx); setVisited(p=>new Set([...p,idx]))
+  }
+
+  // ── SCHEDULING ENGINE — pure functie zodat de solver 'm herhaald kan aanroepen ─
+  // Elk slot = (dag, dagdeel, kamer). Flex = ongebruikte capaciteit binnen de
+  // benuttingsgrens. De parameters schaduwen de state, zodat de solver met
+  // afwijkende (rules/benutting/kamers)-configuraties kan doorrekenen.
+  // Dunne wrapper om de zuivere engine, zodat bestaande aanroepen ongewijzigd blijven.
+  const computeRaster=useCallback((cfg,newRows,ctrlRows,m2,rules,capacity)=>computeRasterEngine(cfg,newRows,ctrlRows,m2,rules,capacity),[])
+
+  // Eén rekenopdracht voor beide modi: de poli-engine of het functiekamer-advies.
+  // De opdracht gaat naar de engine-client, die hem buiten de UI-thread uitvoert.
+  const bouwJob=useCallback(()=> modus==='functie'
+    ? {type:'functie',args:[{kamers:fk.kamers,codes:fk.codes,m2,regels:fk.regels}]}
+    : {type:'poli',args:[cfg,newRows,ctrlRows,m2,rules,capacity]}
+  ,[modus,fk.kamers,fk.codes,fk.regels,cfg,newRows,ctrlRows,m2,rules,capacity])
+  // Synchrone variant (UI-thread) — voor tests en als directe terugval.
+  const bouwRaster=useCallback(()=>ENGINE.rekenSync(bouwJob()),[bouwJob])
+  // ── ALTIJD LIVE ─────────────────────────────────────────────────────────────
+  // Elke wijziging in gegevens, tijden, regels of capaciteit zet een berekening in
+  // gang in de worker. Een generatieteller zorgt dat alleen de uitkomst van de
+  // LAATSTE stand op het scherm komt; oudere uitkomsten worden genegeerd. Een
+  // fout (of een afgebroken berekening) wordt zichtbaar gemeld, met één knop om
+  // het opnieuw te proberen — het raster blijft nooit stil "hangen".
+  const [liveBezig,setLiveBezig]=useState(false)   // toont "bijwerken…/bijgewerkt"
+  const [liveFout,setLiveFout]=useState(null)
+  const liveGen=useRef(0)
+  const rekenLive=useCallback(()=>{
+    const gen=++liveGen.current
+    setLiveBezig(true); setLiveFout(null)
+    return ENGINE.berekenLaatste('live',bouwJob()).then(r=>{
+      if(gen!==liveGen.current||r==null) return null
+      setRaster(r); setLiveBezig(false); return r
+    }).catch(e=>{
+      if(gen!==liveGen.current) return null
+      setLiveBezig(false); setLiveFout(String((e&&e.message)||e)); return null
+    })
+  },[bouwJob])
+  const doGenerate=useCallback(()=>{ rekenLive() },[rekenLive])
+
+  // ── DELIBERATE HERBOUW MET ZICHTBARE UITKOMST ──────────────────────────────
+  // De live-sync rekent elke wijziging al direct door, maar een subtiele
+  // verschuiving (bv. het digitale spreekuur van ma/di/wo naar wo/do/vr) is in
+  // het raster makkelijk te missen. Deze actie bouwt het raster expliciet opnieuw
+  // op ÉN toont in gewone taal wat eruit kwam, zodat je zwart-op-wit ziet dat je
+  // aanpassing is verwerkt. Precies zoals de assistent: analyseren → resultaat tonen.
+  const [herbouwToast,setHerbouwToast]=useState(null)
+  const herbouwNu=useCallback((gaNaarRaster)=>{
+    if(gaNaarRaster){ setActive(3); setVisited(p=>new Set([...p,3])) }
+    rekenLive().then(r=>{ if(!r) return
+    if(r.fk){
+      const sv=r.fk.samenvatting
+      setHerbouwToast({ntp:r.ntp.length,
+        msg:`Rasteradvies opnieuw opgebouwd: ${sv.dagdelenOpen} van ${sv.dagdelenBeschikbaar} dagdelen open over ${r.fk.advies.length} kamers, dekking ${sv.dekking}%. ${r.ntp.length?`${r.ntp.length} onderzoek(en) op de restlijst.`:'Alles ingepland.'}`})
+      return
+    }
+    const DAY_KORT=['ma','di','wo','do','vr']
+    const ddK=dd=>dd==='O'?'ochtend':dd==='M'?'middag':'avond'
+    let digTekst=''
+    if(rules.digitalMode==='cluster' && r.digPlan){
+      const g=r.digPlan.gepland||[]
+      digTekst = g.length
+        ? `Digitale spreekuren: ${g.map(x=>`${DAY_KORT[x.di]} ${ddK(x.dd)}`).join(', ')}.`
+        : 'Er zijn geen volledige digitale spreekuren gemaakt (te weinig volume); de consulten zijn verspreid.'
+    }
+    setHerbouwToast({
+      ntp:r.ntp.length,
+      msg:`Raster opnieuw opgebouwd op basis van je huidige instellingen.${digTekst?' '+digTekst:''} ${r.ntp.length?`${r.ntp.length} afspraak/afspraken op de restlijst.`:'Alles ingepland.'}`
+    })
+    })
+  },[rekenLive,rules])
+  useEffect(()=>{ if(!herbouwToast) return; const t=setTimeout(()=>setHerbouwToast(null),6000); return ()=>clearTimeout(t) },[herbouwToast])
+
+  // ══ SCENARIO-OPTIMISER ══════════════════════════════════════════════════════
+  // Draait JOUW gegevens door alle zinvolle combinaties van de EFFICIËNTIE-knoppen
+  // (rest-dag × minimumbezetting × kamerverdeling) en rangschikt de uitkomsten. De
+  // VOORKEURSREGELS (spoed eerst, starten met, afwisselen, digitaal, flex) blijven
+  // staan zoals jij ze hebt gekozen — dat zijn inhoudelijke keuzes, geen rekenknoppen.
+  // Wél rekenen we per voorkeursregel uit wat hij kost, zodat je die afweging ziet.
+  const [optim,setOptim]=useState(null)
+  const optimBatchRef=useRef(null)
+  // ── GEHEUGEN: wat heeft deze gebruiker eerder gekozen? ──────────────────────
+  const [mem,setMem]=useState(()=>memLees())
+  const [toonAfgewezen,setToonAfgewezen]=useState(false)
+  const memUpdate=useCallback(fn=>setMem(m=>{ const n=fn(m); memSchrijf(n); return n }),[])
+  const huidigeSpec=specKey(poli.specialisme)
+  // Een scenario toepassen of afwijzen wordt onthouden — inclusief hoe vaak.
+  const onthoudScenario=useCallback((k,actie,meting,doel,spec)=>{
+    const sp=specKey(spec)
+    const sl=scenSleutel(k)
+    memUpdate(g=>{
+      const oud=g.scenarios.find(s=>s.spec===sp&&s.sleutel===sl)
+      return {...g, scenarios:[...g.scenarios.filter(s=>!(s.spec===sp&&s.sleutel===sl)),
+        {spec:sp, sleutel:sl, k, actie, doel:doel||null, m:meting||null,
+         keer:(oud&&oud.actie===actie?(oud.keer||1)+1:1), ts:Date.now()}]}
+    })
+  },[memUpdate])
+  const vergeetScenario=useCallback((sleutel,spec)=>{
+    const sp=specKey(spec)
+    memUpdate(g=>({...g, scenarios:g.scenarios.filter(s=>!(s.spec===sp&&s.sleutel===sleutel))}))
+  },[memUpdate])
+  // Intake-antwoorden onthouden per specialisme (label + eventuele vrije invoer,
+  // zodat een volgende keer letterlijk overgenomen kan worden).
+  const onthoudIntake=useCallback((spec,k,label,vrij)=>{
+    const sp=specKey(spec)
+    memUpdate(g=>{
+      const perSpec={...(g.intake[sp]||{})}
+      const oud=perSpec[k]
+      perSpec[k]={label, vrij:vrij||null, keer:(oud&&oud.label===label?(oud.keer||1)+1:1), ts:Date.now()}
+      return {...g, intake:{...g.intake,[sp]:perSpec}}
+    })
+  },[memUpdate])
+  const bewaarIJkpunt=useCallback((spec,naam,meting)=>{
+    const sp=specKey(spec)
+    memUpdate(g=>({...g, ijkpunten:[...g.ijkpunten.slice(-49), {spec:sp, naam:naam||sp, m:meting, ts:Date.now()}]}))
+  },[memUpdate])
+  const wisGeheugen=useCallback(()=>{ memSchrijf({...LEEG_MEM}); setMem({...LEEG_MEM}) },[])
+  const scenGeheugen=useCallback((k,spec)=>
+    mem.scenarios.find(s=>s.spec===specKey(spec)&&s.sleutel===scenSleutel(k)),[mem])
+  const meetRaster=meetRasterPuur
+  // Doelfuncties — expliciet, zodat je zelf bepaalt wat "het beste" betekent.
+  //  plannen — zo min mogelijk op de restlijst (desnoods een kamer meer)
+  //  kamers  — zo min mogelijk kamer-dagen (desnoods iets op de restlijst)
+  //  balans  — één kamer-dag weegt ongeveer op tegen 20 afspraken (een volle kamer)
+  const scoreDoel=(m,doel)=> doel==='plannen' ? m.ntp*1000 + m.kamerDagen
+    : doel==='kamers' ? m.kamerDagen*1000 + m.ntp
+    : m.kamerDagen + m.ntp/20 - m.benut/1000
+  const startOptimiser=useCallback((doel)=>{
+    const dagen=['uit','auto','ma','di','wo','do','vr']
+    const minBez=[60,70,75,80,85]
+    const kvs=['dagdeel','gelijk']
+    const kand=[]
+    dagen.forEach(rd=>minBez.forEach(mb=>kvs.forEach(kv=>kand.push({restDag:rd,minBezetting:mb,kamerVerdeling:kv}))))
+    // Wat kost elke ACTIEVE voorkeursregel? (zelfde efficiëntie-instellingen, regel uit)
+    const voorkeur=[['spoedFirst','Spoed afspraken eerst'],['startNieuw','Starten met een nieuwe afspraak'],
+      ['startControle','Starten met een controle afspraak'],['mixNC','Nieuw en controle afwisselen']]
+      .filter(([k])=>rules[k]).map(([k,l])=>({k,l}))
+    setOptim({bezig:true, voortgang:0, totaal:kand.length+voorkeur.length, doel, resultaten:null, kosten:null})
+    // Alle scenario's gaan als één batch naar een eigen worker: de UI blijft vrij,
+    // het live-raster blijft reageren, en alleen de metingen komen terug.
+    const job=(r)=>({type:'poli',args:[cfg,newRows,ctrlRows,m2,r,capacity],meet:true})
+    const jobs=[job(rules), ...kand.map(k=>job({...rules,...k})), ...voorkeur.map(v=>job({...rules,[v.k]:false}))]
+    if(optimBatchRef.current!=null) ENGINE.annuleer(optimBatchRef.current)
+    const h=ENGINE.berekenBatch(jobs,(n)=>setOptim(o=>o&&o.bezig?({...o, voortgang:Math.max(0,Math.min(n-1,kand.length+voorkeur.length))}):o))
+    optimBatchRef.current=h.id
+    h.promise.then(uit=>{
+      if(optimBatchRef.current!==h.id) return
+      optimBatchRef.current=null
+      const huidigM=uit[0]&&uit[0].ok?uit[0].res:null
+      const res=[], kosten=[]
+      kand.forEach((k,i)=>{ const u=uit[1+i]; if(u&&u.ok) res.push({k, m:u.res}) })
+      voorkeur.forEach((v,i)=>{ const u=uit[1+kand.length+i]; if(u&&u.ok) kosten.push({...v, m:u.res}) })
+      // Rangschikken + ontdubbelen op identieke uitkomst. De minimumbezetting is JOUW
+      // beleidskeuze, geen rekenknop: de hoofdlijst houdt jouw drempel aan. Levert een
+      // ándere drempel aantoonbaar meer op, dan tonen we dat apart als afweging — nooit
+      // stilzwijgend als "de beste".
+      const huidigeDrempel=rules.minBezetting??75
+      // GELEERD: combinaties die je voor deze poli eerder afwees, worden niet meer
+      // als suggestie opgedrongen — ze verhuizen naar een apart, uitklapbaar lijstje.
+      // De rangschikking zelf blijft objectief; het geheugen verbergt en markeert,
+      // het herschrijft nooit stilzwijgend de cijfers.
+      const spec=specKey(poli.specialisme)
+      const afgewezenSet=new Set(mem.scenarios.filter(s=>s.spec===spec&&s.actie==='afgewezen').map(s=>s.sleutel))
+      const rangschik=(lijst)=>{ const gezien=new Set()
+        return lijst.filter(x=>x.m.issues===0)
+          .sort((a,b)=>scoreDoel(a.m,doel)-scoreDoel(b.m,doel))
+          .filter(x=>{ const sig=`${x.m.ntp}|${x.m.kamerDagen}|${x.m.benut}`
+            if(gezien.has(sig)) return false; gezien.add(sig); return true }) }
+      const opDrempel=res.filter(x=>x.k.minBezetting===huidigeDrempel)
+      const gerangschikt=rangschik(opDrempel)
+      const top=gerangschikt.filter(x=>!afgewezenSet.has(scenSleutel(x.k))).slice(0,6)
+      const verborgen=gerangschikt.filter(x=>afgewezenSet.has(scenSleutel(x.k))).slice(0,6)
+      const besteScore=top.length?scoreDoel(top[0].m,doel):Infinity
+      const alt=rangschik(res.filter(x=>x.k.minBezetting!==huidigeDrempel))
+        .filter(x=>!afgewezenSet.has(scenSleutel(x.k)))
+        .filter(x=>scoreDoel(x.m,doel)<besteScore-1e-9).slice(0,3)
+      // "Jullie gewoonte": het scenario dat je voor deze poli het vaakst toepaste,
+      // doorgerekend op de gegevens van vandaag — zodat je ziet of die gewoonte nog klopt.
+      const eerder=mem.scenarios.filter(s=>s.spec===spec&&s.actie==='toegepast')
+        .sort((a,b)=>(b.keer||1)-(a.keer||1)||b.ts-a.ts)[0]
+      let gewoonte=null
+      if(eerder){
+        const hit=res.find(x=>scenSleutel(x.k)===eerder.sleutel)
+        if(hit) gewoonte={...hit, keer:eerder.keer||1, ts:eerder.ts,
+          verschil: besteScore===Infinity?null:scoreDoel(hit.m,doel)-besteScore}
+      }
+      setOptim({bezig:false, voortgang:kand.length+voorkeur.length, totaal:kand.length+voorkeur.length,
+        doel, resultaten:top, alt, verborgen, gewoonte, spec, drempel:huidigeDrempel, huidig:huidigM, kosten})
+    }).catch(e=>{
+      if(optimBatchRef.current!==h.id) return
+      optimBatchRef.current=null
+      setOptim(o=>o&&({...o, bezig:false, fout:String((e&&e.message)||e)}))
+    })
+  },[cfg,newRows,ctrlRows,m2,rules,capacity,mem,poli.specialisme])
+  // ══ BIJSTUREN — de tool gaat met jouw losse opdracht aan de slag ════════════
+  // Een opdracht ("dinsdag ook inplannen", "kamer 3 op maandag naar 85%") wordt
+  // omgezet in een reeks KANDIDAAT-instellingen. Elke kandidaat wordt echt
+  // doorgerekend en gemeten op precies dát wat je vroeg; de eerste die het doel
+  // haalt wint, en anders de kandidaat die het dichtst komt. Je ziet het
+  // voorstel mét de cijfers vóór er iets verandert — er wordt nooit stilzwijgend
+  // aan je raster gesleuteld.
+  const [bijstuur,setBijstuur]=useState(null) // {bezig} | {op, voorstel, huidig}
+  const bijstuurBatchRef=useRef(null)
+  const dagShare=useCallback((dagIdx,aan)=>{
+    // Verdeel de weekvraag opnieuw over de dagen die meedraaien.
+    const keys=WEEKDAY_KEYS
+    const actief=keys.filter((k,i)=> i===dagIdx ? aan : (m2.days[k]||0)>0)
+    if(!actief.length) return m2.days
+    const basis=Math.floor(100/actief.length), rest=100-basis*actief.length
+    const d={ma:0,di:0,wo:0,do:0,vr:0}
+    actief.forEach((k,i)=>{ d[k]=basis+(i<rest?1:0) })
+    return d
+  },[m2.days])
+  // Zet in de afspraakcodes een weekdag aan of uit. Zonder dit blijft een dag
+  // leeg ook al staat er een aandeel op: geen enkele code mag er dan komen.
+  const codesMetDag=useCallback((rows,dagIdx,aan)=>{
+    const k=DAY_ABBR[dagIdx]
+    return rows.map(r=>({...r, weekdagen:{...(r.weekdagen||{}), [k]:aan?1:0}}))
+  },[])
+  const bouwKandidaten=useCallback(op=>{
+    const K=[]
+    const nu={cfg,newRows,ctrlRows,m2,rules,capacity}
+    const huidigeKamers=capacity.mode==='vast'?capacity.kamers:(raster&&raster.numRooms)||3
+    if(op.type==='dag-open'){
+      const days=dagShare(op.dag,true)
+      const nr=codesMetDag(newRows,op.dag,true), cr=codesMetDag(ctrlRows,op.dag,true)
+      const ddD={...m2.ddDagen, O:{...m2.ddDagen.O,[DAY_ABBR[op.dag]]:1}, M:{...m2.ddDagen.M,[DAY_ABBR[op.dag]]:1}}
+      K.push({l:`${DAGS_NL[op.dag]} krijgt een aandeel van de weekvraag en de codes mogen op ${DAGS_NL[op.dag]}`,
+        knoppen:[`Dagverdeling → ${WEEKDAY_KEYS.map(k=>`${k} ${days[k]}%`).join(' · ')}`,
+                 `Alle afspraakcodes: ${DAY_ABBR[op.dag]} aangezet`,
+                 `Dagdelen ochtend + middag open op ${DAY_ABBR[op.dag]}`],
+        st:{...nu, m2:{...m2,days,ddDagen:ddD}, newRows:nr, ctrlRows:cr}})
+      K.push({l:`Hetzelfde, plus de restvraag bundelen op ${DAGS_NL[op.dag]}`,
+        knoppen:[`Dagverdeling → ${DAY_ABBR[op.dag]} mee`,`Alle afspraakcodes: ${DAY_ABBR[op.dag]} aangezet`,
+                 `Rest-dag → ${DAGS_NL[op.dag]}`],
+        st:{...nu, m2:{...m2,days,ddDagen:ddD}, newRows:nr, ctrlRows:cr, rules:{...rules,restDag:WEEKDAY_KEYS[op.dag]}}})
+    }
+    if(op.type==='dag-dicht'){
+      const days=dagShare(op.dag,false)
+      const nr=codesMetDag(newRows,op.dag,false), cr=codesMetDag(ctrlRows,op.dag,false)
+      K.push({l:`${DAGS_NL[op.dag]} draait niet meer mee; de vraag gaat naar de andere dagen`,
+        knoppen:[`Dagverdeling → ${WEEKDAY_KEYS.map(k=>`${k} ${days[k]}%`).join(' · ')}`,
+                 `Alle afspraakcodes: ${DAY_ABBR[op.dag]} uitgezet`],
+        st:{...nu, m2:{...m2,days}, newRows:nr, ctrlRows:cr}})
+    }
+    if(op.type==='benutting'){
+      const p=op.pct
+      K.push({l:`Spreekuren gaan pas open vanaf ${p}% bezetting`,
+        knoppen:[`Minimumbezetting → ${p}%`],
+        st:{...nu, rules:{...rules,restOpruimen:true,minBezetting:p}}})
+      K.push({l:`Drempel ${p}% én de restvraag automatisch bundelen op één dag`,
+        knoppen:[`Minimumbezetting → ${p}%`,'Rest-dag → automatisch'],
+        st:{...nu, rules:{...rules,restOpruimen:true,minBezetting:p,restDag:'auto'}}})
+      K.push({l:`Drempel ${p}% en kamers één voor één volmaken`,
+        knoppen:[`Minimumbezetting → ${p}%`,'Kamers vullen → dagdeel voor dagdeel'],
+        st:{...nu, rules:{...rules,restOpruimen:true,minBezetting:p,kamerVerdeling:'dagdeel'}}})
+      K.push({l:`Drempel ${p}% en de doelbenutting per spreekuur mee omhoog naar ${p}%`,
+        knoppen:[`Minimumbezetting → ${p}%`,`Doelbenutting → ${p}%`],
+        st:{...nu, m2:{...m2,benutting:p}, rules:{...rules,restOpruimen:true,minBezetting:p}}})
+      if(huidigeKamers>1) K.push({l:`Dezelfde vraag in één kamer minder (${huidigeKamers-1})`,
+        knoppen:[`Kamers → vast ${huidigeKamers-1}`,`Minimumbezetting → ${p}%`],
+        st:{...nu, rules:{...rules,restOpruimen:true,minBezetting:p}, capacity:{mode:'vast',kamers:huidigeKamers-1}}})
+    }
+    if(op.type==='kamers'&&op.auto){
+      K.push({l:'De capaciteit groeit tot wat de vraag nodig heeft',
+        knoppen:['Kamers → automatisch'], st:{...nu, capacity:{mode:'auto',kamers:capacity.kamers}}})
+    }
+    if(op.type==='kamers'&&!op.auto){
+      const n=Math.max(1,huidigeKamers+op.delta)
+      K.push({l:`Werken met ${n} kamer${n===1?'':'s'}`, knoppen:[`Kamers → vast ${n}`],
+        st:{...nu, capacity:{mode:'vast',kamers:n}}})
+      if(op.delta>0) K.push({l:'De capaciteit vrij laten groeien tot wat de vraag nodig heeft',
+        knoppen:['Kamers → automatisch'], st:{...nu, capacity:{mode:'auto',kamers:capacity.kamers}}})
+    }
+    // ── verdeling over de dagen ──
+    if(op.type==='verdeling'){
+      const actief=WEEKDAY_KEYS.filter(k=>(m2.days[k]||0)>0)
+      const lijst=actief.length?actief:WEEKDAY_KEYS
+      const maakDagen=gewichten=>{
+        const som=gewichten.reduce((a,b)=>a+b,0)||1
+        const d={ma:0,di:0,wo:0,do:0,vr:0}
+        let rest=100
+        lijst.forEach((k,i)=>{ const v=i===lijst.length-1?rest:Math.round(gewichten[i]/som*100); d[k]=v; rest-=v })
+        return d
+      }
+      const vormen = op.vorm==='best'
+        ? [{l:'Gelijk over alle dagen die meedraaien', g:lijst.map(()=>1)},
+           {l:'Zwaartepunt naar voren', g:lijst.map((_,i)=>lijst.length-i+1)},
+           {l:'Zwaartepunt naar achteren', g:lijst.map((_,i)=>i+2)},
+           {l:'Midden van de week zwaarder', g:lijst.map((_,i)=>1+Math.min(i,lijst.length-1-i))}]
+        : op.vorm==='begin' ? [{l:'Zwaartepunt naar voren', g:lijst.map((_,i)=>lijst.length-i+1)}]
+        : op.vorm==='eind'  ? [{l:'Zwaartepunt naar achteren', g:lijst.map((_,i)=>i+2)}]
+        :                     [{l:'Gelijk over alle dagen die meedraaien', g:lijst.map(()=>1)}]
+      vormen.forEach(v=>{ const days=maakDagen(v.g)
+        K.push({l:v.l, knoppen:[`Dagverdeling → ${WEEKDAY_KEYS.map(k=>`${k} ${days[k]}%`).join(' · ')}`],
+          st:{...nu, m2:{...m2,days}}}) })
+    }
+    if(op.type==='dagdeelverdeling') K.push({l:`${op.verOch}% ochtend, ${100-op.verOch}% middag`,
+      knoppen:[`Verdeling ochtend/middag → ${op.verOch} / ${100-op.verOch}`], st:{...nu, m2:{...m2,verOch:op.verOch}}})
+    if(op.type==='volgorde') K.push({l:op.mix?'Nieuw en controle door elkaar':'Nieuw en controle in blokken',
+      knoppen:[`Afwisselen → ${op.mix?'aan':'uit'}`], st:{...nu, rules:{...rules,mixNC:op.mix}}})
+    if(op.type==='opening') K.push({l:`Openen met een ${op.wat==='nieuw'?'nieuwe patiënt':'controle'}`,
+      knoppen:[`Openen met → ${op.wat==='nieuw'?'nieuwe afspraak':'controle afspraak'}`],
+      st:{...nu, rules:{...rules,startNieuw:op.wat==='nieuw',startControle:op.wat==='controle'}}})
+    if(op.type==='kamerverdeling') K.push({l:op.v==='gelijk'?'Alle kamers gelijk belasten':'Kamers één voor één volmaken',
+      knoppen:[`Kamers vullen → ${op.v==='gelijk'?'gelijk verdelen':'dagdeel voor dagdeel'}`],
+      st:{...nu, rules:{...rules,kamerVerdeling:op.v}}})
+    if(op.type==='tijden'){
+      const verschuif=(t,min)=>toTime(clamp(toMin(t)+min,0,23*60+55))
+      const varianten={
+        'och-eerder':{l:'Ochtend een half uur eerder open', m2:{...m2, ochStart:verschuif(m2.ochStart,-30)}, k:`Ochtend → ${verschuif(m2.ochStart,-30)}–${m2.ochEnd}`},
+        'och-langer':{l:'Ochtend een half uur langer door', m2:{...m2, ochEnd:verschuif(m2.ochEnd,30)}, k:`Ochtend → ${m2.ochStart}–${verschuif(m2.ochEnd,30)}`},
+        'mid-langer':{l:'Middag een half uur langer door', m2:{...m2, midEnd:verschuif(m2.midEnd,30)}, k:`Middag → ${m2.midStart}–${verschuif(m2.midEnd,30)}`},
+        'avond':{l:'Avondspreekuur 17:00–20:00', m2:{...m2, avondOn:true, avondStart:'17:00', avondEnd:'20:00', verAvond:10}, k:'Avondspreekuur → 17:00–20:00 · 10% van de vraag'},
+      }
+      const v=varianten[op.wat]
+      if(v) K.push({l:v.l, knoppen:[v.k], st:{...nu, m2:v.m2}})
+    }
+    if(op.type==='drempel') K.push({l:'Geen minimumbezetting meer — elk dagdeel met vraag gaat open',
+      knoppen:['Minimumbezetting → geen drempel'], st:{...nu, rules:{...rules,restOpruimen:false}}})
+    if(op.type==='spoed') K.push({l:op.aan?'Spoed vooraan in het spreekuur':'Spoed loopt gewoon mee',
+      knoppen:[`Spoed eerst → ${op.aan?'aan (ochtend + middag)':'uit'}`],
+      st:{...nu, rules:{...rules,spoedFirst:op.aan,spoedDagdeel:'both'}}})
+    if(op.type==='digitaal') K.push({l:{spread:'Digitaal verdeeld over de dag',cluster:'Eén eigen digitaal spreekuur',end:'Digitaal aan het einde'}[op.mode],
+      knoppen:[`Digitale consulten → ${op.mode==='spread'?'verdelen':op.mode==='cluster'?'eigen spreekuur':'aan het einde'}`],
+      st:{...nu, rules:{...rules,digitalMode:op.mode,digitalWaar:'both'}}})
+    if(op.type==='flex') K.push({l:op.mode==='end'?'Flex in één blok aan het einde':'Flex verspreid tussen de afspraken',
+      knoppen:[`Flexruimte → ${op.mode==='end'?'blok aan het einde':'verspreid'}`],
+      st:{...nu, rules:{...rules,flexMode:op.mode,flexWaar:'both'}}})
+    if(op.type==='aantallen'){
+      const f=1+op.delta/100
+      const nw=Math.max(1,Math.round(cfg.newPat*f)), ct=Math.max(1,Math.round(cfg.ctrlPat*f))
+      K.push({l:`${nw} nieuwe en ${ct} controles per week`,
+        knoppen:[`Nieuwe patiënten → ${cfg.newPat} wordt ${nw}`,`Controles → ${cfg.ctrlPat} wordt ${ct}`],
+        st:{...nu, cfg:{...cfg,newPat:nw,ctrlPat:ct}}})
+    }
+    if(op.type==='duur'){
+      const pas=rows=>rows.map(r=>({...r, duur:Math.max(5,(r.duur||15)+op.delta)}))
+      K.push({l:`Alle consulten ${op.delta>0?`${op.delta} minuten langer`:`${-op.delta} minuten korter`}`,
+        knoppen:[`Consultduur → ${op.delta>0?'+':''}${op.delta} min op elke code`],
+        st:{...nu, newRows:pas(newRows), ctrlRows:pas(ctrlRows)}})
+    }
+    // ── ZO STRAK MOGELIJK ──
+    // Alles gepland, zo min mogelijk kamer-dagen en geen kamer die maar één dagdeel
+    // draait. We proberen de zinvolle combinaties van kamervulling × rest-dag ×
+    // drempel en laten de meting kiezen; de gebruiker ziet welke wint en waarom.
+    if(op.type==='strak'){
+      const vari=[]
+      ;['gelijk','dagdeel'].forEach(kv=>['auto','uit'].forEach(rd=>[60,75,80].forEach(mb=>
+        vari.push({kv,rd,mb}))))
+      vari.forEach(v=>K.push({
+        l:`${v.kv==='gelijk'?'Kamers gelijk belasten':'Kamer voor kamer volmaken'} · ${v.rd==='auto'?'restvraag bundelen':'niet bundelen'} · drempel ${v.mb}%`,
+        knoppen:[`Kamers vullen → ${v.kv==='gelijk'?'gelijk verdelen':'dagdeel voor dagdeel'}`,
+                 `Rest-dag → ${v.rd==='auto'?'automatisch':'niet bundelen'}`,
+                 `Minimumbezetting → ${v.mb}%`],
+        st:{...nu, rules:{...rules, kamerVerdeling:v.kv, restDag:v.rd, restOpruimen:true, minBezetting:v.mb}}}))
+    }
+    if(op.type==='restlijst'){
+      K.push({l:'De capaciteit vrij laten groeien tot alles past',
+        knoppen:['Kamers → automatisch'], st:{...nu, capacity:{mode:'auto',kamers:capacity.kamers}}})
+      K.push({l:'Capaciteit vrij én de restvraag bundelen op één dag',
+        knoppen:['Kamers → automatisch','Rest-dag → automatisch'],
+        st:{...nu, capacity:{mode:'auto',kamers:capacity.kamers}, rules:{...rules,restDag:'auto'}}})
+      K.push({l:'Drempel loslaten zodat ook half gevulde dagdelen opengaan',
+        knoppen:['Minimumbezetting → geen drempel'],
+        st:{...nu, rules:{...rules,restOpruimen:false}}})
+      K.push({l:'Een kamer erbij',
+        knoppen:[`Kamers → vast ${huidigeKamers+1}`],
+        st:{...nu, capacity:{mode:'vast',kamers:huidigeKamers+1}}})
+    }
+    return K
+  },[cfg,newRows,ctrlRows,m2,rules,capacity,raster,dagShare,codesMetDag])
+  // Meet precies dát waar de opdracht over ging, zodat de terugkoppeling over
+  // hetzelfde gaat als de vraag.
+  const meetDoel=useCallback((r,op)=>{
+    if(!r) return null
+    if(op.type==='dag-open'||op.type==='dag-dicht'){
+      const d=dagMeting(r,op.dag)
+      return {waarde:d.appts, tekst:`${d.appts} afspra${d.appts===1?'ak':'ken'} op ${DAGS_NL[op.dag]}${d.open?` in ${d.kamers} kamer${d.kamers===1?'':'s'} · ${d.pct}% bezet`:''}`,
+        gehaald: op.type==='dag-open' ? d.appts>0 : d.appts===0}
+    }
+    if(op.type==='benutting'){
+      const doel=op.pct
+      if(op.kamer!=null&&op.dag!=null){
+        const dds=op.dd!=null?[op.dd]:[0,1,2]
+        const cellen=dds.map(dd=>({dd, m:celMeting(r,op.dag,op.kamer,dd)})).filter(x=>x.m&&x.m.open)
+        if(!cellen.length) return {waarde:null, gehaald:true,
+          tekst:`kamer ${op.kamer+1} draait op ${DAGS_NL[op.dag]} niet meer — die afspraken zijn over de andere kamers verdeeld`}
+        const laagste=cellen.reduce((a,b)=>a.m.pct<b.m.pct?a:b)
+        return {waarde:laagste.m.pct, gehaald:laagste.m.pct>=doel-2,
+          tekst:cellen.map(c=>`${DD_INFO[c.dd].l.toLowerCase()} ${c.m.pct}%`).join(' · ')+` (kamer ${op.kamer+1}, ${DAGS_NL[op.dag]})`}
+      }
+      // geen kamer genoemd: het laagst bezette open dagdeel in de hele week
+      let laagste=null
+      for(let di=0;di<5;di++){ if(op.dag!=null&&di!==op.dag) continue
+        for(let room=0;room<(r.numRooms||1);room++) for(let dd=0;dd<3;dd++){
+          const m=celMeting(r,di,room,dd); if(!m||!m.open) continue
+          if(!laagste||m.pct<laagste.pct) laagste={pct:m.pct,di,room,dd} } }
+      if(!laagste) return {waarde:null, gehaald:false, tekst:'geen open spreekuren gevonden'}
+      return {waarde:laagste.pct, gehaald:laagste.pct>=doel-2,
+        tekst:`laagst bezette spreekuur: ${laagste.pct}% (${DAGS_NL[laagste.di]}, kamer ${laagste.room+1}, ${DD_INFO[laagste.dd].l.toLowerCase()})`}
+    }
+    if(op.type==='restlijst') return {waarde:r.ntp.length, gehaald:r.ntp.length===0,
+      tekst:`${r.ntp.length} op de restlijst`}
+    if(op.type==='strak'){
+      // Halve dagen = kamers die op een dag maar één dagdeel draaien terwijl het
+      // andere dagdeel die dag wél open is. Precies wat je niet wilt op een rooster.
+      let halve=0, kamerDagen=0
+      for(let di=0;di<5;di++){
+        for(let room=0;room<(r.numRooms||1);room++){
+          const o=celMeting(r,di,room,0), m=celMeting(r,di,room,1)
+          const oO=o&&o.open, mO=m&&m.open
+          if(!oO&&!mO) continue
+          kamerDagen++
+          if(oO!==mO) halve++
+        }
+      }
+      const m=meetRaster(r)
+      return {waarde:r.ntp.length*100+halve, gehaald:r.ntp.length===0&&halve===0,
+        tekst:`${m.placed} gepland · ${r.ntp.length} op de restlijst · ${kamerDagen} kamer-dagen · ${halve} halve dag${halve===1?'':'en'} · ${m.benut}% benut`}
+    }
+    if(op.type==='kamers'){ const m=meetRaster(r)
+      return {waarde:m.kamerDagen, gehaald:true, tekst:`${m.kamerDagen} kamer-dagen, ${m.ntp} op de restlijst`} }
+    // Voor de overige opdrachten meten we het kenmerk dat er het meest toe doet.
+    const m=meetRaster(r)
+    if(op.type==='verdeling'){
+      const perDag=[0,1,2,3,4].map(di=>dagMeting(r,di))
+      return {waarde:m.spreiding, gehaald:true,
+        tekst:`spreiding ${m.spreiding}% · ${perDag.map((d,i)=>`${DAY_ABBR[i]} ${d.open?d.appts:'—'}`).join(' · ')}`}
+    }
+    if(op.type==='dagdeelverdeling'){
+      let och=0, mid=0
+      for(let di=0;di<5;di++) for(let room=0;room<(r.numRooms||1);room++){
+        const o=celMeting(r,di,room,0), mm=celMeting(r,di,room,1)
+        if(o) och+=o.appts; if(mm) mid+=mm.appts }
+      const tot=och+mid||1
+      return {waarde:Math.round(och/tot*100), gehaald:true,
+        tekst:`${och} afspraken in de ochtend, ${mid} in de middag (${Math.round(och/tot*100)} / ${Math.round(mid/tot*100)})`}
+    }
+    if(op.type==='aantallen'||op.type==='duur')
+      return {waarde:m.ntp, gehaald:true, tekst:`${m.placed} ingepland, ${m.ntp} op de restlijst, ${m.kamerDagen} kamer-dagen`}
+    return {waarde:m.ntp, gehaald:true,
+      tekst:`${m.placed} ingepland, ${m.ntp} op de restlijst, ${m.benut}% benut`}
+  },[meetRaster])
+  const zoekVoorstel=useCallback(op=>{
+    // Nog geen uitvoerbare opdracht? Dan wordt er niets doorgerekend — de
+    // gespreksboom stelt eerst een vervolgvraag.
+    if(op.type==='onderwerp'||op.type==='onbekend'){ setBijstuur({op}); return }
+    setBijstuur({bezig:true, op})
+    // De kandidaten worden als batch in een eigen worker doorgerekend; de meting
+    // op het doel gebeurt hier, zodra de volledige rasters terug zijn.
+    const kand=bouwKandidaten(op)
+    const jobs=[{type:'poli',args:[cfg,newRows,ctrlRows,m2,rules,capacity]},
+      ...kand.map(k=>({type:'poli',args:[k.st.cfg,k.st.newRows,k.st.ctrlRows,k.st.m2,k.st.rules,k.st.capacity]}))]
+    if(bijstuurBatchRef.current!=null) ENGINE.annuleer(bijstuurBatchRef.current)
+    const h=ENGINE.berekenBatch(jobs)
+    bijstuurBatchRef.current=h.id
+    h.promise.then(uit=>{
+      if(bijstuurBatchRef.current!==h.id) return
+      bijstuurBatchRef.current=null
+      const huidigR=uit[0]&&uit[0].ok?uit[0].res:null
+      const huidig={doel:meetDoel(huidigR,op), alg:huidigR?meetRaster(huidigR):null}
+      const uitkomsten=[]
+      kand.forEach((k,i)=>{ const u=uit[1+i]; if(u&&u.ok) uitkomsten.push({...k, doel:meetDoel(u.res,op), alg:meetRaster(u.res)}) })
+      // Eerst wie het doel haalt; daarbinnen zo min mogelijk restlijst en kamer-dagen.
+      const gesorteerd=uitkomsten.slice().sort((a,b)=>
+        (a.doel&&a.doel.gehaald?0:1)-(b.doel&&b.doel.gehaald?0:1)
+        || (op.type==='strak' ? (((a.doel&&a.doel.waarde)||0)-((b.doel&&b.doel.waarde)||0)) : 0)
+        || a.alg.ntp-b.alg.ntp || a.alg.kamerDagen-b.alg.kamerDagen)
+      setBijstuur({op, huidig, kandidaten:gesorteerd, keuze:0, bezig:false})
+    }).catch(e=>{
+      if(bijstuurBatchRef.current!==h.id) return
+      bijstuurBatchRef.current=null
+      setBijstuur({op, bezig:false, kandidaten:[], fout:String((e&&e.message)||e)})
+    })
+  },[cfg,newRows,ctrlRows,m2,rules,capacity,meetDoel,meetRaster,bouwKandidaten])
+  const pasVoorstelToe=useCallback(k=>{
+    if(k.st.m2!==m2) setM2(k.st.m2)
+    if(k.st.rules!==rules) setRules(k.st.rules)
+    if(k.st.capacity!==capacity) setCapacity(k.st.capacity)
+    if(k.st.newRows!==newRows) setNewRows(k.st.newRows)
+    if(k.st.ctrlRows!==ctrlRows) setCtrlRows(k.st.ctrlRows)
+    if(k.st.cfg!==cfg) setCfg(k.st.cfg)
+  },[m2,rules,capacity,newRows,ctrlRows,cfg])
+
+  // ══ ASSISTENT — vragen beantwoorden (kennisbank + status) naast het bijsturen ══
+  // Elke tekst gaat eerst door de vraaganalyse: een opdracht gaat de bestaande
+  // bijstuur-keten in (doorrekenen → voorstel → pas toe); een vraag om uitleg of
+  // een statusvraag krijgt een antwoord uit de kennisbank of uit het raster; wat
+  // half begrepen is, krijgt een wedervraag. Het gesprek onthoudt de vorige vraag,
+  // zodat "en op woensdag?" op de vorige vraag voortbouwt.
+  const [gesprek,setGesprek]=useState([])
+  const laatsteVraagRef=useRef(null)
+  const assistentCtx=useCallback(()=>({
+    raster,m2,rules,cfg,capacity,kpi:raster&&raster.kpi,modus,
+    fkKamers:modus==='functie'?(fk.kamers||[]).filter(k=>k.actief!==false):[],
+    kamerNamen:Array.from({length:(raster&&raster.numRooms)||0},(_,i)=>kamerNaam(i)),
+    codes:modus==='functie'?(fk.codes||[]).map(fkCodeLabel).filter(Boolean):[...newRows,...ctrlRows].map(r=>r.afspraakcode).filter(Boolean),
+    codesRows:[...newRows,...ctrlRows],fkRegels:fk.regels,
+  }),[raster,m2,rules,cfg,capacity,modus,fk,newRows,ctrlRows,roomNames])
+  const verwerkVraag=useCallback(tekst=>{
+    const ctx=assistentCtx()
+    const a=analyseerVraag(tekst,ctx,parseOpdracht,laatsteVraagRef.current)
+    laatsteVraagRef.current=a
+    setGesprek(g=>[...g.filter(x=>x.vraag!==tekst).slice(-19),{vraag:tekst,soort:a.soort,id:a.id||null}])
+    if(a.soort==='opdracht'){
+      if(modus==='functie'){
+        setBijstuur({op:{type:'antwoord'},vraag:tekst,antwoord:{soort:'antwoord',bron:'hulp',cat:'hulp',titel:'Bijsturen met een opdracht werkt in de poli-modus',
+          tekst:'In de functiekamer-modus stuur je het advies bij via de gegevens zelf: vink bij een code een andere kamer aan, zet een kamer op meer of minder dagdelen open, of pas de regels aan (vulwijze, minimumbezetting, spreiden). Het rasteradvies rekent elke wijziging direct door. Vragen over dit raster kan ik wél beantwoorden: "hoeveel dagdelen moet A1.243 open", "welke codes hebben geen kamer".',
+          acties:[{l:'Naar Gegevens',nav:1},{l:'Naar Regels',nav:2},{l:'Wat kan de assistent?',vraag:'wat kan de assistent'}]}})
+        return
+      }
+      if(a.alsVraag||a.vervolgOp) setWiz(w=>w?{...w,laatsteLezing:a.alsVraag?'Dat klinkt als een opdracht; ik reken hem meteen door.':'Ik pas de vorige opdracht toe op wat je nu noemt.'}:w)
+      zoekVoorstel(a.op); return
+    }
+    if(a.soort==='onbekend'){ zoekVoorstel(a.op||{type:'onbekend',knoop:'start'}); return }
+    setBijstuur({op:{type:'antwoord'},vraag:tekst,antwoord:a})
+  },[assistentCtx,modus,zoekVoorstel])
+  const toonKennis=useCallback(id=>{
+    const a=antwoordVoor(id,assistentCtx()); if(!a) return
+    laatsteVraagRef.current=a
+    setBijstuur({op:{type:'antwoord'},antwoord:a})
+  },[assistentCtx])
+  // Knoppen onder een antwoord: navigeren, een opdracht doorrekenen, een vervolgvraag
+  // stellen, een ander onderwerp tonen of een wedervraag beantwoorden.
+  const doeActie=useCallback((x)=>{
+    const sluit=()=>{ setWiz(null); setBijstuur(null) }
+    if(x.kennis) return toonKennis(x.kennis)
+    if(x.opdr) return verwerkVraag(x.opdr)
+    if(x.vraag) return verwerkVraag(x.vraag)
+    if(x.ent){ setBijstuur(b=>{ const vorige=b&&b.antwoord; const st=vorige&&vorige.status; const ent={...((vorige&&vorige.ent)||{}),...x.ent}
+      const a=st?beantwoordStatus(st,assistentCtx(),ent):null; if(a){ laatsteVraagRef.current=a; return {op:{type:'antwoord'},antwoord:a} } return b }); return }
+    if(x.nav!=null){ sluit(); nav(x.nav); return }
+    if(x.dag!=null){ sluit(); setSelDay(x.dag); setViewMode('dag'); nav(3); return }
+    if(x.modus){ sluit(); wisselModus(x.modus); return }
+    if(x.actie==='export'){ sluit(); setShowExport(true); return }
+    if(x.actie==='intake'){ setBijstuur(null); setWiz({modus:'intake',stap:0,ant:{}}); return }
+    if(x.actie==='index'){ setBijstuur({op:{type:'antwoord'},index:true}); return }
+    if(x.actie==='fk-zonderkamer'){ sluit(); if(modus!=='functie') wisselModus('functie'); setFk(p=>({...p,mode:p.mode||'manual',sectie:2,filter:'zonderKamer'})); nav(1); return }
+    if(x.actie==='fk-start'){ sluit(); if(modus!=='functie') wisselModus('functie'); setFk(p=>({...p,mode:null})); nav(1); return }
+  },[toonKennis,verwerkVraag,assistentCtx,modus])
+
+  // Test-API voor de invariant-suite (test_invariants.mjs): stelt de pure engine
+  // bloot zodat elke regel-combinatie headless gevalideerd kan worden.
+  useEffect(()=>{ if(typeof window!=='undefined'){ window.__cr=(a,b,c,d,e,f)=>computeRaster(a,b,c,d,e,f) } },[computeRaster])
+  useEffect(()=>{ if(typeof window!=='undefined'){
+    window.__engine=()=>({...ENGINE.info(), liveBezig, liveFout})
+    window.__rekenLive=rekenLive
+    window.__rekenSync=()=>ENGINE.rekenSync(bouwJob())
+    window.__active=()=>active
+    window.__nav=nav
+    window.__setRules=setRules
+    window.__setCfg=setCfg
+  } },[liveBezig,liveFout,rekenLive,active,bouwJob])
+  useEffect(()=>{ if(typeof window!=='undefined'){
+    window.__fk=(kamers,codes,m2x,regels)=>fkBerekenAdvies({kamers,codes,m2:m2x||m2,regels})
+    window.__fkPresets=FK_PRESETS
+    window.__setModus=setModus
+    window.__modus=()=>modus
+    window.__fkState=()=>fk
+    window.__setFk=setFk
+    window.__raster=()=>raster
+    window.__vraag=(t,vorige)=>analyseerVraag(t,assistentCtx(),parseOpdracht,vorige)
+    window.__kennis=KENNIS
+  } },[modus,fk,m2,raster,assistentCtx])
+  // Test-API voor de bijstuur-suite (test_bijsturen.mjs): de opdracht-lezer en de
+  // huidige stand, zodat een test kan controleren dat er pas iets verandert ná
+  // akkoord en dat de belofte uitkomt.
+  useEffect(()=>{ if(typeof window==='undefined') return
+    window.__parse=parseOpdracht
+    window.__boom=VRAAGBOOM
+    window.__m2=()=>m2
+    window.__rules=()=>rules
+    window.__dag=di=>dagMeting(raster,di)
+    window.__laagste=()=>{ let laag=null
+      if(!raster) return null
+      for(let di=0;di<5;di++) for(let room=0;room<(raster.numRooms||1);room++) for(let dd=0;dd<3;dd++){
+        const c=celMeting(raster,di,room,dd); if(!c||!c.open) continue
+        if(!laag||c.pct<laag.pct) laag={pct:c.pct,di,room,dd} }
+      return laag }
+  },[m2,rules,raster])
+
+  // ENGINE 2.0 — live sync (gedebounced): élke wijziging in gegevens/tijden/
+  // regels/capaciteit wordt doorgerekend — ook direct bij het openen en ook nadat
+  // het raster is gewist (import, reset). Vroeger sloeg de live-sync over zolang er
+  // geen raster was; na een import of reset leek de tool dan te "stoppen" tot je
+  // zelf op Genereer klikte. Nu is er altijd een actuele uitkomst onderweg.
+  // De debounce voorkomt dat het snelle slepen aan een schuif een lawine aan
+  // berekeningen geeft; de TRAILING-edge garandeert dat er ALTIJD op de laatste
+  // waarde wordt herrekend. Het rekenen zelf gebeurt in de worker (zie
+  // engineClient.js), dus de knoppen blijven ondertussen bedienbaar.
+  useEffect(()=>{
+    setLiveBezig(true)
+    const id=setTimeout(()=>{ rekenLive() },120)
+    return ()=>clearTimeout(id)
+  },[rekenLive])
+  // De worker alvast starten, zodat de eerste berekening niet op de start wacht.
+  useEffect(()=>{ ENGINE.warmOp() },[])
+  // Status van de rekenengine (worker of synchroon) — zichtbaar voor tests en in de UI.
+  const [engineStatus,setEngineStatus]=useState(()=>ENGINE.info())
+  useEffect(()=>ENGINE.opStatus(setEngineStatus),[])
+
+  const handleFullReset=()=>{
+    setActive(0); setVisited(new Set([0]))
+    setM1Mode(null); setM1Section(1)
+    setCfg({newPat:10,ctrlPat:20,newCodes:2,ctrlCodes:3})
+    setPoli({naam:'',specialisme:''})
+    setCapacity({mode:'auto',kamers:3})
+    setNewRows([]); setCtrlRows([]); setImportBadge(null)
+    setM2({ochStart:'08:30',ochEnd:'12:00',midStart:'13:00',midEnd:'16:30',
+      avondOn:false,avondStart:'17:00',avondEnd:'20:00',verAvond:0,
+      verOch:50,benutting:85,days:{ma:20,di:20,wo:20,do:20,vr:20},
+    ddDagen:{O:{...DEF_DD_DAGEN.O},M:{...DEF_DD_DAGEN.M},A:{...DEF_DD_DAGEN.A}}})
+    setRules({spoedFirst:false,startNieuw:false,startControle:false,mixNC:true,
+      digitalMode:'spread',digitalSlots:[],flexMode:'end',
+      kamerVerdeling:'dagdeel',restDag:'uit',restOpruimen:true,minBezetting:75,spoedDagdeel:'both',
+      startNieuwWaar:'both',startControleWaar:'both',mixWaar:'both',digitalWaar:'both',flexWaar:'both',
+      flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30})
+    setSelDay(0); setRaster(null); setDrag(null)
+    setModus('poli'); setFk({kamers:[],codes:[],regels:fkStandaardRegels(),preset:'',badge:null,open:null,mode:null,sectie:1}); setRoomNames({})
+    setShowFullReset(false)
+  }
+
+  // Kies een specialisme: werk de naam live bij (tenzij de gebruiker een eigen
+  // naam typte) en laad de bijbehorende voorbeeldcodes. Zo stuurt de poli-keuze
+  // het hele model aan. `codes` false = alleen naam/label bijwerken.
+  const kiesSpecialisme=(v,codes=true)=>{
+    setPoli(p=>({...p, specialisme:v,
+      naam:(!p.naam || /^Poli\s/i.test(p.naam)) ? (v?'Poli '+v:'') : p.naam}))
+    const pre=SPEC_PRESETS[v]
+    if(!codes||!pre) return
+    const nieuw=pre.nieuw.map(mkRow), ctrl=pre.ctrl.map(mkRow)
+    setCfg(c=>({...c,newPat:pre.newPat,ctrlPat:pre.ctrlPat,newCodes:nieuw.length,ctrlCodes:ctrl.length}))
+    setNewRows(nieuw); setCtrlRows(ctrl)
+    setM1Mode(m=>m||'manual'); setM1Section(2)
+  }
+  // Zijn er al door de gebruiker ingevoerde codes? (voor de bevestiging bij laden)
+  const heeftCodes=()=> (newRows.some(r=>r.afspraakcode||r.omschrijving) || ctrlRows.some(r=>r.afspraakcode||r.omschrijving))
+
+  const m2c=useMemo(()=>{
+    const od=toMin(m2.ochEnd)-toMin(m2.ochStart)   // ochtend dagdeel bruto minuten
+    const md=toMin(m2.midEnd)-toMin(m2.midStart)   // middag dagdeel bruto minuten
+
+    // A spreekuur is ONE dagdeel — benutting applies per dagdeel, not per full day
+    const nOch=Math.round(od*(m2.benutting/100))   // netto ochtend spreekuur
+    const nMid=Math.round(md*(m2.benutting/100))   // netto middag spreekuur
+    const fOch=od-nOch                              // flex ochtend spreekuur
+    const fMid=md-nMid                              // flex middag spreekuur
+
+    // Per-dag totals (sum of both dagdelen, for display only)
+    const bDay=od+md
+    const nDay=nOch+nMid
+    const fDay=fOch+fMid
+
+    // Per-week totals (weighted by weekday distribution)
+    const dSum=WEEKDAY_KEYS.reduce((s,k)=>s+(m2.days[k]||0),0)
+    const weekFactor=WEEKDAY_KEYS.reduce((s,k)=>s+(m2.days[k]||0)/100,0)
+    const bWk=Math.round(weekFactor*bDay*5)
+    const nWk=Math.round(weekFactor*nDay*5)
+
+    return{od,md,nOch,nMid,fOch,fMid,bDay,nDay,fDay,bWk,nWk,dSum}
+  },[m2])
+
+  const getColor=appt=>{
+    if(appt.isFlex) return {bg:FLEX_COLOR.bg,brd:FLEX_COLOR.brd,fg:FLEX_COLOR.fg}
+    if(appt.isBuffer) return BUF_COLOR
+    if(appt.category==='onderzoek') return FK_PALETTE[(appt.ci||0)%FK_PALETTE.length]
+    if(appt.category==='controle'&&appt.digitaal) return {bg:'#D6EAE3',brd:'#94C5B4',fg:'#1A5544'}
+    if(appt.category==='nieuw') return NEW_PALETTE[appt.ci%NEW_PALETTE.length]||NEW_PALETTE[0]
+    if(appt.category==='controle') return CTRL_PALETTE[appt.ci%CTRL_PALETTE.length]||CTRL_PALETTE[0]
+    return {bg:'#E2E8EE',brd:'#B4C2CE',fg:'#3A4A58'}
+  }
+
+  // ── IMPORT ──────────────────────────────────────────────────────────────────
+  const handleImport=e=>{
+    const file=e.target.files[0]; if(!file) return
+    // Reset the file input so the same file can be re-selected
+    e.target.value=''
+    const reader=new FileReader()
+    reader.onload=ev=>{
+      try{
+        const wb=XLSX.read(ev.target.result,{type:'binary'})
+        const ws=wb.Sheets['_rasterdata']
+        if(!ws) throw new Error('Dit bestand bevat geen hersteldata (_rasterdata). Exporteer opnieuw vanuit de Raster Tool.')
+        const rows=XLSX.utils.sheet_to_json(ws,{header:1})
+        if(!rows||!rows[0]||!rows[0][0]) throw new Error('Hersteldata is leeg of beschadigd.')
+        const state=JSON.parse(rows[0][0])
+        // Restore all config state (with migration defaults for older files)
+        const migRow=r=>({onzeker:'gemiddeld',dagdelen:{O:true,M:true,A:false},
+          modaliteit:r.modaliteit||(r.digitaal?'telefonisch':'fysiek'),...r})
+        if(state.cfg)      setCfg(state.cfg)
+        if(state.newRows)  setNewRows(state.newRows.map(migRow))
+        if(state.ctrlRows) setCtrlRows(state.ctrlRows.map(migRow))
+        if(state.m2)       setM2({avondOn:false,avondStart:'17:00',avondEnd:'20:00',verAvond:0,...state.m2,
+                             ddDagen:ddDagenVan(state.m2)})
+        if(state.rules){
+          const sr=state.rules
+          setRules({spoedFirst:false,startNieuw:false,startControle:false,mixNC:true,
+            digitalMode:'spread',flexMode:'end',
+            kamerVerdeling:'dagdeel',restDag:'uit',restOpruimen:true,minBezetting:75,spoedDagdeel:'both',
+            startNieuwWaar:'both',startControleWaar:'both',mixWaar:'both',digitalWaar:'both',flexWaar:'both',
+            flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30,...sr,
+            ...(sr.kamerVerdeling==='kamer'?{kamerVerdeling:'dagdeel'}:{})})
+        }
+        if(state.fk&&(state.fk.kamers||[]).length){ setFk({kamers:state.fk.kamers||[],codes:(state.fk.codes||[]).map(c=>fkNieuweCode(c)),regels:{...fkStandaardRegels(),...(state.fk.regels||{})},preset:state.fk.preset||'',badge:{t:`Kamers en codes hersteld uit ${file.name}.`},open:null,mode:'excel',sectie:2}) }
+        if(state.modus==='functie'||state.modus==='poli') setModus(state.modus)
+        // Note: raster is not stored (too large), it will be auto-generated
+        setRaster(null)
+        setImportBadge({
+          filename:file.name,
+          date:state.exportDate?new Date(state.exportDate).toLocaleDateString('nl-NL'):'onbekend'
+        })
+        // Navigeer naar Gegevens (index 1), sectie 2 (codetabel) zodat de data zichtbaar is
+        setM1Mode('imported')
+        setM1Section(state.newRows?.length>0||state.ctrlRows?.length>0 ? 2 : 1)
+        setActive(1)
+        setVisited(new Set([0,1,2,3]))
+        alert('✅ Sessie hersteld!\n\nGegevens, codes, tijden en planregels zijn ingeladen.\nGa naar "Rasterproces" om het rooster opnieuw te genereren.')
+      }catch(err){
+        alert('Import mislukt:\n\n'+err.message)
+      }
+    }
+    reader.readAsBinaryString(file)
+  }
+
+  // ── SPREEKUURGEGEVENS UIT EXCEL ─────────────────────────────────────────────
+  // Laad een vrij-opgemaakte Excel/CSV met alle spreekuurgegevens (afkorting,
+  // naam, categorie, duur, aantal/week, verdeling, modaliteit, dagen, dagdelen,
+  // onzekerheid). parseSpreekuurRows herkent de kolommen fuzzy en vult de codes.
+  const handleSpreekuur=e=>{
+    const file=e.target.files[0]; if(!file) return
+    e.target.value=''
+    const reader=new FileReader()
+    reader.onload=ev=>{
+      try{
+        const wb=XLSX.read(ev.target.result,{type:'binary'})
+        // Kies het eerste blad met inhoud (sla verborgen hersteldata over)
+        const naam=wb.SheetNames.find(n=>n!=='_rasterdata')||wb.SheetNames[0]
+        const ws=wb.Sheets[naam]
+        if(!ws) throw new Error('Geen werkblad gevonden in dit bestand.')
+        const aoa=XLSX.utils.sheet_to_json(ws,{header:1,defval:''})
+        const {newRows:nr,ctrlRows:cr,newPat,ctrlPat}=parseSpreekuurRows(aoa)
+        setNewRows(nr); setCtrlRows(cr)
+        setCfg(c=>({...c,newPat,ctrlPat,newCodes:nr.length,ctrlCodes:cr.length}))
+        setRaster(null)
+        setImportBadge(null)
+        setM1Mode('manual'); setM1Section(2)
+        setActive(1); setVisited(new Set([0,1,2,3]))
+        alert('✅ Spreekuurgegevens geladen!\n\n'
+          +nr.length+' nieuw-code(s) · '+cr.length+' controle-code(s)\n'
+          +'Nieuw: '+newPat+'/week · Controle: '+ctrlPat+'/week\n\n'
+          +'Controleer de codes en ga daarna naar "Regels".')
+      }catch(err){
+        alert('Laden mislukt:\n\n'+err.message
+          +'\n\nTip: gebruik de knop "Voorbeeld-Excel" voor het juiste kolomformaat.')
+      }
+    }
+    reader.readAsBinaryString(file)
+  }
+  // Genereer en download een voorbeeld-Excel met de verwachte kolommen.
+  const downloadSpreekuurTemplate=()=>{
+    try{
+      const wb=XLSX.utils.book_new()
+      const kop=['Code','Naam','Categorie','Duur (min)','Aantal/week','Verdeling %','Modaliteit','Dagen','Dagdelen','Onzekerheid']
+      const ws=XLSX.utils.aoa_to_sheet([kop,...SPREEKUUR_VOORBEELD])
+      ws['!cols']=[{wch:8},{wch:22},{wch:11},{wch:11},{wch:12},{wch:12},{wch:14},{wch:20},{wch:18},{wch:13}]
+      XLSX.utils.book_append_sheet(wb,ws,'Spreekuurgegevens')
+      // Een SYNTHETISCHE a.click() wordt geblokkeerd zodra de tool in een
+      // afgeschermde iframe draait (zoals bij een gedeelde link), en een grote
+      // data:-URI weigeren sommige browsers óók. Daarom maken we een echte
+      // Blob-download-URL en tonen we een link die de gebruiker zelf aanklikt —
+      // dat werkt betrouwbaar in alle omgevingen, ook in de gedeelde artifact.
+      setTplLink({
+        wb,
+        href:wbNaarHref(wb),
+        filename:'spreekuurgegevens-voorbeeld.xlsx'})
+    }catch(err){ alert('Kon voorbeeld niet maken: '+err.message) }
+  }
+
+  // ── EXPORT ─────────────────────────────────────────────────────────────────
+  const handleExport=useCallback(()=>{
+    if(!raster){alert('Genereer eerst een raster.');return}
+    setExporting(true); setExportLink(null)
+    setTimeout(()=>{
+      try{
+        const wb=XLSX.utils.book_new()
+        const today=new Date().toLocaleDateString('nl-NL')
+        const s=v=>(v===null||v===undefined)?'':String(v)
+        const numRooms=raster.numRooms||1
+
+        // ══ ECHTE AGENDA-TABBLADEN ═══════════════════════════════════════════
+        // Eén tabblad per dag, opgebouwd als een echt rooster: de tijd in de
+        // eerste kolom (raster van 5 minuten) en één kolom per kamer. Elke
+        // afspraak beslaat precies de cellen van zijn eigen duur (samengevoegd),
+        // zodat je in Excel direct ziet wie wanneer in welke kamer zit — geen
+        // opsomming in één cel meer, maar de agenda zoals je hem leest.
+        const STAP=5
+        const hhmm=t=>{ const u=Math.floor(t/60), m=Math.round(t%60)
+          return String(u).padStart(2,'0')+':'+String(m).padStart(2,'0') }
+        const laatste = raster.avondOn ? raster.avondEnd : raster.midEnd
+        const tijdRijen=(()=>{ const uit=[]
+          for(let t=raster.ochStart;t<laatste;t+=STAP){
+            const open=(t>=raster.ochStart&&t<raster.ochEnd)||(t>=raster.midStart&&t<raster.midEnd)
+              ||(raster.avondOn&&t>=raster.avondStart&&t<raster.avondEnd)
+            uit.push({min:t,open})
+          }
+          return uit })()
+        const rijVoor=t=>Math.round((t-raster.ochStart)/STAP)
+        const ddPrefixen=[['o',0],['m',1]].concat(raster.avondOn?[['a',2]]:[])
+        // Welke kamers draaien er op deze dag écht?
+        const kamersVan=di=>{ const slots=raster.days[di]; if(!slots) return []
+          const uit=[]
+          for(let r=0;r<numRooms;r++)
+            if(ddPrefixen.some(([p])=>(slots[p+r]||[]).some(a=>!a.isFlex))) uit.push(r)
+          return uit }
+        const labelVan=a=> a.isFlex
+          ? `· ${a.description||'flex'} (${a.duur}m) ·`
+          : `${a.code}  ${a.description||''}`.trim()+`  (${a.duur}m)`+(a.digitaal?'  ☎':'')
+
+        for(let di=0;di<5;di++){
+          const slots=raster.days[di]
+          const kamers=kamersVan(di)
+          const kop=((poli.naam||poli.specialisme||'Poliraster').toUpperCase())+' — '+DAYS[di].toUpperCase()
+          const rows=[[kop],['Geëxporteerd: '+today],[]]
+          const merges=[]
+          if(!slots||!kamers.length){
+            rows.push(['Geen spreekuur op deze dag'])
+            const wsL=XLSX.utils.aoa_to_sheet(rows)
+            wsL['!cols']=[{wch:34}]
+            XLSX.utils.book_append_sheet(wb,wsL,DAYS[di].substring(0,3))
+            continue
+          }
+          const headRij=rows.length                       // 0-based index van de kolomkoppen
+          rows.push(['Tijd',...kamers.map(r=>kamerNaam(r))])
+          const eersteRij=rows.length
+          tijdRijen.forEach(tr=>{
+            rows.push([tr.open?hhmm(tr.min):hhmm(tr.min)+'  (pauze)',...kamers.map(()=>'')])
+          })
+          // afspraken in het raster zetten en verticaal samenvoegen
+          kamers.forEach((r,ki)=>{
+            ddPrefixen.forEach(([p])=>{
+              ;(slots[p+r]||[]).forEach(a=>{
+                if(a.start==null) return
+                const r0=eersteRij+rijVoor(a.start)
+                const n=Math.max(1,Math.round((a.duur||STAP)/STAP))
+                if(r0<eersteRij||r0>=eersteRij+tijdRijen.length) return
+                const r1=Math.min(r0+n-1, eersteRij+tijdRijen.length-1)
+                if(rows[r0]) rows[r0][1+ki]=labelVan(a)
+                if(r1>r0) merges.push({s:{r:r0,c:1+ki},e:{r:r1,c:1+ki}})
+              })
+            })
+          })
+          const ws=XLSX.utils.aoa_to_sheet(rows)
+          ws['!cols']=[{wch:14},...kamers.map(()=>({wch:32}))]
+          ws['!merges']=[{s:{r:0,c:0},e:{r:0,c:kamers.length}},...merges]
+          ws['!freeze']={xSplit:1,ySplit:headRij+1}
+          XLSX.utils.book_append_sheet(wb,ws,DAYS[di].substring(0,3))
+        }
+
+        // ══ TOTAAL AGENDA — de hele week in één blad ══════════════════════════
+        // Zelfde tijd-as, maar met álle dagen naast elkaar: per dag een groep
+        // kolommen met de kamers die er draaien. Zo lees je de week als één
+        // rooster en zie je meteen waar het druk is en waar ruimte zit.
+        {
+          const groepen=[0,1,2,3,4].map(di=>({di,kamers:kamersVan(di)})).filter(g=>g.kamers.length)
+          const rows=[[((poli.naam||poli.specialisme||'Poliraster').toUpperCase())+' — TOTAAL AGENDA (hele week)'],
+            ['Geëxporteerd: '+today],[]]
+          const merges=[]
+          if(!groepen.length){
+            rows.push(['Er zijn nog geen spreekuren ingepland.'])
+          } else {
+            const dagRij=rows.length, kamerRij=dagRij+1
+            const kopDag=['Tijd'], kopKamer=['']
+            let c=1
+            groepen.forEach(g=>{
+              kopDag.push(DAYS[g.di]); for(let i=1;i<g.kamers.length;i++) kopDag.push('')
+              g.kamers.forEach(r=>kopKamer.push('K'+(r+1)))
+              if(g.kamers.length>1) merges.push({s:{r:dagRij,c},e:{r:dagRij,c:c+g.kamers.length-1}})
+              c+=g.kamers.length
+            })
+            rows.push(kopDag); rows.push(kopKamer)
+            const eersteRij=rows.length
+            tijdRijen.forEach(tr=>rows.push([tr.open?hhmm(tr.min):hhmm(tr.min)+'  (pauze)',...Array(c-1).fill('')]))
+            let col=1
+            groepen.forEach(g=>{
+              const slots=raster.days[g.di]
+              g.kamers.forEach((r,ki)=>{
+                ddPrefixen.forEach(([p])=>{
+                  ;(slots[p+r]||[]).forEach(a=>{
+                    if(a.start==null) return
+                    const r0=eersteRij+rijVoor(a.start)
+                    if(r0<eersteRij||r0>=eersteRij+tijdRijen.length) return
+                    const n=Math.max(1,Math.round((a.duur||STAP)/STAP))
+                    const r1=Math.min(r0+n-1, eersteRij+tijdRijen.length-1)
+                    // in de weekweergave kort labelen, anders wordt het onleesbaar
+                    if(rows[r0]) rows[r0][col+ki]=a.isFlex?'·':(a.code+(a.digitaal?' ☎':''))
+                    if(r1>r0) merges.push({s:{r:r0,c:col+ki},e:{r:r1,c:col+ki}})
+                  })
+                })
+              })
+              col+=g.kamers.length
+            })
+            const wsW=XLSX.utils.aoa_to_sheet(rows)
+            wsW['!cols']=[{wch:14},...Array(c-1).fill({wch:11})]
+            wsW['!merges']=[{s:{r:0,c:0},e:{r:0,c:Math.max(1,c-1)}},...merges]
+            wsW['!freeze']={xSplit:1,ySplit:kamerRij+1}
+            XLSX.utils.book_append_sheet(wb,wsW,'Totaal agenda')
+          }
+          if(!groepen.length){
+            const wsW=XLSX.utils.aoa_to_sheet(rows)
+            wsW['!cols']=[{wch:40}]
+            XLSX.utils.book_append_sheet(wb,wsW,'Totaal agenda')
+          }
+        }
+
+        // ── ALLE AFSPRAKEN — één regel per afspraak, mét begin- en eindtijd ────
+        // Dit blad is de werklijst én de bron voor herimport: sorteerbaar,
+        // filterbaar, en op tijd geordend zodat het naast de agenda te leggen is.
+        const ar=[['ALLE AFSPRAKEN'],['Geëxporteerd: '+today],[],
+          ['Dag','Dagdeel','Kamer','Begin','Einde','Code','Omschrijving','Duur','Categorie','Digitaal']]
+        const ddNaamVan=p=>p==='o'?'Ochtend':p==='m'?'Middag':'Avond'
+        const regels=[]
+        for(let di=0;di<5;di++){
+          const slots=raster.days[di]; if(!slots) continue
+          for(let r=0;r<numRooms;r++){
+            ddPrefixen.forEach(([pfx])=>{
+              ;(slots[pfx+r]||[]).forEach(a=>{
+                if(a.isFlex) return                       // buffers horen niet in de werklijst
+                regels.push({di,r,pfx,a})
+              })
+            })
+          }
+        }
+        // op dag → tijd → kamer, zodat de lijst leest als het dagprogramma
+        regels.sort((x,y)=>(x.di-y.di)||((x.a.start||0)-(y.a.start||0))||(x.r-y.r))
+        regels.forEach(({di,r,pfx,a})=>{
+          ar.push([s(DAYS[di]),ddNaamVan(pfx),s(kamerNaam(r)),
+            a.start!=null?hhmm(a.start):'', a.end!=null?hhmm(a.end):'',
+            s(a.code),s(a.description),s(a.duur),
+            s(a.category==='nieuw'?'Nieuw':'Controle'),s(a.digitaal?'Ja':'Nee')])
+        })
+        ;(raster.ntp||[]).forEach(a=>ar.push([s(DAYS[a.day]||'?'),'Nog te plannen','—','','',s(a.code),s(a.description),s(a.duur),
+          s(a.category==='nieuw'?'Nieuw':'Controle'),s(a.digitaal?'Ja':'Nee')]))
+        const wsA=XLSX.utils.aoa_to_sheet(ar)
+        wsA['!cols']=[{wch:12},{wch:15},{wch:10},{wch:8},{wch:8},{wch:12},{wch:30},{wch:7},{wch:10},{wch:9}]
+        wsA['!autofilter']={ref:XLSX.utils.encode_range({s:{r:3,c:0},e:{r:Math.max(3,ar.length-1),c:9}})}
+        wsA['!freeze']={xSplit:0,ySplit:4}
+        XLSX.utils.book_append_sheet(wb,wsA,'Alle afspraken')
+
+        // Configuratie
+        const cr=[['CONFIGURATIE'],['Geëxporteerd: '+today],[],
+          ['Nieuwe patiënten/week',s(cfg.newPat)],['Controle patiënten/week',s(cfg.ctrlPat)],[],
+          ['Ochtend spreekuur',s(m2.ochStart)+'–'+s(m2.ochEnd),s(m2c.od+' min bruto'),s(m2c.nOch+' min netto')],
+          ['Middag spreekuur',s(m2.midStart)+'–'+s(m2.midEnd),s(m2c.md+' min bruto'),s(m2c.nMid+' min netto')],
+          ['Benutting',s(m2.benutting+'%'),'Verdeling',s(m2.verOch+'% / '+(100-m2.verOch)+'%')],
+          ['Aantal kamers',s(numRooms)],[],
+          ['ACTIEVE PLANREGELS'],
+          ...Object.entries(PLAN_INFO).map(([k,info])=>{
+            const val=rules[k]; return [s(info.label),s(typeof val==='boolean'?(val?'Actief':'Inactief'):val)]
+          })
+        ]
+        const wsC=XLSX.utils.aoa_to_sheet(cr)
+        wsC['!cols']=[{wch:26},{wch:20},{wch:16},{wch:16}]
+        XLSX.utils.book_append_sheet(wb,wsC,'Configuratie')
+
+        // Restore data (config only, no raster)
+        // ── FUNCTIEKAMER-ADVIES — het raster per kamer als leesbare tabel ────
+        if(raster.fk){
+          const fr=[['RASTERADVIES FUNCTIEKAMERS'],['Geëxporteerd: '+today],
+            [`${raster.fk.samenvatting.dagdelenOpen} van ${raster.fk.samenvatting.dagdelenBeschikbaar} dagdelen open · dekking ${raster.fk.samenvatting.dekking}% · ${raster.fk.samenvatting.rest} op de restlijst · ${raster.fk.samenvatting.weken} weken/jaar · benutting ${raster.fk.samenvatting.benutting}%`],[],
+            ['Kamer','Dagdelen/wk','Ochtend','Middag',...(raster.avondOn?['Avond']:[]),'Benutting','Codes ochtend','Codes middag',...(raster.avondOn?['Codes avond']:[])]]
+          raster.fk.advies.forEach(a=>fr.push([a.naam,a.nOpen,a.perDd.O,a.perDd.M,...(raster.avondOn?[a.perDd.A]:[]),a.benutting+'%',
+            a.profiel.O.join(', '),a.profiel.M.join(', '),...(raster.avondOn?[a.profiel.A.join(', ')]:[])]))
+          fr.push([],['WEEKRASTER PER KAMER (codes × aantal per dagdeel)'],['Kamer','Dag','Dagdeel','Bezetting','Codes'])
+          raster.fk.advies.forEach(a=>a.perDag.forEach((d,di)=>['O','M',...(raster.avondOn?['A']:[])].forEach(dd=>{
+            const c=d[dd]; if(!c||!c.beschikbaar) return
+            fr.push([a.naam,DAYS[di],dd==='O'?'Ochtend':dd==='M'?'Middag':'Avond',c.open?c.pct+'%':'dicht',c.open?c.codes.map(x=>`${x.code} ×${x.n}`).join(', '):''])
+          })))
+          fr.push([],['TOEWIJZING CODE → KAMER'],['Code','Omschrijving','×/wk','Duur','Min/wk','Kamer(s)','Waarom'])
+          raster.fk.toewijzing.forEach(t=>fr.push([t.code,t.oms,t.n,t.duur,t.min,t.kamers.map(k=>t.gesplitst?`${k.naam} (${k.n}×)`:k.naam).join(', '),t.reden]))
+          if(raster.fk.geenKamer.length){ fr.push([],['KAMER NOG TE BEPALEN'],['Code','Omschrijving','×/wk','Duur']); raster.fk.geenKamer.forEach(g=>fr.push([g.code,g.oms,g.n,g.duur])) }
+          if(raster.fk.incidenteel.length){ fr.push([],['INCIDENTEEL (op de flexruimte)'],['Code','Omschrijving','×/wk','Duur']); raster.fk.incidenteel.forEach(g=>fr.push([g.code,g.oms,Math.round(g.aw*100)/100,g.duur])) }
+          if((raster.fk.planregels||[]).length){ fr.push([],['REGELS'],['Geborgd door','Regel','Toelichting']); raster.fk.planregels.forEach(r=>fr.push([r.geborgd==='raster'?'Raster':'Planner',r.t,r.uitleg||''])) }
+          const wsF=XLSX.utils.aoa_to_sheet(fr)
+          wsF['!cols']=[{wch:14},{wch:14},{wch:12},{wch:12},{wch:12},{wch:40},{wch:40},{wch:40}]
+          XLSX.utils.book_append_sheet(wb,wsF,'Functiekamer-advies')
+        }
+        const state={version:'4.1',exportDate:new Date().toISOString(),cfg,newRows,ctrlRows,m2,rules,modus,fk:{kamers:fk.kamers,codes:fk.codes,regels:fk.regels,preset:fk.preset}}
+        const wsS=XLSX.utils.aoa_to_sheet([[JSON.stringify(state)]])
+        XLSX.utils.book_append_sheet(wb,wsS,'_rasterdata')
+
+        setExportLink({
+          wb,
+          href:wbNaarHref(wb),
+          basis:(expName.trim()||(poli.naam||'raster').toLowerCase().replace(/\s+/g,'_')||'raster'),
+          filename:(expName.trim()||(poli.naam||'raster').toLowerCase().replace(/\s+/g,'_')||'raster')+'.xlsx'
+        })
+      }catch(err){console.error('Export:',err);alert('Export fout: '+err.message)}
+      finally{setExporting(false)}
+    },50)
+  },[raster,cfg,newRows,ctrlRows,m2,rules,expName,m2c,poli])
+
+  // ─── PROGRESS BAR ──────────────────────────────────────────────────────────
+  const renderProg=()=>null
+
+  // ─── MODULE 0 ──────────────────────────────────────────────────────────────
+  const upRow=(set,i,f,v)=>set(p=>p.map((r,j)=>j===i?{...r,[f]:v}:r))
+  const upNested=(set,i,f,k,v)=>set(p=>p.map((r,j)=>j===i?{...r,[f]:{...r[f],[k]:v}}:r))
+
+  const renderTable=(rows,set,label,n,total,cat)=>{
+    const cc=cat==='nieuw'?C.primary:C.green
+    const sumPct=rows.reduce((a,r)=>a+r.percentage,0)
+    // Verwijst naar de component op moduleniveau: die behoudt zijn identiteit tussen
+    // renders, zodat het invoerveld de focus houdt en je gewoon een getal kunt typen.
+    const Stepper=NumStepper
+    const FieldLabel=({children})=>(
+      <div style={{fontSize:9.5,fontWeight:600,color:C.muted,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:6}}>{children}</div>
+    )
+    return(
+      <div style={{marginBottom:26}}>
+        {/* Section header — portal style */}
+        <div style={{display:'flex',alignItems:'flex-end',justifyContent:'space-between',marginBottom:14,gap:12}}>
+          <div>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:5}}>
+              <span style={{width:8,height:8,borderRadius:'50%',background:cc}}/>
+              <span style={{fontSize:9.5,fontWeight:700,color:cc,letterSpacing:'0.16em'}}>
+                {cat==='nieuw'?'NIEUWE PATIËNTEN':'CONTROLE PATIËNTEN'}
+              </span>
+            </div>
+            <div style={{fontFamily:"'Newsreader',Georgia,serif",fontSize:22,fontWeight:500,color:C.text,letterSpacing:'-0.01em'}}>
+              {label}
+            </div>
+            <div style={{fontSize:12,color:C.muted,marginTop:2}}>{total} afspraken per week · {n} afspraakcode{n!==1?'s':''}</div>
+          </div>
+          <span style={{fontSize:11.5,fontWeight:600,padding:'5px 12px',borderRadius:20,whiteSpace:'nowrap',
+            background:sumPct===100?'#EAF5EE':'#FCEEEB',color:sumPct===100?C.green:C.danger,
+            border:`1px solid ${sumPct===100?'#C9E6D5':'#F1CFC8'}`}}>
+            Verdeling {sumPct}%{sumPct!==100?' — moet 100%':' ✓'}
+          </span>
+        </div>
+
+        {/* Code cards */}
+        <div style={{display:'flex',flexDirection:'column',gap:12}}>
+          {rows.map((row,i)=>(
+            <div key={i} style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:16,
+              padding:'18px 20px',transition:'box-shadow 0.15s'}}
+              onMouseEnter={e=>e.currentTarget.style.boxShadow='0 6px 20px rgba(27,39,51,0.06)'}
+              onMouseLeave={e=>e.currentTarget.style.boxShadow='none'}>
+              {/* Top row: code + description */}
+              <div style={{display:'flex',gap:12,marginBottom:16,alignItems:'center'}}>
+                <div style={{display:'flex',alignItems:'center',justifyContent:'center',
+                  width:34,height:34,borderRadius:10,background:cat==='nieuw'?C.blueAccent:'#E7F3EC',
+                  color:cc,fontWeight:700,fontSize:13,flexShrink:0,
+                  fontFamily:"'Newsreader',Georgia,serif"}}>{i+1}</div>
+                <input value={row.afspraakcode} onChange={e=>upRow(set,i,'afspraakcode',e.target.value)}
+                  placeholder={`Code ${i+1}`}
+                  style={{width:120,border:`1px solid ${C.border}`,borderRadius:8,padding:'9px 12px',fontSize:13,fontWeight:700,fontFamily:'inherit',color:C.text}}/>
+                <input value={row.omschrijving} onChange={e=>upRow(set,i,'omschrijving',e.target.value)}
+                  placeholder="Omschrijving van de afspraak…"
+                  style={{flex:1,border:`1px solid ${C.border}`,borderRadius:8,padding:'9px 12px',fontSize:13,fontFamily:'inherit',color:C.text}}/>
+                <button onClick={()=>{
+                    const cfgKey=cat==='nieuw'?'newCodes':'ctrlCodes'
+                    set(p=>p.filter((_,j)=>j!==i))
+                    setCfg(c=>({...c,[cfgKey]:Math.max(0,(c[cfgKey]||1)-1)}))
+                  }} title="Deze afspraakcode verwijderen"
+                  style={{width:30,height:30,borderRadius:8,flexShrink:0,cursor:'pointer',border:`1px solid ${C.border}`,
+                    background:C.white,color:C.muted,fontSize:15,display:'flex',alignItems:'center',justifyContent:'center',transition:'all 0.12s'}}
+                  onMouseEnter={e=>{e.currentTarget.style.borderColor=C.danger;e.currentTarget.style.color=C.danger}}
+                  onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.color=C.muted}}>×</button>
+              </div>
+              {/* Field groups */}
+              <div style={{display:'flex',flexWrap:'wrap',gap:'14px 28px',alignItems:'flex-end'}}>
+                <div>
+                  <FieldLabel>Duur</FieldLabel>
+                  <Stepper val={row.duur} on={v=>upRow(set,i,'duur',v)} suffix="min" min={5}/>
+                </div>
+                <div>
+                  <FieldLabel>Verdeling</FieldLabel>
+                  <Stepper val={row.percentage} on={v=>upRow(set,i,'percentage',v)} suffix="%" min={0} max={100}/>
+                </div>
+                <div>
+                  <FieldLabel>Modaliteit</FieldLabel>
+                  <div style={{display:'flex',gap:5,alignItems:'center'}}>
+                    <div style={{display:'inline-flex',background:C.surface2,border:`1px solid ${C.border}`,borderRadius:8,padding:2}}>
+                      {MODALITEITEN.map(mo=>{
+                        const on=(row.modaliteit||(row.digitaal?'telefonisch':'fysiek'))===mo.v
+                        return(<button key={mo.v}
+                          onClick={()=>{upRow(set,i,'modaliteit',mo.v);upRow(set,i,'digitaal',mo.dig)}}
+                          style={{display:'flex',alignItems:'center',gap:5,padding:'5px 10px',borderRadius:6,cursor:'pointer',
+                            fontSize:11.5,fontWeight:600,border:'none',transition:'all 0.12s',
+                            background:on?C.white:'transparent',color:on?C.primary:C.muted,
+                            boxShadow:on?'0 1px 3px rgba(27,39,51,0.12)':'none'}}>
+                          {mo.ico&&<span style={{fontSize:11}}>{mo.ico}</span>}{mo.l}
+                        </button>)
+                      })}
+                    </div>
+                    <button onClick={()=>upRow(set,i,'spoed',!row.spoed)}
+                      style={{display:'flex',alignItems:'center',gap:6,padding:'7px 12px',borderRadius:8,cursor:'pointer',
+                        fontSize:12,fontWeight:600,transition:'all 0.12s',
+                        background:row.spoed?'#FCEEEB':C.white,color:row.spoed?C.danger:C.muted,
+                        border:`1px solid ${row.spoed?C.danger:C.border}`}}>
+                      <span style={{width:7,height:7,borderRadius:'50%',background:row.spoed?C.danger:C.border}}/>Spoed
+                    </button>
+                  </div>
+                </div>
+                <div style={{flex:1,minWidth:200}}>
+                  <FieldLabel>Weekdagen</FieldLabel>
+                  <div style={{display:'flex',gap:5}}>
+                    {DAY_ABBR.map(d=>{
+                      const on=row.weekdagen?.[d]||false
+                      const cnt=DAY_ABBR.filter(dd=>row.weekdagen?.[dd]).length
+                      return(<button key={d} onClick={()=>{if(on&&cnt<=1)return;upNested(set,i,'weekdagen',d,!on)}}
+                        style={{flex:1,maxWidth:46,height:34,borderRadius:7,fontSize:11,fontWeight:700,cursor:'pointer',transition:'all 0.12s',
+                          background:on?cc:C.white,color:on?'#fff':C.muted,border:`1px solid ${on?cc:C.border}`}}>{d}</button>)
+                    })}
+                  </div>
+                </div>
+                <div>
+                  <FieldLabel>Onzekerheid</FieldLabel>
+                  <div style={{display:'flex',gap:5}}>
+                    {[{v:'zeker',l:'Zeker'},{v:'gemiddeld',l:'Gemiddeld'},{v:'onzeker',l:'Onzeker'}].map(o=>{
+                      const on=(row.onzeker||'gemiddeld')===o.v
+                      const oc=o.v==='zeker'?C.green:o.v==='onzeker'?C.danger:C.muted
+                      return(<button key={o.v} onClick={()=>upRow(set,i,'onzeker',o.v)}
+                        style={{padding:'7px 10px',borderRadius:8,cursor:'pointer',fontSize:11.5,fontWeight:600,transition:'all 0.12s',
+                          background:on?oc:C.white,color:on?'#fff':C.muted,border:`1px solid ${on?oc:C.border}`}}>{o.l}</button>)
+                    })}
+                  </div>
+                </div>
+                <div style={{minWidth:200}}>
+                  <FieldLabel>Dagdeel</FieldLabel>
+                  <div style={{display:'flex',gap:6}}>
+                    {[{k:'O',l:'Ochtend',avail:true},{k:'M',l:'Middag',avail:true},{k:'A',l:'Avond',avail:!!m2.avondOn}].map(({k,l,avail})=>{
+                      const dd=row.dagdelen||{O:true,M:true,A:false}
+                      const on=!!dd[k]
+                      if(!avail) return(
+                        <span key={k} title="Schakel avondspreekuur in bij Spreekuurtijden"
+                          style={{padding:'7px 11px',borderRadius:8,fontSize:11.5,fontWeight:600,
+                            background:C.surface2,color:'#B6C0C9',border:`1px dashed ${C.border}`,cursor:'not-allowed'}}>{l}</span>
+                      )
+                      const cnt=['O','M','A'].filter(x=>dd[x]&&(x!=='A'||m2.avondOn)).length
+                      return(<button key={k} onClick={()=>{if(on&&cnt<=1)return;upNested(set,i,'dagdelen',k,!on)}}
+                        style={{display:'flex',alignItems:'center',gap:6,padding:'7px 11px',borderRadius:8,cursor:'pointer',
+                          fontSize:11.5,fontWeight:600,transition:'all 0.12s',
+                          background:on?cc:C.white,color:on?'#fff':C.muted,border:`1px solid ${on?cc:C.border}`}}>
+                        <span style={{width:13,height:13,borderRadius:4,flexShrink:0,
+                          background:on?'rgba(255,255,255,0.3)':C.white,border:`1px solid ${on?'rgba(255,255,255,0.6)':C.border}`,
+                          display:'flex',alignItems:'center',justifyContent:'center',fontSize:9,color:'#fff'}}>{on?'✓':''}</span>
+                        {l}
+                      </button>)
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+          {/* Dynamische knop: volgende afspraakcode toevoegen */}
+          <button onClick={()=>{
+              const cfgKey=cat==='nieuw'?'newCodes':'ctrlCodes'
+              set(p=>[...p,starterRow(cat,p.length,p.length+1)])
+              setCfg(c=>({...c,[cfgKey]:(c[cfgKey]||0)+1}))
+            }}
+            style={{display:'flex',alignItems:'center',justifyContent:'center',gap:9,padding:'15px 20px',borderRadius:16,cursor:'pointer',
+              background:C.white,border:`2px dashed ${cc}`,color:cc,fontWeight:700,fontSize:13.5,fontFamily:'inherit',transition:'all 0.15s'}}
+            onMouseEnter={e=>{e.currentTarget.style.background=cat==='nieuw'?C.blueAccent:'#E7F3EC';e.currentTarget.style.transform='translateY(-1px)'}}
+            onMouseLeave={e=>{e.currentTarget.style.background=C.white;e.currentTarget.style.transform='none'}}>
+            <span style={{width:24,height:24,borderRadius:'50%',background:cc,color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,lineHeight:1}}>+</span>
+            Volgende afspraakcode toevoegen
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  const renderMod0=()=>{
+    const hh=now.getHours()
+    const greet=hh<12?'Goedemorgen':hh<18?'Goedemiddag':'Goedenavond'
+    const hhmm=now.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'})
+    const ss=now.toLocaleTimeString('nl-NL',{second:'2-digit'}).padStart(2,'0')
+    const dateStr=now.toLocaleDateString('nl-NL',{weekday:'long',day:'numeric',month:'long',year:'numeric'}).toUpperCase()
+    const nowMin=hh*60+now.getMinutes()
+    const wdPos=Math.max(0,Math.min(1,(nowMin-420)/840)) // 07:00–21:00
+    return(
+    <div style={{animation:'fadeIn 0.18s ease'}}>
+      {miniHero('GEGEVENS INVOER','Vul de','spreekuurgegevens',greet+', stel patiëntaantallen en afspraakcodes in — of laad een sessie.')}
+
+      {!m1Mode&&(()=>{
+        // decoratieve mini-kalender voor de 'nieuw'-kaart
+        const MiniCal=()=>(
+          <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:3,marginTop:2}}>
+            {Array.from({length:20}).map((_,i)=>{
+              const c=[C.primary,'#2E8B57','#8B5CF6',C.light][i%4]
+              const on=[1,2,3,6,7,11,12,13,16,17,18].includes(i)
+              return <div key={i} style={{height:11,borderRadius:3,background:on?c:C.surface2,opacity:on?0.85:1}}/>
+            })}
+          </div>
+        )
+        const Feat=({children,c})=>(
+          <span style={{display:'inline-flex',alignItems:'center',gap:5,fontSize:11,fontWeight:600,color:c,
+            background:c===C.primary?C.blueAccent:'#E7F3EC',borderRadius:20,padding:'4px 11px'}}>
+            <span style={{width:5,height:5,borderRadius:'50%',background:c}}/>{children}</span>
+        )
+        return(
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(280px,1fr))',gap:16}}>
+          {/* Nieuw raster */}
+          <div onClick={()=>setM1Mode('manual')} style={{background:C.white,border:`1.5px solid ${C.border}`,borderRadius:18,
+            padding:'26px 26px 22px',cursor:'pointer',transition:'all 0.16s',position:'relative',overflow:'hidden'}}
+            onMouseEnter={e=>{e.currentTarget.style.borderColor=C.primary;e.currentTarget.style.boxShadow='0 14px 34px rgba(28,110,164,0.14)';e.currentTarget.style.transform='translateY(-2px)'}}
+            onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.boxShadow='none';e.currentTarget.style.transform='none'}}>
+            <div style={{position:'absolute',right:-40,top:-40,width:130,height:130,borderRadius:'50%',background:C.blueAccent,opacity:0.5}}/>
+            <div style={{position:'relative'}}>
+              <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
+                <div style={{width:52,height:52,borderRadius:15,background:`linear-gradient(140deg,${C.light},${C.primary})`,
+                  display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 8px 18px rgba(28,110,164,0.28)'}}>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                </div>
+                <div>
+                  <div style={{fontSize:9.5,fontWeight:700,color:C.primary,letterSpacing:'0.16em'}}>HANDMATIG STARTEN</div>
+                  <div style={{fontFamily:"'Newsreader',Georgia,serif",fontSize:22,fontWeight:500,color:C.text,letterSpacing:'-0.01em'}}>Nieuw raster</div>
+                </div>
+              </div>
+              <div style={{fontSize:12.5,color:C.muted,lineHeight:1.6,marginBottom:14}}>Bouw je poli van nul op: patiëntaantallen, afspraakcodes en tijden — het raster rekent live mee.</div>
+              <div style={{background:C.rowAlt,border:`1px solid ${C.border}`,borderRadius:11,padding:'11px 13px',marginBottom:16}}>
+                <div style={{fontSize:9,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:7}}>Voorbeeld weekraster</div>
+                <MiniCal/>
+              </div>
+              <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:16}}>
+                <Feat c={C.primary}>Patiëntaantallen</Feat><Feat c={C.primary}>Afspraakcodes</Feat><Feat c={C.primary}>Live raster</Feat>
+              </div>
+              <span style={{display:'inline-flex',alignItems:'center',gap:8,fontSize:13,fontWeight:700,color:'#fff',
+                background:C.primary,borderRadius:10,padding:'10px 18px'}}>Beginnen →</span>
+            </div>
+          </div>
+
+          {/* Bestaand raster */}
+          <label htmlFor="import-file-input" style={{display:'block',background:C.white,border:`1.5px solid ${C.border}`,borderRadius:18,
+            padding:'26px 26px 22px',cursor:'pointer',transition:'all 0.16s',position:'relative',overflow:'hidden'}}
+            onMouseEnter={e=>{e.currentTarget.style.borderColor=C.green;e.currentTarget.style.boxShadow='0 14px 34px rgba(46,139,87,0.14)';e.currentTarget.style.transform='translateY(-2px)'}}
+            onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.boxShadow='none';e.currentTarget.style.transform='none'}}>
+            <div style={{position:'absolute',right:-40,top:-40,width:130,height:130,borderRadius:'50%',background:'#E7F3EC',opacity:0.6}}/>
+            <div style={{position:'relative'}}>
+              <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
+                <div style={{width:52,height:52,borderRadius:15,background:'linear-gradient(140deg,#4FB77E,#2E8B57)',
+                  display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 8px 18px rgba(46,139,87,0.28)'}}>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                </div>
+                <div>
+                  <div style={{fontSize:9.5,fontWeight:700,color:C.green,letterSpacing:'0.16em'}}>UIT EEN BESTAND</div>
+                  <div style={{fontFamily:"'Newsreader',Georgia,serif",fontSize:22,fontWeight:500,color:C.text,letterSpacing:'-0.01em'}}>Bestaand raster</div>
+                </div>
+              </div>
+              <div style={{fontSize:12.5,color:C.muted,lineHeight:1.6,marginBottom:14}}>Ga verder waar je stopte: laad een eerder geëxporteerd Excel-bestand met al je codes, tijden en regels.</div>
+              <div style={{background:C.rowAlt,border:`1px dashed #9AC9A8`,borderRadius:11,padding:'16px 13px',marginBottom:16,textAlign:'center'}}>
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke={C.green} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{marginBottom:5}}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 15l2 2 4-4"/></svg>
+                <div style={{fontSize:11,color:C.muted}}>Sleep je <b style={{color:C.text}}>.xlsx</b> hierheen of klik om te kiezen</div>
+              </div>
+              <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:16}}>
+                <Feat c={C.green}>Codes hersteld</Feat><Feat c={C.green}>Tijden &amp; regels</Feat><Feat c={C.green}>Direct verder</Feat>
+              </div>
+              <span style={{display:'inline-flex',alignItems:'center',gap:8,fontSize:13,fontWeight:700,color:'#fff',
+                background:C.green,borderRadius:10,padding:'10px 18px'}}>Bestand kiezen ↑</span>
+            </div>
+          </label>
+        </div>
+        )
+      })()}
+
+      <input id="import-file-input" type="file" accept=".xlsx"
+        style={{position:'absolute',width:1,height:1,opacity:0,overflow:'hidden',clip:'rect(0,0,0,0)',whiteSpace:'nowrap'}}
+        onChange={handleImport}/>
+      <input id="spreekuur-file-input" type="file" accept=".xlsx,.xls,.csv"
+        style={{position:'absolute',width:1,height:1,opacity:0,overflow:'hidden',clip:'rect(0,0,0,0)',whiteSpace:'nowrap'}}
+        onChange={handleSpreekuur}/>
+
+      {m1Mode==='imported'&&importBadge&&(
+        <div style={{background:'#EFF8F2',border:`1px solid #CBE6D5`,borderRadius:10,padding:'13px 16px',marginBottom:18,display:'flex',alignItems:'center',gap:12}}>
+          <div style={{width:28,height:28,borderRadius:'50%',background:C.green,display:'flex',alignItems:'center',justifyContent:'center',color:'#fff',fontWeight:700,flexShrink:0}}>✓</div>
+          <div><div style={{fontWeight:700,color:C.text,fontSize:13.5}}>Sessie hersteld</div>
+          <div style={{fontSize:12,color:C.muted}}>Bestand: <b style={{color:C.text}}>{importBadge.filename}</b> · {importBadge.date}</div></div>
+          <button onClick={()=>{setM1Mode(null);setImportBadge(null)}} style={{marginLeft:'auto',background:'none',border:'none',cursor:'pointer',color:C.muted,fontSize:18}}>✕</button>
+        </div>
+      )}
+
+      {/* STEP 1 — counts */}
+      {m1Mode&&m1Section===1&&(()=>{
+        const nP=cfg.newPat||0, cP=cfg.ctrlPat||0, tot=nP+cP
+        const nPct=tot?Math.round(nP/tot*100):50, cPct=100-nPct
+        const perDag=tot?Math.round(tot/5):0
+        const ratio=nP>0?(cP/nP):0
+        return(
+        <div style={{maxWidth:860}}>
+          {/* Step indicator */}
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:18,fontSize:12,color:C.muted}}>
+            <span style={{fontWeight:700,color:C.primary}}>1. Aantallen</span>
+            <span style={{color:C.border}}>───</span>
+            <span>2. Afspraakcodes</span>
+          </div>
+
+          {/* ── LIVE HERO: verhouding nieuw ↔ controle ── */}
+          <div style={{background:`linear-gradient(135deg,${C.white},${C.blueAccent})`,border:`1px solid ${C.border}`,
+            borderRadius:18,padding:'22px 26px',marginBottom:16,display:'flex',alignItems:'center',gap:28,flexWrap:'wrap'}}>
+            {/* donut */}
+            <div style={{position:'relative',width:118,height:118,flexShrink:0,borderRadius:'50%',
+              background:tot?`conic-gradient(${C.primary} 0 ${nPct}%, ${C.green} ${nPct}% 100%)`:C.surface2,
+              transition:'all 0.35s ease',boxShadow:'0 6px 18px rgba(27,39,51,0.10)'}}>
+              <div style={{position:'absolute',inset:14,borderRadius:'50%',background:C.white,
+                display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center'}}>
+                <span style={{fontFamily:"'Newsreader',Georgia,serif",fontSize:30,fontWeight:600,color:C.text,lineHeight:1}}>{tot}</span>
+                <span style={{fontSize:8.5,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.09em',marginTop:2}}>per week</span>
+              </div>
+            </div>
+            {/* summary */}
+            <div style={{flex:1,minWidth:240}}>
+              <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:3}}>Zorgvraag van de poli</div>
+              <div style={{fontFamily:"'Newsreader',Georgia,serif",fontSize:21,fontWeight:500,color:C.text,letterSpacing:'-0.01em',marginBottom:12}}>
+                {tot} afspraken per week
+              </div>
+              {/* proportion bar */}
+              <div style={{display:'flex',height:16,borderRadius:8,overflow:'hidden',border:`1px solid ${C.border}`,marginBottom:8}}>
+                <div style={{width:nPct+'%',background:C.primary,transition:'width 0.35s ease',
+                  display:'flex',alignItems:'center',justifyContent:'center',minWidth:nP?24:0}}>
+                  {nPct>=14&&<span style={{fontSize:9.5,fontWeight:800,color:'#fff'}}>{nPct}%</span>}</div>
+                <div style={{flex:1,background:C.green,transition:'all 0.35s ease',
+                  display:'flex',alignItems:'center',justifyContent:'center'}}>
+                  {cPct>=14&&<span style={{fontSize:9.5,fontWeight:800,color:'#fff'}}>{cPct}%</span>}</div>
+              </div>
+              <div style={{display:'flex',gap:16,flexWrap:'wrap',fontSize:11.5}}>
+                <span style={{display:'inline-flex',alignItems:'center',gap:6,color:C.text}}>
+                  <span style={{width:9,height:9,borderRadius:3,background:C.primary}}/>Nieuw <b>{nP}</b></span>
+                <span style={{display:'inline-flex',alignItems:'center',gap:6,color:C.text}}>
+                  <span style={{width:9,height:9,borderRadius:3,background:C.green}}/>Controle <b>{cP}</b></span>
+                <span style={{color:C.muted}}>≈ <b style={{color:C.text}}>{perDag}</b>/dag</span>
+                {nP>0&&<span style={{color:C.muted}}>ratio <b style={{color:C.text}}>1 : {ratio.toFixed(1)}</b></span>}
+              </div>
+            </div>
+          </div>
+
+          {/* ── COUNT CARDS met live aandeel-balk ── */}
+          {[
+            {key:'new',label:'Nieuwe patiënten',color:C.primary,accent:C.blueAccent,patKey:'newPat',codeKey:'newCodes',pct:nPct,val:nP},
+            {key:'ctrl',label:'Controle patiënten',color:C.green,accent:'#E7F3EC',patKey:'ctrlPat',codeKey:'ctrlCodes',pct:cPct,val:cP}
+          ].map(({key,label,color,accent,patKey,codeKey,pct,val})=>(
+            <div key={key} style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:16,
+              padding:'18px 22px',marginBottom:12,position:'relative',overflow:'hidden'}}>
+              {/* zachte aandeel-achtergrond */}
+              <div style={{position:'absolute',left:0,top:0,bottom:0,width:pct+'%',background:accent,
+                opacity:0.55,transition:'width 0.35s ease',pointerEvents:'none'}}/>
+              <div style={{position:'relative',display:'flex',alignItems:'center',justifyContent:'space-between',gap:20,flexWrap:'wrap'}}>
+                <div style={{minWidth:150}}>
+                  <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:2}}>
+                    <span style={{width:8,height:8,borderRadius:'50%',background:color}}/>
+                    <span style={{fontSize:9.5,fontWeight:700,color,letterSpacing:'0.16em'}}>{key==='new'?'NIEUW':'CONTROLE'}</span>
+                    <span style={{fontSize:10,fontWeight:800,color,background:C.white,border:`1px solid ${color}`,borderRadius:20,padding:'1px 8px'}}>{pct}%</span>
+                  </div>
+                  <span style={{fontFamily:"'Newsreader',Georgia,serif",fontWeight:500,fontSize:19,color:C.text,letterSpacing:'-0.01em'}}>{label}</span>
+                </div>
+                <div style={{display:'flex',gap:22,flexWrap:'wrap'}}>
+                  {[
+                    {sub:'Afspraken/week',sk:patKey},
+                    {sub:'Afspraakcodes',sk:codeKey}
+                  ].map(({sub,sk})=>(
+                    <div key={sk}>
+                      <Lbl>{sub}</Lbl>
+                      <div style={{display:'inline-flex',alignItems:'center',border:`1px solid ${C.border}`,borderRadius:9,overflow:'hidden',marginTop:4,background:C.white}}>
+                        <button onClick={()=>setCfg(p=>({...p,[sk]:Math.max(1,p[sk]-1)}))}
+                          style={{width:38,height:42,border:'none',borderRight:`1px solid ${C.border}`,background:C.surface2,cursor:'pointer',fontSize:19,fontWeight:700,color:C.muted}}>−</button>
+                        <input type="number" min={1} max={999} value={cfg[sk]}
+                          onChange={e=>setCfg(p=>({...p,[sk]:clamp(parseInt(e.target.value)||1,1,999)}))}
+                          style={{width:66,textAlign:'center',border:'none',padding:'9px',
+                            fontSize:19,fontWeight:700,color:C.text,fontFamily:'inherit',background:'transparent'}}/>
+                        <button onClick={()=>setCfg(p=>({...p,[sk]:Math.min(999,p[sk]+1)}))}
+                          style={{width:38,height:42,border:'none',borderLeft:`1px solid ${C.border}`,background:C.surface2,cursor:'pointer',fontSize:19,fontWeight:700,color:C.muted}}>+</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ))}
+
+          {/* ── SUBTIEL: alles in één keer uit Excel ── */}
+          <div style={{display:'flex',alignItems:'center',gap:12,flexWrap:'wrap',
+            background:C.rowAlt,border:`1px dashed ${C.border}`,borderRadius:12,padding:'12px 16px',marginBottom:16}}>
+            <span style={{width:30,height:30,borderRadius:9,background:'#F1ECFC',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/></svg>
+            </span>
+            <div style={{flex:1,minWidth:180}}>
+              <div style={{fontSize:12.5,fontWeight:700,color:C.text}}>Al je gegevens al in Excel?</div>
+              <div style={{fontSize:11,color:C.muted}}>Laad codes, aantallen, modaliteit, dagen &amp; onzekerheid in één keer in.</div>
+            </div>
+            <label htmlFor="spreekuur-file-input" style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:12,fontWeight:700,color:'#fff',
+              background:'#7C3AED',borderRadius:9,padding:'8px 14px',cursor:'pointer'}}>⤒ Excel laden</label>
+            {!tplLink
+              ?<button onClick={downloadSpreekuurTemplate} style={{display:'inline-flex',alignItems:'center',gap:5,fontSize:11.5,fontWeight:700,color:'#7C3AED',
+                background:C.white,border:'1px solid #D9C9F7',borderRadius:9,padding:'8px 12px',cursor:'pointer'}}>⤓ Voorbeeld</button>
+              :kanViewerOpslaan()
+                ?<button onClick={async()=>{
+                    setDlMelding(null)
+                    const r=await viewerOpslaan('spreekuurgegevens-voorbeeld', wbNaarCsv(tplLink.wb,'Spreekuurgegevens'))
+                    setDlMelding(r); if(r.ok) setTimeout(()=>setTplLink(null),1500)
+                  }}
+                  title="In een gedeelde pagina kan geen .xlsx worden weggeschreven — je krijgt dezelfde kolommen als CSV"
+                  style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:11.5,fontWeight:700,color:'#fff',
+                    background:'#7C3AED',border:'1px solid #7C3AED',borderRadius:9,padding:'8px 12px',
+                    cursor:'pointer',whiteSpace:'nowrap'}}>⬇ Voorbeeld als CSV</button>
+                :<a href={tplLink.href} download={tplLink.filename} onClick={()=>setTimeout(()=>setTplLink(null),1500)}
+                  style={{display:'inline-flex',alignItems:'center',gap:6,fontSize:11.5,fontWeight:700,color:'#fff',
+                    background:'#7C3AED',border:'1px solid #7C3AED',borderRadius:9,padding:'8px 12px',
+                    textDecoration:'none',whiteSpace:'nowrap'}}>⬇ Download voorbeeld.xlsx</a>}
+            {dlMelding&&(
+              <div style={{flexBasis:'100%',fontSize:11.5,fontWeight:600,
+                color:dlMelding.ok?C.green:C.danger}}>{dlMelding.ok?'✓ ':'△ '}{dlMelding.msg}</div>
+            )}
+          </div>
+
+          <Btn onClick={()=>{
+            const resizeRows=(existing,n,cat)=>{
+              const next=[...existing]
+              while(next.length<n) next.push(starterRow(cat,next.length,n))
+              next.length=n
+              return next
+            }
+            setNewRows(r=>resizeRows(r,cfg.newCodes,'nieuw'))
+            setCtrlRows(r=>resizeRows(r,cfg.ctrlCodes,'controle'))
+            setM1Section(2)
+          }} style={{marginTop:4}}>Volgende: afspraakcodes →</Btn>
+        </div>
+        )
+      })()}
+
+      {/* STEP 2 — codes */}
+      {m1Mode&&m1Section===2&&(
+        <div>
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:18,fontSize:12,color:C.muted}}>
+            <button onClick={()=>setM1Section(1)} style={{background:C.white,border:`1px solid ${C.border}`,
+              borderRadius:7,padding:'6px 12px',cursor:'pointer',fontSize:12,fontWeight:600,color:C.text}}>← Aantallen</button>
+            <span style={{color:C.border}}>───</span>
+            <span style={{fontWeight:700,color:C.primary}}>2. Afspraakcodes</span>
+          </div>
+
+          {/* ── OVERZICHT — alle afspraaktypen in één beeld ── */}
+          {(()=>{
+            const all=[
+              ...newRows.map((r,i)=>({...r,cat:'nieuw',clr:NEW_PALETTE[i%NEW_PALETTE.length]})),
+              ...ctrlRows.map((r,i)=>({...r,cat:'controle',clr:(r.digitaal?{bg:'#D6EAE3',brd:'#94C5B4',fg:'#1A5544'}:CTRL_PALETTE[i%CTRL_PALETTE.length])})),
+            ].filter(r=>r.afspraakcode||r.omschrijving)
+            if(!all.length) return null
+            const withN=all.map(r=>{ const tot=r.cat==='nieuw'?cfg.newPat:cfg.ctrlPat; const n=Math.round(tot*((r.percentage||0)/100)); return {...r,n,min:n*(r.duur||15)} })
+            const totMin=withN.reduce((s,r)=>s+r.min,0)||1
+            const totN=withN.reduce((s,r)=>s+r.n,0)
+            return(
+              <Card style={{marginBottom:22}}>
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12,flexWrap:'wrap',gap:8}}>
+                  <H3 style={{margin:0}}>Overzicht — alle afspraaktypen</H3>
+                  <div style={{display:'flex',gap:14,fontSize:11.5,color:C.muted}}>
+                    <span><b style={{color:C.text}}>{all.length}</b> typen</span>
+                    <span><b style={{color:C.text}}>{totN}</b> afspraken/week</span>
+                    <span><b style={{color:C.text}}>{(totMin/60).toFixed(1)}</b> u zorgvraag</span>
+                  </div>
+                </div>
+                {/* gecombineerde staaf */}
+                <div style={{display:'flex',height:30,borderRadius:8,overflow:'hidden',border:`1px solid ${C.border}`,marginBottom:14}}>
+                  {withN.filter(r=>r.min>0).map((r,i)=>(
+                    <div key={i} title={`${r.afspraakcode||r.omschrijving}: ${r.n}/week · ${r.min} min`}
+                      style={{width:(r.min/totMin*100)+'%',background:r.clr.bg,borderRight:`1px solid ${r.clr.brd}`,
+                        display:'flex',alignItems:'center',justifyContent:'center',color:r.clr.fg,fontSize:9,fontWeight:800,overflow:'hidden'}}>
+                      {(r.min/totMin)>0.06&&(r.afspraakcode||'').slice(0,6)}
+                    </div>
+                  ))}
+                </div>
+                {/* type-kaartjes */}
+                <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(150px,1fr))',gap:8}}>
+                  {withN.map((r,i)=>(
+                    <div key={i} style={{display:'flex',alignItems:'center',gap:9,padding:'8px 10px',borderRadius:9,
+                      background:r.clr.bg,border:`1px solid ${r.clr.brd}`}}>
+                      <span style={{width:9,height:9,borderRadius:'50%',background:r.clr.fg,flexShrink:0}}/>
+                      <div style={{minWidth:0,flex:1}}>
+                        <div style={{fontSize:11.5,fontWeight:800,color:r.clr.fg,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
+                          {r.afspraakcode||'—'} {r.spoed&&<span style={{color:C.danger}}>●</span>}{r.modaliteit&&r.modaliteit!=='fysiek'&&<span>{modInfo(r.modaliteit).ico}</span>}
+                        </div>
+                        <div style={{fontSize:10,color:r.clr.fg,opacity:0.85,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{r.omschrijving||'zonder naam'}</div>
+                      </div>
+                      <div style={{textAlign:'right',flexShrink:0}}>
+                        <div style={{fontSize:12,fontWeight:800,color:r.clr.fg,fontVariantNumeric:'tabular-nums'}}>{r.n}×</div>
+                        <div style={{fontSize:9,color:r.clr.fg,opacity:0.8}}>{r.duur}m</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )
+          })()}
+
+          {renderTable(newRows,setNewRows,'Nieuwe patiënten',cfg.newCodes,cfg.newPat,'nieuw')}
+          {renderTable(ctrlRows,setCtrlRows,'Controle patiënten',cfg.ctrlCodes,cfg.ctrlPat,'controle')}
+        </div>
+      )}
+    </div>
+    )
+  }
+
+  // ─── MODULE 1: SPREEKUURTIJDEN ─────────────────────────────────────────────
+  // Portal 2.0 — compact serif hero for module headers
+  const miniHero=(eyebrow,titleA,titleI,sub)=>(
+    <div style={{position:'relative',background:C.white,border:`1px solid ${C.border}`,borderRadius:18,
+      padding:'20px 26px',marginBottom:20,overflow:'hidden'}}>
+      <div style={{position:'absolute',right:-90,top:-90,width:260,height:260,borderRadius:'50%',
+        border:`1px solid ${C.border}`,opacity:0.5,pointerEvents:'none'}}/>
+      <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:8}}>
+        <span style={{width:20,height:1.5,background:C.primary}}/>
+        <span style={{fontSize:10,fontWeight:700,color:C.primary,letterSpacing:'0.22em'}}>{eyebrow}</span>
+      </div>
+      <h1 style={{fontFamily:"'Newsreader',Georgia,serif",fontWeight:500,fontSize:27,lineHeight:1.1,
+        color:C.text,margin:'0 0 6px 0',letterSpacing:'-0.01em'}}>
+        {titleA} <span style={{fontStyle:'italic',color:C.primary}}>{titleI}</span>
+      </h1>
+      <p style={{fontSize:12.5,color:C.muted,margin:0,lineHeight:1.55}}>{sub}</p>
+    </div>
+  )
+
+  const renderMod1=()=>{
+    const sf=(f,v)=>setM2(p=>({...p,[f]:v}))
+    return(
+      <div style={{animation:'fadeIn 0.18s ease'}}>
+        {miniHero('SPREEKUURTIJDEN','Tijden en','weekindeling','Stel tijden, dagdeelverdeling, benutting en weekpatroon in.')}
+        {/* ── LIVE TIJDLIJN-PREVIEW — beweegt mee, venster verbreedt bij avondspreekuur ── */}
+        {(()=>{
+          const oS=toMin(m2.ochStart),oE=toMin(m2.ochEnd),mS=toMin(m2.midStart),mE=toMin(m2.midEnd)
+          const aS=toMin(m2.avondStart),aE=toMin(m2.avondEnd)
+          const winStart=Math.min(oS,mS)-15
+          const winEnd=(m2.avondOn?Math.max(aE,mE):mE)+15
+          const span=Math.max(60,winEnd-winStart)
+          const pos=t=>(t-winStart)/span*100
+          const blk=(from,to,label,color)=>({l:pos(from),w:Math.max(0,(to-from)/span*100),label,color,from,to})
+          const blks=[blk(oS,oE,'Ochtend',C.primary),blk(mS,mE,'Middag',C.green)]
+          if(m2.avondOn) blks.push(blk(aS,aE,'Avond','#8B5CF6'))
+          const hours=[]; for(let t=Math.ceil(winStart/60)*60;t<=winEnd;t+=60) hours.push(t)
+          const avondBotst=m2.avondOn&&aS<mE
+          const ochBotst=mS<oE
+          return(
+            <Card style={{marginBottom:16}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
+                <H3 style={{margin:0}}>Dagoverzicht — zo ziet de dag eruit</H3>
+                <span style={{fontSize:11,color:C.muted}}>{toTime(winStart+15)}–{toTime(winEnd-15)} · venster {(span/60).toFixed(1)} u</span>
+              </div>
+              <div style={{position:'relative',height:56,background:C.surface2,borderRadius:10,border:`1px solid ${C.border}`,overflow:'hidden'}}>
+                {hours.map(t=>(<div key={t} style={{position:'absolute',left:pos(t)+'%',top:0,bottom:18,width:1,background:C.border}}/>))}
+                {blks.map((b,i)=>(
+                  <div key={i} title={`${b.label}: ${toTime(b.from)}–${toTime(b.to)}`}
+                    style={{position:'absolute',left:b.l+'%',width:b.w+'%',top:6,height:26,borderRadius:6,background:b.color,
+                      display:'flex',alignItems:'center',justifyContent:'center',gap:5,color:'#fff',fontSize:11,fontWeight:700,overflow:'hidden',whiteSpace:'nowrap'}}>
+                    {b.w>7&&<span>{b.label}</span>}{b.w>16&&<span style={{opacity:0.85,fontWeight:500,fontSize:10}}>{toTime(b.from)}–{toTime(b.to)}</span>}
+                  </div>
+                ))}
+                {hours.map(t=>(<div key={'l'+t} style={{position:'absolute',left:pos(t)+'%',bottom:2,transform:'translateX(-50%)',fontSize:9,color:C.muted,fontVariantNumeric:'tabular-nums'}}>{toTime(t)}</div>))}
+              </div>
+              {(avondBotst||ochBotst)&&(
+                <div style={{marginTop:10,fontSize:11.5,color:C.danger,fontWeight:600,display:'flex',alignItems:'center',gap:6}}>
+                  ⚠ {ochBotst?'Ochtend en middag overlappen — de middag begint vóór de ochtend eindigt. ':''}
+                  {avondBotst?'Het avondspreekuur begint vóór de middag eindigt; pas de starttijd aan zodat het in het venster past.':''}
+                </div>
+              )}
+            </Card>
+          )
+        })()}
+        {/* ── DAGDELEN — ochtend, middag en avond ONDER ELKAAR, elk met eigen weekdagen ── */}
+        <Card style={{marginBottom:16}}>
+          <div style={{marginBottom:14}}>
+            <H3 style={{margin:'0 0 4px'}}>Dagdelen — tijden en weekdagen</H3>
+            <p style={{fontSize:11.5,color:C.muted,margin:0,lineHeight:1.55}}>
+              Stel per dagdeel de start- en eindtijd in en klik de weekdagen aan waarop dat dagdeel
+              van toepassing is. Ochtend en middag staan standaard op maandag t/m vrijdag; de avond
+              staat uit tot je er zelf dagen voor aanzet.
+            </p>
+          </div>
+          {(()=>{
+            const dagen=ddDagenVan(m2)
+            const zetDag=(x,k)=>setM2(p=>{
+              const cur=ddDagenVan(p)
+              const nieuw={...cur,[x]:{...cur[x],[k]:!cur[x][k]}}
+              // De avond bestaat alleen zolang er een dag voor aan staat.
+              return {...p,ddDagen:nieuw,avondOn:WEEKDAY_KEYS.some(d=>nieuw.A[d])}
+            })
+            const alleDagen=(x,val)=>setM2(p=>{
+              const cur=ddDagenVan(p)
+              const rij={}; WEEKDAY_KEYS.forEach(d=>{rij[d]=val})
+              const nieuw={...cur,[x]:rij}
+              return {...p,ddDagen:nieuw,avondOn:WEEKDAY_KEYS.some(d=>nieuw.A[d])}
+            })
+            const RIJEN=[
+              {x:'O',label:'Ochtend',ico:'☀',s:'ochStart',e:'ochEnd',color:C.primary,accent:C.blueAccent,dur:m2c.od},
+              {x:'M',label:'Middag', ico:'🌤',s:'midStart',e:'midEnd',color:C.green,accent:'#EDF7F0',dur:m2c.md},
+              {x:'A',label:'Avond',  ico:'🌙',s:'avondStart',e:'avondEnd',color:'#8B5CF6',accent:'#F3EEFA',
+                dur:Math.max(0,toMin(m2.avondEnd||'20:00')-toMin(m2.avondStart||'17:00'))},
+            ]
+            return RIJEN.map(({x,label,ico,s,e,color,accent,dur})=>{
+              const rij=dagen[x]
+              const aantal=WEEKDAY_KEYS.filter(k=>rij[k]).length
+              const uit=aantal===0
+              return(
+                <div key={x} style={{border:`1px solid ${uit?C.border:color+'55'}`,borderLeft:`4px solid ${uit?C.border:color}`,
+                  borderRadius:11,padding:'14px 16px',marginBottom:12,background:uit?C.surface2:C.white,transition:'all 0.15s'}}>
+                  <div style={{display:'flex',alignItems:'center',gap:14,flexWrap:'wrap'}}>
+                    {/* naam + status */}
+                    <div style={{minWidth:120}}>
+                      <div style={{display:'flex',alignItems:'center',gap:7}}>
+                        <span style={{fontSize:15,opacity:uit?0.4:1}}>{ico}</span>
+                        <span style={{fontSize:13.5,fontWeight:800,color:uit?C.muted:color,letterSpacing:'0.02em'}}>{label}</span>
+                      </div>
+                      <div style={{fontSize:10.5,color:uit?C.danger:C.muted,marginTop:2,fontWeight:uit?700:500}}>
+                        {uit?'staat uit — geen dagen':`${aantal} ${aantal===1?'dag':'dagen'} actief`}
+                      </div>
+                    </div>
+                    {/* start / einde */}
+                    {[{l:'Start',k:s},{l:'Einde',k:e}].map(({l,k})=>(
+                      <div key={k}>
+                        <Lbl>{l}</Lbl>
+                        <input type="time" value={m2[k]} onChange={ev=>sf(k,ev.target.value)}
+                          style={{border:`1px solid ${C.border}`,borderRadius:7,padding:'8px 10px',fontSize:14,
+                            fontFamily:'inherit',fontWeight:600,color:C.text,width:118,background:C.white}}/>
+                      </div>
+                    ))}
+                    {/* duur */}
+                    <div>
+                      <Lbl>Duur</Lbl>
+                      <div style={{padding:'8px 12px',background:uit?C.white:accent,borderRadius:7,
+                        fontSize:13,fontWeight:700,color:uit?C.muted:color,border:`1px solid ${uit?C.border:color+'44'}`,
+                        whiteSpace:'nowrap'}}>{dur} minuten</div>
+                    </div>
+                    {/* weekdagen */}
+                    <div style={{flex:1,minWidth:250}}>
+                      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}}>
+                        <Lbl>Weekdagen</Lbl>
+                        <div style={{display:'flex',gap:5}}>
+                          <button onClick={()=>alleDagen(x,true)} style={{fontSize:9.5,fontWeight:700,padding:'2px 8px',borderRadius:12,
+                            border:`1px solid ${C.border}`,background:C.white,color:C.muted,cursor:'pointer'}}>alles</button>
+                          <button onClick={()=>alleDagen(x,false)} style={{fontSize:9.5,fontWeight:700,padding:'2px 8px',borderRadius:12,
+                            border:`1px solid ${C.border}`,background:C.white,color:C.muted,cursor:'pointer'}}>geen</button>
+                        </div>
+                      </div>
+                      <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                        {WEEKDAY_KEYS.map((k,i)=>{
+                          const on=!!rij[k]
+                          return(
+                            <button key={k} onClick={()=>zetDag(x,k)} title={DAYS[i]}
+                              style={{minWidth:46,padding:'7px 0',borderRadius:8,cursor:'pointer',
+                                fontSize:11.5,fontWeight:800,letterSpacing:'0.04em',transition:'all 0.12s',
+                                background:on?color:C.white,color:on?'#fff':C.muted,
+                                border:`1px solid ${on?color:C.border}`}}>
+                              {DAY_ABBR[i]}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )
+            })
+          })()}
+        </Card>
+
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:16}}>
+          <Card>
+            <H3>Verdeling over dagdelen</H3>
+            <p style={{fontSize:11.5,color:C.muted,marginBottom:14,lineHeight:1.55}}>
+              Bepaalt hoe afspraken over de dagdelen verdeeld worden. Gelijk = gelijkmatig; meer naar een dagdeel = dat dagdeel voller.
+            </p>
+            {(()=>{
+              const mid=Math.max(0,100-m2.verOch-(m2.avondOn?m2.verAvond:0))
+              const sum=m2.verOch+mid+(m2.avondOn?m2.verAvond:0)
+              const setOch=v=>{const nv=clamp(v,0,100-(m2.avondOn?m2.verAvond:0));sf('verOch',nv)}
+              const setAv=v=>{const nv=clamp(v,0,100-m2.verOch);setM2(p=>({...p,verAvond:nv}))}
+              const Row=({label,color,val,on,readOnly})=>(
+                <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:10}}>
+                  <span style={{width:74,fontSize:12.5,fontWeight:700,color}}>{label}</span>
+                  <div style={{flex:1,height:8,borderRadius:4,background:C.surface2,overflow:'hidden'}}>
+                    <div style={{height:'100%',borderRadius:4,background:color,width:val+'%',transition:'width 0.15s'}}/>
+                  </div>
+                  {readOnly
+                    ?<span style={{width:96,textAlign:'right',fontSize:14,fontWeight:700,color}}>{val}%</span>
+                    :<div style={{display:'inline-flex',alignItems:'center',border:`1px solid ${C.border}`,borderRadius:7,overflow:'hidden',width:96}}>
+                      <button onClick={()=>on(val-5)} style={{width:28,height:30,border:'none',borderRight:`1px solid ${C.border}`,background:C.surface2,cursor:'pointer',fontWeight:700,color:C.muted}}>−</button>
+                      <span style={{flex:1,textAlign:'center',fontSize:13,fontWeight:700,color:C.text}}>{val}%</span>
+                      <button onClick={()=>on(val+5)} style={{width:28,height:30,border:'none',borderLeft:`1px solid ${C.border}`,background:C.surface2,cursor:'pointer',fontWeight:700,color:C.muted}}>+</button>
+                    </div>}
+                </div>
+              )
+              return(<div>
+                <Row label="Ochtend" color={C.primary} val={m2.verOch} on={setOch}/>
+                <Row label="Middag" color={C.green} val={mid} readOnly/>
+                {m2.avondOn&&<Row label="Avond" color="#8B5CF6" val={m2.verAvond} on={setAv}/>}
+                <div style={{marginTop:6,fontSize:11.5,fontWeight:600,color:sum===100?C.green:C.danger}}>
+                  Totaal {sum}%{sum!==100?' — Middag vult automatisch aan':' ✓'}
+                </div>
+              </div>)
+            })()}
+          </Card>
+          <Card>
+            <H3>Benutting spreekuur (per dagdeel)</H3>
+            <p style={{fontSize:11.5,color:C.muted,marginBottom:10,lineHeight:1.55}}>
+              Een spreekuur is altijd één dagdeel. De benutting bepaalt hoeveel van dat dagdeel gevuld wordt met afspraken.
+            </p>
+            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12}}>
+              <input type="range" min={50} max={100} value={m2.benutting} onChange={e=>sf('benutting',Number(e.target.value))}
+                style={{flex:1,accentColor:C.primary}}/>
+              <button onClick={()=>sf('benutting',Math.max(50,m2.benutting-1))} style={{width:24,height:24,border:`1px solid ${C.border}`,borderRadius:5,background:C.white,cursor:'pointer',fontWeight:700}}>−</button>
+              <span style={{fontWeight:700,fontSize:17,color:C.primary,minWidth:40,textAlign:'center'}}>{m2.benutting}</span>
+              <button onClick={()=>sf('benutting',Math.min(100,m2.benutting+1))} style={{width:24,height:24,border:`1px solid ${C.border}`,borderRadius:5,background:C.white,cursor:'pointer',fontWeight:700}}>+</button>
+              <span style={{color:C.muted,fontWeight:700}}>%</span>
+            </div>
+            {/* Per-dagdeel breakdown */}
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}}>
+              <div style={{padding:'9px 12px',background:'#EFF9FF',borderRadius:7,border:`1px solid ${C.border}`,fontSize:12.5}}>
+                <div style={{fontSize:10,fontWeight:700,color:C.light,textTransform:'uppercase',letterSpacing:'0.07em',marginBottom:4}}>☀ Ochtend spreekuur</div>
+                <div><b style={{color:C.primary}}>{m2c.nOch} min</b> netto van {m2c.od} min bruto</div>
+                <div style={{color:C.muted,fontSize:11.5}}>Flex: <b style={{color:C.green}}>{m2c.fOch} min</b></div>
+              </div>
+              <div style={{padding:'9px 12px',background:'#F0FDF4',borderRadius:7,border:`1px solid ${C.border}`,fontSize:12.5}}>
+                <div style={{fontSize:10,fontWeight:700,color:C.green,textTransform:'uppercase',letterSpacing:'0.07em',marginBottom:4}}>🌤 Middag spreekuur</div>
+                <div><b style={{color:C.primary}}>{m2c.nMid} min</b> netto van {m2c.md} min bruto</div>
+                <div style={{color:C.muted,fontSize:11.5}}>Flex: <b style={{color:C.green}}>{m2c.fMid} min</b></div>
+              </div>
+            </div>
+          </Card>
+        </div>
+
+        <Card style={{marginBottom:16}}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14,flexWrap:'wrap',gap:8}}>
+            <H3 style={{margin:0}}>Weekdagverdeling</H3>
+            <span style={{fontSize:11.5,fontWeight:700,padding:'4px 12px',borderRadius:20,
+              background:m2c.dSum===100?'#EAF5EE':'#FCEEEB',color:m2c.dSum===100?C.green:C.danger,
+              border:`1px solid ${m2c.dSum===100?'#C9E6D5':'#F1CFC8'}`}}>
+              {m2c.dSum===100?'✓ ':'⚠ '}Som {m2c.dSum}%{m2c.dSum!==100?' — moet 100%':''}
+            </span>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:10}}>
+            {WEEKDAY_KEYS.map((k,i)=>{
+              const v=m2.days[k]||0, mxv=Math.max(1,...WEEKDAY_KEYS.map(x=>m2.days[x]||0))
+              const off=v===0
+              return(
+                <div key={k} style={{background:off?C.surface2:C.white,borderRadius:12,padding:'12px 10px',
+                  border:`1px solid ${off?C.border:C.light}`,transition:'all 0.13s'}}>
+                  <div style={{fontSize:11,fontWeight:800,color:off?C.muted:C.primary,textAlign:'center',letterSpacing:'0.05em',marginBottom:8}}>{DAY_ABBR[i]}</div>
+                  {/* verticale vulbar */}
+                  <div style={{height:52,borderRadius:8,background:C.surface2,position:'relative',overflow:'hidden',marginBottom:9,border:`1px solid ${C.border}`}}>
+                    <div style={{position:'absolute',left:0,right:0,bottom:0,height:(v/mxv*100)+'%',
+                      background:`linear-gradient(180deg,${C.light},${C.primary})`,transition:'height 0.25s',borderRadius:'0 0 7px 7px'}}/>
+                    <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center'}}>
+                      <span style={{fontSize:16,fontWeight:800,color:v/mxv>0.55?'#fff':C.text,fontVariantNumeric:'tabular-nums'}}>{v}<span style={{fontSize:9,fontWeight:600,opacity:0.8}}>%</span></span>
+                    </div>
+                  </div>
+                  <div style={{display:'flex',gap:5}}>
+                    <button onClick={()=>setM2(p=>({...p,days:{...p.days,[k]:Math.max(0,p.days[k]-5)}}))}
+                      style={{flex:1,height:26,border:`1px solid ${C.border}`,borderRadius:7,background:C.surface2,cursor:'pointer',fontWeight:800,color:C.primary,fontSize:14}}>−</button>
+                    <button onClick={()=>setM2(p=>({...p,days:{...p.days,[k]:Math.min(100,p.days[k]+5)}}))}
+                      style={{flex:1,height:26,border:`1px solid ${C.border}`,borderRadius:7,background:C.surface2,cursor:'pointer',fontWeight:800,color:C.primary,fontSize:14}}>+</button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </Card>
+
+        {/* samenvatting — nette stat-tegels */}
+        <div style={{background:'linear-gradient(135deg,#12405E,#1C6EA4)',borderRadius:14,padding:'18px 20px',boxShadow:'0 8px 24px rgba(28,110,164,0.18)'}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:14}}>
+            <span style={{width:18,height:2,background:'#5ED6BC'}}/>
+            <span style={{fontSize:9.5,fontWeight:700,color:'#B9E4EF',letterSpacing:'0.18em'}}>SAMENVATTING SPREEKUURTIJDEN</span>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10}}>
+            {[
+              ['Ochtend',m2c.nOch,m2c.od,C.light],
+              ['Middag',m2c.nMid,m2c.md,'#7FD4C0'],
+              ['Per week (netto)',m2c.nWk,m2c.bWk,'#A9C7D9'],
+            ].map(([l,netto,bruto,ac])=>(
+              <div key={l} style={{background:'rgba(255,255,255,0.08)',border:'1px solid rgba(255,255,255,0.12)',borderRadius:11,padding:'12px 14px'}}>
+                <div style={{fontSize:9.5,color:'rgba(255,255,255,0.7)',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:6}}>{l}</div>
+                <div style={{fontSize:22,fontWeight:800,color:'#fff',fontVariantNumeric:'tabular-nums',lineHeight:1}}>{netto}<span style={{fontSize:12,fontWeight:600,color:'rgba(255,255,255,0.7)'}}> min</span></div>
+                <div style={{marginTop:8,height:5,borderRadius:3,background:'rgba(255,255,255,0.15)',overflow:'hidden'}}>
+                  <div style={{height:'100%',width:(bruto>0?netto/bruto*100:0)+'%',background:ac,borderRadius:3}}/>
+                </div>
+                <div style={{fontSize:10,color:'rgba(255,255,255,0.6)',marginTop:5}}>netto van {bruto} min bruto</div>
+              </div>
+            ))}
+          </div>
+          <div style={{marginTop:12,fontSize:11,color:'rgba(255,255,255,0.75)'}}>
+            Per spreekuur = één dagdeel · Benutting {m2.benutting}% · Verdeling ochtend {m2.verOch}% / middag {100-m2.verOch}%{m2.avondOn?` / avond ${m2.verAvond}%`:''}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ─── MODULE 2: PLANREGELS ─────────────────────────────────────────────────
+  const renderMod2=()=>{
+    return(
+      <div style={{animation:'fadeIn 0.18s ease'}}>
+        {miniHero('PLANREGELS','Regels en','strategieën','Kies hoe het rooster automatisch wordt samengesteld — klik op ⓘ bij een regel voor uitleg.')}
+
+        {/* ── LIVE VOORBEELD-SPREEKUUR — laat zien wat je regels doen met een sessie ── */}
+        {(()=>{
+          const sample=[
+            {code:'NP',cat:'nieuw',duur:20,spoed:false,digitaal:false,onzeker:'onzeker'},
+            {code:'CO',cat:'controle',duur:15,spoed:false,digitaal:false,onzeker:'gemiddeld'},
+            {code:'SP',cat:'nieuw',duur:20,spoed:true,digitaal:false,onzeker:'gemiddeld'},
+            {code:'TC',cat:'controle',duur:10,spoed:false,digitaal:true,onzeker:'zeker'},
+            {code:'CO',cat:'controle',duur:15,spoed:false,digitaal:false,onzeker:'gemiddeld'},
+            {code:'NP',cat:'nieuw',duur:20,spoed:false,digitaal:false,onzeker:'zeker'},
+          ]
+          // Spiegelt exact de pipeline van applyPlanRules in de engine, zodat dit
+          // voorbeeld laat zien wat de gekozen regels écht doen.
+          const all=sample.map((a,i)=>({...a,id:'s'+i,category:a.cat}))
+          // Spiegelt exact de drie assen van applyPlanRules (spoed · nieuw/controle · digitaal).
+          const isNieuw=a=>a.category==='nieuw'
+          // Voorbeeld = een OCHTEND-spreekuur, dus de bereik-keuzes gelden hier voor dd=0.
+          const inBerV=w=>(w||'both')==='both'||w==='och'
+          const sN=rules.startNieuw&&inBerV(rules.startNieuwWaar)
+          const sC=rules.startControle&&inBerV(rules.startControleWaar)
+          const mixV=rules.mixNC&&inBerV(rules.mixWaar)
+          const leadCat=(sN&&!sC)?'nieuw':(sC&&!sN)?'controle':(sN&&sC)?'nieuw':null
+          const mixLijst=(lst)=>{
+            if(lst.length<=1) return [...lst]
+            const n=lst.length,totCat={},totCode={}
+            lst.forEach(a=>{const c=isNieuw(a)?'n':'c';totCat[c]=(totCat[c]||0)+1;totCode[a.code]=(totCode[a.code]||0)+1})
+            const rest=[...lst],gCat={},gCode={},uit=[];let vorige=null
+            while(rest.length){ let best=0,bestS=-Infinity
+              for(let j=0;j<rest.length;j++){const a=rest[j],c=isNieuw(a)?'n':'c'
+                let s=-1.8*((((gCat[c]||0)+1)/(uit.length+1))-(totCat[c]||0)/n)-0.9*((((gCode[a.code]||0)+1)/(uit.length+1))-(totCode[a.code]||0)/n)
+                if(vorige&&vorige.code===a.code)s-=0.30
+                if(uit.length===0&&leadCat&&a.category===leadCat)s+=100
+                s+=0.10*(1-j/Math.max(1,rest.length-1)); if(s>bestS){bestS=s;best=j}}
+              const a=rest.splice(best,1)[0],c=isNieuw(a)?'n':'c';uit.push(a);gCat[c]=(gCat[c]||0)+1;gCode[a.code]=(gCode[a.code]||0)+1;vorige=a}
+            return uit
+          }
+          const ongemengd=(lst)=>{const nw=mixLijst(lst.filter(isNieuw)),ct=mixLijst(lst.filter(a=>!isNieuw(a)));return leadCat==='controle'?[...ct,...nw]:[...nw,...ct]}
+          const ordenRomp=(lst)=>lst.length<=1?[...lst]:(mixV?mixLijst(lst):ongemengd(lst))
+          // AS 1 — spoed apart (voorbeeld = ochtend); digitaal apart (AS 4).
+          const dig=all.filter(a=>a.digitaal); let fys=all.filter(a=>!a.digitaal)
+          const spoedAan=rules.spoedFirst&&(rules.spoedDagdeel==='both'||rules.spoedDagdeel==='och')
+          let sp=[]; if(spoedAan){ sp=fys.filter(a=>a.spoed); fys=fys.filter(a=>!a.spoed) }
+          // AS 2 — nieuw/controle-volgorde van de romp (mix of ongemengd, met kop)
+          fys=ordenRomp(fys); sp=ordenRomp(sp)
+          let rest=[...sp,...fys]
+          // AS 4 — digitaal op de tijdas
+          if(dig.length){
+            if(!inBerV(rules.digitalWaar)||rules.digitalMode==='spread'){ const o=[...rest]
+              dig.forEach((d,i)=>o.splice(Math.min(Math.round((i+1)*(o.length+1)/(dig.length+1)),o.length),0,d)); rest=o }
+            else rest=[...rest,...dig]
+          }
+          // bouw blokreeks incl. buffers. Verspreide flex: blokjes ná een afspraak,
+          // nooit ná de laatste (dat is het restblok aan het einde).
+          const seq=[]
+          rest.forEach((a,i)=>{
+            seq.push({...a})
+            if(rules.flexMode==='spread'&&inBerV(rules.flexWaar)&&i>=1&&i<rest.length-1) seq.push({buffer:true,duur:10})
+          })
+          seq.push({buffer:true,duur:rules.flexMode==='end'?25:10,eind:true})
+          const totMin=seq.reduce((s,b)=>s+b.duur,0)||1
+          const clrOf=b=> b.buffer?{bg:FLEX_STRIPE(5,10),fg:FLEX_COLOR.fg,brd:FLEX_COLOR.brd}
+            : b.spoed?{bg:'#FCEEEB',fg:C.danger,brd:'#E7B3A6'}
+            : b.digitaal?{bg:'#D6EAE3',fg:'#1A5544',brd:'#94C5B4'}
+            : b.cat==='nieuw'?NEW_PALETTE[0]:CTRL_PALETTE[0]
+          const actieveRegels=[
+            ...(rules.spoedFirst?['Spoed eerst']:[]),
+            ...(sN?['Start met nieuw']:[]),
+            ...(sC?['Start met controle']:[]),
+            mixV?'Nieuw/controle afwisselen':'Nieuw/controle ongemengd',
+            rules.digitalMode==='end'?`Digitaal aan het einde (${rules.digitalEndMinutes||30}m venster)`:rules.digitalMode==='cluster'?'Eigen digitaal spreekuur':'Digitaal verdeeld',
+            rules.flexMode==='end'?'Buffer aan het einde':`Buffer verspreid (na ${rules.flexNoFirstMin??60}m)`,
+          ]
+          return(
+            <Card style={{marginBottom:14}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:4,flexWrap:'wrap',gap:8}}>
+                <H3 style={{margin:0}}>Voorbeeld-spreekuur — zo plant jouw regelset</H3>
+                <span style={{fontSize:11,color:C.muted}}>live voorbeeld van 6 afspraken · verandert mee met je keuzes</span>
+              </div>
+              <p style={{fontSize:11.5,color:C.muted,margin:'0 0 12px',lineHeight:1.5}}>
+                Een denkbeeldig spreekuur met een spoedgeval, een onzekere nieuwe patiënt en een telefonisch consult. Zet regels aan/uit en zie de volgorde direct veranderen.
+              </p>
+              <div style={{display:'flex',gap:3,height:52,borderRadius:9,overflow:'hidden',border:`1px solid ${C.border}`,background:C.surface2,padding:3}}>
+                {seq.map((b,i)=>{
+                  const c=clrOf(b), w=b.duur/totMin*100
+                  return(
+                    <div key={i} title={b.buffer?`Buffer ${b.duur}m`:`${b.code} · ${b.duur}m${b.spoed?' · spoed':''}${b.digitaal?' · telefonisch':''}${b._bw?' · dubbel geboekt':''}`}
+                      style={{width:w+'%',minWidth:b.buffer?10:26,borderRadius:6,background:c.bg||c.bg,color:c.fg,border:`1px solid ${c.brd}`,
+                        display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',position:'relative',overflow:'hidden',
+                        outline:b._bw?'2px solid #8B5CF6':'none',outlineOffset:-2}}>
+                      {!b.buffer&&<>
+                        <span style={{fontSize:10.5,fontWeight:800,lineHeight:1}}>{b.code}{b.spoed&&<span style={{color:C.danger}}>●</span>}</span>
+                        <span style={{fontSize:8.5,opacity:0.8,marginTop:1}}>{b.digitaal?'☎ ':''}{b.duur}m</span>
+                        {b._bw&&<span style={{position:'absolute',top:1,right:2,fontSize:7,fontWeight:800,color:'#8B5CF6'}}>2×</span>}
+                      </>}
+                      {b.buffer&&<span style={{fontSize:8,fontWeight:700,transform:w<6?'rotate(90deg)':'none'}}>flex</span>}
+                    </div>
+                  )
+                })}
+              </div>
+              <div style={{display:'flex',flexWrap:'wrap',gap:6,marginTop:12}}>
+                {actieveRegels.length?actieveRegels.map((l,i)=>(
+                  <span key={i} style={{fontSize:10.5,fontWeight:600,padding:'3px 10px',borderRadius:20,background:C.blueAccent,color:C.primary,border:`1px solid ${C.light}`}}>{l}</span>
+                )):<span style={{fontSize:11,color:C.muted}}>Nog geen volgorderegels actief — afspraken staan in standaardvolgorde.</span>}
+              </div>
+            </Card>
+          )
+        })()}
+
+        {/* Sequence rules with PRIORITY ORDER (drives the composite comparator) */}
+        <Card style={{marginBottom:14}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
+            <span style={{fontWeight:700,fontSize:13.5,color:C.primary}}>Planmethodieken &amp; volgorde</span>
+          </div>
+          <p style={{fontSize:11.5,color:C.muted,marginBottom:14,lineHeight:1.55}}>
+            Deze regels bepalen de volgorde bínnen elk spreekuur. <b>Spoed</b> heeft altijd voorrang; daarna bepaalt <b>"starten met"</b> de kop en <b>"afwisselen"</b> of nieuw en controle gemengd of ongemengd staan. Er wordt altijd naar de invoer gekeken: een code komt alleen op een dag en dagdeel waar die volgens Gegevens invoer is toegestaan.
+          </p>
+          {['spoedFirst','startNieuw','startControle','mixNC'].map(key=>{
+            const info=PLAN_INFO[key]; const on=rules[key]
+            const beide=key==='startControle'&&rules.startNieuw&&rules.startControle
+            // Elke regel heeft een expliciet BEREIK: in welk dagdeel geldt hij? Zo hoeft
+            // de engine nergens te raden of je de ochtend, de middag of allebei bedoelt.
+            const bereikKey={spoedFirst:'spoedDagdeel',startNieuw:'startNieuwWaar',
+              startControle:'startControleWaar',mixNC:'mixWaar'}[key]
+            return(
+              <div key={key} style={{marginBottom:8}}>
+                <div style={{display:'flex',alignItems:'center',gap:10,padding:'11px 14px',borderRadius:8,
+                  background:on?C.rowAlt:'transparent',border:`1px solid ${on?C.light:C.border}`,transition:'all 0.13s'}}>
+                  <Tip text={info.desc}>
+                    <span style={{width:17,height:17,borderRadius:'50%',background:C.surface2,border:`1px solid ${C.border}`,
+                      fontSize:9,color:C.muted,cursor:'help',display:'inline-flex',alignItems:'center',justifyContent:'center',
+                      fontWeight:700,flexShrink:0}}>ⓘ</span>
+                  </Tip>
+                  <div style={{flex:1,minWidth:0}}>
+                    <span style={{fontSize:12.5,fontWeight:on?600:400,color:on?C.primary:C.text,lineHeight:1.4}}>{info.label}</span>
+                  </div>
+                  <div onClick={()=>setRules(p=>({...p,[key]:!p[key]}))}
+                    style={{width:38,height:22,borderRadius:11,background:on?C.primary:C.border,
+                      cursor:'pointer',position:'relative',transition:'background 0.18s',flexShrink:0}}>
+                    <div style={{width:16,height:16,borderRadius:'50%',background:'#fff',position:'absolute',top:3,left:on?19:3,transition:'left 0.18s'}}/>
+                  </div>
+                </div>
+                {on&&bereikKey&&(
+                  <div style={{margin:'6px 0 0 30px',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+                    <span style={{fontSize:11,color:C.muted}}>Geldt in:</span>
+                    {[{v:'both',l:'Ochtend + middag'},{v:'och',l:'Alleen ochtend'},{v:'mid',l:'Alleen middag'}].map(o=>{
+                      const sel=(rules[bereikKey]||'both')===o.v
+                      return(
+                        <button key={o.v} onClick={()=>setRules(p=>({...p,[bereikKey]:o.v}))}
+                          style={{padding:'4px 11px',borderRadius:16,cursor:'pointer',fontSize:11,fontWeight:600,
+                            background:sel?C.blueAccent:C.white,color:sel?C.primary:C.muted,
+                            border:`1px solid ${sel?C.primary:C.border}`}}>{sel?'✓ ':''}{o.l}</button>
+                      )
+                    })}
+                  </div>
+                )}
+                {beide&&(
+                  <div style={{margin:'6px 0 0 30px',fontSize:11,color:'#7C3AED',display:'flex',alignItems:'flex-start',gap:6,lineHeight:1.4}}>
+                    <span>⚡</span><span>Beide "starten met" staan aan → het spreekuur opent afwisselend, beginnend met een nieuwe afspraak.</span>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </Card>
+
+        {/* Radios: Digitale consulten */}
+        <Card style={{marginBottom:14}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
+            <Tip text={PLAN_INFO.digitalMode.desc}>
+              <span style={{width:17,height:17,borderRadius:'50%',background:C.rowAlt,border:`1px solid ${C.border}`,
+                fontSize:9,color:C.muted,cursor:'help',display:'inline-flex',alignItems:'center',justifyContent:'center',
+                fontWeight:700,flexShrink:0}}>ⓘ</span>
+            </Tip>
+            <span style={{fontWeight:700,fontSize:13.5,color:C.primary}}>📱 {PLAN_INFO.digitalMode.label}</span>
+          </div>
+          <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+            {PLAN_INFO.digitalMode.opts.map(opt=>{
+              const on=rules.digitalMode===opt.v
+              return(
+                <div key={opt.v} onClick={()=>setRules(p=>({...p,digitalMode:opt.v}))}
+                  style={{flex:1,minWidth:130,display:'flex',alignItems:'center',gap:9,padding:'9px 13px',borderRadius:7,cursor:'pointer',
+                    background:on?C.blueAccent:C.white,border:`1.5px solid ${on?C.primary:C.border}`,boxShadow:on?'0 2px 10px rgba(28,110,164,0.12)':'none',transition:'all 0.13s'}}>
+                  <div style={{width:20,height:20,borderRadius:'50%',border:`2px solid ${on?C.primary:C.border}`,
+                    background:on?C.primary:'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,transition:'all 0.13s'}}>
+                    {on&&<span style={{color:'#fff',fontSize:11,fontWeight:800}}>✓</span>}
+                  </div>
+                  <span style={{fontSize:12.5,fontWeight:on?700:500,color:on?C.primary:C.text}}>{opt.l}</span>
+                </div>
+              )
+            })}
+          </div>
+          <div style={{marginTop:10,display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+            <span style={{fontSize:11,color:C.muted}}>Deze plaatsing geldt in:</span>
+            {[{v:'both',l:'Ochtend + middag'},{v:'och',l:'Alleen ochtend'},{v:'mid',l:'Alleen middag'}].map(o=>{
+              const sel=(rules.digitalWaar||'both')===o.v
+              return(
+                <button key={o.v} onClick={()=>setRules(p=>({...p,digitalWaar:o.v}))}
+                  style={{padding:'4px 11px',borderRadius:16,cursor:'pointer',fontSize:11,fontWeight:600,
+                    background:sel?C.blueAccent:C.white,color:sel?C.primary:C.muted,
+                    border:`1px solid ${sel?C.primary:C.border}`}}>{sel?'✓ ':''}{o.l}</button>
+              )
+            })}
+          </div>
+          {/* ── EIGEN DIGITAAL SPREEKUUR — hoeveel passen er, en waar komen ze? ── */}
+          {rules.digitalMode==='cluster'&&(()=>{
+            const plan=raster&&raster.digPlan
+            const gekozen=rules.digitalSlots||[]
+            const isAan=(di,dd)=>gekozen.some(s=>s.di===di&&s.dd===dd)
+            // Hoeveel digitale spreekuren passen er bij deze aantallen? Dat is de bovengrens
+            // voor het aantal dagdelen dat je zinvol kunt kiezen.
+            const maxSlots = plan && plan.mogelijk>0 ? plan.mogelijk : Infinity
+            const wissel=(di,dd)=>setRules(p=>{
+              const l=p.digitalSlots||[]
+              if(l.some(s=>s.di===di&&s.dd===dd)) // al gekozen → uitvinken
+                return {...p, digitalSlots: l.filter(s=>!(s.di===di&&s.dd===dd))}
+              // Nieuw dagdeel erbij. Kies je er méér dan er passen, dan schuift de OUDste
+              // keuze er vanzelf uit — zo verplaats je de spreekuren gewoon door de nieuwe
+              // dagdelen aan te klikken (bv. maandag/dinsdag/woensdag → klik do + vr en
+              // maandag/dinsdag verdwijnen automatisch). Geen vastgelopen halve keuze meer.
+              let next=[...l,{di,dd}]
+              while(next.length>maxSlots) next=next.slice(1)
+              return {...p, digitalSlots: next}
+            })
+            const mislukt=(di,dd)=>plan&&plan.nietGelukt&&plan.nietGelukt.some(s=>s.di===di&&s.dd===dd)
+            const gelukt=(di,dd)=>plan&&plan.gepland&&plan.gepland.some(s=>s.di===di&&s.dd===dd)
+            const ddLijst=[{k:'O',l:'Ochtend'},{k:'M',l:'Middag'}].concat(m2.avondOn?[{k:'A',l:'Avond'}]:[])
+            return(
+              <div style={{marginTop:10,background:C.rowAlt,border:`1px solid ${C.border}`,borderRadius:9,padding:'11px 13px'}}>
+                <div style={{fontSize:12,fontWeight:700,color:C.text,marginBottom:3}}>Hoeveel digitale spreekuren passen er?</div>
+                {plan
+                  ? <div style={{fontSize:11.5,color:C.muted,lineHeight:1.55,marginBottom:9}}>
+                      Een dagdeel is pas een digitaal spreekuur als het met digitale consulten tot
+                      <b style={{color:C.text}}> {String(Math.max(0,(m2.benutting||85)-2.5)).replace('.',',')}–{String(Math.min(100,(m2.benutting||85)+2.5)).replace('.',',')}%</b> gevuld raakt.
+                      Met jouw aantallen kun je er <b style={{color:C.text}}>{plan.mogelijk}</b> vullen.
+                      {plan.gepland.length>0&&<> Nu gepland: <b style={{color:C.text}}>{plan.gepland.length}</b>
+                        {' '}({plan.gepland.slice(0,4).map(g=>`${DAY_ABBR[g.di]} ${g.dd==='O'?'och':g.dd==='M'?'mid':'avo'} — ${g.items.length} consulten, ${g.pct}%`).join(' · ')}
+                        {plan.gepland.length>4?` … en nog ${plan.gepland.length-4}`:''}).</>}
+                      {plan.rest>0&&<> De overige <b style={{color:C.text}}>{plan.rest}</b> consulten zijn over de gewone spreekuren verdeeld.</>}
+                      {plan.mogelijk===0&&<> Er zijn te weinig digitale consulten om één dagdeel te vullen — ze worden daarom allemaal verdeeld.</>}
+                    </div>
+                  : <div style={{fontSize:11.5,color:C.muted,marginBottom:9}}>Genereer het raster om te zien hoeveel digitale spreekuren er passen.</div>}
+                <div style={{fontSize:11,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:6}}>
+                  Waar moeten ze vallen?
+                </div>
+                <div style={{display:'grid',gridTemplateColumns:'58px repeat(5,1fr)',gap:4,marginBottom:7}}>
+                  <div/>
+                  {DAY_ABBR.map((d,i)=><div key={i} style={{textAlign:'center',fontSize:10,fontWeight:800,color:C.muted}}>{d}</div>)}
+                  {ddLijst.map(x=>(
+                    <React.Fragment key={x.k}>
+                      <div style={{fontSize:10.5,color:C.muted,display:'flex',alignItems:'center'}}>{x.l}</div>
+                      {[0,1,2,3,4].map(di=>{
+                        const aan=isAan(di,x.k), ok=gelukt(di,x.k), fout=mislukt(di,x.k)
+                        return(
+                          <button key={di} onClick={()=>wissel(di,x.k)}
+                            title={fout?'Hier passen niet genoeg digitale consulten om het dagdeel te vullen — er komt geen digitaal spreekuur'
+                              :aan?'Aangevinkt als digitaal spreekuur':'Klik om hier een digitaal spreekuur te plaatsen'}
+                            style={{padding:'6px 0',borderRadius:7,cursor:'pointer',fontSize:11,fontWeight:700,
+                              border:`1.5px solid ${fout?'#E8B3A8':aan?C.primary:C.border}`,
+                              background:fout?'#FBEDEA':aan?C.primary:C.white,
+                              color:fout?'#B3402C':aan?'#fff':C.muted}}>
+                            {fout?'✕':ok?'✓':aan?'●':'·'}
+                          </button>
+                        )
+                      })}
+                    </React.Fragment>
+                  ))}
+                </div>
+                <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+                  <button onClick={()=>setRules(p=>({...p,digitalSlots:[]}))}
+                    style={{padding:'5px 11px',borderRadius:8,border:`1px solid ${gekozen.length?C.border:C.primary}`,
+                      background:gekozen.length?C.white:C.blueAccent,cursor:'pointer',fontSize:11,fontWeight:700,
+                      color:gekozen.length?C.muted:C.primary}}>Automatisch kiezen</button>
+                  <span style={{fontSize:11,color:C.muted}}>
+                    {gekozen.length
+                      ? `${gekozen.length} dagdeel${gekozen.length===1?'':'en'} gekozen — de tool houdt zich hieraan${isFinite(maxSlots)?` (max ${maxSlots}; kies je een nieuw dagdeel, dan schuift het oudste eruit)`:''}. Het raster past zich direct aan.`
+                      : 'Niets gekozen: de tool spreidt de digitale spreekuren zelf over de week.'}
+                  </span>
+                </div>
+                {plan&&plan.nietGelukt&&plan.nietGelukt.length>0&&(
+                  <div style={{marginTop:8,fontSize:11.5,color:'#8A6A12',background:'#FDF6E3',
+                    border:'1px solid #EBD08A',borderRadius:8,padding:'7px 10px',lineHeight:1.5}}>
+                    Op {plan.nietGelukt.map(s=>`${DAY_ABBR[s.di]} ${s.dd==='O'?'ochtend':s.dd==='M'?'middag':'avond'}`).join(' en ')} passen
+                    niet genoeg digitale consulten om het dagdeel tot de benutting te vullen. Daar komt geen digitaal
+                    spreekuur; die consulten zijn over de gewone spreekuren verdeeld.
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+          {rules.digitalMode==='end'&&(
+            <div style={{marginTop:10,display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',
+              background:C.rowAlt,border:`1px solid ${C.border}`,borderRadius:9,padding:'10px 13px'}}>
+              <div style={{flex:1,minWidth:190}}>
+                <div style={{fontSize:12,fontWeight:700,color:C.text}}>Breedte eindvenster</div>
+                <div style={{fontSize:11,color:C.muted}}>Digitale consulten vallen in de laatste <b style={{color:C.text}}>{rules.digitalEndMinutes||30} min</b> van het spreekuur.</div>
+              </div>
+              <div style={{display:'inline-flex',alignItems:'center',border:`1px solid ${C.border}`,borderRadius:8,overflow:'hidden',background:C.white}}>
+                <button onClick={()=>setRules(p=>({...p,digitalEndMinutes:Math.max(10,(p.digitalEndMinutes||30)-10)}))}
+                  style={{width:32,height:32,border:'none',borderRight:`1px solid ${C.border}`,background:C.surface2,cursor:'pointer',fontWeight:700,color:C.muted,fontSize:15}}>−</button>
+                <span style={{width:52,textAlign:'center',fontSize:13,fontWeight:700,color:C.text}}>{rules.digitalEndMinutes||30}m</span>
+                <button onClick={()=>setRules(p=>({...p,digitalEndMinutes:Math.min(180,(p.digitalEndMinutes||30)+10)}))}
+                  style={{width:32,height:32,border:'none',borderLeft:`1px solid ${C.border}`,background:C.surface2,cursor:'pointer',fontWeight:700,color:C.muted,fontSize:15}}>+</button>
+              </div>
+            </div>
+          )}
+        </Card>
+
+        {/* Radios: Kamerverdeling — bepaalt de STRUCTUUR (welke kamer/dagdeel) */}
+        <Card style={{marginBottom:14}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
+            <Tip text={PLAN_INFO.kamerVerdeling.desc}>
+              <span style={{width:17,height:17,borderRadius:'50%',background:C.rowAlt,border:`1px solid ${C.border}`,
+                fontSize:9,color:C.muted,cursor:'help',display:'inline-flex',alignItems:'center',justifyContent:'center',
+                fontWeight:700,flexShrink:0}}>ⓘ</span>
+            </Tip>
+            <span style={{fontWeight:700,fontSize:13.5,color:C.primary}}>🚪 {PLAN_INFO.kamerVerdeling.label}</span>
+          </div>
+          <p style={{fontSize:11.5,color:C.muted,marginBottom:12,lineHeight:1.55}}>
+            Dit is de enige regel die de <b style={{color:C.text}}>structuur</b> bepaalt: wélke kamer en wélk dagdeel een
+            afspraak krijgt. Alle andere regels bepalen alleen de volgorde bínnen een spreekuur.
+          </p>
+          <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+            {PLAN_INFO.kamerVerdeling.opts.map(opt=>{
+              const on=(rules.kamerVerdeling||'vullen')===opt.v
+              const sub=opt.v==='dagdeel'
+                ? `Ochtend kamer 1 → middag kamer 1 → ochtend kamer 2 … elk spreekuur op ${m2.benutting}% (±2,5 procentpunt).`
+                : `Elke kamer en elk dagdeel een vergelijkbare belasting en mix, elk op ${m2.benutting}% (±2,5 procentpunt).`
+              return(
+                <div key={opt.v} onClick={()=>setRules(p=>({...p,kamerVerdeling:opt.v}))}
+                  style={{flex:1,minWidth:190,display:'flex',alignItems:'flex-start',gap:9,padding:'11px 13px',borderRadius:7,cursor:'pointer',
+                    background:on?C.blueAccent:C.white,border:`1.5px solid ${on?C.primary:C.border}`,boxShadow:on?'0 2px 10px rgba(28,110,164,0.12)':'none',transition:'all 0.13s'}}>
+                  <div style={{width:20,height:20,borderRadius:'50%',border:`2px solid ${on?C.primary:C.border}`,marginTop:1,
+                    background:on?C.primary:'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,transition:'all 0.13s'}}>
+                    {on&&<span style={{color:'#fff',fontSize:11,fontWeight:800}}>✓</span>}
+                  </div>
+                  <div>
+                    <div style={{fontSize:12.5,fontWeight:on?700:500,color:on?C.primary:C.text}}>{opt.l}</div>
+                    <div style={{fontSize:10.5,color:C.muted,lineHeight:1.45,marginTop:2}}>{sub}</div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          <div style={{marginTop:11,background:C.rowAlt,border:`1px solid ${C.border}`,borderRadius:9,padding:'11px 13px'}}>
+            <div style={{fontSize:12,fontWeight:700,color:C.text,marginBottom:3}}>Restvraag bundelen tot volle kamers</div>
+            <div style={{fontSize:11,color:C.muted,lineHeight:1.5,marginBottom:8}}>
+              Deelt de weekvraag niet rond op volle kamers, dan draait elke dag een deels gevulde extra kamer op lage
+              benutting. Met deze optie maakt de tool alle kamers die vol kúnnen zijn ook écht vol (rond de bovenkant
+              van de band) en verhuist de overgebleven "rest-kamer(s)" naar één dag — de gekozen rest-dag, of bij
+              "Automatisch" de drukste dag. Zo staat er hooguit één deels gevulde kamer in de hele week i.p.v. op elke
+              dag een halve. Afspraken verhuizen alleen naar een dag die hun code toestaat, en het totaal blijft exact
+              de opgegeven pool. Levert bundelen bij het gekozen aantal kamers geen winst op, dan blijft de gelijkmatige
+              verdeling staan.
+            </div>
+            <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+              {[{v:'uit',l:'Uit'},{v:'auto',l:'Automatisch'},...WEEKDAY_KEYS.map((k,i)=>({v:k,l:DAY_ABBR[i]}))].map(o=>{
+                const on=(rules.restDag||'uit')===o.v
+                return(
+                  <button key={o.v} onClick={()=>setRules(p=>({...p,restDag:o.v}))}
+                    style={{padding:'6px 13px',borderRadius:16,cursor:'pointer',fontSize:11.5,fontWeight:700,
+                      background:on?C.primary:C.white,color:on?'#fff':C.muted,
+                      border:`1px solid ${on?C.primary:C.border}`}}>{o.l}</button>
+                )
+              })}
+            </div>
+            <div style={{marginTop:12,paddingTop:11,borderTop:`1px solid ${C.border}`}}>
+              <div style={{fontSize:12,fontWeight:700,color:C.text,marginBottom:3}}>Minimumbezetting — wanneer gaat een spreekuur open?</div>
+              <div style={{fontSize:11,color:C.muted,lineHeight:1.5,marginBottom:8}}>
+                Een dagdeel gaat alléén open als het minstens dit percentage gevuld raakt. Een kamer die maar voor een
+                kwart gevuld is kost een hele kamer-dag voor een handvol afspraken. Haalt een dagdeel de drempel niet,
+                dan worden die afspraken eerst over de andere spreekuren van diezelfde dag verdeeld; wat dan nog
+                overblijft gaat naar "nog te plannen". Met <b style={{color:C.text}}>"Restvraag bundelen tot volle
+                kamers"</b> hierboven maak je daar op één gekozen dag alsnog een vólle extra kamer van.
+              </div>
+              <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+                {[{v:true,l:'Drempel aan'},{v:false,l:'Uit (alles open, ook half gevuld)'}].map(o=>{
+                  const on=(rules.restOpruimen!==false)===o.v
+                  return(
+                    <button key={String(o.v)} onClick={()=>setRules(p=>({...p,restOpruimen:o.v}))}
+                      style={{padding:'6px 13px',borderRadius:16,cursor:'pointer',fontSize:11.5,fontWeight:700,
+                        background:on?C.primary:C.white,color:on?'#fff':C.muted,
+                        border:`1px solid ${on?C.primary:C.border}`}}>{o.l}</button>
+                  )
+                })}
+                {rules.restOpruimen!==false&&(
+                  <div style={{display:'inline-flex',alignItems:'center',gap:7,marginLeft:2}}>
+                    <span style={{fontSize:11,color:C.muted}}>Drempel:</span>
+                    <div style={{display:'inline-flex',alignItems:'center',border:`1px solid ${C.border}`,borderRadius:8,overflow:'hidden',background:C.white}}>
+                      <button onClick={()=>setRules(p=>({...p,minBezetting:Math.max(0,(p.minBezetting??75)-5)}))}
+                        style={{width:30,height:30,border:'none',borderRight:`1px solid ${C.border}`,background:C.surface2,cursor:'pointer',fontWeight:700,color:C.primary,fontSize:15}}>−</button>
+                      <span style={{width:50,textAlign:'center',fontSize:13,fontWeight:700,color:C.text}}>{rules.minBezetting??75}%</span>
+                      <button onClick={()=>setRules(p=>({...p,minBezetting:Math.min(100,(p.minBezetting??75)+5)}))}
+                        style={{width:30,height:30,border:'none',borderLeft:`1px solid ${C.border}`,background:C.surface2,cursor:'pointer',fontWeight:700,color:C.primary,fontSize:15}}>+</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </Card>
+
+        {/* Radios: Flex-tijd */}
+        <Card style={{marginBottom:14}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
+            <Tip text={PLAN_INFO.flexMode.desc}>
+              <span style={{width:17,height:17,borderRadius:'50%',background:C.rowAlt,border:`1px solid ${C.border}`,
+                fontSize:9,color:C.muted,cursor:'help',display:'inline-flex',alignItems:'center',justifyContent:'center',
+                fontWeight:700,flexShrink:0}}>ⓘ</span>
+            </Tip>
+            <span style={{fontWeight:700,fontSize:13.5,color:C.primary}}>⏱ {PLAN_INFO.flexMode.label}</span>
+          </div>
+          <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+            {PLAN_INFO.flexMode.opts.map(opt=>{
+              const on=rules.flexMode===opt.v
+              return(
+                <div key={opt.v} onClick={()=>setRules(p=>({...p,flexMode:opt.v}))}
+                  style={{flex:1,minWidth:160,display:'flex',alignItems:'center',gap:9,padding:'9px 13px',borderRadius:7,cursor:'pointer',
+                    background:on?C.blueAccent:C.white,border:`1.5px solid ${on?C.primary:C.border}`,boxShadow:on?'0 2px 10px rgba(28,110,164,0.12)':'none',transition:'all 0.13s'}}>
+                  <div style={{width:20,height:20,borderRadius:'50%',border:`2px solid ${on?C.primary:C.border}`,
+                    background:on?C.primary:'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,transition:'all 0.13s'}}>
+                    {on&&<span style={{color:'#fff',fontSize:11,fontWeight:800}}>✓</span>}
+                  </div>
+                  <span style={{fontSize:12.5,fontWeight:on?700:500,color:on?C.primary:C.text}}>{opt.l}</span>
+                </div>
+              )
+            })}
+          </div>
+          <div style={{marginTop:10,display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+            <span style={{fontSize:11,color:C.muted}}>Deze verdeling geldt in:</span>
+            {[{v:'both',l:'Ochtend + middag'},{v:'och',l:'Alleen ochtend'},{v:'mid',l:'Alleen middag'}].map(o=>{
+              const sel=(rules.flexWaar||'both')===o.v
+              return(
+                <button key={o.v} onClick={()=>setRules(p=>({...p,flexWaar:o.v}))}
+                  style={{padding:'4px 11px',borderRadius:16,cursor:'pointer',fontSize:11,fontWeight:600,
+                    background:sel?C.blueAccent:C.white,color:sel?C.primary:C.muted,
+                    border:`1px solid ${sel?C.primary:C.border}`}}>{sel?'✓ ':''}{o.l}</button>
+              )
+            })}
+          </div>
+          {rules.flexMode==='spread'&&(
+            <div style={{marginTop:10,display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',
+              background:FLEX_COLOR.bg,border:`1px solid ${FLEX_COLOR.brd}`,borderRadius:9,padding:'10px 13px'}}>
+              <span style={{width:12,height:12,borderRadius:3,background:FLEX_STRIPE(3,6),border:`1px solid ${FLEX_COLOR.brd}`,flexShrink:0}}/>
+              <div style={{flex:1,minWidth:190}}>
+                <div style={{fontSize:12,fontWeight:700,color:FLEX_COLOR.fg}}>Geen flex aan het begin</div>
+                <div style={{fontSize:11,color:C.muted}}>Flex komt <b style={{color:C.text}}>uitsluitend tussen de afspraken</b>, pas ná <b style={{color:C.text}}>{rules.flexNoFirstMin??60} min</b> spreekuur. Elk flexblok is <b style={{color:C.text}}>exact {rules.flexBlokMin??10} min</b> — nooit korter of langer. De blokken worden gelijkmatig tussen de afspraken gespreid en het spreekuur <b style={{color:C.text}}>eindigt met een afspraak</b>. Een eventueel restant kleiner dan één heel blok (hooguit {(rules.flexBlokMin??10)-5} min) kan geen exact blok vormen en blijft als kleine, ongemarkeerde ruimte aan het einde.</div>
+              </div>
+              <div style={{display:'inline-flex',alignItems:'center',border:`1px solid ${FLEX_COLOR.brd}`,borderRadius:8,overflow:'hidden',background:C.white}}>
+                <button onClick={()=>setRules(p=>({...p,flexNoFirstMin:Math.max(0,(p.flexNoFirstMin??60)-10)}))}
+                  style={{width:32,height:32,border:'none',borderRight:`1px solid ${FLEX_COLOR.brd}`,background:FLEX_COLOR.bg2,cursor:'pointer',fontWeight:700,color:FLEX_COLOR.fg,fontSize:15}}>−</button>
+                <span style={{width:52,textAlign:'center',fontSize:13,fontWeight:700,color:C.text}}>{rules.flexNoFirstMin??60}m</span>
+                <button onClick={()=>setRules(p=>({...p,flexNoFirstMin:Math.min(240,(p.flexNoFirstMin??60)+10)}))}
+                  style={{width:32,height:32,border:'none',borderLeft:`1px solid ${FLEX_COLOR.brd}`,background:FLEX_COLOR.bg2,cursor:'pointer',fontWeight:700,color:FLEX_COLOR.fg,fontSize:15}}>+</button>
+              </div>
+              <div style={{width:'100%',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginTop:2}}>
+                <span style={{fontSize:11,fontWeight:700,color:FLEX_COLOR.fg}}>Grootte van een flexblokje:</span>
+                {[5,10,15,20,30].map(v=>{
+                  const on=(rules.flexBlokMin??10)===v
+                  return(
+                    <button key={v} onClick={()=>setRules(p=>({...p,flexBlokMin:v}))}
+                      style={{padding:'5px 12px',borderRadius:16,cursor:'pointer',fontSize:11.5,fontWeight:700,
+                        background:on?FLEX_COLOR.brd:C.white,color:on?'#fff':FLEX_COLOR.fg,
+                        border:`1px solid ${FLEX_COLOR.brd}`}}>{v} min</button>
+                  )
+                })}
+                <span style={{fontSize:11,color:C.muted}}>of eigen waarde:</span>
+                <div style={{display:'inline-flex',alignItems:'center',border:`1px solid ${FLEX_COLOR.brd}`,borderRadius:8,overflow:'hidden',background:C.white}}>
+                  <button onClick={()=>setRules(p=>({...p,flexBlokMin:Math.max(5,(p.flexBlokMin??10)-5)}))}
+                    style={{width:28,height:28,border:'none',borderRight:`1px solid ${FLEX_COLOR.brd}`,background:FLEX_COLOR.bg2,cursor:'pointer',fontWeight:700,color:FLEX_COLOR.fg}}>−</button>
+                  <input type="number" min={5} max={240} step={5} value={rules.flexBlokMin??10}
+                    onChange={e=>setRules(p=>({...p,flexBlokMin:Math.max(5,Math.min(240,parseInt(e.target.value)||5))}))}
+                    style={{width:56,textAlign:'center',border:'none',padding:'5px 2px',fontSize:12.5,fontWeight:700,color:C.text,fontFamily:'inherit'}}/>
+                  <button onClick={()=>setRules(p=>({...p,flexBlokMin:Math.min(240,(p.flexBlokMin??10)+5)}))}
+                    style={{width:28,height:28,border:'none',borderLeft:`1px solid ${FLEX_COLOR.brd}`,background:FLEX_COLOR.bg2,cursor:'pointer',fontWeight:700,color:FLEX_COLOR.fg}}>+</button>
+                  <span style={{fontSize:10.5,color:C.muted,padding:'0 8px'}}>min</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </Card>
+
+        {/* ── SAMENSPEL VAN DE REGELS — wat versterkt elkaar, wat botst ── */}
+        <Card style={{marginBottom:14}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
+            <span style={{fontWeight:700,fontSize:13.5,color:C.primary}}>🧭 Samenspel van je regels</span>
+          </div>
+          <p style={{fontSize:11.5,color:C.muted,marginBottom:12,lineHeight:1.55}}>
+            Regels werken op verschillende <b style={{color:C.text}}>assen</b>. Regels op verschillende assen versterken
+            elkaar; regels op dezelfde as sluiten elkaar uit en zijn daarom een keuze. Hieronder zie je wat jouw
+            combinatie oplevert en waar twee regels om dezelfde ruimte vechten.
+          </p>
+          {(()=>{
+            const kop=(rules.startNieuw&&rules.startControle)?'afwisselend, nieuw eerst':(rules.startNieuw)?'nieuw':(rules.startControle)?'controle':'geen voorkeur'
+            const ASSEN=[
+              {as:'Structuur',uitleg:'wie in welke kamer en welk dagdeel',
+               waarde:rules.kamerVerdeling==='dagdeel'?'Dagdeel voor dagdeel vol':'Gelijk verdelen'},
+              {as:'Prioriteit',uitleg:'wat vooraan komt',
+               waarde:rules.spoedFirst?'Spoed eerst':'geen prioriteitsregel'},
+              {as:'Kop & mix',uitleg:'waarmee opent het spreekuur, en de volgorde',
+               waarde:`Opent met ${kop} · ${rules.mixNC?'nieuw/controle afgewisseld':'ongemengd'}`},
+              {as:'Plaatsing',uitleg:'digitaal en flexruimte op de tijdas',
+               waarde:`Digitaal ${rules.digitalMode==='end'?'in het eindvenster':rules.digitalMode==='cluster'?'in een eigen spreekuur':'verdeeld over de dag'} · flex ${rules.flexMode==='end'?'aan het einde':'verspreid'}`},
+            ]
+            const sig=[]
+            if(rules.startNieuw&&rules.startControle) sig.push({t:'info',m:'Beide "starten met" staan aan — een spreekuur kan met één afspraak openen; het opent daarom afwisselend, beginnend met een nieuwe afspraak.'})
+            if(rules.spoedFirst&&(rules.startNieuw||rules.startControle)) sig.push({t:'info',m:'Spoed eerst heeft voorrang: het spoedblok staat vooraan, de "starten met"-keuze bepaalt de kop van de romp dáárna.'})
+            if(!rules.mixNC&&(rules.startNieuw||rules.startControle)) sig.push({t:'ok',m:`Afwisselen staat uit: eerst alle ${((rules.startControle&&!rules.startNieuw)?'controle':'nieuwe')}-afspraken, dan de andere categorie.`})
+            if(rules.mixNC&&!rules.startNieuw&&!rules.startControle) sig.push({t:'ok',m:'Nieuw en controle staan om-en-om naar rato van hun aantallen — een gemengde volgorde zonder vaste kop.'})
+            if(rules.digitalMode==='end'&&rules.flexMode==='spread') sig.push({t:'info',m:'Digitaal in het eindvenster + flex verspreid: de flexblokjes gaan tussen de fysieke afspraken, het digitale venster wordt daarna aan het einde gelegd. Dit gaat samen.'})
+            if(rules.kamerVerdeling==='gelijk'&&rules.flexMode==='end') sig.push({t:'info',m:'Gelijk verdelen zorgt bewust voor gelijkmatige kamers, maar levert per kamer méér flex aan het einde op dan "dagdeel voor dagdeel vol".'})
+            if(!sig.length) sig.push({t:'ok',m:'Je huidige combinatie heeft geen tegenstrijdigheden — alle actieve regels werken op verschillende assen.'})
+            return(<>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(210px,1fr))',gap:8,marginBottom:12}}>
+                {ASSEN.map(a=>(
+                  <div key={a.as} style={{background:C.rowAlt,border:`1px solid ${C.border}`,borderRadius:9,padding:'9px 11px'}}>
+                    <div style={{fontSize:9,fontWeight:700,color:C.primary,textTransform:'uppercase',letterSpacing:'0.08em'}}>{a.as}</div>
+                    <div style={{fontSize:9.5,color:C.muted,marginBottom:4}}>{a.uitleg}</div>
+                    <div style={{fontSize:11.5,fontWeight:700,color:C.text,lineHeight:1.35}}>{a.waarde}</div>
+                  </div>
+                ))}
+              </div>
+              {sig.map((x,i)=>{
+                const col=x.t==='ok'?C.green:x.t==='warn'?'#B8860B':C.primary
+                const bg=x.t==='ok'?'#EDF7F0':x.t==='warn'?'#FBF3E2':C.blueAccent
+                return(
+                  <div key={i} style={{display:'flex',gap:9,alignItems:'flex-start',background:bg,border:`1px solid ${col}33`,
+                    borderRadius:9,padding:'9px 12px',marginBottom:6}}>
+                    <span style={{color:col,fontWeight:800,fontSize:12,flexShrink:0}}>{x.t==='ok'?'✓':x.t==='warn'?'⚠':'ℹ'}</span>
+                    <span style={{fontSize:11.5,color:C.text,lineHeight:1.5}}>{x.m}</span>
+                  </div>
+                )
+              })}
+            </>)
+          })()}
+        </Card>
+
+        {/* Active summary */}
+        <div style={{background:C.rowAlt,borderRadius:9,padding:'12px 16px',border:`1px solid ${C.border}`}}>
+          <div style={{fontSize:10.5,fontWeight:700,color:C.primary,marginBottom:7,textTransform:'uppercase',letterSpacing:'0.06em'}}>Actieve instellingen:</div>
+          <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
+            <span style={{padding:'3px 10px',background:C.white,borderRadius:20,fontSize:11,border:`1px solid ${C.border}`,color:C.muted}}>
+              Flex: <b>{rules.flexMode==='end'?'Aan het einde':`Verspreid (na ${rules.flexNoFirstMin??60}m)`}</b>
+            </span>
+            <span style={{padding:'3px 10px',background:C.white,borderRadius:20,fontSize:11,border:`1px solid ${C.border}`,color:C.muted}}>
+              Volgorde: <b>{rules.mixNC?'Nieuw/controle afgewisseld':'Ongemengd'}</b>
+            </span>
+            <span style={{padding:'3px 10px',background:C.white,borderRadius:20,fontSize:11,border:`1px solid ${C.border}`,color:C.muted}}>
+              Digitaal: <b>{rules.digitalMode==='end'?`Einde (${rules.digitalEndMinutes||30}m)`:rules.digitalMode==='cluster'?'Cluster':'Verdelen'}</b>
+            </span>
+            {rules.spoedFirst&&(
+              <span style={{padding:'3px 10px',background:C.white,borderRadius:20,fontSize:11,border:`1px solid ${C.border}`,color:C.muted}}>
+                Spoed geldt in: <b>{rules.spoedDagdeel==='och'?'ochtend':rules.spoedDagdeel==='mid'?'middag':'ochtend + middag'}</b>
+              </span>
+            )}
+            {TOGGLE_KEYS.filter(k=>rules[k]).map(k=>(
+              <span key={k} style={{padding:'3px 10px',background:'#F0FDF4',borderRadius:20,fontSize:11,border:`1px solid ${C.green}`,color:C.green,fontWeight:600}}>
+                ✓ {PLAN_INFO[k]?.label}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ─── MODULE 3: RASTER ─────────────────────────────────────────────────────
+  // ─── MODULE 3: RASTERPROCES — week grid (slot-based) ───────────────────────
+  // Sleepbronnen: leid ze rechtstreeks af uit de ingevoerde codes, zodat je élke
+  // variant (nieuw/controle × fysiek/telefonisch/video) direct het raster op sleept.
+  const PALETTE=(()=>{
+    const uit=[]
+    if(modus==='functie'){
+      fk.codes.forEach((r,i)=>{ if(fkCodeLabel(r)) uit.push({
+        key:'fk'+i,label:r.oms||r.code,code:fkCodeLabel(r),category:'onderzoek',ci:i,digitaal:false,modaliteit:'fysiek',
+        duur:fkSnap(r.duur),clr:FK_PALETTE[i%FK_PALETTE.length],fkCi:i}) })
+      if(!uit.length) uit.push({key:'fk',label:'Onderzoek',code:'ONDZ',category:'onderzoek',ci:0,digitaal:false,modaliteit:'fysiek',duur:15,clr:FK_PALETTE[0]})
+      return uit
+    }
+    newRows.forEach((r,i)=>{ if(r.afspraakcode||r.omschrijving) uit.push({
+      key:'np'+i,label:r.omschrijving||r.afspraakcode||'Nieuw',code:r.afspraakcode||'NP'+(i+1),
+      category:'nieuw',ci:i,digitaal:!!r.digitaal,modaliteit:r.modaliteit||(r.digitaal?'telefonisch':'fysiek'),
+      duur:r.duur||30,clr:NEW_PALETTE[i%NEW_PALETTE.length]}) })
+    ctrlRows.forEach((r,i)=>{ if(r.afspraakcode||r.omschrijving) uit.push({
+      key:'cp'+i,label:r.omschrijving||r.afspraakcode||'Controle',code:r.afspraakcode||'CP'+(i+1),
+      category:'controle',ci:i,digitaal:!!r.digitaal,modaliteit:r.modaliteit||(r.digitaal?'telefonisch':'fysiek'),
+      duur:r.duur||15,clr:r.digitaal?{bg:'#D6EAE3',brd:'#94C5B4',fg:'#1A5544'}:CTRL_PALETTE[i%CTRL_PALETTE.length]}) })
+    if(!uit.length) uit.push(
+      {key:'np',label:'Nieuwe patiënt',code:'NP',category:'nieuw',ci:0,digitaal:false,modaliteit:'fysiek',duur:30,clr:NEW_PALETTE[0]},
+      {key:'cf',label:'Controle',code:'CP',category:'controle',ci:0,digitaal:false,modaliteit:'fysiek',duur:15,clr:CTRL_PALETTE[0]})
+    return uit
+  })()
+
+  const renderMod3=()=>{
+    if(modus==='functie'&&!fkActieveKamers.length){
+      return(
+        <div style={{animation:'fadeIn 0.18s ease',padding:'60px 40px',textAlign:'center',background:C.white,borderRadius:14,border:`1px solid ${C.border}`,maxWidth:640,margin:'40px auto'}}>
+          <div style={{fontSize:44,marginBottom:12}}>🔬</div>
+          <div style={{fontFamily:"'Newsreader',Georgia,serif",fontSize:24,color:C.text,marginBottom:8}}>Functiekamers — nog geen kamers</div>
+          <div style={{fontSize:13,color:C.muted,lineHeight:1.6,marginBottom:18}}>Kies links bij <b>Gegevens</b> hoe je wilt beginnen: een Excel inladen, of zelf invullen met een vooringevulde basis voor je vakgroep. Het rasteradvies verschijnt hier zodra er kamers en onderzoeken zijn.</div>
+          <Btn onClick={()=>{ nav(1); setFk(p=>({...p,mode:null})) }}>Naar het startscherm →</Btn>
+        </div>
+      )
+    }
+    if(!raster){
+      return(
+        <div style={{animation:'fadeIn 0.18s ease'}}>
+          {renderProg()}
+          <div style={{padding:'60px 40px',textAlign:'center',background:C.white,borderRadius:12,border:`1px solid ${C.border}`}}>
+            <div style={{fontSize:48,marginBottom:16}}>{liveFout?'⚠️':'⚡'}</div>
+            {liveFout ? (<>
+              <div style={{fontWeight:700,color:'#9A2A1A',fontSize:17,marginBottom:8}}>Doorrekenen is niet gelukt</div>
+              <div style={{fontSize:13,color:C.muted,marginBottom:16,maxWidth:520,margin:'0 auto 16px'}}>{liveFout}</div>
+              <Btn onClick={doGenerate} style={{fontSize:14,padding:'11px 28px'}}>↻ Opnieuw proberen</Btn>
+            </>) : liveBezig ? (<>
+              <div style={{fontWeight:700,color:C.primary,fontSize:17,marginBottom:8}}>Raster wordt berekend…</div>
+              <div style={{fontSize:13,color:C.muted}}>De engine rekent je gegevens en regels door; dit duurt meestal minder dan een seconde.</div>
+            </>) : (<>
+              <div style={{fontWeight:700,color:C.primary,fontSize:17,marginBottom:8}}>Raster nog niet gegenereerd</div>
+              <Btn onClick={doGenerate} style={{fontSize:14,padding:'11px 28px'}}>⚡ Genereer raster nu</Btn>
+            </>)}
+          </div>
+        </div>
+      )
+    }
+
+    const numRooms=raster.numRooms||1
+    const {mUsable,aUsable,ochDur,midDur}=raster
+
+    // Helper: total duration in a slot
+    const slotUsed=(arr)=>(arr||[]).reduce((s,a)=>s+a.duur,0)
+    const cap=dd=>dd===0?mUsable:dd===1?aUsable:(raster.avUsable||aUsable)
+    const dagdeelDur=dd=>dd===0?ochDur:dd===1?midDur:(raster.avDur||midDur)
+
+    // Week stats
+    const allAppts=[]
+    Object.values(raster.days||{}).forEach(slots=>{ if(slots) Object.values(slots).forEach(arr=>arr.forEach(a=>allAppts.push(a))) })
+    const nNieuw=allAppts.filter(a=>a.category==='nieuw').length
+    const nCtrlF=allAppts.filter(a=>a.category==='controle'&&!a.digitaal).length
+    const nCtrlT=allAppts.filter(a=>a.category==='controle'&&a.digitaal).length
+    const totC=nCtrlF+nCtrlT
+    const pctTel=totC>0?Math.round(nCtrlT/totC*100):0
+    const nNtp=(raster.ntp||[]).length
+
+    // ── ANALYSE 2.1 — vraag vs. capaciteit + modaliteitsmix + risico's ──────────
+    const realAppts=allAppts.filter(a=>!a.isFlex&&(!a.overbook||a.bwReal))
+    const modMix=['fysiek','telefonisch','video'].map(mv=>({
+      mv,label:modInfo(mv).l,ico:modInfo(mv).ico,
+      n:realAppts.filter(a=>(a.modaliteit||(a.digitaal?'telefonisch':'fysiek'))===mv).length
+    })).filter(x=>x.n>0)
+    const nReal=realAppts.length||1
+    // Wekelijkse vráág (uit de codes) los van wat het raster plaatste
+    const demandMin=raster.fk?raster.fk.samenvatting.vraagMin:Math.round(
+      newRows.reduce((s,r)=>s+cfg.newPat*((r.percentage||0)/100)*(r.duur||15),0)+
+      ctrlRows.reduce((s,r)=>s+cfg.ctrlPat*((r.percentage||0)/100)*(r.duur||15),0))
+    const capMin=raster.kpi?raster.kpi.week.capacity:0
+    const plannedMin=raster.kpi?raster.kpi.week.planned:0
+    const dekking=demandMin>0?Math.round(capMin/demandMin*100):100
+    // Onzekerheid-mix (voor buffer-advies)
+    const onzMix={zeker:0,gemiddeld:0,onzeker:0}
+    realAppts.forEach(a=>{onzMix[a.onzeker||'gemiddeld']=(onzMix[a.onzeker||'gemiddeld']||0)+1})
+    const pctOnzeker=nReal>0?Math.round(onzMix.onzeker/nReal*100):0
+    // ── SLIMME AGENDA-ANALYSE — kijkt naar de werkelijke bezetting per dag/kamer ──
+    const ddDurMap={o:ochDur,m:midDur,a:(raster.avDur||midDur)}
+    const ddPres=['o','m',...(raster.avondOn?['a']:[])]
+    // Vraag per (dag,dagdeel) = geplaatst + wat op de restlijst staat (echte behoefte)
+    const ntpMinFor=(di,pre)=>(raster.ntp||[]).reduce((s,a)=>{
+      const p=a.dd==='O'?'o':a.dd==='M'?'m':a.dd==='A'?'a':null
+      return s+((a.day===di&&p===pre)?(a.duur||0):0)},0)
+    const needFloatAt=(benut)=>{
+      let mx=0.0001
+      ;[0,1,2,3,4].forEach(di=>{ const slots=raster.days[di]; if(!slots) return
+        ddPres.forEach(pre=>{
+          let min=0; for(let r=0;r<numRooms;r++){(slots[pre+r]||[]).forEach(a=>{if(!a.isFlex&&!a.overbook)min+=a.duur})}
+          min+=ntpMinFor(di,pre)
+          const usable=(ddDurMap[pre]||midDur)*(benut/100)
+          if(usable>0) mx=Math.max(mx,min/usable)
+        }) })
+      return mx
+    }
+    const neededRoomsAt=(benut)=>Math.max(1,Math.ceil(needFloatAt(benut)-1e-9))
+    // Onderbenutte kamers opsporen (per kamer over de hele week)
+    const roomLoad=Array.from({length:numRooms},()=>({cnt:0,dagen:0}))
+    ;[0,1,2,3,4].forEach(di=>{ const slots=raster.days[di]; if(!slots) return
+      for(let r=0;r<numRooms;r++){ let c=0; ddPres.forEach(pre=>{(slots[pre+r]||[]).forEach(a=>{if(!a.isFlex&&!a.overbook)c++})})
+        if(c>0){ roomLoad[r].cnt+=c; roomLoad[r].dagen++ } } })
+    const zwakkeKamer=numRooms>1 ? roomLoad.map((l,r)=>({r,gem:l.dagen?l.cnt/l.dagen:0,cnt:l.cnt})).sort((a,b)=>a.cnt-b.cnt)[0] : null
+    const avgDuur=nReal>0?Math.max(5,Math.round(plannedMin/nReal)):15
+    const flexMin=raster.kpi?raster.kpi.week.flex:0
+    const beschRooms=capacity.mode==='vast'?capacity.kamers:numRooms
+
+    // Belasting per (dag,dagdeel) — pauzes blijven ongemoeid, alleen flex schuift mee
+    const ddLoads=[]
+    ;[0,1,2,3,4].forEach(di=>{ const slots=raster.days[di]; if(!slots) return
+      ddPres.forEach(pre=>{
+        let min=0; for(let r=0;r<numRooms;r++){(slots[pre+r]||[]).forEach(a=>{if(!a.isFlex&&!a.overbook)min+=a.duur})}
+        min+=ntpMinFor(di,pre)
+        if(min>0) ddLoads.push({min,dur:(ddDurMap[pre]||midDur)})
+      }) })
+    const benutVoorKamers=R=>{ if(R<=0)return 999; let mx=0; ddLoads.forEach(x=>{mx=Math.max(mx,x.min/(x.dur*R))}); return Math.ceil(mx*100) }
+    const overflowAppts=(R,b)=>Math.round(ddLoads.reduce((s,x)=>s+Math.max(0,x.min-x.dur*b/100*R),0)/avgDuur)
+    const clampBenut=b=>Math.max(50,Math.min(98,b))
+
+    // Advies-signalen — concreet en met dag/kamer erbij waar mogelijk
+    const adviezen=[]
+    if(nNtp>0){
+      const compactRooms=neededRoomsAt(92)
+      if(compactRooms<=beschRooms) adviezen.push({t:'warn',m:`${nNtp} afspraken passen niet, maar er staat ${flexMin} min flex/buffer gereserveerd. Verhoog de benutting naar ~92% (kort de flex per dag in) → past waarschijnlijk in de huidige ${beschRooms} kamer(s).`})
+      else adviezen.push({t:'bad',m:`${nNtp} afspraken passen niet. Ook bij 92% benutting zijn er ${compactRooms} parallelle kamers nodig (nu ${beschRooms}). Voeg een kamer/specialist toe óf verlaag de vraag.`})
+    }
+    if(zwakkeKamer && zwakkeKamer.cnt>0 && zwakkeKamer.cnt<=3){
+      adviezen.push({t:'warn',m:`${kamerNaam(zwakkeKamer.r)} draagt over de hele week maar ${zwakkeKamer.cnt} afspraken — die kamer is nauwelijks rendabel. Overweeg 'm te schrappen en de flexblokken in te korten (benutting omhoog); de vraag past dan efficiënter in ${numRooms-1} kamers.`})
+    }
+    if(nNtp>0 && capacity.mode==='vast' && benutVoorKamers(beschRooms)>97) adviezen.push({t:'bad',m:`Kritisch: met ${beschRooms} kamer${beschRooms===1?'':'s'} past het ook met minimale flex niet. Kun je geen kamer bijzetten, verruim dan de spreekuurtijden of verlaag de weekvraag — de pauzes blijven ongemoeid.`})
+    if(nNtp===0 && flexMin>avgDuur*8 && m2.benutting<90){
+      const winst=Math.floor((flexMin - (flexMin*m2.benutting/92))/avgDuur)
+      if(winst>=3) adviezen.push({t:'info',m:`Er is ~${flexMin} min flex ingepland. Zou je de benutting naar 92% zetten, dan komt ruimte vrij voor ± ${winst} extra afspraken per week zonder extra kamer.`})
+    }
+    if(dekking<100&&demandMin>0) adviezen.push({t:'bad',m:`Capaciteit dekt ${dekking}% van de weekvraag (${(demandMin/60).toFixed(1)} u vraag vs ${(capMin/60).toFixed(1)} u beschikbaar).`})
+    else if(dekking>150) adviezen.push({t:'warn',m:`Ruim overschot: ${dekking}% capaciteit t.o.v. de vraag. Een kamer of dagdeel minder kan al voldoende zijn.`})
+    if(pctOnzeker>=30&&rules.flexMode!=='spread') adviezen.push({t:'info',m:`${pctOnzeker}% onzekere afspraken — 'Buffer: verspreid' vangt uitloop beter op.`})
+    if(!adviezen.length) adviezen.push({t:'ok',m:'Vraag en capaciteit zijn in balans; geen knelpunten gevonden.'})
+
+    // ── Time-grid raster (resource calendar: rooms as columns, time on Y) ──────
+    const PXMIN=calZoom*0.95 // px per minute for the grid
+    const ochStart=raster.ochStart, ochEnd=raster.ochEnd, midStart=raster.midStart, midEnd=raster.midEnd
+    const avondOn=!!raster.avondOn, avondStart=raster.avondStart, avondEnd=raster.avondEnd
+    const PAUSE_H=Math.max(36,(midStart-ochEnd)*PXMIN*0.32)
+    const PAUSE_H2=avondOn?Math.max(36,(avondStart-midEnd)*PXMIN*0.32):0
+    // Build dagdeel regions with their y-offsets
+    // Marge van een uur vóór en ná het spreekuur: puur ter oriëntatie, je kunt er
+    // niet plannen. Zo staan de begin- en eindtijd niet meer tegen de rand geklemd.
+    const LEAD_MIN=60
+    const LEAD=LEAD_MIN*PXMIN
+    const regions=[{dd:'O',pre:'o',label:'Ochtend',start:ochStart,end:ochEnd,y0:LEAD}]
+    let yAcc=LEAD+(ochEnd-ochStart)*PXMIN+PAUSE_H
+    regions.push({dd:'M',pre:'m',label:'Middag',start:midStart,end:midEnd,y0:yAcc})
+    yAcc+=(midEnd-midStart)*PXMIN
+    if(avondOn){
+      yAcc+=PAUSE_H2
+      regions.push({dd:'A',pre:'a',label:'Avond',start:avondStart,end:avondEnd,y0:yAcc})
+      yAcc+=(avondEnd-avondStart)*PXMIN
+    }
+    const gridH=yAcc+LEAD
+    const regionOf=t=>{
+      for(let i=regions.length-1;i>=0;i--){ if(t>=regions[i].start) return regions[i] }
+      return regions[0]
+    }
+    const toY=t=>{ const r=regionOf(t); return r.y0+(t-r.start)*PXMIN }
+
+    // expose geometry for drag math (region-based)
+    gridGeomRef.current={PXMIN,pauseH:Math.max(PAUSE_H,PAUSE_H2),
+      regions:regions.map(r=>({start:r.start,end:r.end,y0:r.y0}))}
+
+    const gridLines=[]
+    regions.forEach(r=>{ for(let t=r.start;t<=r.end;t+=15) gridLines.push({t,y:toY(t),hour:t%60===0,half:t%30===0}) })
+    // Tijdlabels in de marges, zodat je ziet waar de dag begint en eindigt.
+    const eersteT=regions[0].start, laatsteT=regions[regions.length-1].end
+    for(let k=1;k<=Math.floor(LEAD_MIN/30);k++){
+      const tv=eersteT-k*30; if(tv>=0) gridLines.push({t:tv,y:toY(eersteT)-k*30*PXMIN,hour:tv%60===0,half:true,buiten:true})
+      const tn=laatsteT+k*30;  gridLines.push({t:tn,y:toY(laatsteT)+k*30*PXMIN,hour:tn%60===0,half:true,buiten:true})
+    }
+
+    const isDragging=!!dragItem
+
+    // Overlap layout: assign each item a column + column-count so overlapping items sit side-by-side
+    const layoutOverlap=(items)=>{
+      const sorted=[...items].sort((a,b)=>(a.start||0)-(b.start||0)||(b.duur-a.duur))
+      const cols=[] // each col holds the end-time of its last item
+      const placed=sorted.map(it=>{
+        let c=0
+        while(c<cols.length && cols[c]>(it.start||0)) c++
+        cols[c]=it.end||((it.start||0)+it.duur)
+        return {it,col:c}
+      })
+      // group into overlap clusters to compute total columns per cluster
+      const result=[]
+      placed.forEach(({it,col})=>{
+        const overlaps=placed.filter(p=>(p.it.start||0)<(it.end||0)&&(p.it.end||0)>(it.start||0))
+        const totalCols=Math.max(...overlaps.map(o=>o.col))+1
+        result.push({...it,_col:col,_cols:totalCols})
+      })
+      return result
+    }
+
+    // A positioned block (appointment OR flex) with drag + resize handles
+    const Block=({it,day,slot})=>{
+      const isFlex=it.isFlex
+      const clr=isFlex?{bg:FLEX_COLOR.bg,brd:FLEX_COLOR.brd,fg:FLEX_COLOR.fg}:getColor(it)
+      const beingDragged=dragItem&&dragItem.appt&&dragItem.appt.id===it.id&&dragItem.mode!=='resize-top'&&dragItem.mode!=='resize-bot'
+      const top=toY(it.start)+1
+      const h=Math.max((it.duur)*PXMIN-2, 22)
+      const W=100/(it._cols||1)
+      const L=(it._col||0)*W
+      return(
+        <div
+          onMouseDown={e=>startDrag(e,{mode:'move',appt:it,fromDay:day,fromSlot:slot})}
+          onTouchStart={e=>startDrag(e,{mode:'move',appt:it,fromDay:day,fromSlot:slot})}
+          style={{position:'absolute',top,left:`calc(${L}% + 2px)`,width:`calc(${W}% - 4px)`,height:h,
+            background:isFlex?FLEX_STRIPE(6,13)
+              :it.overbook?'repeating-linear-gradient(45deg,#F3EEFA,#F3EEFA 6px,#EBE2F7 6px,#EBE2F7 13px)':clr.bg,
+            color:it.overbook?'#6D28B5':clr.fg,border:`1px solid ${it.overbook?'#8B5CF6':clr.brd}`,
+            borderLeft:(isFlex||it.overbook)?`3px dashed ${it.overbook?'#8B5CF6':clr.brd}`:`3px solid ${clr.brd}`,
+            borderRadius:6,cursor:isDragging?'grabbing':'grab',userSelect:'none',overflow:'hidden',
+            outline:beingDragged?`2px solid ${C.primary}`:(it.baileyWelsh&&!it.overbook?`2px solid #8B5CF6`:'none'),outlineOffset:1,
+            boxShadow:beingDragged?`0 10px 26px rgba(28,110,164,0.35)`:'0 1px 2px rgba(16,40,60,0.08)',
+            zIndex:beingDragged?60:(isFlex?3:5),
+            transition:beingDragged?'none':'top 0.08s ease, left 0.08s ease',
+            pointerEvents:isDragging?'none':'auto',
+            display:'flex',flexDirection:'column'}}>
+          {/* top resize handle */}
+          <div onMouseDown={e=>startDrag(e,{mode:'resize-top',appt:it,fromDay:day,fromSlot:slot})}
+            onTouchStart={e=>startDrag(e,{mode:'resize-top',appt:it,fromDay:day,fromSlot:slot})}
+            style={{position:'absolute',top:0,left:0,right:0,height:6,cursor:'ns-resize',zIndex:6}}/>
+          <div style={{padding:'4px 7px',flex:1,overflow:'hidden',pointerEvents:'none'}}
+            title={it._why?('Waarom hier?\n• '+it._why.join('\n• ')):''}>
+            <div style={{display:'flex',alignItems:'center',gap:4,fontSize:10.5,fontWeight:700,lineHeight:1.25}}>
+              <span style={{fontVariantNumeric:'tabular-nums',opacity:0.9}}>{toTime(it.start)}</span>
+              {!isFlex&&it.spoed&&<span>●</span>}
+              {!isFlex&&it.digitaal&&<span style={{fontSize:9}}>{modInfo(it.modaliteit||'telefonisch').ico||'📞'}</span>}
+              {!isFlex&&it.baileyWelsh&&<span style={{fontSize:8,fontWeight:800,background:'#8B5CF6',color:'#fff',
+                borderRadius:3,padding:'0 3px'}}>B²</span>}
+              <span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                {isFlex?'Flex':it.code}
+              </span>
+              <span onMouseDown={e=>{e.stopPropagation();e.preventDefault();deleteAppt(day,slot,it.id)}}
+                style={{cursor:'pointer',opacity:0.45,fontWeight:700,fontSize:13,pointerEvents:isDragging?'none':'auto',padding:'0 1px'}}>×</span>
+            </div>
+            {h>32&&<div style={{fontSize:9.5,opacity:0.8,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',marginTop:1}}>
+              {isFlex?(it.description||`${it.duur} min vrij`):`${it.description} · ${it.duur}m`}
+            </div>}
+          </div>
+          {/* bottom resize handle */}
+          <div onMouseDown={e=>startDrag(e,{mode:'resize-bot',appt:it,fromDay:day,fromSlot:slot})}
+            onTouchStart={e=>startDrag(e,{mode:'resize-bot',appt:it,fromDay:day,fromSlot:slot})}
+            style={{position:'absolute',bottom:0,left:0,right:0,height:6,cursor:'ns-resize',zIndex:6,
+              display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
+            <div style={{width:20,height:2,marginBottom:1,borderRadius:2,background:clr.brd,opacity:0.4}}/>
+          </div>
+        </div>
+      )
+    }
+
+    // One room column
+    const RoomColumn=({room})=>{
+      const slots=raster.days[selDay]||{}
+      const regData=regions.map(r=>{
+        const arr=slots[r.pre+room]||[]
+        const used=arr.filter(a=>!a.isFlex).reduce((s,a)=>s+a.duur,0)
+        return {...r,arr,used,laid:layoutOverlap(arr),
+          over:dragOver&&dragOver.day===selDay&&dragOver.slot===r.pre+room}
+      })
+      return(
+        <div style={{flex:1,minWidth:158,borderRight:`1px solid ${C.border}`,position:'relative'}}>
+          {/* Column header — editable spreekuur name + add menu */}
+          <div style={{height:48,background:C.surface2,borderBottom:`2px solid ${C.primary}`,
+            display:'flex',alignItems:'center',gap:6,padding:'0 6px 0 8px',
+            position:'sticky',top:0,zIndex:addMenu&&addMenu.room===room?40:15,borderRight:`1px solid ${C.border}`}}>
+            <div style={{flex:1,minWidth:0}}>
+              <input value={kamerNaam(room)}
+                onChange={e=>{ const v=e.target.value
+                  if(modus==='functie'&&fkActieveKamers[room]){ const id=fkActieveKamers[room].id; setFk(p=>({...p,kamers:p.kamers.map(k=>k.id===id?{...k,naam:v}:k)})) }
+                  else setRoomNames(p=>({...p,[room]:v})) }}
+                title={modus==='functie'?"Naam van de functiekamer — klik om te wijzigen":"Naam van het spreekuur — klik om te wijzigen"}
+                style={{width:'100%',border:'1px solid transparent',background:'transparent',
+                  fontSize:12.5,fontWeight:700,color:C.text,letterSpacing:'-0.01em',fontFamily:'inherit',
+                  padding:'3px 5px',borderRadius:5,cursor:'text'}}
+                onFocus={e=>{e.target.style.background='#fff';e.target.style.borderColor=C.border}}
+                onBlur={e=>{e.target.style.background='transparent';e.target.style.borderColor='transparent'}}/>
+              {/* Vulling per dagdeel, met de benutting uit module Tijden als doel.
+                  Groen = op of boven doel, oranje = eronder — zo zie je direct of
+                  het spreekuur de ingestelde benutting haalt. */}
+              <div style={{display:'flex',gap:5,paddingLeft:5,flexWrap:'wrap'}}>
+                {regData.map(r=>{
+                  const bruto=r.end-r.start
+                  const pct=bruto>0?Math.round(r.used/bruto*100):0
+                  const doel=m2.benutting||85
+                  const haalt=pct>=doel-3
+                  return(
+                    <span key={r.pre} title={`${r.label}: ${r.used} van ${bruto} min · doel ${doel}%`}
+                      style={{fontSize:9,fontFamily:'monospace',fontWeight:700,
+                        color:r.used===0?C.muted:(haalt?'#2E6B3A':FLEX_COLOR.fg),
+                        background:r.used===0?'transparent':(haalt?'#EDF7F0':FLEX_COLOR.bg),
+                        border:`1px solid ${r.used===0?'transparent':(haalt?'#C9E6D5':FLEX_COLOR.brd)}`,
+                        borderRadius:5,padding:'1px 5px'}}>
+                      {r.used}m · {pct}%
+                    </span>
+                  )
+                })}
+              </div>
+            </div>
+            <div style={{position:'relative'}}>
+              <button onClick={()=>setAddMenu(addMenu&&addMenu.room===room?null:{room})}
+                title="Afspraak of flexblok toevoegen aan dit spreekuur"
+                style={{width:26,height:26,borderRadius:7,flexShrink:0,cursor:'pointer',
+                  border:`1px solid ${addMenu&&addMenu.room===room?C.primary:C.border}`,
+                  background:addMenu&&addMenu.room===room?C.primary:C.white,
+                  color:addMenu&&addMenu.room===room?'#fff':C.primary,fontSize:17,fontWeight:700,lineHeight:1,
+                  display:'flex',alignItems:'center',justifyContent:'center'}}>+</button>
+              {addMenu&&addMenu.room===room&&(
+                <>
+                  <div onClick={()=>setAddMenu(null)} style={{position:'fixed',inset:0,zIndex:90}}/>
+                  <div style={{position:'absolute',top:30,right:0,width:230,zIndex:91,
+                    background:C.white,border:`1px solid ${C.border}`,borderRadius:10,
+                    boxShadow:C.shadowLg,padding:8,maxHeight:340,overflowY:'auto'}}>
+                    <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',
+                      letterSpacing:'0.06em',padding:'4px 8px 6px'}}>Afspraak toevoegen</div>
+                    {[...newRows.map(r=>({...r,category:'nieuw'})),...ctrlRows.map(r=>({...r,category:'controle'}))]
+                      .filter(r=>r.afspraakcode||r.omschrijving).map((r,idx)=>{
+                      const clr=getColor({category:r.category,ci:0,digitaal:r.digitaal})
+                      return(
+                        <div key={idx} onClick={()=>addToRoom(selDay,room,r)}
+                          style={{display:'flex',alignItems:'center',gap:8,padding:'7px 8px',borderRadius:7,cursor:'pointer',transition:'background 0.1s'}}
+                          onMouseEnter={e=>e.currentTarget.style.background=C.surface2}
+                          onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                          <span style={{width:9,height:9,borderRadius:'50%',background:clr.brd,flexShrink:0}}/>
+                          <span style={{flex:1,fontSize:12,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                            {r.afspraakcode||r.omschrijving} {r.digitaal&&'📞'}
+                          </span>
+                          <span style={{fontSize:10.5,color:C.muted,fontVariantNumeric:'tabular-nums'}}>{r.duur}m</span>
+                        </div>
+                      )
+                    })}
+                    {[...newRows,...ctrlRows].filter(r=>r.afspraakcode||r.omschrijving).length===0&&(
+                      <div style={{fontSize:11,color:C.muted,padding:'4px 8px 8px'}}>Geen afspraakcodes ingevoerd.</div>
+                    )}
+                    <div style={{borderTop:`1px solid ${C.border}`,margin:'6px 0'}}/>
+                    <div style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',
+                      letterSpacing:'0.06em',padding:'2px 8px 6px'}}>Flexblok toevoegen</div>
+                    <div style={{display:'flex',gap:6,padding:'0 8px 6px'}}>
+                      {[15,30,45].map(d=>(
+                        <button key={d} onClick={()=>addToRoom(selDay,room,{flex:true,duur:d})}
+                          style={{flex:1,padding:'7px 4px',borderRadius:7,cursor:'pointer',fontSize:11.5,fontWeight:600,
+                            background:FLEX_COLOR.bg,color:FLEX_COLOR.fg,border:`1px dashed ${FLEX_COLOR.brd}`}}>{d} min</button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+          {/* Body */}
+          <div data-roombody={`${selDay}_o${room}`} style={{position:'relative',height:gridH,background:C.white}}>
+            {/* Gesloten marges vóór en ná het spreekuur — grijs, niet planbaar */}
+            <div style={{position:'absolute',top:0,left:0,right:0,height:LEAD,zIndex:2,pointerEvents:'none',
+              background:'repeating-linear-gradient(45deg,#EDF0F4,#EDF0F4 6px,#F5F7F9 6px,#F5F7F9 12px)',
+              borderBottom:`1px solid ${C.border}`}}/>
+            <div style={{position:'absolute',bottom:0,left:0,right:0,height:LEAD,zIndex:2,pointerEvents:'none',
+              background:'repeating-linear-gradient(45deg,#EDF0F4,#EDF0F4 6px,#F5F7F9 6px,#F5F7F9 12px)',
+              borderTop:`1px solid ${C.border}`}}/>
+            {gridLines.map(({t,y,hour},idx)=>(
+              <div key={idx} style={{position:'absolute',top:y,left:0,right:0,height:1,
+                background:hour?'#D8E0E8':'#EEF2F6',zIndex:0}}/>
+            ))}
+            {/* Drop zones per region */}
+            {regData.map(r=>{
+              const yTop=r.y0, hZone=(r.end-r.start)*PXMIN
+              return(
+                <div key={'z'+r.pre} data-slotkey={r.pre+room} data-day={selDay}
+                  style={{position:'absolute',top:yTop,left:0,right:0,height:hZone,zIndex:1,
+                    background:r.over?'rgba(15,92,140,0.10)':'transparent',
+                    outline:r.over?`2px dashed ${C.primary}`:'none',outlineOffset:-2,transition:'background 0.1s'}}/>
+              )
+            })}
+            {/* Pause bands (between consecutive regions) */}
+            {regions.slice(1).map((r,i)=>{
+              const prev=regions[i]
+              const pTop=prev.y0+(prev.end-prev.start)*PXMIN
+              const pH=r.y0-pTop
+              return(
+                <div key={'p'+i} style={{position:'absolute',top:pTop,left:0,right:0,height:pH,zIndex:2,
+                  background:'repeating-linear-gradient(45deg,#EDF1F5,#EDF1F5 6px,#F6F9FB 6px,#F6F9FB 13px)',
+                  borderTop:`1px solid ${C.border}`,borderBottom:`1px solid ${C.border}`,
+                  display:'flex',alignItems:'center',justifyContent:'center'}}>
+                  <span style={{fontSize:8.5,color:C.muted,fontWeight:600,letterSpacing:'0.12em'}}>PAUZE</span>
+                </div>
+              )
+            })}
+            {/* Blocks per region */}
+            {regData.map(r=>r.laid.map(it=><Block key={it.id} it={it} day={selDay} slot={r.pre+room}/>))}
+          </div>
+        </div>
+      )
+    }
+
+    // Toon alleen kamers die op DEZE dag daadwerkelijk een spreekuur hebben. Een
+    // kamer die op een andere dag wel wordt gebruikt maar hier leeg is, wordt niet
+    // getoond — anders staar je naar lege kolommen die niets betekenen.
+    const kamerInGebruik=(di,r)=>{
+      const sl=raster.days[di]; if(!sl) return false
+      return ['o','m','a'].some(pre=>((sl[pre+r]||[]).some(a=>!a.isFlex)))
+    }
+    const rooms=(()=>{
+      // In VAST-modus is het aantal kamers een handmatige knop: toon élke gekozen
+      // kamer als kolom, óók de lege — zo levert "+" zichtbaar een extra (leeg,
+      // besleepbaar) spreekuur op en haalt "−" de laatste kamer weg. In AUTO-modus
+      // tonen we alleen de kamers die de vraag daadwerkelijk gebruikt.
+      const vast=raster.capacity&&raster.capacity.mode==='vast'
+      const uit=[]
+      for(let r=0;r<numRooms;r++) if(vast||kamerInGebruik(selDay,r)) uit.push(r)
+      return uit.length?uit:[0]      // altijd minstens één kolom om op te slepen
+    })()
+    const dayHasData=!!raster.days[selDay]
+
+    // Inklapbare paneelkop met minimaliseer/maximaliseer-knop
+    const PanelKop=({id,titel,samenvatting})=>(
+      <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:openPanels[id]?10:0,flexWrap:'wrap'}}>
+        <span style={{fontSize:9.5,fontWeight:700,color:C.primary,letterSpacing:'0.12em',textTransform:'uppercase'}}>{titel}</span>
+        {!openPanels[id]&&samenvatting&&<span style={{fontSize:11.5,color:C.muted}}>{samenvatting}</span>}
+        <button onClick={()=>togglePanel(id)} title={openPanels[id]?'Minimaliseren':'Maximaliseren'}
+          style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:6,fontSize:11,fontWeight:600,color:C.muted,
+            background:C.white,border:`1px solid ${C.border}`,borderRadius:7,padding:'4px 11px',cursor:'pointer',transition:'all 0.12s'}}
+          onMouseEnter={e=>{e.currentTarget.style.borderColor=C.primary;e.currentTarget.style.color=C.primary}}
+          onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.color=C.muted}}>
+          {openPanels[id]?'▲ Minimaliseren':'▼ Maximaliseren'}
+        </button>
+      </div>
+    )
+
+    return(
+      <div style={{animation:'fadeIn 0.18s ease'}}>
+        {renderProg()}
+
+        {/* Header */}
+        <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:14,flexWrap:'wrap',gap:10}}>
+          <div>
+            <div style={{display:'flex',alignItems:'center',gap:9,marginBottom:5}}>
+              <span style={{width:18,height:1.5,background:C.primary}}/>
+              <span style={{fontSize:9.5,fontWeight:700,color:C.primary,letterSpacing:'0.2em'}}>RASTERPROCES</span>
+            </div>
+            <h1 style={{fontFamily:"'Newsreader',Georgia,serif",fontWeight:500,fontSize:25,lineHeight:1.1,
+              color:C.text,margin:'0 0 4px 0'}}>Multi-dynamische <span style={{fontStyle:'italic',color:C.primary}}>weekplanning</span></h1>
+            <p style={{fontSize:12.5,color:C.muted,margin:0}}>Klik een dag · sleep afspraken tussen kamers, dagdelen en het palet · pak elk blok vast om te verplaatsen of te verlengen.</p>
+          </div>
+          <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+            {/* De assistent staat hier, bij het raster zelf — niet weggestopt in een menu. */}
+            {(!SIMPEL||modus==='functie')&&<button onClick={()=>{ if(modus==='functie'){ setOpenPanels(p=>({...p,fkAdvies:true})); window.scrollTo({top:0,behavior:'smooth'}); return } setBijstuur(null); setWiz({modus:'bijsturen'})}}
+              title={modus==='functie'?"Het rasteradvies per functiekamer staat bovenaan — in gewone taal, met de toewijzing en de regels":"Zeg in gewone taal wat er anders moet — de tool rekent het door en laat het je eerst zien"}
+              style={{display:'flex',alignItems:'center',gap:7,padding:'8px 15px',borderRadius:11,border:'none',
+                cursor:'pointer',fontSize:12.5,fontWeight:700,color:'#fff',
+                background:'linear-gradient(135deg,#1C6EA4,#39C6AC)',boxShadow:'0 4px 14px rgba(28,110,164,0.3)',
+                transition:'transform 0.12s,box-shadow 0.12s'}}
+              onMouseEnter={e=>{e.currentTarget.style.transform='translateY(-1px)';e.currentTarget.style.boxShadow='0 6px 18px rgba(28,110,164,0.38)'}}
+              onMouseLeave={e=>{e.currentTarget.style.transform='none';e.currentTarget.style.boxShadow='0 4px 14px rgba(28,110,164,0.3)'}}>
+              {modus==='functie'?'✨ Toon het rasteradvies':'✨ Vraag de assistent'}
+            </button>}
+            <div style={{display:'flex',padding:2,background:C.surface2,border:`1px solid ${C.border}`,borderRadius:9}}>
+              {[{v:'dag',l:'Dag'},{v:'week',l:'Week'}].map(o=>(
+                <button key={o.v} onClick={()=>setViewMode(o.v)}
+                  style={{padding:'5px 14px',borderRadius:7,border:'none',cursor:'pointer',fontSize:12,fontWeight:600,
+                    background:viewMode===o.v?C.white:'transparent',color:viewMode===o.v?C.primary:C.muted,
+                    boxShadow:viewMode===o.v?'0 1px 3px rgba(27,39,51,0.10)':'none',transition:'all 0.13s'}}>{o.l}</button>
+              ))}
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:6,padding:'5px 10px',background:C.white,border:`1px solid ${C.border}`,borderRadius:8}}>
+              <span style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.05em'}}>Zoom</span>
+              <button onClick={()=>setCalZoom(z=>Math.max(1.5,+(z-0.5).toFixed(1)))} style={{width:22,height:22,borderRadius:5,border:`1px solid ${C.border}`,background:C.white,cursor:'pointer',fontWeight:700,color:C.primary}}>−</button>
+              <span style={{fontWeight:700,fontSize:12,color:C.primary,minWidth:30,textAlign:'center'}}>{Math.round(calZoom/3*100)}%</span>
+              <button onClick={()=>setCalZoom(z=>Math.min(7,+(z+0.5).toFixed(1)))} style={{width:22,height:22,borderRadius:5,border:`1px solid ${C.border}`,background:C.white,cursor:'pointer',fontWeight:700,color:C.primary}}>+</button>
+            </div>
+            <div title={liveFout?`Doorrekenen mislukt: ${liveFout} — klik om het opnieuw te proberen.`
+                :`Het raster past zich automatisch aan zodra je een instelling of planregel wijzigt.${engineStatus.modus==='worker'?' Het rekenen gebeurt op de achtergrond, zodat de tool blijft reageren.':''}`}
+              onClick={liveFout?doGenerate:undefined}
+              style={{display:'flex',alignItems:'center',gap:6,padding:'5px 10px',borderRadius:8,cursor:liveFout?'pointer':'default',
+                background:liveFout?'#FBE9E6':liveBezig?'#FEF6E0':'#EAF4E0',border:`1px solid ${liveFout?'#E0A090':liveBezig?'#F0C840':'#98CC70'}`,
+                fontSize:11,fontWeight:700,color:liveFout?'#9A2A1A':liveBezig?'#7A5000':'#2A5018',transition:'all 0.2s'}}>
+              <span style={{width:8,height:8,borderRadius:'50%',background:liveFout?'#D04030':liveBezig?'#E0A020':'#3AAE4E',
+                display:'inline-block'}}/>
+              {liveFout?'mislukt — opnieuw proberen':liveBezig?'bijwerken…':'live — bijgewerkt'}
+            </div>
+            <button onClick={()=>herbouwNu(false)}
+              title="Analyseer de huidige gegevens en instellingen opnieuw en bouw het raster ermee op"
+              style={{display:'flex',alignItems:'center',gap:7,padding:'8px 15px',borderRadius:11,border:'none',
+                cursor:'pointer',fontSize:12.5,fontWeight:700,color:'#fff',
+                background:'linear-gradient(135deg,#1C6EA4,#2E9BC8)',boxShadow:'0 4px 14px rgba(28,110,164,0.3)',
+                transition:'transform 0.12s,box-shadow 0.12s'}}
+              onMouseEnter={e=>{e.currentTarget.style.transform='translateY(-1px)';e.currentTarget.style.boxShadow='0 6px 18px rgba(28,110,164,0.38)'}}
+              onMouseLeave={e=>{e.currentTarget.style.transform='none';e.currentTarget.style.boxShadow='0 4px 14px rgba(28,110,164,0.3)'}}>
+              🔄 Analyseer &amp; herbouw
+            </button>
+            <Btn small onClick={()=>setShowExport(true)} style={{background:C.green,border:'none'}}>⬇ Export</Btn>
+          </div>
+        </div>
+
+        {/* ── CAPACITEITSPLANNING — kies het aantal kamers + past-advies ── */}
+        {modus==='poli'&&raster.capacity&&(()=>{
+          const cap=raster.capacity
+          const besch=capacity.kamers
+          const nodig=cap.needed
+          const past=nodig<=besch
+          const vast=capacity.mode==='vast'
+          const status = vast
+            ? (cap.fits
+                ? {t:'ok',ico:'✓',kop:`Past — ${nodig} parallel ${nodig===1?'spreekuur':'spreekuren'} nodig, ${besch} ${besch===1?'kamer':'kamers'} beschikbaar`,
+                   sub:`Er blijft ${Math.max(0,besch-nodig)} ${besch-nodig===1?'kamer':'kamers'} over.`}
+                : {t:'bad',ico:'✗',kop:`Past niet — ${nodig} kamers nodig, ${besch} beschikbaar`,
+                   sub:`${cap.overflow} afspra${cap.overflow===1?'ak staat':'ken staan'} op "nog te plannen". Verhoog het aantal kamers, verleng de spreekuren of verlaag de vraag.`})
+            : (nodig<=besch
+                ? {t:'ok',ico:'✓',kop:`Past binnen je capaciteit — ${nodig} van ${besch} ${besch===1?'kamer':'kamers'} benut`,
+                   sub:'Automatische modus: het rooster groeit precies tot wat nodig is.'}
+                : {t:'warn',ico:'△',kop:`Rooster gebruikt ${nodig} parallelle spreekuren — meer dan de ${besch} die je opgaf`,
+                   sub:'Zet "Vast aantal" aan om te begrenzen (overschot gaat dan naar "nog te plannen"), of verhoog het aantal kamers.'})
+          const stCol=status.t==='ok'?C.green:status.t==='bad'?C.danger:'#B8860B'
+          const stBg=status.t==='ok'?'#EDF7F0':status.t==='bad'?'#FCEEEB':'#FBF3E2'
+          const Stepper=({icon,label,val,onCh,min=1,max=20})=>(
+            <div style={{display:'flex',alignItems:'center',gap:9,padding:'8px 12px',background:C.white,
+              border:`1px solid ${C.border}`,borderRadius:10}}>
+              <span style={{fontSize:15}}>{icon}</span>
+              <div>
+                <div style={{fontSize:9.5,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.05em'}}>{label}</div>
+                <div style={{display:'flex',alignItems:'center',gap:8,marginTop:3}}>
+                  <button onClick={()=>onCh(Math.max(min,val-1))} style={{width:24,height:24,borderRadius:6,border:`1px solid ${C.border}`,background:C.surface2,cursor:'pointer',fontWeight:700,fontSize:15,color:C.primary}}>−</button>
+                  <span style={{fontWeight:700,fontSize:18,color:C.text,minWidth:20,textAlign:'center',fontVariantNumeric:'tabular-nums'}}>{val}</span>
+                  <button onClick={()=>onCh(Math.min(max,val+1))} style={{width:24,height:24,borderRadius:6,border:`1px solid ${C.border}`,background:C.surface2,cursor:'pointer',fontWeight:700,fontSize:15,color:C.primary}}>+</button>
+                </div>
+              </div>
+            </div>
+          )
+          return(
+            <div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:12,padding:'14px 16px',marginBottom:12,
+              display:'flex',alignItems:'center',gap:16,flexWrap:'wrap'}}>
+              <div style={{minWidth:150}}>
+                <div style={{fontSize:9.5,fontWeight:700,color:C.primary,letterSpacing:'0.12em',textTransform:'uppercase',marginBottom:5}}>Capaciteitsplanning</div>
+                <div style={{display:'flex',background:C.surface2,border:`1px solid ${C.border}`,borderRadius:8,padding:2}}>
+                  {[{v:'auto',l:'Automatisch'},{v:'vast',l:'Vast aantal'}].map(o=>(
+                    <button key={o.v} onClick={()=>setCapacity(p=>({...p,mode:o.v}))}
+                      style={{padding:'5px 11px',borderRadius:6,border:'none',cursor:'pointer',fontSize:11.5,fontWeight:700,transition:'all 0.12s',
+                        background:capacity.mode===o.v?C.primary:'transparent',color:capacity.mode===o.v?'#fff':C.muted}}>{o.l}</button>
+                  ))}
+                </div>
+                <div style={{fontSize:10.5,color:C.muted,marginTop:6,lineHeight:1.4,maxWidth:190}}>
+                  {vast?'Begrensd tot wat je opgeeft; wat niet past gaat naar "nog te plannen".':'Het rooster groeit tot precies wat de vraag nodig heeft.'}
+                </div>
+              </div>
+              <Stepper icon="🚪" label="Kamers" val={capacity.kamers} onCh={v=>setCapacity(p=>({...p,kamers:v,mode:'vast'}))}/>
+              <button onClick={()=>setCapacity(p=>({...p,kamers:Math.max(p.kamers,nodig),mode:'vast'}))}
+                title="Stel het aantal kamers in op het minimaal benodigde aantal (vast)"
+                style={{padding:'8px 12px',borderRadius:9,border:`1px solid ${C.border}`,background:C.surface2,cursor:'pointer',
+                  fontSize:11.5,fontWeight:600,color:C.text}}>Stel in op benodigd ({nodig})</button>
+              <div style={{flex:1,minWidth:220,display:'flex',alignItems:'center',gap:11,padding:'10px 14px',
+                background:stBg,border:`1px solid ${stCol}33`,borderRadius:10}}>
+                <span style={{width:26,height:26,borderRadius:'50%',background:stCol,color:'#fff',fontSize:15,fontWeight:700,
+                  display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>{status.ico}</span>
+                <div>
+                  <div style={{fontSize:12.5,fontWeight:700,color:stCol}}>{status.kop}</div>
+                  <div style={{fontSize:11,color:C.muted,marginTop:1,lineHeight:1.4}}>{status.sub}</div>
+                </div>
+              </div>
+            </div>
+          )
+        })()}
+
+        {/* ── ENGINE 2.0: KPI dashboard (inklapbaar) ── */}
+        {raster.kpi&&(
+          <div style={{marginBottom:12}}>
+          <PanelKop id="kpi" titel="Kerncijfers" samenvatting={`${raster.kpi.week.appts} afspr · ${raster.kpi.week.benutting}% benut · ${raster.kpi.week.spreiding}% spreiding`}/>
+          {openPanels.kpi&&(
+          <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:10}}>
+            {[
+              {l:'Afspraken / week',v:raster.kpi.week.appts,sub:`${raster.kpi.week.planned} min gepland`},
+              {l:'Benutting',v:raster.kpi.week.benutting+'%',sub:`van ${raster.kpi.week.capacity} min capaciteit`,
+                warn:raster.kpi.week.benutting>m2.benutting},
+              {l:'Flex / buffer',v:raster.kpi.week.flex+' min',sub:'gereserveerde ruimte'},
+              {l:'Spreiding',v:raster.kpi.week.spreiding+'%',sub:'gelijkmatigheid over dagen',
+                warn:raster.kpi.week.spreiding<70},
+              {l:'Validatie',v:raster.kpi.issues.length===0?'✓ OK':raster.kpi.issues.length,
+                sub:raster.kpi.issues.length===0?'geen conflicten':'conflicten gevonden',
+                warn:raster.kpi.issues.length>0},
+            ].map((k,i)=>(
+              <div key={i} title={i===4&&raster.kpi.issues.length?raster.kpi.issues.map(x=>`${DAYS[x.day]} K${x.room+1}: ${x.msg}`).join('\n'):''}
+                style={{background:C.white,border:`1px solid ${k.warn?'#F0C0B4':C.border}`,borderRadius:12,padding:'12px 14px'}}>
+                <div style={{fontSize:9.5,fontWeight:700,color:C.muted,letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:5}}>{k.l}</div>
+                <div style={{fontSize:21,fontWeight:700,color:k.warn?C.danger:C.text,lineHeight:1,fontVariantNumeric:'tabular-nums'}}>{k.v}</div>
+                <div style={{fontSize:10,color:C.muted,marginTop:4}}>{k.sub}</div>
+              </div>
+            ))}
+          </div>
+          )}
+          </div>
+        )}
+
+        {modus==='functie'&&renderFkAdvies()}
+        {/* ── BEZETTINGSKAART — de hele week in één beeld ────────────────────────
+             Elke cel is één kamer op één dag in één dagdeel, gekleurd naar jouw
+             doelbenutting en jouw drempel. Zo zie je in één oogopslag wat je
+             anders uit het raster moet puzzelen: welke dag helemaal leeg is en
+             welke kamer half gevuld draait. Klik een cel of een lege dag aan en
+             de assistent gaat er meteen mee aan de slag. */}
+        {(()=>{
+          const nRooms=raster.numRooms||1
+          const doel=m2.benutting||85
+          const drempel=rules.restOpruimen?(rules.minBezetting??75):0
+          const dds=[0,1].concat(raster.avondOn?[2]:[])
+          // Waaróm is een dag leeg? Een lege dag is bijna nooit een fout maar een
+          // gevolg van een instelling — en dan hoort de tool dat te zeggen in
+          // plaats van je te laten zoeken.
+          const dagReden=di=>{
+            const k=WEEKDAY_KEYS[di], K=DAY_ABBR[di]
+            if((m2.days[k]||0)===0)
+              return {kort:'staat op 0% van de weekvraag', lang:`${DAGS_NL[di]} heeft 0% van de weekvraag toegewezen gekregen, dus er valt niets te plannen.`}
+            const codes=[...newRows,...ctrlRows].filter(x=>x.afspraakcode||x.omschrijving)
+            if(codes.length&&!codes.some(x=>(x.weekdagen||{})[K]))
+              return {kort:`geen afspraakcode mag op ${K}`, lang:`Geen enkele afspraakcode heeft ${DAGS_NL[di]} als toegestane weekdag, dus er kan niets op deze dag terechtkomen.`}
+            if(rules.restOpruimen)
+              return {kort:`haalde de drempel van ${rules.minBezetting}% niet`,
+                lang:`De vraag voor ${DAGS_NL[di]} haalde de minimumbezetting van ${rules.minBezetting}% niet. Die afspraken zijn samengevoegd met een andere dag in plaats van een half leeg spreekuur te openen — dat is de regel "minimumbezetting" die aan staat.`}
+            return {kort:'er bleef geen vraag over', lang:`Na het verdelen bleef er voor ${DAGS_NL[di]} geen vraag over om te plannen.`}
+          }
+          const dagen=[0,1,2,3,4].map(di=>({di, m:dagMeting(raster,di)}))
+          const legeDagen=dagen.filter(d=>!d.m.open).map(d=>({...d, reden:dagReden(d.di)}))
+          // ── TELLING: hoeveel dagdelen (kamer × dag × dagdeel) draaien er? ────────
+          // Dit is de kerncijfer van een raster — het aantal spreekuren dat je écht
+          // openzet. Handmatig tellen in de kaart is foutgevoelig, dus we tellen mee:
+          // totaal, per dagdeel, en hoeveel hele kamer-dagen dat zijn.
+          const telling=(()=>{
+            let totaal=0, halve=0, heleKamerDagen=0
+            const perDd={}; dds.forEach(dd=>perDd[dd]=0)
+            let minuten=0, capaciteit=0
+            for(let di=0;di<5;di++) for(let room=0;room<nRooms;room++){
+              let open=0
+              for(const dd of dds){ const c=celMeting(raster,di,room,dd)
+                if(c&&c.open){ totaal++; perDd[dd]++; open++; minuten+=c.min; capaciteit+=c.cap } }
+              if(open>0){ if(open===dds.length) heleKamerDagen++; else halve++ }
+            }
+            return {totaal, perDd, heleKamerDagen, halve,
+              pct: capaciteit>0?Math.round(minuten/capaciteit*100):0}
+          })()
+          const onderDrempel=[]
+          for(let di=0;di<5;di++) for(let room=0;room<nRooms;room++) for(const dd of dds){
+            const c=celMeting(raster,di,room,dd)
+            if(c&&c.open&&c.pct<doel-6) onderDrempel.push({di,room,dd,pct:c.pct})
+          }
+          onderDrempel.sort((a,b)=>a.pct-b.pct)
+          const Cel=({di,room,dd})=>{
+            const c=celMeting(raster,di,room,dd)
+            const leeg=!c||!c.open
+            const kl=leeg?null:bandKleur(c.pct,doel,drempel)
+            const pakt=kaartDrag&&kaartDrag.di===di&&kaartDrag.room===room&&kaartDrag.dd===dd
+            const hover=kaartOver&&kaartOver.di===di&&kaartOver.room===room&&kaartOver.dd===dd
+            const doelvak=kaartDrag&&!pakt
+            const naam=`${kamerNaam(room)} · ${DAGS_NL[di]} · ${DD_INFO[dd].l.toLowerCase()}`
+            return(
+              <button
+                data-kaartcel={`${di}-${room}-${dd}`}
+                onPointerDown={e=>kaartPak(e,di,room,dd,leeg,
+                  `${modus==='functie'?kamerNaam(room):'K'+(room+1)} · ${DAY_ABBR[di]} ${DD_INFO[dd].kort}${leeg?'':` · ${c.appts} afspr`}`)}
+                onClick={()=>{
+                  if(kaartNetGesleept.current) return
+                  if(modus==='functie'||SIMPEL){ setSelDay(di); setViewMode('dag'); return }
+                  const t= leeg
+                    ? `op ${DAGS_NL[di]} staan geen afspraken, graag ${DAGS_NL[di]} ook inplannen`
+                    : `kamer ${room+1} op ${DAGS_NL[di]} staat op ${c.pct}% bezetting, ik wil richting ${doel}%`
+                  setWiz({modus:'bijsturen', voorstelTekst:t}); zoekVoorstel(parseOpdracht(t)) }}
+                title={leeg
+                  ? `${naam}: geen spreekuur — sleep hier een spreekuur naartoe, of klik om bij te sturen`
+                  : `${naam}: ${c.appts} afspraken, ${c.min} van ${c.cap} min (${c.pct}%, ${kl.l})\nSleep dit vak naar een andere dag of kamer om het spreekuur te verplaatsen (staat daar al een spreekuur, dan ruilen ze van plek). Klik om bij te sturen.`}
+                onMouseEnter={e=>{if(kaartDrag)return;e.currentTarget.style.transform='translateY(-1px)';e.currentTarget.style.boxShadow='0 3px 9px rgba(27,39,51,0.13)'}}
+                onMouseLeave={e=>{e.currentTarget.style.transform='none';e.currentTarget.style.boxShadow='none'}}
+                style={{display:'block',width:'100%',textAlign:'left',marginBottom:3,
+                  cursor:leeg?(kaartDrag?'copy':'pointer'):(kaartDrag?'grabbing':'grab'),
+                  touchAction:'none',   // zodat slepen op touch niet de pagina scrollt
+                  padding:'3px 5px',borderRadius:6,position:'relative',overflow:'hidden',
+                  transition:'box-shadow 0.12s, outline 0.1s',
+                  opacity:pakt?0.4:1,
+                  outline:hover&&doelvak?`2px solid ${C.primary}`:'none', outlineOffset:1,
+                  boxShadow:hover&&doelvak?`0 0 0 4px rgba(28,110,164,0.16)`:'none',
+                  border:`1px solid ${hover&&doelvak?C.primary:leeg?C.border:kl.brd}`,
+                  background:leeg
+                    ?(hover&&doelvak?'#E8F2F9':`repeating-linear-gradient(45deg,${C.surface2},${C.surface2} 4px,${C.white} 4px,${C.white} 8px)`)
+                    :kl.bg}}>
+                {!leeg&&<span style={{position:'absolute',left:0,top:0,bottom:0,width:`${Math.min(100,c.pct)}%`,
+                  background:kl.brd,opacity:0.32,transition:'width 0.55s cubic-bezier(.4,0,.2,1)'}}/>}
+                <span style={{position:'relative',display:'flex',alignItems:'center',gap:4,
+                  fontSize:9.5,fontWeight:700,color:leeg?C.muted:kl.fg}}>
+                  <span style={{opacity:0.75,fontSize:8.5,letterSpacing:'0.04em'}}>{DD_INFO[dd].kort}</span>
+                  <span style={{marginLeft:'auto',fontVariantNumeric:'tabular-nums'}}>
+                    {hover&&doelvak?(leeg?'hierheen':'ruilen'):leeg?'—':`${c.pct}%`}</span>
+                </span>
+              </button>
+            )
+          }
+          return(
+            <div style={{marginBottom:12,border:`1px solid ${C.border}`,borderRadius:16,overflow:'hidden',background:C.white,
+              boxShadow:'0 2px 14px rgba(27,39,51,0.05)',animation:'pmUp 0.3s ease both'}}>
+              <div style={{display:'flex',alignItems:'center',gap:9,padding:'11px 16px',flexWrap:'wrap',
+                background:'linear-gradient(90deg,#0E3450,#1C6EA4 60%,#39C6AC)',color:'#fff'}}>
+                <span style={{fontSize:15}}>🗺</span>
+                <span style={{fontSize:12.5,fontWeight:800,letterSpacing:'0.03em'}}>BEZETTINGSKAART — WAAR ZIT RUIMTE, WAAR ZIT HET VOL?</span>
+                <span style={{marginLeft:'auto',fontSize:10,fontWeight:700,background:'rgba(255,255,255,0.2)',
+                  padding:'2px 9px',borderRadius:10,whiteSpace:'nowrap'}}>doel {doel}%{drempel?` · drempel ${drempel}%`:''}</span>
+              </div>
+              {/* ── TELLING — het aantal ingeplande dagdelen in één oogopslag ──────── */}
+              <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap',
+                padding:'9px 14px',background:C.rowAlt,borderBottom:`1px solid ${C.border}`}}>
+                <span title="Elk vak in de kaart dat een spreekuur draait (kamer × dag × dagdeel)"
+                  style={{display:'inline-flex',alignItems:'baseline',gap:6,padding:'4px 12px',borderRadius:9,
+                    background:C.primary,color:'#fff',cursor:'help'}}>
+                  <b style={{fontSize:18,fontVariantNumeric:'tabular-nums',lineHeight:1}}>{telling.totaal}</b>
+                  <span style={{fontSize:11,fontWeight:700}}>dagdelen ingepland</span>
+                </span>
+                {dds.map(dd=>(
+                  <span key={dd} style={{fontSize:11,color:C.muted}}>
+                    <b style={{color:C.text,fontVariantNumeric:'tabular-nums'}}>{telling.perDd[dd]}</b> {DD_INFO[dd].l.toLowerCase()}
+                  </span>
+                ))}
+                <span style={{width:1,height:16,background:C.border}}/>
+                <span title="Een kamer die op één dag zowel ochtend als middag draait, telt als hele kamer-dag."
+                  style={{fontSize:11,color:C.muted,cursor:'help'}}>
+                  <b style={{color:C.text,fontVariantNumeric:'tabular-nums'}}>{telling.heleKamerDagen}</b> hele kamer-dagen
+                  {telling.halve>0&&<> · <b style={{color:'#8A6A12',fontVariantNumeric:'tabular-nums'}}>{telling.halve}</b> halve</>}
+                </span>
+                <span style={{marginLeft:'auto',fontSize:11,color:C.muted}}>
+                  gemiddelde bezetting <b style={{color:C.text,fontVariantNumeric:'tabular-nums'}}>{telling.pct}%</b>
+                </span>
+              </div>
+              <div style={{padding:'12px 14px'}}>
+                <div style={{display:'grid',gridTemplateColumns:`52px repeat(5,minmax(0,1fr))`,gap:6}}>
+                  <div/>
+                  {dagen.map(({di,m})=>(
+                    <div key={di} style={{textAlign:'center',paddingBottom:4}}>
+                      <div style={{fontSize:10.5,fontWeight:800,color:m.open?C.text:'#B3402C',letterSpacing:'0.04em'}}>{DAY_ABBR[di]}</div>
+                      <div style={{fontSize:9.5,color:m.open?C.muted:'#B3402C'}}>
+                        {m.open?`${m.appts} afspr · ${m.pct}%`:'geen spreekuur'}</div>
+                      {!m.open&&(
+                        <div title={dagReden(di).lang}
+                          style={{fontSize:9,color:C.muted,lineHeight:1.3,marginTop:1,cursor:'help'}}>{dagReden(di).kort}</div>
+                      )}
+                      {m.open&&(()=>{
+                        // Draaien de kamers hele dagen, of zijn er halve? Dat is precies
+                        // wat je op een rooster wilt weten en anders moet uitpuzzelen.
+                        const perDd=dds.map(dd=>{ let n=0
+                          for(let room=0;room<nRooms;room++){ const c=celMeting(raster,di,room,dd); if(c&&c.open) n++ }
+                          return {dd,n} }).filter(x=>x.n>0)
+                        if(!perDd.length) return null
+                        const gelijk=perDd.every(x=>x.n===perDd[0].n)
+                        return(
+                          <div style={{fontSize:9,color:gelijk?C.muted:'#8A6A12',marginTop:1,cursor:'help'}}
+                            title={gelijk
+                              ? `${perDd[0].n} kamer(s), de hele dag open.`
+                              : `Ongelijk: ${perDd.map(x=>`${x.n} kamer(s) ${DD_INFO[x.dd].l.toLowerCase()}`).join(', ')}. Dat komt doordat de vraag ongelijk over de dagdelen ligt (verdeling ochtend/middag). Vraag de assistent om "zo strak mogelijk" — dan maak ik er hele dagen van waar dat kan.`}>
+                            {gelijk
+                              ? `${perDd[0].n} kamer${perDd[0].n===1?'':'s'} · hele dag`
+                              : perDd.map(x=>`${x.n} ${DD_INFO[x.dd].kort}`).join(' / ')}
+                          </div>
+                        )
+                      })()}
+                    </div>
+                  ))}
+                  {Array.from({length:nRooms},(_,room)=>(
+                    <React.Fragment key={room}>
+                      <div title={kamerNaam(room)} style={{fontSize:10.5,fontWeight:700,color:C.muted,display:'flex',alignItems:'center',whiteSpace:'nowrap'}}>{modus==='functie'?kamerNaam(room):`K${room+1}`}</div>
+                      {[0,1,2,3,4].map(di=>(
+                        <div key={di}>{dds.map(dd=><Cel key={dd} di={di} room={room} dd={dd}/>)}</div>
+                      ))}
+                    </React.Fragment>
+                  ))}
+                </div>
+                {/* legenda */}
+                <div style={{display:'flex',gap:12,flexWrap:'wrap',alignItems:'center',marginTop:10,
+                  paddingTop:9,borderTop:`1px solid ${C.border}`}}>
+                  {[{p:doel+8,t:`boven doel`},{p:doel,t:'op doel'},{p:Math.max(drempel,doel-12),t:'onder doel'},
+                    ...(drempel?[{p:Math.max(0,drempel-10),t:'onder drempel'}]:[])].map((x,i)=>{
+                    const kl=bandKleur(x.p,doel,drempel)
+                    return(
+                      <span key={i} style={{display:'inline-flex',alignItems:'center',gap:5,fontSize:10.5,color:C.muted}}>
+                        <span style={{width:13,height:11,borderRadius:3,background:kl.bg,border:`1px solid ${kl.brd}`}}/>{x.t}
+                      </span>
+                    )
+                  })}
+                  <span style={{display:'inline-flex',alignItems:'center',gap:5,fontSize:10.5,color:C.muted}}>
+                    <span style={{width:13,height:11,borderRadius:3,border:`1px solid ${C.border}`,
+                      background:`repeating-linear-gradient(45deg,${C.surface2},${C.surface2} 3px,${C.white} 3px,${C.white} 6px)`}}/>geen spreekuur
+                  </span>
+                  <span style={{fontSize:10.5,color:C.muted,marginLeft:'auto'}}>
+                    <b style={{color:C.primary}}>sleep</b> een vak naar een andere dag of kamer om het spreekuur te verplaatsen · <b>klik</b> om {SIMPEL?'die dag te openen':'bij te sturen'}</span>
+                </div>
+                {/* wat springt eruit — met een directe opdracht aan de assistent */}
+                {!SIMPEL&&(legeDagen.length>0||onderDrempel.length>0)&&(
+                  <div style={{display:'flex',gap:8,flexWrap:'wrap',marginTop:10}}>
+                    {modus==='poli'&&legeDagen.map(({di,reden})=>(
+                      <button key={'d'+di} title={reden.lang} onClick={()=>{
+                          const t=`op ${DAGS_NL[di]} staan geen afspraken, graag ${DAGS_NL[di]} ook inplannen`
+                          setWiz({modus:'bijsturen', voorstelTekst:t}); zoekVoorstel(parseOpdracht(t)) }}
+                        style={{padding:'7px 12px',borderRadius:10,cursor:'pointer',fontSize:11.5,fontWeight:700,
+                          background:'#FBEDEA',color:'#B3402C',border:'1px solid #E8B3A8'}}>
+                        ⚑ {DAY_ABBR[di]} is leeg ({reden.kort}) — laten meedraaien
+                      </button>
+                    ))}
+                    {modus==='poli'&&onderDrempel.slice(0,3).map((x,i)=>(
+                      <button key={'k'+i} onClick={()=>{
+                          const t=`kamer ${x.room+1} op ${DAGS_NL[x.di]} staat op ${x.pct}% bezetting, ik wil richting ${doel}%`
+                          setWiz({modus:'bijsturen', voorstelTekst:t}); zoekVoorstel(parseOpdracht(t)) }}
+                        style={{padding:'7px 12px',borderRadius:10,cursor:'pointer',fontSize:11.5,fontWeight:700,
+                          background:'#FDF6E3',color:'#8A6A12',border:'1px solid #EBD08A'}}>
+                        △ {DAY_ABBR[x.di]} K{x.room+1} {DD_INFO[x.dd].kort} — {x.pct}% naar {doel}%
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })()}
+
+        {/* ── VERBETEREN — één knop, één advies in gewone taal ───────────────────
+             De optimiser rekent hetzelfde door als altijd, maar wat je hier ziet
+             is één zin en één knop. Alle tabellen, doelfuncties en afwegingen
+             staan onder "geavanceerd" voor wie ze wil zien. */}
+        {modus==='poli'&&(()=>{
+          const bezig=!!(optim&&optim.bezig)
+          const klaar=optim&&!optim.bezig&&optim.resultaten
+          const beste=klaar&&optim.resultaten[0]
+          const h=klaar&&optim.huidig
+          const isNu=beste&&beste.k.restDag===(rules.restDag||'uit')&&beste.k.minBezetting===(rules.minBezetting??75)&&beste.k.kamerVerdeling===rules.kamerVerdeling
+          const winstNtp=beste?h.ntp-beste.m.ntp:0
+          const winstKd=beste?h.kamerDagen-beste.m.kamerDagen:0
+          const zin = !beste ? null
+            : isNu ? 'Je zit al op de beste instelling die ik kan vinden — er valt met deze gegevens niets te winnen.'
+            : (winstNtp<=0&&winstKd<=0) ? 'Ik vind geen instelling die dit raster beter maakt zonder ergens iets in te leveren.'
+            : `Ik kan ${[winstNtp>0?`${winstNtp} afspra${winstNtp===1?'ak':'ken'} méér inplannen`:'',winstKd>0?`${winstKd} kamer-dag${winstKd===1?'':'en'} besparen`:''].filter(Boolean).join(' en ')}.`
+          return(
+            <div style={{marginBottom:12,borderRadius:16,overflow:'hidden',background:C.white,
+              border:`1px solid ${C.border}`,boxShadow:'0 2px 14px rgba(27,39,51,0.05)',animation:'pmUp 0.3s ease both'}}>
+              <div style={{padding:'15px 18px',display:'flex',alignItems:'center',gap:14,flexWrap:'wrap'}}>
+                <div style={{minWidth:230,flex:1}}>
+                  <div style={{fontSize:14.5,fontWeight:800,color:C.text,letterSpacing:'-0.01em'}}>
+                    {bezig?'Ik zoek de beste instelling…':klaar?'Advies':'Kan dit beter?'}
+                  </div>
+                  <div style={{fontSize:12,color:C.muted,lineHeight:1.55,marginTop:2}}>
+                    {bezig ? 'Ik reken je gegevens door alle zinvolle combinaties.'
+                      : klaar ? zin
+                      : 'Ik reken je gegevens door en vertel in één zin of het beter kan.'}
+                  </div>
+                </div>
+                {!bezig&&(
+                  <button onClick={()=>startOptimiser('balans')}
+                    style={{padding:'11px 20px',borderRadius:12,border:'none',cursor:'pointer',fontSize:12.5,fontWeight:700,
+                      background:C.primary,color:'#fff',boxShadow:'0 4px 14px rgba(28,110,164,0.28)',transition:'transform 0.12s'}}
+                    onMouseEnter={e=>e.currentTarget.style.transform='translateY(-1px)'}
+                    onMouseLeave={e=>e.currentTarget.style.transform='none'}>
+                    {klaar?'↻ Opnieuw kijken':'✨ Kan dit beter?'}</button>
+                )}
+                {klaar&&beste&&!isNu&&(winstNtp>0||winstKd>0)&&(
+                  <button onClick={()=>{ setRules(p=>({...p,...beste.k})); onthoudScenario(beste.k,'toegepast',beste.m,optim.doel,poli.specialisme) }}
+                    style={{padding:'11px 20px',borderRadius:12,border:'none',cursor:'pointer',fontSize:12.5,fontWeight:700,
+                      background:C.green,color:'#fff',boxShadow:'0 4px 14px rgba(46,139,87,0.26)'}}>
+                    ✓ Doe maar</button>
+                )}
+              </div>
+              {bezig&&(
+                <div style={{height:4,background:C.surface2}}>
+                  <div style={{height:'100%',width:`${Math.round(optim.voortgang/Math.max(1,optim.totaal)*100)}%`,
+                    background:'linear-gradient(90deg,#1C6EA4,#39C6AC)',transition:'width 0.15s'}}/>
+                </div>
+              )}
+            </div>
+          )
+        })()}
+
+        {/* ── GEAVANCEERD — alles wat je niet hoeft te zien om te beginnen ── */}
+        {modus==='poli'&&<div style={{marginBottom:12}}>
+          <button onClick={()=>setToonGeav(v=>!v)}
+            style={{display:'flex',alignItems:'center',gap:9,width:'100%',padding:'10px 15px',borderRadius:12,
+              border:`1px solid ${C.border}`,background:toonGeav?C.white:'transparent',cursor:'pointer',
+              color:C.muted,fontSize:11.5,fontWeight:700,letterSpacing:'0.04em',transition:'all 0.15s'}}
+            onMouseEnter={e=>{e.currentTarget.style.background=C.white;e.currentTarget.style.color=C.primary}}
+            onMouseLeave={e=>{e.currentTarget.style.background=toonGeav?C.white:'transparent';e.currentTarget.style.color=C.muted}}>
+            <span style={{transition:'transform 0.2s',transform:toonGeav?'rotate(90deg)':'none',display:'inline-block'}}>▸</span>
+            {toonGeav?'VERBERG DE DETAILS':'MEER DETAILS — ALLE VARIANTEN, WAT DE ENGINE DEED, ANALYSE EN GEHEUGEN'}
+          </button>
+        </div>}
+        {modus==='poli'&&toonGeav&&(<div style={{animation:'pmUp 0.25s ease both'}}>
+        {/* ── SCENARIO-OPTIMISER — laat de tool zélf de beste instellingen zoeken ── */}
+        <div style={{marginBottom:12,border:`1px solid ${C.border}`,borderRadius:12,overflow:'hidden',background:C.white}}>
+          <div style={{display:'flex',alignItems:'center',gap:9,padding:'10px 15px',flexWrap:'wrap',
+            background:'linear-gradient(90deg,#123B57,#1C6EA4 60%,#39C6AC)',color:'#fff'}}>
+            <span style={{fontSize:15}}>🧠</span>
+            <span style={{fontSize:12.5,fontWeight:800,letterSpacing:'0.03em'}}>SCENARIO-OPTIMISER — WAT IS DE BESTE INSTELLING VOOR JOUW VRAAG?</span>
+            {optim&&optim.bezig&&(
+              <span style={{marginLeft:'auto',fontSize:10.5,fontWeight:700,background:'rgba(255,255,255,0.22)',padding:'2px 9px',borderRadius:10}}>
+                {optim.voortgang}/{optim.totaal} doorgerekend…
+              </span>
+            )}
+          </div>
+          <div style={{padding:'12px 14px'}}>
+            <p style={{fontSize:11.5,color:C.muted,margin:'0 0 10px',lineHeight:1.5}}>
+              De tool rekent jouw gegevens door <b style={{color:C.text}}>70 combinaties</b> van rest-dag × minimumbezetting ×
+              kamerverdeling en zet de uitkomsten op een rij. Je <b style={{color:C.text}}>voorkeursregels</b> (spoed, starten met,
+              afwisselen, digitaal, flex) blijven staan zoals jij ze koos — daaronder zie je wél wat elke regel je kost.
+            </p>
+            <div style={{display:'flex',gap:7,flexWrap:'wrap',alignItems:'center',marginBottom:optim&&optim.resultaten?12:0}}>
+              <span style={{fontSize:11,color:C.muted}}>Wat is voor jou "het beste"?</span>
+              {[{v:'balans',l:'Balans (aanbevolen)',s:'één kamer-dag weegt op tegen ± 20 afspraken'},
+                {v:'plannen',l:'Alles inplannen',s:'zo min mogelijk op de restlijst, desnoods een kamer meer'},
+                {v:'kamers',l:'Minste kamers',s:'zo min mogelijk kamer-dagen, desnoods iets op de restlijst'}].map(o=>(
+                <button key={o.v} title={o.s} disabled={!!(optim&&optim.bezig)}
+                  onClick={()=>startOptimiser(o.v)}
+                  style={{padding:'7px 13px',borderRadius:16,cursor:optim&&optim.bezig?'wait':'pointer',fontSize:11.5,fontWeight:700,
+                    background:optim&&optim.doel===o.v?C.primary:C.white,color:optim&&optim.doel===o.v?'#fff':C.text,
+                    border:`1px solid ${optim&&optim.doel===o.v?C.primary:C.border}`,opacity:optim&&optim.bezig?0.6:1}}>{o.l}</button>
+              ))}
+            </div>
+            {optim&&!optim.bezig&&optim.fout&&(
+              <div style={{marginTop:10,padding:'9px 12px',borderRadius:9,background:'#FBE9E6',border:'1px solid #E0A090',color:'#9A2A1A',fontSize:12,display:'flex',alignItems:'center',gap:10}}>
+                <span>⚠️ Doorrekenen van de scenario's is niet gelukt: {optim.fout}</span>
+                <button onClick={()=>startOptimiser(optim.doel)} style={{marginLeft:'auto',padding:'5px 11px',borderRadius:8,border:'1px solid #E0A090',background:C.white,cursor:'pointer',fontSize:11.5,fontWeight:700,color:'#9A2A1A'}}>↻ Opnieuw</button>
+              </div>
+            )}
+            {optim&&optim.bezig&&(
+              <div style={{height:6,background:C.surface2,borderRadius:4,overflow:'hidden',marginTop:10}}>
+                <div style={{height:'100%',width:`${Math.round(optim.voortgang/Math.max(1,optim.totaal)*100)}%`,
+                  background:'linear-gradient(90deg,#1C6EA4,#39C6AC)',transition:'width 0.15s'}}/>
+              </div>
+            )}
+            {optim&&!optim.bezig&&optim.resultaten&&(()=>{
+              const h=optim.huidig
+              const isHuidig=x=>x.k.restDag===(rules.restDag||'uit')&&x.k.minBezetting===(rules.minBezetting??75)&&x.k.kamerVerdeling===rules.kamerVerdeling
+              const dagL={uit:'geen rest-dag',auto:'rest-dag automatisch',ma:'rest-dag maandag',di:'rest-dag dinsdag',wo:'rest-dag woensdag',do:'rest-dag donderdag',vr:'rest-dag vrijdag'}
+              const Delta=({v,goed})=> v===0?<span style={{color:C.muted}}>±0</span>
+                :<span style={{color:goed?C.green:C.danger,fontWeight:700}}>{v>0?'+':''}{v}</span>
+              const Tabel=({rijen,besteBadge,afgewezenLijst})=>(
+                <div style={{overflowX:'auto'}}>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:11.5,minWidth:640}}>
+                  <thead><tr style={{background:C.surface2}}>
+                    {['Instelling','Ingepland','Nog te plannen','Kamer-dagen','Benutting',''].map((c,i)=>(
+                      <th key={i} style={{textAlign:i===0?'left':i===5?'right':'center',padding:'7px 9px',
+                        fontSize:9.5,fontWeight:800,color:C.muted,textTransform:'uppercase',letterSpacing:'0.06em',
+                        borderBottom:`1px solid ${C.border}`}}>{c}</th>
+                    ))}
+                  </tr></thead>
+                  <tbody>
+                    {rijen.map((x,i)=>{
+                      const nu=isHuidig(x)
+                      const her=scenGeheugen(x.k,poli.specialisme)
+                      return(
+                        <tr key={i} style={{background:nu?C.blueAccent:(i%2?C.rowAlt:C.white)}}>
+                          <td style={{padding:'8px 9px',borderBottom:`1px solid ${C.border}`}}>
+                            <div style={{display:'flex',gap:5,flexWrap:'wrap',alignItems:'center'}}>
+                              {i===0&&besteBadge&&<span style={{fontSize:9,fontWeight:800,background:C.green,color:'#fff',padding:'2px 7px',borderRadius:9}}>{besteBadge}</span>}
+                              {nu&&<span style={{fontSize:9,fontWeight:800,background:C.primary,color:'#fff',padding:'2px 7px',borderRadius:9}}>NU ACTIEF</span>}
+                              {her&&her.actie==='toegepast'&&(
+                                <span title={`Je koos deze instelling eerder voor ${optim.spec} — laatst op ${datumKort(her.ts)}`}
+                                  style={{fontSize:9,fontWeight:800,background:'#7C3AED',color:'#fff',padding:'2px 7px',borderRadius:9}}>
+                                  ★ EERDER GEKOZEN{(her.keer||1)>1?` ${her.keer}×`:''}</span>
+                              )}
+                              {her&&her.actie==='afgewezen'&&(
+                                <span title={`Je wees deze instelling eerder af voor ${optim.spec} — ${datumKort(her.ts)}`}
+                                  style={{fontSize:9,fontWeight:800,background:'#8A6A12',color:'#fff',padding:'2px 7px',borderRadius:9}}>
+                                  ✕ EERDER AFGEWEZEN</span>
+                              )}
+                              <span style={{fontWeight:600,color:C.text}}>{dagL[x.k.restDag]}</span>
+                              <span style={{color:C.muted}}>· drempel {x.k.minBezetting}%</span>
+                              <span style={{color:C.muted}}>· {x.k.kamerVerdeling==='gelijk'?'gelijk verdelen':'dagdeel voor dagdeel'}</span>
+                            </div>
+                          </td>
+                          <td style={{textAlign:'center',padding:'8px 9px',borderBottom:`1px solid ${C.border}`,fontWeight:700}}>
+                            {x.m.placed} <span style={{fontWeight:400,fontSize:10}}>(<Delta v={x.m.placed-h.placed} goed={x.m.placed>=h.placed}/>)</span>
+                          </td>
+                          <td style={{textAlign:'center',padding:'8px 9px',borderBottom:`1px solid ${C.border}`,fontWeight:700,
+                            color:x.m.ntp?'#B8860B':C.green}}>
+                            {x.m.ntp} <span style={{fontWeight:400,fontSize:10,color:C.muted}}>(<Delta v={x.m.ntp-h.ntp} goed={x.m.ntp<=h.ntp}/>)</span>
+                          </td>
+                          <td style={{textAlign:'center',padding:'8px 9px',borderBottom:`1px solid ${C.border}`,fontWeight:700}}>
+                            {x.m.kamerDagen} <span style={{fontWeight:400,fontSize:10,color:C.muted}}>(<Delta v={x.m.kamerDagen-h.kamerDagen} goed={x.m.kamerDagen<=h.kamerDagen}/>)</span>
+                          </td>
+                          <td style={{textAlign:'center',padding:'8px 9px',borderBottom:`1px solid ${C.border}`,fontWeight:700}}>{x.m.benut}%</td>
+                          <td style={{textAlign:'right',padding:'8px 9px',borderBottom:`1px solid ${C.border}`}}>
+                            <div style={{display:'flex',gap:5,justifyContent:'flex-end',alignItems:'center'}}>
+                              <button disabled={nu}
+                                onClick={()=>{ setRules(p=>({...p,...x.k})); onthoudScenario(x.k,'toegepast',x.m,optim.doel,poli.specialisme) }}
+                                title="Deze instelling toepassen — de tool onthoudt dat je hem koos"
+                                style={{padding:'5px 12px',borderRadius:14,cursor:nu?'default':'pointer',fontSize:11,fontWeight:700,
+                                  background:nu?C.surface2:C.primary,color:nu?C.muted:'#fff',border:'none',whiteSpace:'nowrap'}}>
+                                {nu?'Actief':'Toepassen'}</button>
+                              {afgewezenLijst
+                                ? <button onClick={()=>{ vergeetScenario(scenSleutel(x.k),poli.specialisme); setToonAfgewezen(true) }}
+                                    title="Toch weer meenemen als suggestie"
+                                    style={{padding:'5px 10px',borderRadius:14,cursor:'pointer',fontSize:11,fontWeight:700,
+                                      background:C.white,color:C.primary,border:`1px solid ${C.border}`,whiteSpace:'nowrap'}}>↺ Terug</button>
+                                : <button onClick={()=>onthoudScenario(x.k,'afgewezen',x.m,optim.doel,poli.specialisme)}
+                                    title="Niet passend voor deze poli — verberg deze combinatie voortaan"
+                                    style={{padding:'5px 10px',borderRadius:14,cursor:'pointer',fontSize:11,fontWeight:700,
+                                      background:C.white,color:C.muted,border:`1px solid ${C.border}`,whiteSpace:'nowrap'}}>✕ Niet voor ons</button>}
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+                </div>
+              )
+              return(<>
+                {optim.gewoonte&&(
+                  <div style={{marginBottom:14,border:'1px solid #C9B6F0',background:'#F7F3FE',borderRadius:11,padding:'11px 13px'}}>
+                    <div style={{fontSize:9.5,fontWeight:800,color:'#6D28D9',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:5}}>
+                      ★ Jullie gewoonte — {optim.gewoonte.keer}× eerder gekozen voor {optim.spec}
+                    </div>
+                    <div style={{fontSize:11.5,color:C.text,lineHeight:1.5}}>
+                      <b>{dagL[optim.gewoonte.k.restDag]} · drempel {optim.gewoonte.k.minBezetting}% · {optim.gewoonte.k.kamerVerdeling==='gelijk'?'gelijk verdelen':'dagdeel voor dagdeel'}</b>
+                      {' — '}met de gegevens van nu: {optim.gewoonte.m.placed} ingepland, {optim.gewoonte.m.ntp} op de restlijst, {optim.gewoonte.m.kamerDagen} kamer-dagen, {optim.gewoonte.m.benut}% benut.
+                    </div>
+                    <div style={{fontSize:11.5,marginTop:4,lineHeight:1.5,
+                      color:optim.gewoonte.verschil!=null&&optim.gewoonte.verschil>1e-9?'#8A6A12':C.green,fontWeight:600}}>
+                      {optim.gewoonte.verschil==null?'Er is nu geen betere combinatie doorgerekend om mee te vergelijken.'
+                        : optim.gewoonte.verschil<=1e-9
+                          ? '✓ Die gewoonte is voor deze vraag nog steeds de beste keuze.'
+                          : `△ Voor déze vraag scoort de bovenste instelling hieronder beter — ${optim.gewoonte.m.ntp-optim.resultaten[0].m.ntp>0?`${optim.gewoonte.m.ntp-optim.resultaten[0].m.ntp} afspraken minder op de restlijst`:''}${(optim.gewoonte.m.ntp-optim.resultaten[0].m.ntp>0&&optim.gewoonte.m.kamerDagen-optim.resultaten[0].m.kamerDagen>0)?' en ':''}${optim.gewoonte.m.kamerDagen-optim.resultaten[0].m.kamerDagen>0?`${optim.gewoonte.m.kamerDagen-optim.resultaten[0].m.kamerDagen} kamer-dagen minder`:''}. Kijk of dat verschil de moeite waard is.`}
+                    </div>
+                  </div>
+                )}
+                <div style={{fontSize:9.5,fontWeight:800,color:C.muted,letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:7}}>
+                  Met jouw minimumbezetting van {optim.drempel}%
+                </div>
+                <Tabel rijen={optim.resultaten} besteBadge="BESTE"/>
+                {optim.verborgen&&optim.verborgen.length>0&&(
+                  <div style={{marginTop:9}}>
+                    <button onClick={()=>setToonAfgewezen(v=>!v)}
+                      style={{padding:'5px 11px',borderRadius:14,border:`1px solid ${C.border}`,background:C.white,
+                        cursor:'pointer',fontSize:11,fontWeight:600,color:C.muted}}>
+                      {toonAfgewezen?'▾':'▸'} {optim.verborgen.length} combinatie{optim.verborgen.length===1?'':'s'} verborgen — je wees {optim.verborgen.length===1?'die':'die'} eerder af voor deze poli
+                    </button>
+                    {toonAfgewezen&&<div style={{marginTop:8}}><Tabel rijen={optim.verborgen} afgewezenLijst/></div>}
+                  </div>
+                )}
+                {optim.alt&&optim.alt.length>0&&(
+                  <div style={{marginTop:14}}>
+                    <div style={{fontSize:9.5,fontWeight:800,color:'#8A6A12',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:5}}>
+                      Afweging — als je de drempel zou aanpassen
+                    </div>
+                    <div style={{fontSize:11,color:C.muted,marginBottom:7,lineHeight:1.45}}>
+                      De minimumbezetting is jouw beleidskeuze, geen rekenknop. Deze instellingen scoren beter,
+                      maar alleen doordat spreekuren bij een andere drempel wél/niet opengaan. Bekijk of dat past bij je poli.
+                    </div>
+                    <Tabel rijen={optim.alt} besteBadge="ANDERE DREMPEL"/>
+                  </div>
+                )}
+                {optim.kosten&&optim.kosten.length>0&&(
+                  <div style={{marginTop:14}}>
+                    <div style={{fontSize:9.5,fontWeight:800,color:C.muted,letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:7}}>
+                      Wat kost elke voorkeursregel?
+                    </div>
+                    <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:8}}>
+                      {optim.kosten.map((v,i)=>{
+                        const dNtp=h.ntp-v.m.ntp, dKd=h.kamerDagen-v.m.kamerDagen
+                        const gratis=dNtp<=0&&dKd<=0
+                        return(
+                          <div key={i} style={{border:`1px solid ${gratis?C.green+'55':'#B8860B55'}`,background:gratis?'#EDF7F0':'#FCF6E8',
+                            borderRadius:9,padding:'9px 12px'}}>
+                            <div style={{fontSize:11.5,fontWeight:700,color:C.text}}>{v.l}</div>
+                            <div style={{fontSize:11,color:gratis?C.green:'#8A6A12',marginTop:2,lineHeight:1.4}}>
+                              {gratis
+                                ? 'Kost je niets — deze regel gaat niet ten koste van inplannen of kamers.'
+                                : `Uitzetten zou ${dNtp>0?`${dNtp} afspra${dNtp===1?'ak':'ken'} méér inplannen`:''}${dNtp>0&&dKd>0?' en ':''}${dKd>0?`${dKd} kamer-dag${dKd===1?'':'en'} besparen`:''}.`}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+              </>)
+            })()}
+          </div>
+        </div>
+
+        {/* ── GEHEUGEN — wat heeft de tool van jou geleerd? ──────────────────────
+             Alles wat hier staat is door jóu gekozen: toegepaste en afgewezen
+             scenario's, intake-antwoorden en bewaarde ijkpunten. Het staat lokaal
+             in de browser en stuurt de suggesties hierboven aan. Zichtbaar en
+             wisbaar, zodat er nooit een onzichtbaar profiel ontstaat. */}
+        {(()=>{
+          const spec=specKey(poli.specialisme)
+          const eigenScen=mem.scenarios.filter(s=>s.spec===spec)
+          const andereScen=mem.scenarios.filter(s=>s.spec!==spec)
+          const eigenIntake=Object.entries(mem.intake[spec]||{})
+          const eigenIJk=mem.ijkpunten.filter(p=>p.spec===spec)
+          const nu=meetRaster(raster)
+          const leeg=!eigenScen.length&&!eigenIntake.length&&!eigenIJk.length&&!andereScen.length
+          const dagL={uit:'geen rest-dag',auto:'rest-dag automatisch',ma:'rest-dag maandag',di:'rest-dag dinsdag',wo:'rest-dag woensdag',do:'rest-dag donderdag',vr:'rest-dag vrijdag'}
+          const per100=m=>m.placed>0?Math.round(m.kamerDagen/m.placed*1000)/10:0
+          const gem=lijst=>lijst.length?Math.round(lijst.reduce((s,x)=>s+per100(x.m),0)/lijst.length*10)/10:null
+          const ijkGem=gem(eigenIJk)
+          return(
+            <div style={{marginBottom:12,border:`1px solid ${C.border}`,borderRadius:12,overflow:'hidden',background:C.white}}>
+              <div style={{display:'flex',alignItems:'center',gap:9,padding:'10px 15px',flexWrap:'wrap',
+                background:'linear-gradient(90deg,#3B2E63,#6D28D9 60%,#9F7AEA)',color:'#fff'}}>
+                <span style={{fontSize:15}}>📚</span>
+                <span style={{fontSize:12.5,fontWeight:800,letterSpacing:'0.03em'}}>GEHEUGEN — WAT DE TOOL VAN JOU HEEFT GELEERD</span>
+                <span style={{marginLeft:'auto',fontSize:10,fontWeight:700,background:'rgba(255,255,255,0.2)',
+                  padding:'2px 9px',borderRadius:10,whiteSpace:'nowrap'}}>{spec}</span>
+              </div>
+              <div style={{padding:'12px 14px'}}>
+                {leeg&&(
+                  <p style={{fontSize:11.5,color:C.muted,margin:'0 0 10px',lineHeight:1.55}}>
+                    Nog niets geleerd. Zodra je hierboven een scenario <b style={{color:C.text}}>toepast</b> of als
+                    <b style={{color:C.text}}> "niet voor ons"</b> wegzet, onthoudt de tool dat per poli: toegepaste keuzes
+                    komen terug als <b style={{color:C.text}}>"jullie gewoonte"</b>, afgewezen combinaties worden niet meer
+                    voorgesteld. Ook je antwoorden in de assistent en bewaarde ijkpunten komen hier te staan.
+                  </p>
+                )}
+                <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(310px,1fr))',gap:10}}>
+                  {/* Voorkeuren uit toegepaste/afgewezen scenario's */}
+                  {eigenScen.length>0&&(
+                    <div style={{border:`1px solid ${C.border}`,borderRadius:10,padding:'10px 12px'}}>
+                      <div style={{fontSize:9.5,fontWeight:800,color:C.muted,letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:7}}>
+                        Jullie scenariokeuzes
+                      </div>
+                      {eigenScen.sort((a,b)=>b.ts-a.ts).map(s=>(
+                        <div key={s.sleutel} style={{display:'flex',gap:8,alignItems:'flex-start',padding:'6px 0',
+                          borderTop:`1px solid ${C.border}`}}>
+                          <span style={{fontSize:9,fontWeight:800,padding:'2px 7px',borderRadius:9,whiteSpace:'nowrap',flexShrink:0,
+                            background:s.actie==='toegepast'?'#7C3AED':'#8A6A12',color:'#fff'}}>
+                            {s.actie==='toegepast'?`★ ${s.keer||1}×`:'✕ afgewezen'}</span>
+                          <div style={{minWidth:0,flex:1}}>
+                            <div style={{fontSize:11.5,color:C.text,fontWeight:600,lineHeight:1.4}}>
+                              {dagL[s.k.restDag]} · drempel {s.k.minBezetting}% · {s.k.kamerVerdeling==='gelijk'?'gelijk verdelen':'dagdeel voor dagdeel'}
+                            </div>
+                            <div style={{fontSize:10.5,color:C.muted}}>{datumKort(s.ts)}{s.doel?` · doel: ${s.doel}`:''}</div>
+                          </div>
+                          <button onClick={()=>vergeetScenario(s.sleutel,poli.specialisme)} title="Vergeet deze keuze"
+                            style={{border:'none',background:'transparent',cursor:'pointer',color:C.muted,fontSize:13,flexShrink:0}}>×</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {/* Onthouden intake-antwoorden */}
+                  {eigenIntake.length>0&&(
+                    <div style={{border:`1px solid ${C.border}`,borderRadius:10,padding:'10px 12px'}}>
+                      <div style={{fontSize:9.5,fontWeight:800,color:C.muted,letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:7}}>
+                        Jouw antwoorden in de assistent
+                      </div>
+                      <div style={{fontSize:11.3,lineHeight:1.75,color:C.text}}>
+                        {eigenIntake.map(([k,v])=>(
+                          <div key={k} style={{display:'flex',gap:6}}>
+                            <span style={{color:C.muted,minWidth:118,flexShrink:0}}>{INTAKE_LABELS[k]||k}</span>
+                            <span style={{fontWeight:600,minWidth:0}}>{v.label}</span>
+                            {(v.keer||1)>1&&<span style={{color:'#6D28D9',fontWeight:700,fontSize:10}}>{v.keer}×</span>}
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{fontSize:10.5,color:C.muted,marginTop:7,lineHeight:1.45}}>
+                        De assistent zet deze antwoorden een volgende keer klaar — je kunt ze in één klik overnemen.
+                      </div>
+                    </div>
+                  )}
+                  {/* Benchmark op basis van bewaarde ijkpunten */}
+                  <div style={{border:`1px solid ${C.border}`,borderRadius:10,padding:'10px 12px'}}>
+                    <div style={{fontSize:9.5,fontWeight:800,color:C.muted,letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:7}}>
+                      IJkpunten &amp; vergelijking
+                    </div>
+                    <div style={{fontSize:11.5,color:C.text,lineHeight:1.6,marginBottom:8}}>
+                      Dit raster: <b>{nu.placed}</b> afspraken op <b>{nu.kamerDagen}</b> kamer-dagen
+                      {' '}(<b>{per100(nu)}</b> kamer-dagen per 100 afspraken, {nu.benut}% benut).
+                      {ijkGem!=null&&(
+                        <> Eerder bewaard voor {spec}: gemiddeld <b>{ijkGem}</b> per 100 —{' '}
+                          <span style={{fontWeight:700,color:per100(nu)<=ijkGem?C.green:'#8A6A12'}}>
+                            {per100(nu)<=ijkGem?'dit raster is zuiniger of gelijk':'dit raster gebruikt meer kamer-dagen'}
+                          </span>.</>
+                      )}
+                    </div>
+                    {eigenIJk.length>0&&(
+                      <div style={{fontSize:11,color:C.muted,lineHeight:1.6,marginBottom:8}}>
+                        {eigenIJk.slice().reverse().slice(0,4).map((p,i)=>(
+                          <div key={i}>· {datumKort(p.ts)} — {p.m.placed} afspr · {p.m.kamerDagen} kamer-dagen · {p.m.benut}% benut</div>
+                        ))}
+                      </div>
+                    )}
+                    <button onClick={()=>bewaarIJkpunt(poli.specialisme,poli.naam,nu)}
+                      style={{padding:'7px 13px',borderRadius:10,border:`1px solid ${C.border}`,background:C.white,
+                        cursor:'pointer',fontSize:11.5,fontWeight:700,color:C.primary}}>📌 Bewaar dit raster als ijkpunt</button>
+                  </div>
+                </div>
+                {(andereScen.length>0||mem.ijkpunten.length>eigenIJk.length)&&(
+                  <div style={{fontSize:11,color:C.muted,marginTop:10,lineHeight:1.5}}>
+                    Er staat ook geheugen voor andere poli's ({[...new Set(andereScen.map(s=>s.spec))].join(', ')||'—'}).
+                    Elke poli heeft een eigen geheugen; wat je bij de ene afwijst geldt niet voor de andere.
+                  </div>
+                )}
+                {!leeg&&(
+                  <button onClick={()=>{ if(window.confirm('Alles wat de tool van jou heeft geleerd wissen?\n\nToegepaste en afgewezen scenario\'s, intake-antwoorden en ijkpunten — voor álle poli\'s. Dit kan niet ongedaan worden gemaakt.')) wisGeheugen() }}
+                    style={{marginTop:10,padding:'6px 12px',borderRadius:10,border:`1px solid ${C.border}`,background:C.white,
+                      cursor:'pointer',fontSize:11,fontWeight:600,color:C.muted}}>↺ Geheugen wissen</button>
+                )}
+              </div>
+            </div>
+          )
+        })()}
+
+        {/* ── OVERZICHT — één paneel: alles wat de engine deed + waar je op moet letten ──
+             De aanpassingen-log (automatische ingrepen) en de meldingen (regel-interacties
+             en aandachtspunten) staan onder één kop, gegroepeerd en compact, zodat in één
+             oogopslag zichtbaar is wát er speelt. */}
+        {((raster.aanpassingen&&raster.aanpassingen.length)||(raster.notices&&raster.notices.length)||(raster.regelrapport&&raster.regelrapport.length))>0&&(()=>{
+          // Eén uniform item-model uit twee bronnen. sev bepaalt de groep + volgorde:
+          // 0 regel-interactie · 1 let op / niet gelukt · 2 info · 3 toegepast/aangepast.
+          const STYLE={
+            interactie:{col:'#7C3AED',bg:'#F5F1FD',tag:'Regel-interactie',ico:'⚡'},
+            'let-op'  :{col:'#B8860B',bg:'#FCF6E8',tag:'Let op',        ico:'△'},
+            niet      :{col:C.danger, bg:'#FBEDEA',tag:'Niet gelukt',    ico:'✕'},
+            info      :{col:C.primary,bg:C.blueAccent,tag:'Info',        ico:'ℹ'},
+            aangepast :{col:'#7C3AED',bg:'#F5F1FD',tag:'Zelf aangepast', ico:'⏱'},
+            ok        :{col:C.green,  bg:'#EDF7F0',tag:'Toegepast',      ico:'✓'},
+          }
+          const items=[]
+          ;(raster.notices||[]).forEach(n=>{
+            // Pure bevestigingen (level 'ok', geen interactie) dupliceren de aanpassingen-log
+            // hieronder (die ze mét aantallen logt) — hier overslaan om dubbeling te vermijden.
+            if(n.level==='ok'&&!n.interactie) return
+            const kind=n.interactie?'interactie':n.level==='warn'?'let-op':'info'
+            const sev=n.interactie?0:n.level==='warn'?1:2
+            items.push({kind,sev,titel:n.rule,detail:n.msg,oplossing:n.fix,waarde:null,ico:n.icoOverride})
+          })
+          ;(raster.aanpassingen||[]).forEach(a=>{
+            const kind=a.t==='niet'?'niet':a.t==='let-op'?'let-op':a.t==='wijziging'?'aangepast':'ok'
+            const sev=a.t==='niet'?1:a.t==='let-op'?1:a.t==='wijziging'?3:3
+            items.push({kind,sev,titel:a.k,detail:a.d,oplossing:null,waarde:a.v,ico:a.ico})
+          })
+          items.sort((x,y)=>x.sev-y.sev)
+          const aandacht=items.filter(i=>i.sev<=2)
+          const gedaan  =items.filter(i=>i.sev===3)
+          const Kaart=(it,i)=>{ const s=STYLE[it.kind]||STYLE.info
+            return(
+              <div key={i} style={{borderLeft:`3px solid ${s.col}`,background:s.bg,borderRadius:'0 9px 9px 0',
+                padding:'9px 12px',display:'flex',flexDirection:'column',gap:3,minWidth:0}}>
+                <div style={{display:'flex',alignItems:'center',gap:7,flexWrap:'wrap'}}>
+                  <span style={{fontSize:8.5,fontWeight:800,letterSpacing:'0.06em',textTransform:'uppercase',
+                    background:s.col,color:'#fff',padding:'2px 7px',borderRadius:9,whiteSpace:'nowrap'}}>{it.ico||s.ico} {s.tag}</span>
+                  <span style={{fontSize:11.5,fontWeight:700,color:C.text,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{it.titel}</span>
+                  {it.waarde&&<span style={{marginLeft:'auto',fontSize:11,fontWeight:800,color:s.col,whiteSpace:'nowrap'}}>{it.waarde}</span>}
+                </div>
+                {it.detail&&<div style={{fontSize:10.8,color:C.muted,lineHeight:1.42}}>{it.detail}</div>}
+                {it.oplossing&&(
+                  <div style={{display:'flex',alignItems:'flex-start',gap:6,marginTop:1}}>
+                    <span style={{fontSize:9,fontWeight:800,color:s.col,letterSpacing:'0.05em',textTransform:'uppercase',flexShrink:0,marginTop:1}}>Oplossing →</span>
+                    <span style={{fontSize:10.8,color:C.text,lineHeight:1.42}}>{it.oplossing}</span>
+                  </div>
+                )}
+              </div>
+            )}
+          return(
+            <div style={{marginBottom:12,border:`1px solid ${C.border}`,borderRadius:12,overflow:'hidden',background:C.white}}>
+              <div style={{display:'flex',alignItems:'center',gap:9,padding:'10px 15px',
+                background:'linear-gradient(90deg,#0E3450,#1C6EA4 55%,#2E8FC7)',color:'#fff'}}>
+                <span style={{fontSize:15}}>🛠</span>
+                <span style={{fontSize:12.5,fontWeight:800,letterSpacing:'0.03em'}}>OVERZICHT — WAT DE ENGINE DEED &amp; WAAR JE OP MOET LETTEN</span>
+                <span style={{marginLeft:'auto',display:'flex',gap:6}}>
+                  {aandacht.length>0&&<span style={{fontSize:10,fontWeight:700,background:'rgba(255,214,120,0.28)',color:'#FFE9B0',padding:'2px 9px',borderRadius:10,whiteSpace:'nowrap'}}>{aandacht.length} aandachtspunt{aandacht.length===1?'':'en'}</span>}
+                  {gedaan.length>0&&<span style={{fontSize:10,fontWeight:700,background:'rgba(93,214,188,0.26)',color:'#BFF3E4',padding:'2px 9px',borderRadius:10,whiteSpace:'nowrap'}}>{gedaan.length} toegepast</span>}
+                </span>
+              </div>
+              <div style={{padding:'12px 14px'}}>
+                {aandacht.length>0&&(<>
+                  <div style={{fontSize:9.5,fontWeight:800,color:C.muted,letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:7}}>Aandachtspunten &amp; regel-interacties</div>
+                  <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(330px,1fr))',gap:8,marginBottom:gedaan.length>0?14:0}}>
+                    {aandacht.map((it,i)=>Kaart(it,'a'+i))}
+                  </div>
+                </>)}
+                {gedaan.length>0&&(<>
+                  <div style={{fontSize:9.5,fontWeight:800,color:C.muted,letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:7}}>Automatisch toegepast &amp; aangepast</div>
+                  <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(300px,1fr))',gap:8}}>
+                    {gedaan.map((it,i)=>Kaart(it,'g'+i))}
+                  </div>
+                </>)}
+                {/* ── PER REGEL: wat is er gedaan, en waarom (niet)? ── */}
+                {raster.regelrapport&&raster.regelrapport.length>0&&(<>
+                  <div style={{fontSize:9.5,fontWeight:800,color:C.muted,letterSpacing:'0.1em',textTransform:'uppercase',margin:'14px 0 7px'}}>
+                    Per regel — wat heeft de engine gedaan?
+                  </div>
+                  <div style={{border:`1px solid ${C.border}`,borderRadius:9,overflow:'hidden'}}>
+                    {raster.regelrapport.map((x,i)=>{
+                      const col=x.status==='niet'?C.danger:x.status==='deels'?'#B8860B':C.green
+                      const ico=x.status==='niet'?'✕':x.status==='deels'?'◐':'✓'
+                      return(
+                        <div key={i} style={{display:'flex',gap:10,padding:'9px 12px',alignItems:'flex-start',
+                          borderTop:i?`1px solid ${C.border}`:'none',background:i%2?C.rowAlt:C.white}}>
+                          <span style={{width:18,height:18,borderRadius:'50%',background:col,color:'#fff',fontSize:10,fontWeight:800,
+                            display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,marginTop:1}}>{ico}</span>
+                          <div style={{minWidth:0,flex:1}}>
+                            <div style={{fontSize:11.5,fontWeight:700,color:C.text}}>{x.regel}</div>
+                            <div style={{fontSize:11,color:C.text,lineHeight:1.45,marginTop:1}}>{x.wat}</div>
+                            {x.waarom&&(
+                              <div style={{fontSize:10.8,color:C.muted,lineHeight:1.45,marginTop:3,paddingLeft:9,
+                                borderLeft:`2px solid ${col}44`}}>{x.waarom}</div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </>)}
+              </div>
+            </div>
+          )
+        })()}
+
+        {/* ── ANALYSE 2.1: vraag/capaciteit-balans · modaliteitsmix · advies (inklapbaar) ── */}
+        <div style={{marginBottom:12}}>
+        <PanelKop id="analyse" titel="Analyse" samenvatting={`dekking ${dekking>999?'∞':dekking+'%'} · ${adviezen.length} advies${adviezen.length===1?'':'punten'}`}/>
+        {openPanels.analyse&&(
+        <div style={{display:'grid',gridTemplateColumns:'1.15fr 1fr 1.4fr',gap:10}}>
+          {/* Vraag vs capaciteit */}
+          <div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:12,padding:'13px 15px'}}>
+            <div style={{fontSize:9.5,fontWeight:700,color:C.muted,letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:9}}>Vraag vs. capaciteit</div>
+            {(()=>{
+              const mx=Math.max(demandMin,capMin,1)
+              const Row=({lb,val,clr})=>(
+                <div style={{marginBottom:8}}>
+                  <div style={{display:'flex',justifyContent:'space-between',fontSize:10.5,marginBottom:3}}>
+                    <span style={{color:C.muted}}>{lb}</span><span style={{fontWeight:700,color:C.text,fontVariantNumeric:'tabular-nums'}}>{(val/60).toFixed(1)} u</span>
+                  </div>
+                  <div style={{height:8,borderRadius:4,background:C.surface2,overflow:'hidden'}}>
+                    <div style={{height:'100%',width:(val/mx*100)+'%',background:clr,borderRadius:4,transition:'width 0.4s'}}/>
+                  </div>
+                </div>
+              )
+              return(<div>
+                <Row lb="Weekvraag (uit codes)" val={demandMin} clr={C.primary}/>
+                <Row lb="Beschikbare capaciteit" val={capMin} clr={C.green}/>
+                <div style={{marginTop:9,fontSize:11.5,fontWeight:600,
+                  color:dekking>=100?C.green:C.danger}}>
+                  Dekking {dekking>999?'∞':dekking+'%'} {dekking>=100?'— vraag past':'— tekort'}
+                </div>
+              </div>)
+            })()}
+          </div>
+          {/* Modaliteitsmix */}
+          <div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:12,padding:'13px 15px'}}>
+            <div style={{fontSize:9.5,fontWeight:700,color:C.muted,letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:9}}>Modaliteitsmix</div>
+            <div style={{display:'flex',height:12,borderRadius:6,overflow:'hidden',marginBottom:10,border:`1px solid ${C.border}`}}>
+              {modMix.map((x,i)=>(
+                <div key={x.mv} title={`${x.label}: ${x.n}`} style={{width:(x.n/nReal*100)+'%',
+                  background:x.mv==='fysiek'?C.primary:x.mv==='telefonisch'?'#2E8B57':'#8B5CF6'}}/>
+              ))}
+            </div>
+            <div style={{display:'flex',flexDirection:'column',gap:5}}>
+              {modMix.map(x=>(
+                <div key={x.mv} style={{display:'flex',alignItems:'center',gap:6,fontSize:11}}>
+                  <span style={{width:9,height:9,borderRadius:2,background:x.mv==='fysiek'?C.primary:x.mv==='telefonisch'?'#2E8B57':'#8B5CF6'}}/>
+                  <span style={{color:C.text}}>{x.ico} {x.label}</span>
+                  <span style={{marginLeft:'auto',fontWeight:700,color:C.text,fontVariantNumeric:'tabular-nums'}}>{x.n} · {Math.round(x.n/nReal*100)}%</span>
+                </div>
+              ))}
+              {!modMix.length&&<span style={{fontSize:11,color:C.muted}}>Geen afspraken.</span>}
+            </div>
+          </div>
+          {/* Advies */}
+          <div style={{background:C.white,border:`1px solid ${C.border}`,borderRadius:12,padding:'13px 15px'}}>
+            <div style={{fontSize:9.5,fontWeight:700,color:C.muted,letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:9}}>Analyse &amp; advies</div>
+            <div style={{display:'flex',flexDirection:'column',gap:6,maxHeight:118,overflowY:'auto'}}>
+              {adviezen.map((a,i)=>(
+                <div key={i} style={{display:'flex',gap:8,fontSize:11.5,lineHeight:1.45}}>
+                  <span style={{width:8,height:8,borderRadius:'50%',marginTop:4,flexShrink:0,
+                    background:a.t==='bad'?C.danger:a.t==='warn'?'#D9860A':a.t==='ok'?C.green:C.light}}/>
+                  <span style={{color:C.text}}>{a.m}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+        )}
+        </div>
+
+        {/* ── PLANREGELS · LIVE — snelle schakelaars ── */}
+        {(()=>{
+          const TOG=[{k:'spoedFirst',l:'Spoed eerst'},{k:'startNieuw',l:'Start: nieuw'},{k:'startControle',l:'Start: controle'},{k:'mixNC',l:'Nieuw/controle afwisselen'}]
+          return(
+            <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap',alignItems:'center',
+              background:C.white,border:`1px solid ${C.border}`,borderRadius:12,padding:'9px 12px'}}>
+              <span style={{fontSize:10,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.08em'}}>Regels · live</span>
+              {TOG.map(({k,l})=>{ const on=rules[k]
+                return(
+                  <button key={k} onClick={()=>setRules(p=>({...p,[k]:!p[k]}))}
+                    style={{padding:'6px 12px',borderRadius:16,cursor:'pointer',fontSize:11.5,fontWeight:600,
+                      background:on?C.blueAccent:C.white,color:on?C.primary:C.muted,border:`1px solid ${on?C.primary:C.border}`}}>
+                    {on?'✓ ':''}{l}</button>
+                )
+              })}
+              <span style={{width:1,height:20,background:C.border}}/>
+              {[{v:'end',l:'Buffer: einde'},{v:'spread',l:'Buffer: verspreid'}].map(o=>(
+                <button key={o.v} onClick={()=>setRules(p=>({...p,flexMode:o.v}))}
+                  style={{padding:'6px 12px',borderRadius:16,cursor:'pointer',fontSize:11.5,fontWeight:600,
+                    background:rules.flexMode===o.v?FLEX_COLOR.bg:C.white,color:rules.flexMode===o.v?FLEX_COLOR.fg:C.muted,
+                    border:`1px solid ${rules.flexMode===o.v?FLEX_COLOR.brd:C.border}`}}>{o.l}</button>
+              ))}
+            </div>
+          )
+        })()}
+
+        </div>)}
+
+        {/* ── VOLLEDIG WEEKOVERZICHT — per dag, per dagdeel de verdeling nieuw/controle ── */}
+        {viewMode==='week'&&(()=>{
+          // ── ECHTE WEEK-KALENDER: alle 5 dagen als tijdrooster naast elkaar ──
+          const HEAD=44
+          const WeekBlok=({it,di})=>{
+            if(it.isFlex) return(
+              <div style={{position:'absolute',top:toY(it.start)+0.5,left:1,right:1,height:Math.max(it.duur*PXMIN-1,5),
+                borderRadius:3,background:FLEX_STRIPE(4,8),
+                border:`1px solid ${FLEX_COLOR.brd}`,zIndex:2}}/>)
+            const clr=getColor(it), h=Math.max(it.duur*PXMIN-1,9)
+            return(
+              <div title={`${it.code} · ${it.description||''} · ${toTime(it.start)}–${toTime(it.end)}`}
+                onClick={()=>{setSelDay(di);setViewMode('dag')}}
+                style={{position:'absolute',top:toY(it.start)+0.5,left:1,right:1,height:h,cursor:'pointer',
+                  background:it.overbook?'repeating-linear-gradient(45deg,#F3EEFA,#F3EEFA 5px,#EBE2F7 5px,#EBE2F7 10px)':clr.bg,
+                  color:it.overbook?'#6D28B5':clr.fg,border:`1px solid ${it.overbook?'#8B5CF6':clr.brd}`,
+                  borderLeft:`2.5px solid ${it.overbook?'#8B5CF6':clr.brd}`,borderRadius:4,overflow:'hidden',zIndex:4,
+                  display:'flex',alignItems:'center',gap:2,padding:'0 3px',fontSize:8.5,fontWeight:800,lineHeight:1}}>
+                {h>=13&&<span style={{opacity:0.85,fontVariantNumeric:'tabular-nums',fontWeight:600}}>{toTime(it.start).slice(0,5)}</span>}
+                {it.spoed&&<span style={{color:C.danger}}>●</span>}
+                {it.digitaal&&<span>{modInfo(it.modaliteit||'telefonisch').ico||'☎'}</span>}
+                <span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{it.code}</span>
+              </div>
+            )
+          }
+          const uurLijnen=gridLines.filter(g=>g.hour)
+          return(
+            <div style={{marginBottom:14}}>
+              <div style={{display:'flex',alignItems:'center',gap:14,marginBottom:10,flexWrap:'wrap'}}>
+                <span style={{fontSize:13,fontWeight:700,color:C.text}}>Weekraster — de hele week als tijdrooster</span>
+                <div style={{display:'flex',gap:12,fontSize:11,color:C.muted}}>
+                  {[['Nieuw',NEW_PALETTE[0]],['Controle',CTRL_PALETTE[0]],['Op afstand',{bg:'#D6EAE3',brd:'#94C5B4'}]].map(([l,c])=>(
+                    <span key={l} style={{display:'flex',alignItems:'center',gap:5}}><span style={{width:11,height:11,borderRadius:3,background:c.bg,border:`1px solid ${c.brd}`}}/>{l}</span>
+                  ))}
+                  <span style={{display:'flex',alignItems:'center',gap:5}}><span style={{width:11,height:11,borderRadius:3,background:FLEX_STRIPE(3,6),border:`1px solid ${FLEX_COLOR.brd}`}}/>Flex</span>
+                </div>
+                <span style={{marginLeft:'auto',fontSize:11,color:C.muted,fontStyle:'italic'}}>klik een afspraak of dag om die dag te openen · zoom past de hoogte aan</span>
+              </div>
+              <div style={{display:'flex',border:`1px solid ${C.border}`,borderRadius:12,overflow:'auto',background:C.white,boxShadow:C.shadow}}>
+                {/* tijd-as */}
+                <div style={{width:44,flexShrink:0,borderRight:`1.5px solid ${C.border}`,background:C.timeline,position:'sticky',left:0,zIndex:6}}>
+                  <div style={{height:HEAD,borderBottom:`1px solid ${C.border}`}}/>
+                  <div style={{position:'relative',height:gridH}}>
+                    {uurLijnen.map(({t,y},i)=>(<div key={i} style={{position:'absolute',top:y-6,right:5,fontSize:9.5,fontWeight:700,color:C.hour,fontVariantNumeric:'tabular-nums'}}>{toTime(t)}</div>))}
+                  </div>
+                </div>
+                {/* 5 dagkolommen */}
+                {[0,1,2,3,4].map(di=>{
+                  const slots=raster.days[di], pk=raster.kpi?.perDay[di], on=selDay===di
+                  return(
+                    <div key={di} style={{flex:1,minWidth:150,borderRight:di<4?`1px solid ${C.border}`:'none',background:on?'#F6FBFD':C.white}}>
+                      <div onClick={()=>{setSelDay(di);setViewMode('dag')}}
+                        style={{height:HEAD,borderBottom:`2px solid ${on?C.primary:C.border}`,cursor:'pointer',
+                          display:'flex',alignItems:'center',justifyContent:'space-between',padding:'0 9px',position:'sticky',top:0,background:on?'#EAF4FA':C.surface2,zIndex:5}}>
+                        <span style={{fontSize:12,fontWeight:800,color:on?C.primary:C.text}}>{DAY_ABBR[di]}<span style={{fontWeight:500,color:C.muted,marginLeft:4,fontSize:10}}>{DAYS[di].slice(2)}</span></span>
+                        {pk&&slots&&<span style={{fontSize:9.5,fontWeight:700,padding:'2px 7px',borderRadius:9,background:pk.benutting>m2.benutting?'#FCEEEB':'#EAF5EE',color:pk.benutting>m2.benutting?C.danger:C.green}}>{pk.benutting}%</span>}
+                      </div>
+                      {!slots?(
+                        <div style={{height:gridH,display:'flex',alignItems:'center',justifyContent:'center',color:C.muted,fontSize:10.5,textAlign:'center',padding:8}}>Geen<br/>spreekuur</div>
+                      ):(
+                        <div style={{position:'relative',height:gridH}}>
+                          <div style={{position:'absolute',top:0,left:0,right:0,height:LEAD,zIndex:3,pointerEvents:'none',
+                            background:'repeating-linear-gradient(45deg,#EDF0F4,#EDF0F4 5px,#F5F7F9 5px,#F5F7F9 10px)'}}/>
+                          <div style={{position:'absolute',bottom:0,left:0,right:0,height:LEAD,zIndex:3,pointerEvents:'none',
+                            background:'repeating-linear-gradient(45deg,#EDF0F4,#EDF0F4 5px,#F5F7F9 5px,#F5F7F9 10px)'}}/>
+                          {/* uur/half lijnen */}
+                          {gridLines.map(({t,y,hour,half},i)=>(<div key={i} style={{position:'absolute',top:y,left:0,right:0,height:1,background:hour?'#DBE3EA':half?'#EEF2F6':'transparent',zIndex:0}}/>))}
+                          {/* pauze-banden */}
+                          {regions.slice(1).map((r,i)=>{const prev=regions[i];const pTop=prev.y0+(prev.end-prev.start)*PXMIN;return(
+                            <div key={'p'+i} style={{position:'absolute',top:pTop,left:0,right:0,height:r.y0-pTop,zIndex:1,
+                              background:'repeating-linear-gradient(45deg,#EEF1F5,#EEF1F5 5px,#F7F9FB 5px,#F7F9FB 11px)',borderTop:`1px solid ${C.border}`,borderBottom:`1px solid ${C.border}`}}/>)})}
+                          {/* kamer-subkolommen */}
+                          <div style={{position:'absolute',inset:0,display:'flex'}}>
+                            {(()=>{
+                              // Per dag alleen de kamers die er echt een spreekuur hebben
+                              const dagKamers=[]
+                              for(let r=0;r<numRooms;r++) if(kamerInGebruik(di,r)) dagKamers.push(r)
+                              const lijst=dagKamers.length?dagKamers:[0]
+                              return lijst.map((r,ix)=>(
+                                <div key={r} style={{flex:1,position:'relative',borderRight:ix<lijst.length-1?`1px dashed ${C.border}`:'none'}}>
+                                  {regions.map(reg=>(slots[reg.pre+r]||[]).map(it=><WeekBlok key={it.id} it={it} di={di}/>))}
+                                </div>
+                              ))
+                            })()}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })()}
+
+        {viewMode==='dag'&&(<>
+        {/* Day tabs */}
+        <div style={{display:'flex',gap:6,marginBottom:14}}>
+          {DAYS.slice(0,5).map((d,i)=>{
+            const slots=raster.days[i]
+            let n=0; if(slots) Object.values(slots).forEach(arr=>n+=arr.length)
+            const on=selDay===i
+            return(
+              <button key={i} onClick={()=>setSelDay(i)}
+                style={{flex:1,padding:'9px 8px',borderRadius:9,cursor:'pointer',position:'relative',
+                  border:`1.5px solid ${on?C.primary:C.border}`,
+                  background:on?C.primary:C.white,color:on?'#fff':C.text,
+                  fontWeight:on?700:500,fontSize:12.5,transition:'all 0.13s'}}>
+                {d}
+                <span style={{display:'block',fontSize:9.5,fontWeight:500,marginTop:2,
+                  color:on?'rgba(255,255,255,0.8)':C.muted}}>{slots?n+' afspr.':'geen spreekuur'}</span>
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Status + palette */}
+        <div style={{display:'flex',gap:10,marginBottom:12,flexWrap:'wrap',alignItems:'center'}}>
+          <div style={{padding:'7px 13px',borderRadius:8,fontSize:12,display:'flex',alignItems:'center',gap:7,
+            background:nNtp>0?'#FEF6E0':'#EAF4E0',color:nNtp>0?'#7A5000':'#2A5018',
+            border:`1px solid ${nNtp>0?'#F0C840':'#98CC70'}`}}>
+            {nNtp>0?'⚠':'✓'} {nNtp>0?`${nNtp} nog te plannen`:'Alles ingepland'}
+          </div>
+          <span style={{fontSize:10.5,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.05em'}}>Toevoegen:</span>
+          {PALETTE.map(p=>(
+            <div key={p.key}
+              onMouseDown={e=>startDrag(e,{mode:'new',palette:p})}
+              onTouchStart={e=>startDrag(e,{mode:'new',palette:p})}
+              style={{display:'flex',alignItems:'center',gap:6,padding:'5px 11px',borderRadius:20,cursor:'grab',
+                userSelect:'none',background:p.clr.bg,border:`1px solid ${p.clr.brd}`,fontSize:11,fontWeight:500,color:p.clr.fg}}>
+              <span style={{width:8,height:8,borderRadius:2,background:p.clr.brd}}/>{p.label} <span style={{opacity:0.6}}>({p.duur}m)</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Main grid + NTP side panel */}
+        <div style={{display:'flex',gap:12,alignItems:'flex-start'}}>
+          {/* Time-grid raster */}
+          <div style={{flex:1,background:C.white,borderRadius:12,border:`1px solid ${C.border}`,
+            overflow:'hidden',boxShadow:C.shadow}}>
+            <div style={{padding:'10px 14px',background:C.rowAlt,borderBottom:`1px solid ${C.border}`,
+              display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+              <span style={{fontWeight:700,color:C.primary,fontSize:14}}>{DAYS[selDay]}</span>
+              <span style={{fontSize:11,color:C.muted}}>{toTime(ochStart)}–{toTime(ochEnd)} · {toTime(midStart)}–{toTime(midEnd)}{avondOn?` · ${toTime(avondStart)}–${toTime(avondEnd)}`:''}</span>
+            </div>
+            {dayHasData?(
+              <div style={{display:'flex',maxHeight:620,overflowY:'auto',overflowX:'auto'}}>
+                {/* Time axis */}
+                <div style={{width:54,flexShrink:0,position:'relative',borderRight:`1.5px solid ${C.border}`,
+                  background:C.timeline}}>
+                  <div style={{height:48,position:'sticky',top:0,background:C.timeline,zIndex:5,borderRight:`1px solid ${C.border}`}}/>
+                  <div style={{position:'relative',height:gridH}}>
+                    {gridLines.filter(g=>g.half).map(({t,y,hour},idx)=>(
+                      <div key={idx} style={{position:'absolute',top:y-7,right:6,fontSize:hour?10.5:9,
+                        fontWeight:hour?700:400,color:hour?C.hour:C.muted,fontVariantNumeric:'tabular-nums'}}>{toTime(t)}</div>
+                    ))}
+                  </div>
+                </div>
+                {/* Room columns */}
+                {rooms.map(r=><RoomColumn key={r} room={r}/>)}
+              </div>
+            ):(
+              <div style={{padding:'50px 30px',textAlign:'center',color:C.muted}}>
+                <div style={{fontSize:32,marginBottom:10}}>📭</div>
+                <div style={{fontWeight:700,fontSize:14,color:C.text}}>Geen spreekuur op {DAYS[selDay]}</div>
+                <div style={{fontSize:12.5,marginTop:4}}>Pas de weekverdeling aan in Spreekuurtijden (0% = geen spreekuur).</div>
+              </div>
+            )}
+          </div>
+
+          {/* NTP panel */}
+          <div data-slotkey="ntp" data-day="ntp"
+            style={{width:200,flexShrink:0,background:dragOver&&dragOver.slot==='ntp'?C.blueAccent:'#F0EDE8',
+              border:`1.5px dashed ${dragOver&&dragOver.slot==='ntp'?C.primary:C.border}`,borderRadius:12,
+              padding:12,minHeight:200,maxHeight:620,overflowY:'auto'}}>
+            <div style={{fontSize:11,fontWeight:700,color:C.muted,textTransform:'uppercase',
+              letterSpacing:'0.05em',marginBottom:10,display:'flex',alignItems:'center',gap:5}}>
+              ⏳ Nog te plannen {nNtp>0&&<span style={{background:C.danger,color:'#fff',borderRadius:10,padding:'1px 7px',fontSize:10}}>{nNtp}</span>}
+            </div>
+            {nNtp===0
+              ? <div style={{textAlign:'center',fontSize:11,color:C.muted,marginTop:30,lineHeight:1.6}}>✓<br/>Alle afspraken<br/>zijn ingepland</div>
+              : (raster.ntp||[]).map(a=>{
+                  const clr=getColor(a)
+                  return(
+                    <div key={a.id}
+                      onMouseDown={e=>startDrag(e,{mode:'move',appt:a,fromDay:a.day,fromSlot:'ntp'})}
+                      onTouchStart={e=>startDrag(e,{mode:'move',appt:a,fromDay:a.day,fromSlot:'ntp'})}
+                      title={a._reden?`${a.code}: ${a._reden}`:undefined}
+                      style={{fontSize:11,padding:'5px 8px',borderRadius:5,marginBottom:4,cursor:'grab',userSelect:'none',
+                        background:clr.bg,color:clr.fg,border:`1px solid ${clr.brd}`,
+                        display:'flex',alignItems:'center',gap:4}}>
+                      {a.digitaal&&<span style={{fontSize:9}}>📱</span>}
+                      <span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{a.description} ({a.duur}m)</span>
+                    </div>
+                  )
+                })}
+          </div>
+        </div>
+
+        {/* Legend + stats footer */}
+        <div style={{display:'flex',gap:16,marginTop:14,flexWrap:'wrap',alignItems:'center'}}>
+          <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'center',flex:1}}>
+            <span style={{fontSize:10.5,fontWeight:700,color:C.muted,textTransform:'uppercase'}}>Legenda</span>
+            {modus==='functie'
+              ? <div style={{display:'flex',alignItems:'center',gap:5,fontSize:11.5,color:C.muted}}>
+                  <span style={{width:11,height:11,borderRadius:3,background:FK_PALETTE[0].bg,border:`1px solid ${FK_PALETTE[0].brd}`}}/>Onderzoek (eigen kleur per code)
+                </div>
+              : <>
+            <div style={{display:'flex',alignItems:'center',gap:5,fontSize:11.5,color:C.muted}}>
+              <span style={{width:11,height:11,borderRadius:3,background:NEW_PALETTE[0].bg,border:`1px solid ${NEW_PALETTE[0].brd}`}}/>Nieuw
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:5,fontSize:11.5,color:C.muted}}>
+              <span style={{width:11,height:11,borderRadius:3,background:CTRL_PALETTE[0].bg,border:`1px solid ${CTRL_PALETTE[0].brd}`}}/>Controle
+            </div>
+                </>}
+            <div style={{display:'flex',alignItems:'center',gap:5,fontSize:11.5,color:C.muted}}>
+              <span style={{width:11,height:11,borderRadius:3,background:FLEX_STRIPE(2,5),border:`1px dashed ${FLEX_COLOR.brd}`}}/>Flex ({100-m2.benutting}%)
+            </div>
+          </div>
+          <div style={{display:'flex',gap:14,fontSize:12,fontWeight:600}}>
+            {raster.fk
+              ? <span style={{color:C.primary}}>🔬 {allAppts.filter(a=>a.category==='onderzoek').length} onderzoeken · {raster.fk.advies.length} kamers</span>
+              : <>
+            <span style={{color:C.primary}}>👥 {nNieuw} nieuw</span>
+            <span style={{color:C.green}}>📋 {totC} controle ({pctTel}% tel.)</span>
+                </>}
+            <span style={{color:nNtp>0?C.danger:C.green}}>⏳ {nNtp} te plannen</span>
+          </div>
+        </div>
+        </>)}
+
+        {/* Floating drag ghost — moved via ref for smooth realtime tracking */}
+        {dragItem&&(dragItem.mode==='new'||(dragItem.mode==='move'&&dragItem.fromSlot==='ntp'))&&(()=>{
+          const clr=dragItem.mode==='new'?dragItem.palette.clr:getColor(dragItem.appt)
+          const label=dragItem.mode==='new'?dragItem.palette.label:(dragItem.appt.description||dragItem.appt.code)
+          const dur=dragItem.mode==='new'?dragItem.palette.duur:dragItem.appt.duur
+          return(
+            <div ref={ghostRef} style={{position:'fixed',zIndex:4000,pointerEvents:'none',
+              width:168,padding:'8px 11px',borderRadius:7,
+              background:clr.bg,color:clr.fg,border:`2px solid ${clr.brd}`,
+              boxShadow:'0 12px 30px rgba(0,0,0,0.28)',transform:'rotate(-1.5deg)',
+              fontSize:12,fontWeight:700,lineHeight:1.3}}>
+              <div style={{display:'flex',alignItems:'center',gap:5}}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={clr.fg} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{opacity:0.7}}><path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/></svg>
+                <span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{label}</span>
+              </div>
+              <div style={{fontSize:10.5,fontWeight:500,opacity:0.8,marginTop:2}}>{dur} min · sleep naar kamer</div>
+            </div>
+          )
+        })()}
+
+        {/* Sleep-indicator van de bezettingskaart: laat zien wát je verplaatst */}
+        {kaartGhost&&(
+          <div style={{position:'fixed',left:kaartGhost.x+14,top:kaartGhost.y+12,zIndex:4000,
+            pointerEvents:'none',padding:'7px 12px',borderRadius:9,
+            background:C.primary,color:'#fff',fontSize:11.5,fontWeight:700,
+            boxShadow:'0 10px 26px rgba(9,30,45,0.32)',transform:'rotate(-1.5deg)',whiteSpace:'nowrap'}}>
+            ⇄ {kaartGhost.label}
+            <div style={{fontSize:10,fontWeight:500,opacity:0.85,marginTop:1}}>
+              {kaartOver?'laat los om hier neer te zetten':'sleep naar een ander vak'}
+            </div>
+          </div>
+        )}
+
+        {/* EXPORT dialog */}
+        {showExport&&(
+          <div style={{position:'fixed',inset:0,background:'rgba(15,30,45,0.55)',backdropFilter:'blur(6px)',
+            display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000}}>
+            <Card style={{width:520,maxWidth:'94vw',padding:28,maxHeight:'90vh',overflowY:'auto'}}>
+              <div style={{fontWeight:700,fontSize:16,color:C.primary,marginBottom:4}}>📤 Excel export</div>
+              <div style={{fontSize:12.5,color:C.muted,marginBottom:18,lineHeight:1.65}}>
+                Eén Excel met <b style={{color:C.text}}>een tabblad per dag</b> — de tijd in de eerste kolom en één kolom
+                per kamer, waarbij elke afspraak precies zijn eigen tijdvak beslaat. Plus een tabblad
+                {' '}<b style={{color:C.text}}>Totaal agenda</b> (de hele week naast elkaar), <b style={{color:C.text}}>Alle
+                afspraken</b> (met begin- en eindtijd, filterbaar) en de <b style={{color:C.text}}>Configuratie</b>.
+                Het bestand is ook weer in te lezen in deze tool.
+              </div>
+              {!exportLink?(
+                <>
+                  <Lbl>Bestandsnaam</Lbl>
+                  <div style={{display:'flex',gap:8,marginBottom:20}}>
+                    <input value={expName} onChange={e=>setExpName(e.target.value)}
+                      style={{flex:1,border:`1.5px solid ${C.border}`,borderRadius:7,padding:'8px 12px',fontSize:13.5,fontFamily:'inherit'}}/>
+                    <span style={{padding:'8px 12px',background:C.rowAlt,border:`1px solid ${C.border}`,borderRadius:7,fontSize:12.5,color:C.muted}}>.xlsx</span>
+                  </div>
+                  <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
+                    <Btn variant="secondary" onClick={()=>{setShowExport(false);setExportLink(null)}} disabled={exporting}>Annuleren</Btn>
+                    <Btn onClick={handleExport} disabled={exporting} style={{background:C.green,border:'none',minWidth:190}}>
+                      {exporting?'⏳ Genereren...':'⚙️ Genereer bestand'}
+                    </Btn>
+                  </div>
+                </>
+              ):(
+                <>
+                  <div style={{padding:'16px',background:'#F0FDF6',border:`1.5px solid ${C.green}`,borderRadius:10,marginBottom:20}}>
+                    <div style={{fontWeight:700,color:C.green,fontSize:13,marginBottom:4}}>✅ Bestand klaar!</div>
+                    <div style={{fontSize:12.5,color:C.muted}}>Klik hieronder om te downloaden.</div>
+                  </div>
+                  {kanViewerOpslaan()?(
+                    // Gedeelde pagina: we proberen ALTIJD eerst één echte .xlsx weg te
+                    // schrijven. Weigert deze weergave dat bestandstype, dan krijg je
+                    // hetzelfde in ÉÉN bestand — niet als stapel losse downloads.
+                    <>
+                      <button onClick={async()=>{
+                          setDlMelding({bezig:true,msg:'Bezig met opslaan…'})
+                          setDlMelding(await viewerOpslaanXlsx(exportLink.basis, exportLink.wb))
+                        }}
+                        style={{display:'block',width:'100%',textAlign:'center',padding:'14px 20px',marginBottom:10,
+                          background:C.green,color:'#fff',border:'none',borderRadius:10,cursor:'pointer',
+                          fontWeight:700,fontSize:15}}>
+                        ⬇ Download {exportLink.basis}.xlsx
+                      </button>
+                      <div style={{fontSize:11.5,color:C.muted,lineHeight:1.55,marginBottom:12}}>
+                        Eén bestand met alle tabbladen. Slaagt dit niet, dan staat hieronder waarom en
+                        krijg je dezelfde inhoud als één CSV.
+                      </div>
+                      {dlMelding&&!dlMelding.bezig&&(
+                        <div style={{fontSize:12,fontWeight:600,marginBottom:12,lineHeight:1.5,
+                          color:dlMelding.ok?C.green:C.danger}}>{dlMelding.ok?'✓ ':'△ '}{dlMelding.msg}</div>
+                      )}
+                      {dlMelding&&dlMelding.geenXlsx&&(
+                        <div style={{padding:'12px 14px',background:C.rowAlt,border:`1px solid ${C.border}`,
+                          borderRadius:10,marginBottom:12}}>
+                          <div style={{fontSize:12,color:C.muted,lineHeight:1.6,marginBottom:10}}>
+                            Deze <b style={{color:C.text}}>gedeelde weergave</b> mag alleen bepaalde bestandstypen
+                            opslaan, en .xlsx staat daar niet tussen. Twee opties:
+                            <br/>· <b style={{color:C.text}}>Voor een échte Excel:</b> open het losse
+                            {' '}<b style={{color:C.text}}>polimodel.html</b>-bestand lokaal (dubbelklikken) en exporteer
+                            daar — dan krijg je één .xlsx met alle tabbladen.
+                            <br/>· <b style={{color:C.text}}>Of nu meteen:</b> alle tabbladen in één CSV hieronder.
+                          </div>
+                          <button onClick={async()=>{
+                              setDlMelding(await viewerOpslaan(exportLink.basis, wbNaarEenCsv(exportLink.wb)))
+                            }}
+                            style={{display:'block',width:'100%',textAlign:'center',padding:'11px 16px',
+                              background:C.white,color:C.text,border:`1.5px solid ${C.border}`,borderRadius:9,
+                              cursor:'pointer',fontWeight:700,fontSize:13}}>
+                            ⬇ Alles in één CSV ({exportLink.basis}.csv)
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  ):(
+                    <a href={exportLink.href} download={exportLink.filename}
+                      style={{display:'block',textAlign:'center',padding:'14px 20px',
+                        background:C.green,color:'#fff',borderRadius:10,
+                        fontWeight:700,fontSize:15,textDecoration:'none',marginBottom:14}}>
+                      ⬇ Download {exportLink.filename}
+                    </a>
+                  )}
+                  <div style={{display:'flex',justifyContent:'flex-end'}}>
+                    <Btn variant="secondary" onClick={()=>{setShowExport(false);setExportLink(null);setDlMelding(null)}}>Sluiten</Btn>
+                  </div>
+                </>
+              )}
+            </Card>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // Index 0 = Tijden (renderMod1), index 1 = Gegevens (renderMod0)
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ══ FUNCTIEKAMERS — invoer, regels en rasteradvies ═══════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════════
+  const fkKamers=fk.kamers||[], fkCodes=fk.codes||[], fkReg=fk.regels||fkStandaardRegels()
+  const fkZet=fn=>setFk(p=>({...p,...fn(p)}))
+  const fkZetKamer=(i,patch)=>fkZet(p=>({kamers:p.kamers.map((k,j)=>j===i?{...k,...patch}:k)}))
+  const fkZetCode=(i,patch)=>fkZet(p=>({codes:p.codes.map((c,j)=>j===i?{...c,...patch}:c)}))
+  const fkZetRegel=(patch)=>fkZet(p=>({regels:{...(p.regels||fkStandaardRegels()),...patch}}))
+  const fkLaadPreset=naam=>{
+    const pr=FK_PRESETS[naam]; if(!pr) return
+    setFk({kamers:pr.kamers.map(k=>({...k,ddDagen:{O:{...k.ddDagen.O},M:{...k.ddDagen.M},A:{...k.ddDagen.A}}})),
+      codes:pr.codes.map(c=>({...c,kamers:{...c.kamers},dagdelen:{...c.dagdelen},weekdagen:{...c.weekdagen}})),
+      regels:{...fkStandaardRegels(),planregels:(pr.planregels||[]).map(r=>({...r}))},preset:naam,mode:'manual',sectie:1,open:null,zoek:'',filter:'alle',
+      badge:{t:pr.voorbeeld
+        ?`Basis "${naam}" klaargezet — ${pr.kamers.length} kamers en ${pr.codes.length} codes met voorbeeldcijfers. Vervang ze door je eigen jaarcijfers.`
+        :`"${naam}" geladen — ${pr.kamers.length} kamers, ${pr.codes.length} codes met de aantallen van 2025.`}})
+    setRoomNames({})
+    if(!poli.naam) setPoli(p=>({...p,naam:naam}))
+  }
+  fkLaadPresetRef.current=fkLaadPreset
+  const fkWeekVan=c=>fkWeekAantal(c,fkReg.wekenPerJaar)
+  const fkKleur=i=>FK_PALETTE[i%FK_PALETTE.length]
+  const fkFileRef=useRef(null)
+  const fkImporteer=e=>{
+    const file=e.target.files[0]; if(!file) return
+    e.target.value=''
+    const reader=new FileReader()
+    reader.onload=ev=>{
+      try{
+        const wb=XLSX.read(ev.target.result,{type:'binary'})
+        // 1) Een eerder opgeslagen sessie van deze tool → alles terugzetten.
+        if(wb.Sheets['_rasterdata']){
+          const rows=XLSX.utils.sheet_to_json(wb.Sheets['_rasterdata'],{header:1})
+          const state=JSON.parse(rows[0][0])
+          if(!state.fk||!(state.fk.kamers||[]).length) throw new Error('Deze sessie bevat geen functiekamers. Exporteer opnieuw vanuit de functiekamer-modus, of laad een codelijst.')
+          if(state.m2) setM2({avondOn:false,avondStart:'17:00',avondEnd:'20:00',verAvond:0,...state.m2,ddDagen:ddDagenVan(state.m2)})
+          setFk({kamers:state.fk.kamers||[],codes:(state.fk.codes||[]).map(c=>fkNieuweCode(c)),regels:{...fkStandaardRegels(),...(state.fk.regels||{})},preset:state.fk.preset||'',
+            mode:'excel',sectie:2,open:null,zoek:'',filter:'alle',badge:{t:`Sessie hersteld uit ${file.name}: ${(state.fk.kamers||[]).length} kamers en ${(state.fk.codes||[]).length} codes.`}})
+          return
+        }
+        // 2) Een codelijst, eventueel met een blad "Kamers".
+        const kamerBlad=wb.SheetNames.find(n=>/kamer/i.test(n))
+        const kamersNieuw=kamerBlad?fkParseKamers(XLSX.utils.sheet_to_json(wb.Sheets[kamerBlad],{header:1,defval:''})):[]
+        const kamersVoor=kamersNieuw.length?kamersNieuw:fkKamers
+        const codeBlad=wb.SheetNames.find(n=>/code|onderzoek/i.test(n)&&n!==kamerBlad)||wb.SheetNames.find(n=>n!==kamerBlad)||wb.SheetNames[0]
+        const aoa=XLSX.utils.sheet_to_json(wb.Sheets[codeBlad],{header:1,defval:''})
+        const codes=fkParseCodes(aoa,kamersVoor)
+        // Kamers die alleen in de codelijst genoemd worden (A1.213 in een opmerking) maar nog niet bestaan → aanmaken.
+        const kamersAf=[...kamersVoor]
+        if(!kamersAf.length){
+          const nums=new Set(); aoa.flat().forEach(v=>[...String(v??'').matchAll(/A\s?1?\.?\s?(\d{3})/gi)].forEach(m=>nums.add(m[1])))
+          ;[...nums].sort().forEach(n=>kamersAf.push(fkNieuweKamer('A1.'+n)))
+        }
+        const codes2=kamersAf!==kamersVoor||kamersAf.length!==kamersVoor.length?fkParseCodes(aoa,kamersAf):codes
+        const zonder=codes2.filter(c=>fkWeekAantal(c,fkReg.wekenPerJaar)>0&&!Object.keys(c.kamers).length).length
+        fkZet(p=>({kamers:kamersAf,codes:codes2,preset:'',mode:'excel',sectie:zonder?2:1,open:null,zoek:'',filter:zonder?'zonderKamer':'alle',
+          badge:{t:`${codes2.length} codes${kamersNieuw.length?` en ${kamersNieuw.length} kamers`:''} ingelezen uit ${file.name}${zonder?` — bij ${zonder} codes is nog geen kamer herkend; vink die hieronder aan`:''}.`}}))
+      }catch(err){ alert('Import mislukt:\n\n'+err.message) }
+    }
+    reader.readAsBinaryString(file)
+  }
+  const fkVoorbeeldExcel=()=>{
+    const wb=XLSX.utils.book_new()
+    const bron=fkCodes.filter(fkCodeLabel).length?{kamers:fkKamers,codes:fkCodes}:FK_PRESETS['Longfunctie']
+    const dagenTxt=o=>WEEKDAY_KEYS.filter(d=>(o||{})[d]).join(' ')
+    const wk=XLSX.utils.aoa_to_sheet([['Kamer','Omschrijving','Ochtend (dagen)','Middag (dagen)','Avond (dagen)'],
+      ...bron.kamers.map(k=>[k.naam,k.oms,dagenTxt(k.ddDagen&&k.ddDagen.O),dagenTxt(k.ddDagen&&k.ddDagen.M),dagenTxt(k.ddDagen&&k.ddDagen.A)])])
+    wk['!cols']=[{wch:14},{wch:60},{wch:16},{wch:16},{wch:16}]
+    XLSX.utils.book_append_sheet(wb,wk,'Kamers')
+    const naamVan=id=>(bron.kamers.find(k=>k.id===id)||{}).naam
+    const rows=[['Code','Omschrijving','Aantal per jaar','Duur (min)','Kamers','Dagdelen','Opmerking'],
+      ...bron.codes.map(c=>[c.code,c.oms,c.aantalJaar||'',c.duur,
+        Object.keys(c.kamers||{}).filter(id=>c.kamers[id]).map(naamVan).filter(Boolean).join(', '),
+        ['O','M','A'].filter(d=>d==='A'?!!(c.dagdelen||{}).A:(c.dagdelen||{})[d]!==false).map(d=>FK_DD_NAAM[d]).join(' '),c.opmerking||''])]
+    const ws=XLSX.utils.aoa_to_sheet(rows)
+    ws['!cols']=[{wch:10},{wch:40},{wch:14},{wch:10},{wch:28},{wch:16},{wch:50}]
+    XLSX.utils.book_append_sheet(wb,ws,'Codes')
+    const a=document.createElement('a'); a.href=wbNaarHref(wb); a.download='functiekamer_codes.xlsx'; a.click()
+  }
+  const FkDagenGrid=({waarde,onChange,klein})=>(
+    <div style={{display:'grid',gridTemplateColumns:'auto repeat(5,1fr)',gap:klein?2:3,alignItems:'center'}}>
+      <span/>
+      {DAY_ABBR.map(d=><span key={d} style={{fontSize:9,fontWeight:700,color:C.muted,textAlign:'center'}}>{d}</span>)}
+      {['O','M','A'].map(dd=>(
+        <React.Fragment key={dd}>
+          <span style={{fontSize:9.5,fontWeight:700,color:C.muted,paddingRight:4}}>{dd==='O'?'Och':dd==='M'?'Mid':'Av'}</span>
+          {WEEKDAY_KEYS.map(k=>{ const aan=!!(waarde[dd]||{})[k]
+            return <button key={k} onClick={()=>onChange(dd,k,!aan)} title={`${DD_INFO[dd==='O'?0:dd==='M'?1:2].l} ${k}`}
+              style={{height:klein?14:18,borderRadius:4,border:`1px solid ${aan?C.primary:C.border}`,cursor:'pointer',
+                background:aan?C.primary:C.white,color:aan?'#fff':C.muted,fontSize:8,fontWeight:700}}>{aan?'✓':''}</button> })}
+        </React.Fragment>
+      ))}
+    </div>
+  )
+  const fkSamenvatting=(()=>{
+    const perKamer={}; fkKamers.forEach(k=>{perKamer[k.id]={codes:0,alleenHier:0,min:0}})
+    let totMin=0, totN=0
+    fkCodes.forEach(c=>{ if(!fkCodeLabel(c)) return
+      const aw=fkWeekVan(c); const min=aw*fkSnap(c.duur); totMin+=min; totN+=aw
+      const ids=Object.keys(c.kamers||{}).filter(id=>c.kamers[id]&&perKamer[id])
+      ids.forEach(id=>{ perKamer[id].codes++; if(ids.length===1){ perKamer[id].alleenHier++; perKamer[id].min+=min } })
+    })
+    return {perKamer,totMin:Math.round(totMin),totN:Math.round(totN*10)/10,
+      zonderKamer:fkCodes.filter(c=>fkCodeLabel(c)&&fkWeekVan(c)>0&&!Object.keys(c.kamers||{}).some(id=>c.kamers[id])).length}
+  })()
+
+  const renderFkInvoer=()=>{
+    const start=!fk.mode
+    const sectie=fk.sectie||1
+    const zoek=(fk.zoek||'').toLowerCase().trim()
+    const filter=fk.filter||'alle'
+    const sorteer=fk.sorteer||'invoer'
+    const nCodes=fkCodes.filter(fkCodeLabel).length
+    const presetInfo=fk.preset?FK_PRESETS[fk.preset]:null
+    const Stap=({n,l,actief,klaar,onClick})=>(
+      <button onClick={onClick} style={{display:'flex',alignItems:'center',gap:8,padding:'7px 12px',borderRadius:10,cursor:'pointer',
+        border:`1px solid ${actief?C.primary:C.border}`,background:actief?C.blueAccent:C.white,color:actief?C.primary:C.text,fontWeight:700,fontSize:12}}>
+        <span style={{width:20,height:20,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:800,
+          background:klaar?'#39C6AC':actief?C.primary:C.surface2,color:klaar||actief?'#fff':C.muted}}>{klaar?'✓':n}</span>{l}
+      </button>
+    )
+    const Lab=({children})=><div style={{fontSize:9.5,fontWeight:600,color:C.muted,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:4}}>{children}</div>
+    const inp={border:`1px solid ${C.border}`,borderRadius:7,padding:'6px 8px',fontSize:12,fontFamily:'inherit',color:C.text,minWidth:0,background:C.white}
+
+    // ── STARTSCHERM — twee opties, net als bij de poli ─────────────────────────
+    if(start) return(
+      <div style={{animation:'fadeIn 0.18s ease'}}>
+        {miniHero('FUNCTIEKAMERS','Hoe wil je','beginnen?','Laad een Excel in, of vul zelf in met een vooringevulde basis voor je vakgroep. Alles is daarna aan te passen.')}
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(250px,1fr))',gap:14}}>
+          {/* Optie 1: Excel */}
+          <div data-fk-start="excel" onClick={()=>fkFileRef.current&&fkFileRef.current.click()}
+            style={{background:C.white,border:`1.5px solid ${C.border}`,borderRadius:18,padding:'22px 22px 20px',cursor:'pointer',transition:'all 0.16s',position:'relative',overflow:'hidden'}}
+            onMouseEnter={e=>{e.currentTarget.style.borderColor=C.green;e.currentTarget.style.boxShadow='0 14px 34px rgba(46,139,87,0.14)';e.currentTarget.style.transform='translateY(-2px)'}}
+            onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.boxShadow='none';e.currentTarget.style.transform='none'}}>
+            <div style={{position:'absolute',right:-40,top:-40,width:130,height:130,borderRadius:'50%',background:'#E7F3EC',opacity:0.6}}/>
+            <div style={{position:'relative'}}>
+              <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:12}}>
+                <div style={{width:46,height:46,borderRadius:14,background:'linear-gradient(140deg,#4FB77E,#2E8B57)',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 8px 18px rgba(46,139,87,0.28)',fontSize:20}}>📥</div>
+                <div>
+                  <div style={{fontSize:9.5,fontWeight:700,color:C.green,letterSpacing:'0.16em'}}>OPTIE 1</div>
+                  <div style={{fontFamily:"'Newsreader',Georgia,serif",fontSize:21,fontWeight:500,color:C.text}}>Excel inladen</div>
+                </div>
+              </div>
+              <div style={{fontSize:12.5,color:C.muted,lineHeight:1.6,marginBottom:12}}>
+                Upload je codelijst (code · omschrijving · aantal per jaar · duur · kamers) of een eerder opgeslagen sessie. Kamers en onderzoeken worden meteen ingeladen.
+              </div>
+              <span style={{display:'inline-flex',alignItems:'center',gap:8,fontSize:13,fontWeight:700,color:'#fff',background:C.green,borderRadius:10,padding:'9px 16px'}}>Bestand kiezen →</span>
+              <button onClick={e=>{e.stopPropagation(); fkVoorbeeldExcel()}} title="Excel-sjabloon met de kolommen die de tool verwacht"
+                style={{display:'block',marginTop:12,background:'none',border:'none',cursor:'pointer',fontSize:11.5,fontWeight:600,color:C.green,padding:0,textDecoration:'underline'}}>⤓ Sjabloon downloaden</button>
+            </div>
+          </div>
+          {/* Optie 2: zelf invullen met een basis per vakgroep */}
+          <div style={{background:C.white,border:`1.5px solid ${C.border}`,borderRadius:18,padding:'22px 22px 20px',position:'relative',overflow:'hidden'}}>
+            <div style={{position:'absolute',right:-40,top:-40,width:130,height:130,borderRadius:'50%',background:C.blueAccent,opacity:0.5}}/>
+            <div style={{position:'relative'}}>
+              <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:12}}>
+                <div style={{width:46,height:46,borderRadius:14,background:`linear-gradient(140deg,${C.light},${C.primary})`,display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 8px 18px rgba(28,110,164,0.28)',fontSize:20}}>✎</div>
+                <div>
+                  <div style={{fontSize:9.5,fontWeight:700,color:C.primary,letterSpacing:'0.16em'}}>OPTIE 2</div>
+                  <div style={{fontFamily:"'Newsreader',Georgia,serif",fontSize:21,fontWeight:500,color:C.text}}>Zelf invullen</div>
+                </div>
+              </div>
+              <div style={{fontSize:12.5,color:C.muted,lineHeight:1.6,marginBottom:12}}>
+                Kies je vakgroep. De kamers en onderzoeken staan dan alvast klaar als basis; je past aantallen, duren en kamers aan.
+              </div>
+              <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                {Object.entries(FK_PRESETS).map(([n,p])=>(
+                  <button key={n} data-fk-preset={n} onClick={()=>fkLaadPreset(n)}
+                    style={{display:'flex',alignItems:'center',gap:10,padding:'9px 12px',borderRadius:10,border:`1px solid ${C.border}`,background:C.white,cursor:'pointer',textAlign:'left',transition:'all 0.12s'}}
+                    onMouseEnter={e=>{e.currentTarget.style.borderColor=C.primary;e.currentTarget.style.background=C.blueAccent}}
+                    onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.background=C.white}}>
+                    <span style={{fontSize:12.5,fontWeight:700,color:C.text,flex:1}}>{n}</span>
+                    <span style={{fontSize:10.5,color:C.muted}}>{p.kamers.length} kamers · {p.codes.length} codes{p.voorbeeld?' · voorbeeldcijfers':' · cijfers 2025'}</span>
+                    <span style={{color:C.primary,fontWeight:700}}>→</span>
+                  </button>
+                ))}
+                <button data-fk-preset="leeg" onClick={()=>setFk({kamers:[fkNieuweKamer('Kamer 1'),fkNieuweKamer('Kamer 2')],codes:[fkNieuweCode({code:'',oms:''})],regels:fkStandaardRegels(),preset:'',badge:null,open:null,mode:'manual',sectie:1})}
+                  style={{padding:'8px 12px',borderRadius:10,border:`1px dashed ${C.border}`,background:'transparent',cursor:'pointer',fontSize:12,fontWeight:600,color:C.muted,textAlign:'left'}}>○ Leeg beginnen — eigen kamers en codes</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <input ref={fkFileRef} type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}} onChange={fkImporteer}/>
+      </div>
+    )
+
+    // ── INVULSCHERM — twee stappen: kamers, onderzoeken ───────────────────────
+    const zichtbaar=fkCodes.map((c,i)=>({c,i})).filter(({c})=>{
+      if(filter==='zonderKamer'&&(fkWeekVan(c)<=0||Object.keys(c.kamers||{}).some(id=>c.kamers[id]&&fkKamers.some(k=>k.id===id)))) return false
+      if(filter==='dagdeel'&&!((c.dagdelen||{}).O===false||(c.dagdelen||{}).M===false)) return false
+      if(zoek&&!(`${c.code} ${c.oms} ${c.opmerking||''}`.toLowerCase().includes(zoek))) return false
+      return true
+    }).sort((a,b)=> sorteer==='volume' ? fkWeekVan(b.c)*fkSnap(b.c.duur)-fkWeekVan(a.c)*fkSnap(a.c.duur)
+      : sorteer==='code' ? fkCodeLabel(a.c).localeCompare(fkCodeLabel(b.c)) : a.i-b.i)
+    return(
+      <div style={{animation:'fadeIn 0.18s ease'}}>
+        {/* kop: terug, stappen, herkomst */}
+        <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginBottom:12}}>
+          <button onClick={()=>fkZet(()=>({mode:null}))} title="Terug naar het startscherm (kamers en codes blijven bewaard)"
+            style={{padding:'7px 10px',borderRadius:10,border:`1px solid ${C.border}`,background:C.white,cursor:'pointer',fontSize:11.5,fontWeight:600,color:C.muted}}>← Start</button>
+          <Stap n={1} l="Kamers" actief={sectie===1} klaar={sectie!==1&&fkKamers.length>0} onClick={()=>fkZet(()=>({sectie:1}))}/>
+          <Stap n={2} l="Onderzoeken" actief={sectie===2} klaar={false} onClick={()=>fkZet(()=>({sectie:2}))}/>
+          <span style={{flex:1}}/>
+          {fk.preset&&<span style={{fontSize:10.5,fontWeight:700,padding:'4px 9px',borderRadius:8,background:presetInfo&&presetInfo.voorbeeld?'#FDF6E3':'#EAF5EE',color:presetInfo&&presetInfo.voorbeeld?'#8A6A12':C.green,border:`1px solid ${presetInfo&&presetInfo.voorbeeld?'#EBD08A':'#C9E6D5'}`}}
+            title={presetInfo&&presetInfo.voorbeeld?'Dit zijn voorbeeldcijfers als startpunt — vervang ze door je eigen jaarcijfers':'Aantallen uit 2025, uit het wensendocument'}>
+            {fk.preset}{presetInfo&&presetInfo.voorbeeld?' · voorbeeldcijfers':''}</span>}
+        </div>
+        {fk.badge&&<div style={{marginBottom:12,padding:'8px 12px',borderRadius:9,background:'#EAF5EE',border:'1px solid #C9E6D5',fontSize:11.5,color:C.green,fontWeight:600,display:'flex',gap:8,alignItems:'center'}}>
+          <span style={{flex:1}}>✓ {fk.badge.t}</span><button onClick={()=>fkZet(()=>({badge:null}))} style={{border:'none',background:'none',cursor:'pointer',color:C.green,fontSize:14}}>×</button></div>}
+        {/* samenvatting in één regel */}
+        <div style={{display:'flex',gap:14,flexWrap:'wrap',padding:'9px 14px',borderRadius:11,background:C.surface2,border:`1px solid ${C.border}`,marginBottom:14,fontSize:11.5,color:C.muted,alignItems:'center'}}>
+          <span><b style={{color:C.text,fontSize:13}}>{fkActieveKamers.length}</b> kamers</span>
+          <span><b style={{color:C.text,fontSize:13}}>{nCodes}</b> codes</span>
+          <span><b style={{color:C.text,fontSize:13}}>{fkSamenvatting.totN}</b> onderzoeken/wk</span>
+          <span><b style={{color:C.text,fontSize:13}}>{Math.round(fkSamenvatting.totMin/60*10)/10}</b> uur/wk</span>
+          {fkSamenvatting.zonderKamer>0
+            ? <button onClick={()=>fkZet(()=>({sectie:2,filter:'zonderKamer'}))} style={{marginLeft:'auto',padding:'4px 10px',borderRadius:8,border:'1px solid #F1CFC8',background:'#FBEDEA',color:C.danger,fontSize:11,fontWeight:700,cursor:'pointer'}}>
+                △ {fkSamenvatting.zonderKamer} zonder kamer — toon</button>
+            : <span style={{marginLeft:'auto',color:C.green,fontWeight:700}}>✓ elke code heeft een kamer</span>}
+        </div>
+
+        {sectie===1&&(
+          <Card style={{marginBottom:14,padding:18}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10,gap:10}}>
+              <div>
+                <H3 style={{margin:'0 0 3px'}}>Kamers</H3>
+                <p style={{fontSize:11.5,color:C.muted,margin:0,lineHeight:1.5}}>Naam, wat er kan, en op welke dagdelen de kamer beschikbaar is. Welke code in welke kamer mag, vink je aan bij stap 2.</p>
+              </div>
+              <Btn small onClick={()=>fkZet(p=>({kamers:[...p.kamers,fkNieuweKamer(`Kamer ${p.kamers.length+1}`)]}))}>+ Kamer</Btn>
+            </div>
+            <div style={{display:'flex',flexDirection:'column',gap:8}}>
+              {fkKamers.map((k,i)=>{ const sv=fkSamenvatting.perKamer[k.id]||{codes:0,alleenHier:0,min:0}
+                return(
+                <div key={k.id} style={{border:`1px solid ${C.border}`,borderRadius:12,padding:'10px 12px',background:k.actief===false?C.surface2:C.white,opacity:k.actief===false?0.65:1}}>
+                  <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:8}}>
+                    <span style={{width:10,height:10,borderRadius:3,background:fkKleur(i).brd,flexShrink:0}}/>
+                    <input value={k.naam} onChange={e=>fkZetKamer(i,{naam:e.target.value})} placeholder="Kamer, bv. A1.213" style={{...inp,width:100,fontWeight:700}}/>
+                    <input value={k.oms} onChange={e=>fkZetKamer(i,{oms:e.target.value})} placeholder="Wat kan er in deze kamer?" style={{...inp,flex:1}}/>
+                    <label title="Buiten gebruik: de codes blijven staan, maar er wordt niets in gepland" style={{display:'flex',alignItems:'center',gap:4,fontSize:10.5,fontWeight:600,color:C.muted,cursor:'pointer',whiteSpace:'nowrap'}}>
+                      <input type="checkbox" checked={k.actief!==false} onChange={e=>fkZetKamer(i,{actief:e.target.checked})}/> in gebruik</label>
+                    <button onClick={()=>{ if(window.confirm(`Kamer ${k.naam||i+1} verwijderen?`)) fkZet(p=>({kamers:p.kamers.filter((_,j)=>j!==i)})) }} title="Kamer verwijderen"
+                      style={{width:26,height:26,borderRadius:7,border:`1px solid ${C.border}`,background:C.white,color:C.muted,cursor:'pointer',fontSize:13}}>×</button>
+                  </div>
+                  <div style={{display:'flex',gap:16,alignItems:'center',flexWrap:'wrap'}}>
+                    <FkDagenGrid klein waarde={k.ddDagen||{}} onChange={(dd,dag,aan)=>fkZetKamer(i,{ddDagen:{...(k.ddDagen||{}),[dd]:{...((k.ddDagen||{})[dd]||{}),[dag]:aan}}})}/>
+                    <div style={{fontSize:11,color:C.muted,lineHeight:1.6}}>
+                      <b style={{color:C.text}}>{sv.codes}</b> codes mogen hier · <b style={{color:C.text}}>{sv.alleenHier}</b> alléén hier
+                      {sv.min>0&&<> · vaste vraag <b style={{color:C.text}}>{Math.round(sv.min/60*10)/10} u/wk</b></>}
+                    </div>
+                  </div>
+                </div>
+              )})}
+              {!fkKamers.length&&<div style={{fontSize:12,color:C.muted,textAlign:'center',padding:'14px 0'}}>Nog geen kamers — voeg een kamer toe.</div>}
+            </div>
+            <div style={{display:'flex',justifyContent:'flex-end',marginTop:12}}>
+              <Btn onClick={()=>fkZet(()=>({sectie:2}))}>Volgende: onderzoeken →</Btn>
+            </div>
+          </Card>
+        )}
+
+        {sectie===2&&(
+          <Card style={{marginBottom:14,padding:18}}>
+            <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:10,marginBottom:10,flexWrap:'wrap'}}>
+              <div>
+                <H3 style={{margin:'0 0 3px'}}>Onderzoeken</H3>
+                <p style={{fontSize:11.5,color:C.muted,margin:0,lineHeight:1.5}}>Per code: aantal per jaar, duur, en de kamers waar het kan. Klik ▸ voor dagdelen, weekdagen en bijzondere regels.</p>
+              </div>
+              <div style={{display:'flex',alignItems:'center',gap:6}}>
+                <span style={{fontSize:10.5,fontWeight:600,color:C.muted}}>weken/jaar</span>
+                <NumStepper val={fkReg.wekenPerJaar} on={v=>fkZetRegel({wekenPerJaar:v})} step={1} min={30} max={52} breed={38}/>
+                <Btn small onClick={()=>fkZet(p=>({codes:[...p.codes,fkNieuweCode()],open:p.codes.length,zoek:'',filter:'alle'}))}>+ Code</Btn>
+              </div>
+            </div>
+            {/* werkbalk: zoeken, filteren, sorteren */}
+            <div style={{display:'flex',gap:6,alignItems:'center',marginBottom:8,flexWrap:'wrap'}}>
+              <input value={fk.zoek||''} onChange={e=>fkZet(()=>({zoek:e.target.value}))} placeholder="Zoek code of omschrijving…" style={{...inp,flex:'1 1 150px'}}/>
+              {[{v:'alle',l:'Alle'},{v:'zonderKamer',l:`Zonder kamer (${fkSamenvatting.zonderKamer})`},{v:'dagdeel',l:'Alleen ochtend/middag'}].map(f=>(
+                <button key={f.v} onClick={()=>fkZet(()=>({filter:f.v}))} style={{padding:'5px 10px',borderRadius:8,border:`1px solid ${filter===f.v?C.primary:C.border}`,background:filter===f.v?C.blueAccent:C.white,color:filter===f.v?C.primary:C.muted,fontSize:11,fontWeight:700,cursor:'pointer'}}>{f.l}</button>
+              ))}
+              <select value={sorteer} onChange={e=>fkZet(()=>({sorteer:e.target.value}))} style={{...inp,padding:'5px 6px',fontSize:11}}>
+                <option value="invoer">volgorde: invoer</option><option value="volume">volgorde: meeste minuten</option><option value="code">volgorde: code A–Z</option>
+              </select>
+            </div>
+            {/* tabel */}
+            <div style={{border:`1px solid ${C.border}`,borderRadius:10,overflow:'hidden'}}>
+              <div style={{display:'grid',gridTemplateColumns:'78px 1fr 60px 52px 54px 24px',gap:6,padding:'6px 8px',background:C.surface2,fontSize:9.5,fontWeight:700,color:C.muted,textTransform:'uppercase',letterSpacing:'0.05em',borderBottom:`1px solid ${C.border}`}}>
+                <span>Code</span><span>Omschrijving</span><span style={{textAlign:'right'}}>Per jaar</span><span style={{textAlign:'right'}}>Duur</span><span style={{textAlign:'right'}}>Min/wk</span><span/>
+              </div>
+              {zichtbaar.map(({c,i},ri)=>{ const aw=fkWeekVan(c); const open=fk.open===i
+                const ids=Object.keys(c.kamers||{}).filter(id=>c.kamers[id]&&fkKamers.some(k=>k.id===id))
+                const geenKamer=aw>0&&!ids.length&&!!fkCodeLabel(c)
+                const dagd=c.dagdelen||{}
+                return(
+                <div key={i} style={{borderTop:ri?`1px solid ${C.border}`:'none',background:geenKamer?'#FDF7F5':(open?'#F8FAFC':C.white),padding:'6px 8px'}}>
+                  <div style={{display:'grid',gridTemplateColumns:'78px 1fr 60px 52px 54px 24px',gap:6,alignItems:'center'}}>
+                    <input value={c.code} onChange={e=>fkZetCode(i,{code:e.target.value})} placeholder="Code" style={{...inp,padding:'5px 7px',fontWeight:700,color:fkKleur(i).fg,background:fkKleur(i).bg,borderColor:fkKleur(i).brd}}/>
+                    <input value={c.oms} onChange={e=>fkZetCode(i,{oms:e.target.value})} placeholder="Omschrijving" style={{...inp,padding:'5px 7px'}}/>
+                    <input type="number" value={c.bron==='week'?'':(c.aantalJaar||'')} onChange={e=>fkZetCode(i,{aantalJaar:+e.target.value||0,bron:'jaar'})} placeholder={c.bron==='week'?`${c.aantalWeek}/wk`:'0'} title={c.bron==='week'?`Vast op ${c.aantalWeek} per week (zie ▸)`:'Aantal per jaar'}
+                      style={{...inp,padding:'5px 6px',textAlign:'right'}}/>
+                    <input type="number" step="5" value={c.duur} onChange={e=>fkZetCode(i,{duur:+e.target.value||5})} title="Duur in minuten" style={{...inp,padding:'5px 6px',textAlign:'right'}}/>
+                    <span style={{fontSize:11.5,fontWeight:700,color:C.text,textAlign:'right',fontVariantNumeric:'tabular-nums'}}>{Math.round(aw*fkSnap(c.duur))}</span>
+                    <button onClick={()=>fkZet(()=>({open:open?null:i}))} title="Dagdelen, weekdagen, apparaat, koppeling, voorkeurskamer, opmerking"
+                      style={{width:24,height:24,borderRadius:6,border:`1px solid ${C.border}`,cursor:'pointer',background:open?C.primary:C.white,color:open?'#fff':C.muted,fontSize:11,fontWeight:700}}>{open?'▾':'▸'}</button>
+                  </div>
+                  <div style={{display:'flex',alignItems:'center',gap:4,marginTop:5,flexWrap:'wrap'}}>
+                    {fkKamers.map((k,ki)=>{ const aan=!!(c.kamers||{})[k.id]
+                      return <button key={k.id} onClick={()=>fkZetCode(i,{kamers:{...(c.kamers||{}),[k.id]:!aan}})} title={`${k.naam}: ${aan?'mag hier — klik om uit te zetten':'mag hier niet — klik om aan te zetten'}`}
+                        style={{padding:'2px 8px',borderRadius:12,border:`1px solid ${aan?fkKleur(ki).brd:C.border}`,cursor:'pointer',fontSize:10,fontWeight:700,
+                          background:aan?fkKleur(ki).bg:C.white,color:aan?fkKleur(ki).fg:'#B4BEC8'}}>{aan?'✓ ':''}{k.naam||`Kamer ${ki+1}`}</button> })}
+                    {geenKamer&&<span style={{fontSize:10.5,color:C.danger,fontWeight:700}}>← kies een kamer</span>}
+                    <span style={{flex:1}}/>
+                    {(dagd.O===false||dagd.M===false||dagd.A)&&<span style={{fontSize:10,fontWeight:700,color:C.primary,background:C.blueAccent,padding:'2px 7px',borderRadius:8}}>
+                      alleen {['O','M','A'].filter(d=>d==='A'?!!dagd.A:dagd[d]!==false).map(d=>FK_DD_NAAM[d]).join(' + ')}</span>}
+                    {c.apparaat&&<span style={{fontSize:10,fontWeight:700,color:'#5B3A86',background:'#EEE4F7',padding:'2px 7px',borderRadius:8}}>⚙ {c.apparaat}</span>}
+                    {c.koppel&&<span style={{fontSize:10,fontWeight:700,color:'#8A4B12',background:'#FBE9D7',padding:'2px 7px',borderRadius:8}}>🔗 {c.koppel}</span>}
+                    {c.opmerking&&!open&&<span title={c.opmerking} style={{fontSize:10,color:C.muted,maxWidth:160,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontStyle:'italic'}}>{c.opmerking}</span>}
+                  </div>
+                  {open&&(
+                    <div style={{marginTop:8,paddingTop:8,borderTop:`1px dashed ${C.border}`,display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(150px,1fr))',gap:10,alignItems:'start'}}>
+                      <div>
+                        <Lab>Dagdelen</Lab>
+                        <div style={{display:'flex',gap:3}}>
+                          {['O','M','A'].map(dd=>{ const aan=dd==='A'?!!dagd.A:dagd[dd]!==false
+                            return <button key={dd} onClick={()=>fkZetCode(i,{dagdelen:{O:dagd.O!==false,M:dagd.M!==false,A:!!dagd.A,[dd]:!aan}})}
+                              style={{padding:'4px 9px',borderRadius:6,border:`1px solid ${aan?C.primary:C.border}`,cursor:'pointer',fontSize:10.5,fontWeight:700,background:aan?C.primary:C.white,color:aan?'#fff':C.muted}}>{FK_DD_NAAM[dd]}</button> })}
+                        </div>
+                      </div>
+                      <div>
+                        <Lab>Weekdagen</Lab>
+                        <div style={{display:'flex',gap:3}}>
+                          {DAY_ABBR.map(d=>{ const aan=(c.weekdagen||{})[d]!==false
+                            return <button key={d} onClick={()=>fkZetCode(i,{weekdagen:{...{MA:true,DI:true,WO:true,DO:true,VR:true},...(c.weekdagen||{}),[d]:!aan}})}
+                              style={{width:28,height:22,borderRadius:5,border:`1px solid ${aan?C.primary:C.border}`,cursor:'pointer',fontSize:9.5,fontWeight:700,background:aan?C.primary:C.white,color:aan?'#fff':C.muted}}>{d}</button> })}
+                        </div>
+                      </div>
+                      <div>
+                        <Lab>Vast aantal per week</Lab>
+                        <div style={{display:'flex',gap:6,alignItems:'center'}}>
+                          <input type="number" step="0.5" value={c.bron==='week'?(c.aantalWeek||''):''} placeholder={`${Math.round(aw*10)/10} uit jaar`} onChange={e=>fkZetCode(i,{aantalWeek:+e.target.value||0,bron:e.target.value===''?'jaar':'week'})} style={{...inp,width:80}}/>
+                          {c.bron==='week'&&<button onClick={()=>fkZetCode(i,{bron:'jaar'})} style={{border:'none',background:'none',color:C.primary,fontSize:10.5,cursor:'pointer',fontWeight:600}}>terug naar jaar</button>}
+                        </div>
+                      </div>
+                      <div>
+                        <Lab>Apparaat (één toestel)</Lab>
+                        <input value={c.apparaat||''} onChange={e=>fkZetCode(i,{apparaat:e.target.value})} placeholder="bv. NO-meter" title="Codes met hetzelfde apparaat gaan naar één kamer en staan nooit gelijktijdig" style={{...inp,width:'100%',boxSizing:'border-box'}}/>
+                      </div>
+                      <div>
+                        <Lab>Altijd samen met (koppel)</Lab>
+                        <input value={c.koppel||''} onChange={e=>fkZetCode(i,{koppel:e.target.value})} placeholder="bv. B1+B2" title="Codes met dezelfde koppelnaam worden als één blok gepland" style={{...inp,width:'100%',boxSizing:'border-box'}}/>
+                      </div>
+                      <div>
+                        <Lab>Voorkeurskamer</Lab>
+                        <select value={c.voorkeur||''} onChange={e=>fkZetCode(i,{voorkeur:e.target.value})} style={{...inp,width:'100%'}}>
+                          <option value="">geen voorkeur</option>
+                          {fkKamers.filter(k=>(c.kamers||{})[k.id]).map(k=><option key={k.id} value={k.id}>{k.naam}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <Lab>Over de week</Lab>
+                        <select value={c.spreiden||'auto'} onChange={e=>fkZetCode(i,{spreiden:e.target.value})} style={{...inp,width:'100%'}}>
+                          <option value="auto">automatisch (≥{fkReg.spreidVanaf}×/wk spreiden)</option>
+                          <option value="ja">spreiden over de dagen</option>
+                          <option value="nee">clusteren in weinig dagdelen</option>
+                        </select>
+                      </div>
+                      <div style={{gridColumn:'1 / -1',display:'flex',gap:8,alignItems:'flex-end'}}>
+                        <div style={{flex:1}}>
+                          <Lab>Opmerking</Lab>
+                          <input value={c.opmerking||''} onChange={e=>fkZetCode(i,{opmerking:e.target.value})} placeholder="bv. voorwaarden, wie het doet" style={{...inp,width:'100%',boxSizing:'border-box'}}/>
+                        </div>
+                        <button onClick={()=>fkZet(p=>({codes:p.codes.filter((_,j)=>j!==i),open:null}))}
+                          style={{padding:'6px 10px',borderRadius:7,border:`1px solid #F1CFC8`,background:'#FBEDEA',color:C.danger,cursor:'pointer',fontSize:11,fontWeight:700,whiteSpace:'nowrap'}}>× Verwijderen</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )})}
+              {!zichtbaar.length&&<div style={{fontSize:12,color:C.muted,textAlign:'center',padding:'16px 0'}}>{nCodes?'Geen codes die aan het filter voldoen.':'Nog geen codes — klik op + Code.'}</div>}
+            </div>
+            <div style={{display:'flex',justifyContent:'space-between',marginTop:12,alignItems:'center'}}>
+              <Btn small variant="secondary" onClick={()=>fkZet(()=>({sectie:1}))}>← Kamers</Btn>
+              <Btn onClick={()=>herbouwNu(true)}>Naar het rasteradvies →</Btn>
+            </div>
+          </Card>
+        )}
+        <input ref={fkFileRef} type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}} onChange={fkImporteer}/>
+      </div>
+    )
+  }
+
+  const renderFkRegels=()=>{
+    const met=f=>fkCodes.filter(c=>fkCodeLabel(c)&&f(c)).map(c=>c.code)
+    const apparaten=[...new Set(fkCodes.map(c=>(c.apparaat||'').trim()).filter(Boolean))]
+    const koppels=[...new Set(fkCodes.map(c=>(c.koppel||'').trim()).filter(Boolean))]
+    const RadioRij=({v,l,d,huidig,zet})=>(
+      <label style={{display:'flex',gap:10,alignItems:'flex-start',padding:'9px 12px',borderRadius:10,cursor:'pointer',
+        border:`1px solid ${huidig===v?C.primary:C.border}`,background:huidig===v?C.blueAccent:C.white,marginBottom:6}}>
+        <input type="radio" checked={huidig===v} onChange={()=>zet(v)} style={{marginTop:2}}/>
+        <span><b style={{fontSize:12.5,color:C.text}}>{l}</b><br/><span style={{fontSize:11.5,color:C.muted,lineHeight:1.5}}>{d}</span></span>
+      </label>
+    )
+    return(
+      <div style={{animation:'fadeIn 0.18s ease'}}>
+        {miniHero('PLANREGELS','Regels voor','functiekamers','Hoe vult de tool de dagdelen per kamer, en welke regels blijven mensenwerk van de planner?')}
+
+        <Card style={{marginBottom:16}}>
+          <H3 style={{margin:'0 0 4px'}}>Dagdelen vullen</H3>
+          <p style={{fontSize:11.5,color:C.muted,margin:'0 0 10px',lineHeight:1.55}}>
+            De doelbenutting ({m2.benutting}%) en de dagdeeltijden staan bij <b>Tijden</b>. Een dagdeel wordt tot die benutting
+            (±2,5 procentpunt) gevuld; de rest is flexruimte voor incidentele onderzoeken en uitloop.
+          </p>
+          <RadioRij v="heleDagen" l="Hele dagen, gespreid over de week" huidig={fkReg.vulwijze} zet={v=>fkZetRegel({vulwijze:v})}
+            d="Een kamer draait bij voorkeur ochtend én middag op dezelfde dag; die dagen liggen verspreid over de week en elke kamer begint op een andere dag, zodat niet alle kamers dezelfde dag dicht zijn."/>
+          <RadioRij v="spreiden" l="Eerst alle ochtenden, dan de middagen" huidig={fkReg.vulwijze} zet={v=>fkZetRegel({vulwijze:v})}
+            d="Elke kamer is zoveel mogelijk dagen open, desnoods alleen 's ochtends. Handig als patiënten elke dag terecht moeten kunnen."/>
+          <div style={{display:'flex',gap:18,flexWrap:'wrap',marginTop:12}}>
+            <label style={{display:'flex',gap:8,alignItems:'flex-start',cursor:'pointer',flex:'1 1 240px'}}>
+              <input type="checkbox" checked={fkReg.verdichten!==false} onChange={e=>fkZetRegel({verdichten:e.target.checked})} style={{marginTop:3}}/>
+              <span><b style={{fontSize:12.5}}>Dagdelen zo vol mogelijk</b><br/><span style={{fontSize:11.5,color:C.muted,lineHeight:1.5}}>Een dagdeel gaat dicht zodra alles erin elders past. Uit = liever méér dagdelen op een lagere bezetting.</span></span>
+            </label>
+            <div>
+              <div style={{fontSize:9.5,fontWeight:600,color:C.muted,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:5}}>Minimumbezetting</div>
+              <NumStepper val={fkReg.minBezetting} on={v=>fkZetRegel({minBezetting:v})} suffix="%" step={5} min={0} max={m2.benutting}/>
+              <div style={{fontSize:10.5,color:C.muted,marginTop:4,maxWidth:200,lineHeight:1.45}}>Een dunner dagdeel gaat alleen open als het werk nergens anders past — en wordt dan bijgevuld uit vollere dagdelen.</div>
+            </div>
+            <div>
+              <div style={{fontSize:9.5,fontWeight:600,color:C.muted,textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:5}}>Spreiden vanaf</div>
+              <NumStepper val={fkReg.spreidVanaf} on={v=>fkZetRegel({spreidVanaf:v})} suffix="× / wk" step={1} min={1} max={50}/>
+              <div style={{fontSize:10.5,color:C.muted,marginTop:4,maxWidth:200,lineHeight:1.45}}>Codes die vaker voorkomen worden over de dagen gespreid; zeldzamere codes worden geclusterd in zo min mogelijk dagdelen.</div>
+            </div>
+          </div>
+        </Card>
+
+        <Card style={{marginBottom:16}}>
+          <H3 style={{margin:'0 0 4px'}}>Bijzondere regels — wat de engine zelf bewaakt</H3>
+          <p style={{fontSize:11.5,color:C.muted,margin:'0 0 10px',lineHeight:1.55}}>Deze regels stel je per code in bij <b>Gegevens</b> (▸ meer). Zo staat het er nu:</p>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:10}}>
+            {[
+              {k:'Alleen bepaalde dagdelen',v:met(c=>(c.dagdelen||{}).O===false||(c.dagdelen||{}).M===false),d:'Deze codes mogen niet in elk dagdeel (bv. uitlezen alleen \'s ochtends).'},
+              {k:'Eén gekwalificeerde kamer',v:met(c=>Object.keys(c.kamers||{}).filter(id=>c.kamers[id]).length===1),d:'Kunnen maar in één kamer en gaan daar altijd heen.'},
+              {k:'Apparaat-gebonden',v:apparaten.map(a=>`${a}: ${met(c=>(c.apparaat||'').trim()===a).join(', ')}`),d:'Eén toestel → alle codes ermee in één kamer, nooit gelijktijdig.'},
+              {k:'Gekoppeld (één blok)',v:koppels.map(g=>`${g}: ${met(c=>(c.koppel||'').trim()===g).join(' + ')}`),d:'Worden altijd samen, aansluitend, in dezelfde kamer gepland.'},
+              {k:'Voorkeurskamer',v:met(c=>c.voorkeur),d:'Gaan naar hun voorkeurskamer zolang die ruimte heeft.'},
+            ].map(x=>(
+              <div key={x.k} style={{border:`1px solid ${C.border}`,borderRadius:10,padding:'9px 12px',background:C.surface2}}>
+                <div style={{fontSize:11.5,fontWeight:700,color:C.text}}>{x.k} <span style={{color:C.muted,fontWeight:600}}>· {x.v.length}</span></div>
+                <div style={{fontSize:10.5,color:C.muted,lineHeight:1.45,margin:'2px 0 4px'}}>{x.d}</div>
+                <div style={{fontSize:11,color:C.primary,fontWeight:600,lineHeight:1.5}}>{x.v.length?x.v.join(x.v.some(s=>s.includes(':'))?' · ':', '):'—'}</div>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        <Card style={{marginBottom:16}}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:6}}>
+            <H3 style={{margin:0}}>Regels voor de planner</H3>
+            <Btn small onClick={()=>fkZetRegel({planregels:[...(fkReg.planregels||[]),{t:'',geborgd:'planner',uitleg:''}]})}>+ Regel</Btn>
+          </div>
+          <p style={{fontSize:11.5,color:C.muted,margin:'0 0 10px',lineHeight:1.55}}>
+            Regels over één patiënt (welke onderzoeken niet op dezelfde dag, niet in verschillende kamers) kent het raster niet — dat blijft
+            mensenwerk bij het boeken. Ze staan hier zodat ze bij het raster en in de export meegaan. Per regel staat of het raster hem
+            <b> borgt</b> of dat hij <b>mensenwerk</b> is.
+          </p>
+          <div style={{display:'flex',flexDirection:'column',gap:6}}>
+            {(fkReg.planregels||[]).map((r,i)=>(
+              <div key={i} style={{display:'flex',gap:8,alignItems:'flex-start',border:`1px solid ${C.border}`,borderRadius:10,padding:'8px 10px'}}>
+                <select value={r.geborgd||'planner'} onChange={e=>fkZetRegel({planregels:fkReg.planregels.map((x,j)=>j===i?{...x,geborgd:e.target.value}:x)})}
+                  style={{border:`1px solid ${C.border}`,borderRadius:7,padding:'5px 6px',fontSize:11,fontFamily:'inherit',background:r.geborgd==='raster'?'#EAF5EE':'#FDF6E3',color:r.geborgd==='raster'?C.green:'#8A6A12',fontWeight:700}}>
+                  <option value="raster">✓ raster borgt</option><option value="planner">☐ mensenwerk</option>
+                </select>
+                <div style={{flex:1}}>
+                  <input value={r.t} onChange={e=>fkZetRegel({planregels:fkReg.planregels.map((x,j)=>j===i?{...x,t:e.target.value}:x)})} placeholder="De regel in één zin"
+                    style={{width:'100%',boxSizing:'border-box',border:`1px solid ${C.border}`,borderRadius:7,padding:'6px 8px',fontSize:12,fontFamily:'inherit',fontWeight:600}}/>
+                  <input value={r.uitleg||''} onChange={e=>fkZetRegel({planregels:fkReg.planregels.map((x,j)=>j===i?{...x,uitleg:e.target.value}:x)})} placeholder="Toelichting (optioneel)"
+                    style={{width:'100%',boxSizing:'border-box',border:`1px solid ${C.border}`,borderRadius:7,padding:'5px 8px',fontSize:11,fontFamily:'inherit',marginTop:4,color:C.muted}}/>
+                </div>
+                <button onClick={()=>fkZetRegel({planregels:fkReg.planregels.filter((_,j)=>j!==i)})} title="Regel verwijderen"
+                  style={{width:26,height:26,borderRadius:7,border:`1px solid ${C.border}`,background:C.white,color:C.muted,cursor:'pointer'}}>×</button>
+              </div>
+            ))}
+            {!(fkReg.planregels||[]).length&&<div style={{fontSize:12,color:C.muted,textAlign:'center',padding:'10px 0'}}>Nog geen regels — de voorbeeldset brengt er vijf mee.</div>}
+          </div>
+        </Card>
+      </div>
+    )
+  }
+
+  // ── RASTERADVIES — de uitkomst per kamer, in gewone taal ──────────────────
+  const renderFkAdvies=()=>{
+    if(!raster||!raster.fk) return null
+    const {advies,samenvatting:sv,toewijzing,incidenteel,geenKamer,planregels}=raster.fk
+    const fouten=fkControleerKwalificaties(raster,fkKamers,fkCodes)
+    const dds=['O','M',...(raster.avondOn?['A']:[])]
+    const zinVoor=a=>{
+      const dagen=a.dagen.map(d=>`${DAY_ABBR[d.di].toLowerCase()}${d.heleDag?'':` (${d.dd.map(x=>FK_DD_NAAM[x]).join('+')})`}`).join(', ')
+      const och=a.profiel.O.length?`'s ochtends ${a.profiel.O.join(', ')}`:''
+      const mid=a.profiel.M.length?`'s middags ${a.profiel.M.join(', ')}`:''
+      const av=a.profiel.A.length?`'s avonds ${a.profiel.A.join(', ')}`:''
+      if(!a.nOpen) return `${a.naam} hoeft niet open: er is geen vraag aan toegewezen.`
+      return `${a.naam} moet ${a.nOpen} ${a.nOpen===1?'dagdeel':'dagdelen'} per week open (${dagen}) met ${[och,mid,av].filter(Boolean).join(' en ')}.`
+    }
+    const Chip=({l,v,kleur})=>(
+      <div style={{padding:'7px 12px',borderRadius:10,background:C.white,border:`1px solid ${C.border}`,minWidth:88}}>
+        <div style={{fontSize:9,fontWeight:700,color:C.muted,letterSpacing:'0.08em',textTransform:'uppercase'}}>{l}</div>
+        <div style={{fontSize:16,fontWeight:800,color:kleur||C.text,fontVariantNumeric:'tabular-nums'}}>{v}</div>
+      </div>
+    )
+    const open=openPanels.fkAdvies!==false
+    return(
+      <div style={{marginBottom:14,background:C.white,border:`1px solid ${C.border}`,borderRadius:14,boxShadow:C.shadow,overflow:'hidden'}}>
+        <div onClick={()=>togglePanel('fkAdvies')} style={{padding:'10px 16px',display:'flex',alignItems:'center',gap:10,cursor:'pointer',
+          background:'linear-gradient(135deg,#0E3450,#1C6EA4)',color:'#fff'}}>
+          <span style={{fontSize:12.5,fontWeight:800,letterSpacing:'0.03em'}}>RASTERADVIES — FUNCTIEKAMERS</span>
+          <span style={{fontSize:11,opacity:0.85}}>· {sv.dagdelenOpen} van {sv.dagdelenBeschikbaar} dagdelen open · dekking {sv.dekking}% · {sv.rest?`${sv.rest} op de restlijst`:'alles ingepland'}</span>
+          <span style={{flex:1}}/>
+          <span style={{fontSize:11,opacity:0.85}}>{open?'▾ inklappen':'▸ uitklappen'}</span>
+        </div>
+        {open&&(
+        <div style={{padding:'14px 16px'}}>
+          {/* kerncijfers */}
+          <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:14}}>
+            <Chip l="Codes" v={sv.codes}/>
+            <Chip l="Onderzoeken / wk" v={sv.afspraken}/>
+            <Chip l="Vraag" v={`${Math.round(sv.vraagMin/60*10)/10} u`}/>
+            <Chip l="Capaciteit" v={`${Math.round(sv.capMin/60*10)/10} u`}/>
+            <Chip l="Dekking" v={`${sv.dekking}%`} kleur={sv.dekking>=100?C.green:C.danger}/>
+            <Chip l="Dagdelen open" v={`${sv.dagdelenOpen} / ${sv.dagdelenBeschikbaar}`}/>
+            <Chip l="Restlijst" v={sv.rest} kleur={sv.rest?C.danger:C.green}/>
+            <Chip l="Weken / jaar" v={sv.weken}/>
+          </div>
+
+          {/* in gewone taal */}
+          <div style={{padding:'10px 14px',borderRadius:10,background:C.blueAccent,border:`1px solid #C5DCEC`,marginBottom:14,fontSize:12.5,lineHeight:1.65,color:C.ink2}}>
+            <div style={{fontSize:9.5,fontWeight:700,color:C.primary,letterSpacing:'0.1em',marginBottom:4}}>HET ADVIES IN GEWONE TAAL</div>
+            {advies.map(a=><div key={a.kamerId}>• {zinVoor(a)}</div>)}
+            {!!geenKamer.length&&<div style={{color:C.danger,fontWeight:600}}>• Nog geen kamer voor: {geenKamer.map(g=>`${g.code} (${g.n}×/wk)`).join(', ')} — vink bij Gegevens een kamer aan.</div>}
+            {!!incidenteel.length&&<div style={{color:C.muted}}>• {incidenteel.length} codes komen minder dan eens per twee weken voor (samen ± {raster.fk.incidenteelMin} min/wk) en horen op de flexruimte: {incidenteel.map(x=>x.code).join(', ')}.</div>}
+          </div>
+
+          {/* per kamer */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(300px,1fr))',gap:10,marginBottom:14}}>
+            {advies.map(a=>(
+              <div key={a.kamerId} style={{border:`1px solid ${C.border}`,borderRadius:12,padding:'12px 14px',background:C.white}}>
+                <div style={{display:'flex',alignItems:'baseline',gap:8,marginBottom:2}}>
+                  <span style={{width:10,height:10,borderRadius:3,background:fkKleur(a.r).brd}}/>
+                  <span style={{fontSize:14,fontWeight:800,color:C.text}}>{a.naam}</span>
+                  <span style={{fontSize:11,color:C.muted,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flex:1}} title={a.oms}>{a.oms}</span>
+                </div>
+                <div style={{display:'flex',gap:12,alignItems:'baseline',margin:'6px 0 8px'}}>
+                  <span style={{fontSize:26,fontWeight:800,color:C.primary,lineHeight:1}}>{a.nOpen}</span>
+                  <span style={{fontSize:11.5,color:C.muted,lineHeight:1.4}}>dagdelen / week open<br/>{a.perDd.O} ochtend · {a.perDd.M} middag{raster.avondOn?` · ${a.perDd.A} avond`:''} · benutting {a.benutting}%</span>
+                  {a.rest>0&&<span style={{marginLeft:'auto',fontSize:11,fontWeight:700,color:C.danger,background:'#FBEDEA',padding:'3px 8px',borderRadius:8}}>{a.rest} past niet</span>}
+                </div>
+                {/* weekstrip */}
+                <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:4,marginBottom:8}}>
+                  {a.perDag.map((d,di)=>(
+                    <div key={di} style={{textAlign:'center'}}>
+                      <div style={{fontSize:9.5,fontWeight:700,color:C.muted,marginBottom:2}}>{DAY_ABBR[di]}</div>
+                      {dds.map(dd=>{ const c=d[dd]; const dicht=!c||!c.beschikbaar||!c.open
+                        const kl=dicht?null:bandKleur(c.pct,m2.benutting||85,fkReg.minBezetting||0)
+                        return <div key={dd} title={dicht?`${FK_DD_NAAM[dd]}: ${c&&c.beschikbaar?'dicht':'niet beschikbaar'}`:`${FK_DD_NAAM[dd]}: ${c.used} van ${c.bruto} min (${c.pct}%)\n${c.codes.map(x=>`${x.code} ×${x.n}`).join(', ')}`}
+                          onClick={()=>{ setSelDay(di); setViewMode('dag') }}
+                          style={{height:22,borderRadius:5,marginBottom:3,cursor:'pointer',fontSize:9.5,fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',
+                            border:`1px solid ${dicht?C.border:kl.brd}`,background:dicht?(c&&c.beschikbaar?`repeating-linear-gradient(45deg,${C.surface2},${C.surface2} 3px,${C.white} 3px,${C.white} 6px)`:C.surface2):kl.bg,color:dicht?C.muted:kl.fg}}>
+                          {dicht?'':`${c.pct}%`}</div> })}
+                    </div>
+                  ))}
+                </div>
+                {dds.map(dd=>a.profiel[dd].length>0&&(
+                  <div key={dd} style={{fontSize:11,color:C.text,lineHeight:1.5,marginBottom:2}}>
+                    <b style={{color:C.muted,textTransform:'capitalize'}}>{FK_DD_NAAM[dd]}:</b> {a.profiel[dd].map(code=>{ const x=a.codes.find(c=>c.code===code)
+                      return <span key={code} style={{display:'inline-block',margin:'1px 3px 1px 0',padding:'1px 7px',borderRadius:8,background:C.surface2,border:`1px solid ${C.border}`,fontWeight:600}}>{code}{x?<span style={{color:C.muted,fontWeight:500}}> ×{x.n}</span>:null}</span> })}
+                  </div>
+                ))}
+                {!a.nOpen&&<div style={{fontSize:11,color:C.muted}}>Geen vraag toegewezen — deze kamer blijft dicht.</div>}
+              </div>
+            ))}
+          </div>
+
+          {/* kwalificatie-waarschuwingen na slepen */}
+          {!!fouten.length&&(
+            <div style={{padding:'9px 12px',borderRadius:10,background:'#FBEDEA',border:'1px solid #F1CFC8',fontSize:11.5,color:C.danger,marginBottom:12,lineHeight:1.55}}>
+              <b>△ {fouten.length} blok{fouten.length===1?' staat':'ken staan'} in een kamer zonder kwalificatie:</b>{' '}
+              {fouten.slice(0,8).map(f=>`${f.code} in ${f.kamer} (${DAY_ABBR[f.di]} ${toTime(f.start)})`).join(' · ')}{fouten.length>8?' · …':''}.
+              Sleep ze terug of vink de kamer aan bij de code.
+            </div>
+          )}
+
+          {/* toewijzing + regels */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(320px,1fr))',gap:12}}>
+            <div>
+              <div style={{fontSize:9.5,fontWeight:700,color:C.primary,letterSpacing:'0.1em',marginBottom:6}}>TOEWIJZING CODE → KAMER</div>
+              <div style={{maxHeight:260,overflowY:'auto',border:`1px solid ${C.border}`,borderRadius:10}}>
+                <table style={{width:'100%',borderCollapse:'collapse',fontSize:11}}>
+                  <thead><tr style={{background:C.surface2}}>
+                    {['Code','×/wk','Min/wk','Kamer(s)','Waarom'].map(h=><th key={h} style={{textAlign:'left',padding:'5px 8px',fontSize:9.5,color:C.muted,letterSpacing:'0.05em',position:'sticky',top:0,background:C.surface2}}>{h}</th>)}
+                  </tr></thead>
+                  <tbody>
+                    {toewijzing.map(t=>(
+                      <tr key={t.code} style={{borderTop:`1px solid ${C.border}`}}>
+                        <td style={{padding:'4px 8px',fontWeight:700}}>{t.code}</td>
+                        <td style={{padding:'4px 8px'}}>{t.n}</td>
+                        <td style={{padding:'4px 8px'}}>{t.min}</td>
+                        <td style={{padding:'4px 8px',fontWeight:600,color:C.primary}}>{t.kamers.map(k=>t.gesplitst?`${k.naam} (${k.n}×)`:k.naam).join(', ')}</td>
+                        <td style={{padding:'4px 8px',color:C.muted}}>{t.reden}</td>
+                      </tr>
+                    ))}
+                    {!toewijzing.length&&<tr><td colSpan={5} style={{padding:10,color:C.muted,textAlign:'center'}}>Nog geen codes met vraag én kamer.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div>
+              <div style={{fontSize:9.5,fontWeight:700,color:C.primary,letterSpacing:'0.1em',marginBottom:6}}>REGELS — WAT HET RASTER BORGT EN WAT MENSENWERK BLIJFT</div>
+              <div style={{display:'flex',flexDirection:'column',gap:5}}>
+                {(planregels||[]).filter(r=>r.t).map((r,i)=>(
+                  <div key={i} style={{display:'flex',gap:8,alignItems:'flex-start',padding:'7px 10px',borderRadius:9,border:`1px solid ${C.border}`,background:C.white}}>
+                    <span style={{fontSize:9.5,fontWeight:800,padding:'2px 7px',borderRadius:6,whiteSpace:'nowrap',
+                      background:r.geborgd==='raster'?'#EAF5EE':'#FDF6E3',color:r.geborgd==='raster'?C.green:'#8A6A12'}}>{r.geborgd==='raster'?'✓ RASTER':'☐ PLANNER'}</span>
+                    <span style={{fontSize:11.5,lineHeight:1.45,color:C.text}}>{r.t}{r.uitleg&&<span style={{color:C.muted}}> — {r.uitleg}</span>}</span>
+                  </div>
+                ))}
+                {!(planregels||[]).some(r=>r.t)&&<div style={{fontSize:11.5,color:C.muted}}>Geen regels vastgelegd (zie Regels).</div>}
+              </div>
+            </div>
+          </div>
+        </div>)}
+      </div>
+    )
+  }
+
+  const mods=[renderMod1, modus==='functie'?renderFkInvoer:renderMod0, modus==='functie'?renderFkRegels:renderMod2, renderMod3]
+
+  // ─── LAYOUT — POLIRASTER STUDIO (live workspace: rail + panel + canvas) ────
+  const clockStr=now.toLocaleTimeString('nl-NL',{hour:'2-digit',minute:'2-digit'})
+  const RAIL=[
+    {id:0,label:'Tijden',icon:<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>},
+    {id:1,label:'Gegevens',icon:<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>},
+    {id:2,label:'Regels',icon:<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2" fill="currentColor"/><circle cx="15" cy="12" r="2" fill="currentColor"/><circle cx="7" cy="18" r="2" fill="currentColor"/></svg>},
+    {id:3,label:'Raster',icon:<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M9 9v12M15 9v12"/></svg>},
+  ]
+  const panelOpen=active<3
+  return(
+    <div style={{display:'flex',height:'100vh',overflow:'hidden',
+      fontFamily:"'Inter',system-ui,sans-serif",background:'#EEF1F5'}}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Newsreader:ital,opsz,wght@0,16..72,400;0,16..72,500;1,16..72,400;1,16..72,500&display=swap');
+        @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+        @keyframes pmPulse{0%,100%{opacity:1}50%{opacity:0.3}}
+        @keyframes pmUp{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+        @keyframes pmPop{from{opacity:0;transform:scale(0.96)}to{opacity:1;transform:scale(1)}}
+        *{box-sizing:border-box}
+        input:focus{outline:none!important;border-color:${C.primary}!important;
+          box-shadow:0 0 0 3px rgba(28,110,164,0.13)!important}
+        ::-webkit-scrollbar{width:9px;height:9px}
+        ::-webkit-scrollbar-track{background:transparent}
+        ::-webkit-scrollbar-thumb{background:#C8D2DC;border-radius:6px}
+        ::-webkit-scrollbar-thumb:hover{background:#AEBCC9}
+        button:focus{outline:none}
+        input[type=number]::-webkit-inner-spin-button{opacity:0.5}
+      `}</style>
+
+      {/* ══ ZIJBALK / RAIL ══ */}
+      <nav style={{width:98,flexShrink:0,background:'linear-gradient(180deg,#0E3450 0%,#124D74 55%,#0F5F8C 100%)',
+        display:'flex',flexDirection:'column',alignItems:'stretch',padding:'16px 10px 12px',zIndex:50,
+        boxShadow:'2px 0 18px rgba(9,30,45,0.18)'}}>
+        {/* merk */}
+        <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:7,marginBottom:20}}>
+          <div style={{width:42,height:42,borderRadius:13,background:'linear-gradient(140deg,#39C6AC,#1C8FBF)',
+            display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 6px 16px rgba(11,60,90,0.5)'}}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M9 9v12M15 9v12"/></svg>
+          </div>
+          <div style={{textAlign:'center',lineHeight:1.1}}>
+            <div style={{fontSize:11,fontWeight:800,color:'#EAF6FB',letterSpacing:'-0.01em'}}>PoliRaster</div>
+            <div style={{fontFamily:"'IBM Plex Mono',monospace",fontSize:7.5,color:'#7FD4C0',letterSpacing:'0.18em'}}>{SIMPEL?'STUDIO 2.3 · SIMPEL':'STUDIO 2.3'}</div>
+          </div>
+        </div>
+        {/* Planmodus: poli-spreekuren of functiekamers */}
+        <div title="Poli = gelijke spreekkamers met nieuwe en controlepatiënten. Functiekamers = kamers met eigen kwalificaties; de tool adviseert per kamer welke dagdelen open moeten."
+          style={{display:'flex',flexDirection:'column',gap:3,marginBottom:10,padding:3,borderRadius:11,background:'rgba(255,255,255,0.08)'}}>
+          {[{v:'poli',l:'Poli'},{v:'functie',l:'Functiekamers'}].map(o=>(
+            <button key={o.v} data-modus={o.v} onClick={()=>wisselModus(o.v)}
+              style={{padding:'6px 4px',borderRadius:8,border:'none',cursor:'pointer',fontSize:9.5,fontWeight:700,letterSpacing:'0.02em',
+                background:modus===o.v?'#39C6AC':'transparent',color:modus===o.v?'#04120D':'rgba(255,255,255,0.7)'}}>{o.l}</button>
+          ))}
+        </div>
+        {/* Begeleide intake — stelt vragen en zet de hele planning klaar (niet in de simpele variant) */}
+        {!SIMPEL&&<button onClick={()=>{ if(modus==='functie'){ setBijstuur(null); setWiz({modus:'bijsturen'}); return } setWiz(raster?{modus:'kies'}:{modus:'intake',stap:0,ant:{}}) }}
+          title="Assistent — de hele opzet doorlopen, of dit raster bijsturen met een opdracht in gewone taal"
+          style={{display:'flex',alignItems:'center',justifyContent:'center',gap:6,marginBottom:12,
+            padding:'10px 6px',borderRadius:12,border:'1px solid rgba(93,214,188,0.45)',cursor:'pointer',
+            background:'linear-gradient(135deg,rgba(93,214,188,0.24),rgba(28,110,164,0.24))',color:'#DFFAF2',
+            fontSize:10.5,fontWeight:700,letterSpacing:'0.02em'}}
+          onMouseEnter={e=>e.currentTarget.style.background='linear-gradient(135deg,rgba(93,214,188,0.4),rgba(28,110,164,0.4))'}
+          onMouseLeave={e=>e.currentTarget.style.background='linear-gradient(135deg,rgba(93,214,188,0.24),rgba(28,110,164,0.24))'}>
+          ✨ Assistent
+        </button>}
+        {/* stappen */}
+        <div style={{display:'flex',flexDirection:'column',gap:6,flex:1}}>
+          {RAIL.map((r,i)=>{
+            const on=active===r.id
+            const done = r.id===1?(modus==='functie'?fk.codes.some(fkCodeLabel):(newRows.some(x=>x.afspraakcode||x.omschrijving)||ctrlRows.some(x=>x.afspraakcode||x.omschrijving)))
+              : r.id===3?!!raster : true
+            return(
+              <button key={r.id} onClick={()=>nav(r.id)} title={r.label} style={{
+                position:'relative',padding:'11px 4px 9px',borderRadius:13,border:'none',cursor:'pointer',
+                display:'flex',flexDirection:'column',alignItems:'center',gap:5,
+                background:on?'rgba(255,255,255,0.17)':'transparent',
+                color:on?'#fff':'rgba(255,255,255,0.6)',transition:'all 0.14s'}}
+                onMouseEnter={e=>{if(!on){e.currentTarget.style.background='rgba(255,255,255,0.07)';e.currentTarget.style.color='rgba(255,255,255,0.9)'}}}
+                onMouseLeave={e=>{if(!on){e.currentTarget.style.background='transparent';e.currentTarget.style.color='rgba(255,255,255,0.6)'}}}>
+                {on&&<span style={{position:'absolute',left:0,top:'50%',transform:'translateY(-50%)',width:3,height:22,borderRadius:3,background:'#5ED6BC'}}/>}
+                <div style={{position:'relative'}}>
+                  {r.icon}
+                  <span style={{position:'absolute',top:-5,right:-9,width:13,height:13,borderRadius:'50%',
+                    fontSize:8,fontWeight:800,display:'flex',alignItems:'center',justifyContent:'center',
+                    background:done?'#39C6AC':'rgba(255,255,255,0.22)',color:done?'#04120D':'#EAF6FB'}}>{done?'✓':i+1}</span>
+                </div>
+                <span style={{fontSize:9.5,fontWeight:on?700:600,letterSpacing:'0.02em'}}>{r.label}</span>
+              </button>
+            )
+          })}
+        </div>
+        {/* acties */}
+        <div style={{display:'flex',flexDirection:'column',gap:6,marginTop:8,paddingTop:10,borderTop:'1px solid rgba(255,255,255,0.12)'}}>
+          <button onClick={()=>setShowExport(true)} title="Exporteren naar Excel" style={{display:'flex',alignItems:'center',justifyContent:'center',gap:6,
+            padding:'9px 4px',borderRadius:11,border:'none',cursor:'pointer',background:'rgba(93,214,188,0.18)',color:'#B9F0E2',fontSize:10,fontWeight:700}}
+            onMouseEnter={e=>e.currentTarget.style.background='rgba(93,214,188,0.3)'}
+            onMouseLeave={e=>e.currentTarget.style.background='rgba(93,214,188,0.18)'}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>Export
+          </button>
+          <button onClick={()=>setShowFullReset(true)} title="Opnieuw beginnen" style={{display:'flex',alignItems:'center',justifyContent:'center',gap:6,
+            padding:'7px 4px',borderRadius:11,border:'none',cursor:'pointer',background:'transparent',color:'rgba(255,255,255,0.5)',fontSize:10,fontWeight:600}}
+            onMouseEnter={e=>e.currentTarget.style.color='#F0A090'}
+            onMouseLeave={e=>e.currentTarget.style.color='rgba(255,255,255,0.5)'}>↺ Opnieuw</button>
+        </div>
+      </nav>
+
+      {/* ══ SETTINGS PANEL (slides away on Raster) ══ */}
+      <aside style={{width:panelOpen?560:0,flexShrink:0,transition:'width 0.25s ease',overflow:'hidden',
+        background:C.white,borderRight:panelOpen?`1px solid ${C.border}`:'none',display:'flex',flexDirection:'column'}}>
+        <div style={{width:560,display:'flex',flexDirection:'column',height:'100%'}}>
+          <div style={{padding:'16px 22px 12px',borderBottom:`1px solid ${C.border}`,flexShrink:0,
+            display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+            <div>
+              <div style={{fontSize:9,fontWeight:700,color:C.primary,letterSpacing:'0.2em',marginBottom:3}}>INSTELLINGEN</div>
+              <div style={{fontFamily:"'Newsreader',Georgia,serif",fontSize:21,fontWeight:500,color:C.text}}>
+                {active===0?'Spreekuurtijden':active===1?(modus==='functie'?'Functiekamers':'Gegevens invoer'):'Planregels'}
+              </div>
+            </div>
+            <button onClick={()=>nav(3)} title="Paneel sluiten — volledig raster"
+              style={{width:30,height:30,borderRadius:9,border:`1px solid ${C.border}`,background:C.white,
+                cursor:'pointer',color:C.muted,fontSize:13,display:'flex',alignItems:'center',justifyContent:'center'}}>⟨</button>
+          </div>
+          <div style={{flex:1,overflowY:'auto',padding:'16px 22px 30px',zoom:0.92}}>
+            {active<3&&mods[active]?.()}
+          </div>
+          {/* Vaste actiebalk: bouw het raster expliciet opnieuw op met de huidige keuzes.
+              De wijzigingen worden al live doorgerekend, maar deze knop maakt het
+              expliciet én toont zwart-op-wit wat eruit kwam. */}
+          <div style={{flexShrink:0,borderTop:`1px solid ${C.border}`,padding:'12px 22px',
+            display:'flex',alignItems:'center',gap:10,background:C.surface2}}>
+            <button onClick={()=>herbouwNu(false)}
+              title="Analyseer de huidige gegevens en instellingen opnieuw en bouw het raster ermee op"
+              style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',gap:8,
+                padding:'11px 16px',borderRadius:11,border:'none',cursor:'pointer',fontSize:13.5,fontWeight:800,
+                color:'#fff',background:'linear-gradient(135deg,#1C6EA4,#2E9BC8)',
+                boxShadow:'0 4px 14px rgba(28,110,164,0.3)',transition:'transform 0.12s'}}
+              onMouseEnter={e=>e.currentTarget.style.transform='translateY(-1px)'}
+              onMouseLeave={e=>e.currentTarget.style.transform='none'}>
+              🔄 Analyseer &amp; herbouw raster
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      {/* ══ LIVE RASTER CANVAS ══ */}
+      <section style={{flex:1,minWidth:0,overflowY:'auto',position:'relative'}}>
+        {/* canvas top strip */}
+        <div style={{position:'sticky',top:0,zIndex:60,background:'rgba(238,241,245,0.92)',backdropFilter:'blur(10px)',
+          borderBottom:`1px solid ${C.border}`,padding:'9px 22px',display:'flex',alignItems:'center',gap:14}}>
+          <div style={{fontSize:13,fontWeight:700,color:C.text,letterSpacing:'-0.01em'}}>
+            PoliRaster <span style={{fontFamily:"'Newsreader',Georgia,serif",fontStyle:'italic',color:C.primary}}>Studio</span>
+            <span style={{fontSize:8.5,fontWeight:700,color:C.primary,verticalAlign:'super',marginLeft:2}}>2.3</span>
+          </div>
+          <span style={{width:1,height:20,background:C.border}}/>
+          {/* Planmodus — ook hier, zodat de functiekamer-modus niet te missen is */}
+          <div title="Poli-spreekuren: gelijke spreekkamers met nieuwe en controlepatiënten. Functiekamers: kamers met eigen kwalificaties — de tool adviseert per kamer welke dagdelen open moeten en met welke onderzoekscodes."
+            style={{display:'flex',padding:2,background:C.surface2,border:`1px solid ${C.border}`,borderRadius:9}}>
+            {[{v:'poli',l:'Poli-spreekuren'},{v:'functie',l:'🔬 Functiekamers'}].map(o=>(
+              <button key={o.v} data-modus-top={o.v} onClick={()=>wisselModus(o.v)}
+                style={{padding:'5px 12px',borderRadius:7,border:'none',cursor:'pointer',fontSize:12,fontWeight:700,
+                  background:modus===o.v?C.white:'transparent',color:modus===o.v?C.primary:C.muted,
+                  boxShadow:modus===o.v?'0 1px 3px rgba(27,39,51,0.10)':'none',transition:'all 0.13s'}}>{o.l}</button>
+            ))}
+          </div>
+          {modus==='functie'&&<span style={{fontSize:11,fontWeight:600,color:C.green,background:'#EAF5EE',border:'1px solid #C9E6D5',borderRadius:8,padding:'4px 9px'}}>
+            {fkActieveKamers.length} kamers · {fk.codes.filter(fkCodeLabel).length} codes{fk.preset?` · ${FK_PRESETS[fk.preset]&&FK_PRESETS[fk.preset].voorbeeld?'voorbeeldset':'set'} ${fk.preset}`:''}
+          </span>}
+          {/* Vrij invulbare poli — typ de naam of kies een specialisme */}
+          <input value={poli.naam} onChange={e=>setPoli(p=>({...p,naam:e.target.value}))}
+            placeholder="Naam van de poli…" title="Voor welke poli maak je dit raster?"
+            style={{fontSize:13,fontWeight:700,color:C.text,border:`1px solid transparent`,background:'transparent',
+              borderRadius:7,padding:'5px 9px',minWidth:130,maxWidth:240,fontFamily:'inherit',transition:'all 0.12s'}}
+            onFocus={e=>{e.target.style.background=C.white;e.target.style.borderColor=C.border}}
+            onBlur={e=>{e.target.style.background='transparent';e.target.style.borderColor='transparent'}}/>
+          {modus==='poli'&&<select value={poli.specialisme} onChange={e=>{
+              const v=e.target.value
+              if(!v){ setPoli(p=>({...p,specialisme:''})); return }
+              // Voorbeeldcodes laden — vraag alleen om bevestiging als er al eigen codes staan
+              if(heeftCodes()){
+                if(window.confirm(`Voorbeeldcodes voor ${v} laden?\n\nDit vervangt de huidige afspraakcodes en aantallen. Klik Annuleren om alleen de naam te wijzigen.`))
+                  kiesSpecialisme(v,true)
+                else kiesSpecialisme(v,false)
+              } else kiesSpecialisme(v,true)
+            }}
+            title="Kies een specialisme — laadt passende voorbeeldcodes"
+            style={{fontSize:11.5,color:poli.specialisme?C.primary:C.muted,fontWeight:poli.specialisme?700:400,
+              border:`1px solid ${C.border}`,background:C.white,
+              borderRadius:7,padding:'5px 8px',cursor:'pointer',fontFamily:'inherit'}}>
+            <option value="">Specialisme…</option>
+            {SPECIALISMEN.map(s=><option key={s} value={s}>{s}</option>)}
+          </select>}
+          {modus==='poli'&&poli.specialisme&&SPEC_PRESETS[poli.specialisme]&&(
+            <button onClick={()=>{ if(!heeftCodes()||window.confirm(`Voorbeeldcodes voor ${poli.specialisme} opnieuw laden?\n\nDit vervangt de huidige afspraakcodes.`)) kiesSpecialisme(poli.specialisme,true) }}
+              title="Laad opnieuw de voorbeeldcodes voor dit specialisme"
+              style={{fontSize:11,fontWeight:600,color:C.primary,background:C.blueAccent,border:`1px solid ${C.primary}`,
+                borderRadius:7,padding:'5px 10px',cursor:'pointer',whiteSpace:'nowrap'}}>⤓ Voorbeeldcodes</button>
+          )}
+          <span style={{fontSize:10.5,color:C.muted}}>· live — wijzigingen links worden direct doorgerekend</span>
+          <div style={{flex:1}}/>
+          {importBadge&&<span style={{fontSize:10,fontWeight:600,color:C.green,background:'#EAF4EE',
+            padding:'3px 9px',borderRadius:10,border:'1px solid #CCE5D6'}}>{importBadge.filename}</span>}
+          <div style={{display:'flex',alignItems:'center',gap:6,padding:'3px 10px',borderRadius:12,border:`1px solid ${C.border}`,background:C.white}}>
+            <span style={{width:6,height:6,borderRadius:'50%',background:C.green}}/>
+            <span style={{fontSize:8.5,fontWeight:700,color:C.text,letterSpacing:'0.1em'}}>LIVE</span>
+          </div>
+          <span style={{fontSize:14,fontWeight:700,color:C.text,fontVariantNumeric:'tabular-nums'}}>{clockStr}</span>
+        </div>
+        {herbouwToast&&(
+          <div onClick={()=>setHerbouwToast(null)}
+            style={{position:'sticky',top:44,zIndex:65,margin:'10px 22px 0',cursor:'pointer',
+              display:'flex',alignItems:'flex-start',gap:10,padding:'11px 15px',borderRadius:11,
+              background:herbouwToast.ntp>0?'#FEF6E0':'#EAF7EE',
+              border:`1px solid ${herbouwToast.ntp>0?'#F0C840':'#9AD4AC'}`,
+              boxShadow:'0 6px 20px rgba(20,40,60,0.14)',animation:'fadeIn 0.2s ease'}}>
+            <span style={{fontSize:16,lineHeight:1.2}}>{herbouwToast.ntp>0?'⚠️':'✅'}</span>
+            <span style={{fontSize:12.5,fontWeight:600,color:herbouwToast.ntp>0?'#7A5000':'#1E5A32',lineHeight:1.5}}>
+              {herbouwToast.msg}
+            </span>
+            <span style={{marginLeft:'auto',fontSize:11,color:C.muted,whiteSpace:'nowrap'}}>sluiten ✕</span>
+          </div>
+        )}
+        <div style={{padding:'18px 22px 50px'}}>
+          {raster
+            ? renderMod3()
+            : (
+              <div style={{maxWidth:520,margin:'80px auto',textAlign:'center'}}>
+                <div style={{fontFamily:"'Newsreader',Georgia,serif",fontSize:30,color:C.text,marginBottom:10}}>
+                  Welkom in <span style={{fontStyle:'italic',color:C.primary}}>PoliRaster Studio</span>
+                </div>
+                <p style={{fontSize:13,color:C.muted,lineHeight:1.7,marginBottom:22}}>
+                  Stel links de gegevens, tijden en planregels in — het raster verschijnt hier en past zich live aan.
+                </p>
+                <Btn onClick={doGenerate}>Genereer eerste raster</Btn>
+              </div>
+            )}
+        </div>
+      </section>
+
+      {/* ══ ASSISTENT — begeleide intake ═══════════════════════════════════════
+           Stapsgewijze vragen die de héle opzet klaarzetten. Twee dingen staan
+           voorop: (1) élke vraag heeft naast de knoppen een eigen invulpaneel, dus
+           je zit nooit vast aan drie voorgekookte opties; (2) alles blijft
+           deterministisch — een antwoord zet gewoon een instelling, er wordt niets
+           bedacht. Wat je antwoordt wordt per poli onthouden en kan een volgende
+           keer in één klik worden overgenomen. */}
+      {wiz&&(()=>{
+        // ── MODUS-KEUZE — nieuwe opzet of dit raster bijsturen? ────────────────
+        if(wiz.modus==='kies') return(
+          <div data-assistent style={{position:'fixed',inset:0,background:'rgba(10,22,34,0.6)',backdropFilter:'blur(7px)',
+            display:'flex',alignItems:'center',justifyContent:'center',zIndex:2100,padding:20}}>
+            <div style={{background:C.white,borderRadius:20,width:'min(680px,100%)',boxShadow:C.shadowLg,
+              border:`1px solid ${C.border}`,overflow:'hidden'}}>
+              <div style={{padding:'16px 22px',display:'flex',alignItems:'center',gap:11,
+                background:'linear-gradient(90deg,#0E3450,#1C6EA4 60%,#39C6AC)',color:'#fff'}}>
+                <span style={{fontSize:18}}>✨</span>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:13.5,fontWeight:800}}>Assistent</div>
+                  <div style={{fontSize:10.5,opacity:0.85}}>waar kan ik mee helpen?</div>
+                </div>
+                <button onClick={()=>setWiz(null)} title="Sluiten"
+                  style={{width:28,height:28,borderRadius:9,border:'1px solid rgba(255,255,255,0.3)',
+                    background:'rgba(255,255,255,0.12)',color:'#fff',cursor:'pointer',fontSize:15}}>×</button>
+              </div>
+              <div style={{padding:'20px 22px',display:'grid',gap:11}}>
+                <button onClick={()=>setWiz({modus:'bijsturen'})}
+                  style={{textAlign:'left',padding:'16px 18px',borderRadius:14,cursor:'pointer',
+                    border:`1.5px solid ${C.primary}`,background:C.blueAccent}}>
+                  <div style={{fontSize:15,fontWeight:800,color:C.text,marginBottom:3}}>🛠 Dit raster bijsturen</div>
+                  <div style={{fontSize:12,color:C.muted,lineHeight:1.55}}>
+                    Zeg in gewone taal wat er anders moet — "op dinsdag staan geen afspraken, graag ook inplannen"
+                    of "kamer 3 op maandag moet richting 85%". Ik reken door wat daarvoor nodig is, laat het je
+                    eerst zien en pas het pas toe als jij akkoord bent.
+                  </div>
+                </button>
+                <button onClick={()=>setWiz({modus:'intake',stap:0,ant:{}})}
+                  style={{textAlign:'left',padding:'16px 18px',borderRadius:14,cursor:'pointer',
+                    border:`1.5px solid ${C.border}`,background:C.white}}>
+                  <div style={{fontSize:15,fontWeight:800,color:C.text,marginBottom:3}}>📋 Opnieuw de hele opzet doorlopen</div>
+                  <div style={{fontSize:12,color:C.muted,lineHeight:1.55}}>
+                    De begeleide intake: twintig vragen die poli, zorgvraag, tijden, capaciteit en planregels
+                    van voren af aan klaarzetten.
+                  </div>
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+
+        // ── BIJSTUREN — losse opdracht in gewone taal ──────────────────────────
+        if(wiz.modus==='bijsturen'){
+          const doelBen=m2.benutting||85
+          const nRooms=(raster&&raster.numRooms)||1
+          const ddsB=[0,1].concat(raster&&raster.avondOn?[2]:[])
+          // Wat valt er nú op aan het raster? Elk signaal is meteen een opdracht.
+          const signalen=[]
+          if(raster&&modus==='functie'&&raster.fk){
+            if(raster.fk.geenKamer.length) signalen.push({ico:'△', kleur:'#8A6A12', bg:'#FDF6E3', brd:'#EBD08A',
+              t:`${raster.fk.geenKamer.length} codes zonder kamer: ${raster.fk.geenKamer.map(g=>g.code).join(', ')}`, opdr:'wat betekent kamer nog te bepalen'})
+            raster.fk.advies.filter(a=>a.rest>0).forEach(a=>signalen.push({ico:'△', kleur:'#B3402C', bg:'#FBEDEA', brd:'#E8B3A8',
+              t:`${a.naam}: ${a.rest} onderzoeken passen niet`, opdr:`hoeveel dagdelen moet ${a.naam} open`}))
+            raster.fk.advies.forEach(a=>signalen.push({ico:'🔬', kleur:'#1C6EA4', bg:'#E4F0F8', brd:'#A4C4DE',
+              t:`${a.naam}: ${a.nOpen} dagdelen per week`, opdr:`hoeveel dagdelen moet ${a.naam} open`}))
+          }
+          if(raster&&modus!=='functie'){
+            ;[0,1,2,3,4].forEach(di=>{ const d=dagMeting(raster,di)
+              if(!d.open) signalen.push({ico:'⚑', kleur:'#B3402C', bg:'#FBEDEA', brd:'#E8B3A8',
+                t:`${DAGS_NL[di]}: geen enkel spreekuur`,
+                opdr:`op ${DAGS_NL[di]} staan geen afspraken, graag ${DAGS_NL[di]} ook inplannen`}) })
+            const laag=[]
+            for(let di=0;di<5;di++) for(let room=0;room<nRooms;room++) for(const dd of ddsB){
+              const c=celMeting(raster,di,room,dd)
+              if(c&&c.open&&c.pct<doelBen-6) laag.push({di,room,dd,pct:c.pct}) }
+            laag.sort((a,b)=>a.pct-b.pct)
+            laag.slice(0,3).forEach(x=>signalen.push({ico:'△', kleur:'#8A6A12', bg:'#FDF6E3', brd:'#EBD08A',
+              t:`${DAGS_NL[x.di]}, kamer ${x.room+1} (${DD_INFO[x.dd].l.toLowerCase()}): ${x.pct}% — doel is ${doelBen}%`,
+              opdr:`kamer ${x.room+1} op ${DAGS_NL[x.di]} staat op ${x.pct}% bezetting, ik wil richting ${doelBen}%`}))
+            if(raster.ntp&&raster.ntp.length) signalen.push({ico:'△', kleur:'#8A6A12', bg:'#FDF6E3', brd:'#EBD08A',
+              t:`${raster.ntp.length} afspraken staan op de restlijst`,
+              opdr:'alles moet ingepland worden, niets meer op de restlijst'})
+          }
+          const b=bijstuur
+          const start=t=>verwerkVraag(t)
+          const keuze=b&&b.kandidaten?b.kandidaten[b.keuze||0]:null
+          const Getal=({voor,na,omlaagGoed,eenheid=''})=>{
+            const d=na-voor
+            return(
+              <span style={{fontWeight:700,color:C.text,fontVariantNumeric:'tabular-nums'}}>
+                {voor}{eenheid} → {na}{eenheid}{' '}
+                <span style={{fontWeight:700,fontSize:11,
+                  color:d===0?C.muted:((d<0)===!!omlaagGoed?C.green:C.danger)}}>
+                  {d===0?'±0':`${d>0?'+':''}${d}`}</span>
+              </span>
+            )
+          }
+          return(
+            <div data-assistent style={{position:'fixed',inset:0,background:'rgba(10,22,34,0.6)',backdropFilter:'blur(7px)',
+              display:'flex',alignItems:'center',justifyContent:'center',zIndex:2100,padding:20}}>
+              <div style={{background:C.white,borderRadius:20,width:'min(1040px,100%)',height:'min(90vh,780px)',
+                display:'flex',boxShadow:C.shadowLg,border:`1px solid ${C.border}`,overflow:'hidden'}}>
+
+                {/* links: wat de tool nu ziet */}
+                <aside style={{width:292,flexShrink:0,background:'linear-gradient(170deg,#0E3450 0%,#124D74 60%,#0F5F8C 100%)',
+                  color:'#fff',display:'flex',flexDirection:'column',padding:'20px 0 14px'}}>
+                  <div style={{padding:'0 18px 14px',borderBottom:'1px solid rgba(255,255,255,0.13)'}}>
+                    <div style={{display:'flex',alignItems:'center',gap:9}}>
+                      <div style={{width:34,height:34,borderRadius:11,background:'linear-gradient(140deg,#39C6AC,#1C8FBF)',
+                        display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,flexShrink:0}}>🛠</div>
+                      <div>
+                        <div style={{fontSize:13.5,fontWeight:800}}>Bijsturen</div>
+                        <div style={{fontSize:10,color:'#8FD8C6'}}>ik reken het eerst door</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{flex:1,overflowY:'auto',padding:'14px 14px 10px'}}>
+                    <div style={{fontSize:9,fontWeight:800,letterSpacing:'0.14em',color:'rgba(255,255,255,0.45)',
+                      textTransform:'uppercase',margin:'0 4px 8px'}}>Wat mij nu opvalt</div>
+                    {signalen.length===0&&(
+                      <div style={{fontSize:11.5,color:'rgba(255,255,255,0.55)',padding:'0 4px',lineHeight:1.55}}>
+                        Geen lege dagen, geen half gevulde kamers en niets op de restlijst. Je kunt hiernaast
+                        alsnog een eigen opdracht geven.
+                      </div>
+                    )}
+                    {signalen.map((s,i)=>(
+                      <button key={i} onClick={()=>start(s.opdr)}
+                        style={{display:'block',width:'100%',textAlign:'left',marginBottom:6,padding:'9px 11px',
+                          borderRadius:10,cursor:'pointer',border:'1px solid rgba(255,255,255,0.16)',
+                          background:'rgba(255,255,255,0.09)',color:'#fff'}}
+                        onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,0.17)'}
+                        onMouseLeave={e=>e.currentTarget.style.background='rgba(255,255,255,0.09)'}>
+                        <div style={{fontSize:11.5,fontWeight:600,lineHeight:1.4}}>{s.ico} {s.t}</div>
+                        <div style={{fontSize:10,color:'#8FD8C6',marginTop:3}}>→ pak dit op</div>
+                      </button>
+                    ))}
+                  </div>
+                </aside>
+
+                {/* rechts: de opdracht en het voorstel */}
+                <div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column',background:C.surface2}}>
+                  <div style={{padding:'14px 24px 12px',background:C.white,display:'flex',alignItems:'center',gap:10}}>
+                    <span style={{fontSize:9.5,fontWeight:800,color:C.primary,letterSpacing:'0.14em',textTransform:'uppercase'}}>Bijsturen</span>
+                    <div style={{flex:1}}/>
+                    {modus!=='functie'&&<button onClick={()=>setWiz({modus:'intake',stap:0,ant:{}})}
+                      style={{padding:'6px 12px',borderRadius:9,border:`1px solid ${C.border}`,background:C.white,
+                        cursor:'pointer',fontSize:11,fontWeight:600,color:C.muted}}>Hele opzet opnieuw</button>}
+                    <button onClick={()=>{setWiz(null);setBijstuur(null)}} title="Sluiten"
+                      style={{width:28,height:28,borderRadius:9,border:`1px solid ${C.border}`,background:C.white,
+                        color:C.muted,cursor:'pointer',fontSize:15,lineHeight:1}}>×</button>
+                  </div>
+
+                  <div style={{flex:1,overflowY:'auto',padding:'18px 24px 24px'}}>
+                    <div style={{fontFamily:"'Newsreader',Georgia,serif",fontSize:24,fontWeight:500,color:C.text,
+                      lineHeight:1.25,marginBottom:7}}>Wat moet er anders — of wat wil je weten?</div>
+                    <p style={{fontSize:12.5,color:C.muted,lineHeight:1.6,margin:'0 0 14px',maxWidth:640}}>
+                      Schrijf het zoals je het tegen een collega zou zeggen. Een opdracht reken ik door en laat ik je eerst
+                      zien; een vraag beantwoord ik uit de kennisbank of uit je raster. Begrijp ik je half, dan vraag ik door.
+                    </p>
+                    <OpdrachtInvoer key={wiz.voorstelTekst||'leeg'} initieel={wiz.voorstelTekst||''}
+                      onZoek={start} bezig={!!(b&&b.bezig)}/>
+
+                    {!b&&(
+                      <div style={{marginTop:16,border:`1px solid ${C.border}`,background:C.white,borderRadius:12,padding:'12px 15px'}}>
+                        <div style={{fontSize:9.5,fontWeight:800,color:C.muted,letterSpacing:'0.1em',
+                          textTransform:'uppercase',marginBottom:7}}>Dit begrijp ik</div>
+                        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))',gap:10,fontSize:12,color:C.text,lineHeight:1.7}}>
+                          <div><b style={{color:C.primary}}>Bijsturen</b> — "dinsdag ook inplannen", "kamer 3 op maandag richting 85%", "er mag een kamer bij", "spoed vooraan", "een avondspreekuur erbij", "alles inplannen"</div>
+                          <div><b style={{color:C.primary}}>Uitleg</b> — "wat is de band", "wat doet de minimumbezetting", "waarom staat er iets op de restlijst", "hoe kiest de tool een kamer", "wat is een goede benutting"</div>
+                          <div><b style={{color:C.primary}}>Status</b> — "hoe vol is kamer 2 op dinsdag", "welke dagen zijn leeg", "hoeveel kamer-dagen", "waar staat NP", "welke instellingen staan aan"</div>
+                        </div>
+                        <div style={{display:'flex',gap:6,flexWrap:'wrap',marginTop:10,alignItems:'center'}}>
+                          {VOORBEELDVRAGEN.slice(0,6).map(v=>(
+                            <button key={v} onClick={()=>start(v)}
+                              style={{padding:'5px 10px',borderRadius:14,border:`1px solid ${C.border}`,background:C.surface2,cursor:'pointer',fontSize:11,color:C.text}}
+                              onMouseEnter={e=>e.currentTarget.style.borderColor=C.primary} onMouseLeave={e=>e.currentTarget.style.borderColor=C.border}>{v}?</button>
+                          ))}
+                          <button onClick={()=>setBijstuur({op:{type:'antwoord'},index:true})} data-onderwerpen
+                            style={{padding:'5px 11px',borderRadius:14,border:`1px solid ${C.primary}`,background:C.blueAccent,cursor:'pointer',fontSize:11,fontWeight:700,color:C.primary}}>📚 Alle onderwerpen ({KENNIS.length})</button>
+                        </div>
+                        {gesprek.length>0&&(
+                          <div style={{marginTop:10,paddingTop:8,borderTop:`1px dashed ${C.border}`,fontSize:11,color:C.muted}}>
+                            Eerder gevraagd: {gesprek.slice(-5).reverse().map((g,i)=>(
+                              <button key={i} onClick={()=>start(g.vraag)} style={{border:'none',background:'none',cursor:'pointer',color:C.primary,fontSize:11,padding:'0 4px',textDecoration:'underline'}}>{g.vraag}</button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* KENNISBANK — een antwoord, een keuze, een wedervraag of de onderwerpenlijst */}
+                    {b&&!b.bezig&&b.index&&(()=>{
+                      const zoek=(b.zoek||'').trim()
+                      const res=zoek?zoekKennis(zoek,12).map(x=>x.k):null
+                      return(
+                        <div data-kennis-index style={{marginTop:16,border:`1.5px solid ${C.primary}`,background:C.white,borderRadius:13,overflow:'hidden',animation:'pmUp 0.22s ease both'}}>
+                          <div style={{padding:'11px 15px',background:C.blueAccent,borderBottom:`1px solid ${C.border}`,display:'flex',gap:10,alignItems:'center',flexWrap:'wrap'}}>
+                            <div>
+                              <div style={{fontSize:9.5,fontWeight:800,color:C.primary,letterSpacing:'0.1em',textTransform:'uppercase'}}>Alle onderwerpen</div>
+                              <div style={{fontSize:12,color:C.muted}}>{KENNIS.length} onderwerpen — klik er een aan, of zoek.</div>
+                            </div>
+                            <input value={b.zoek||''} onChange={e=>setBijstuur(x=>({...x,zoek:e.target.value}))} placeholder="Zoek een onderwerp…"
+                              style={{marginLeft:'auto',border:`1px solid ${C.border}`,borderRadius:8,padding:'6px 10px',fontSize:12,fontFamily:'inherit',minWidth:180}}/>
+                          </div>
+                          <div style={{padding:'12px 15px',maxHeight:360,overflowY:'auto'}}>
+                            {(res?[{cat:'zoek',naam:res.length?`${res.length} gevonden`:'Niets gevonden — probeer een ander woord',items:res}]:kennisPerCategorie()).map(g=>(
+                              <div key={g.cat} style={{marginBottom:10}}>
+                                <div style={{fontSize:9.5,fontWeight:800,color:C.muted,letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:5}}>{g.naam}</div>
+                                <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
+                                  {g.items.map(k=>(
+                                    <button key={k.id} onClick={()=>toonKennis(k.id)}
+                                      style={{padding:'5px 10px',borderRadius:9,border:`1px solid ${C.border}`,background:C.white,cursor:'pointer',fontSize:11.5,color:C.text,textAlign:'left'}}
+                                      onMouseEnter={e=>{e.currentTarget.style.borderColor=C.primary;e.currentTarget.style.background=C.blueAccent}}
+                                      onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.background=C.white}}>{k.titel}</button>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    })()}
+
+                    {b&&!b.bezig&&b.antwoord&&(b.antwoord.soort==='keuze'||b.antwoord.soort==='vervolgvraag')&&(
+                      <div data-wedervraag style={{marginTop:16,border:`1.5px solid ${C.primary}`,background:C.white,borderRadius:13,overflow:'hidden',animation:'pmUp 0.22s ease both'}}>
+                        <div style={{padding:'11px 15px',background:C.blueAccent,borderBottom:`1px solid ${C.border}`}}>
+                          <div style={{fontSize:9.5,fontWeight:800,color:C.primary,letterSpacing:'0.1em',textTransform:'uppercase'}}>{b.antwoord.soort==='vervolgvraag'?'Even doorvragen':'Ik wil je goed begrijpen'}</div>
+                          <div style={{fontSize:13.5,fontWeight:700,color:C.text,marginTop:3}}>{b.antwoord.vraag}</div>
+                          {b.antwoord.uitleg&&<div style={{fontSize:11.5,color:C.muted,marginTop:2,lineHeight:1.5}}>{b.antwoord.uitleg}</div>}
+                        </div>
+                        <div style={{padding:'13px 15px',display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(180px,1fr))',gap:8}}>
+                          {(b.antwoord.opties||[]).map((o,i)=>(
+                            <button key={i} onClick={()=>doeActie(o)}
+                              style={{textAlign:'left',padding:'10px 13px',borderRadius:11,cursor:'pointer',border:`1.5px solid ${C.border}`,background:C.white,transition:'all 0.12s'}}
+                              onMouseEnter={e=>{e.currentTarget.style.borderColor=C.primary;e.currentTarget.style.background=C.blueAccent}}
+                              onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.background=C.white}}>
+                              <div style={{fontSize:12.5,fontWeight:700,color:C.text}}>{o.l}</div>
+                              {o.s&&<div style={{fontSize:11,color:C.muted,marginTop:2}}>{o.s}</div>}
+                            </button>
+                          ))}
+                          {b.antwoord.soort==='keuze'&&(
+                            <button onClick={()=>zoekVoorstel({type:'onderwerp',knoop:'start'})}
+                              style={{textAlign:'left',padding:'10px 13px',borderRadius:11,cursor:'pointer',border:`1.5px dashed ${C.border}`,background:C.white}}>
+                              <div style={{fontSize:12.5,fontWeight:700,color:C.muted}}>Nee, ik wil iets bijsturen →</div>
+                              <div style={{fontSize:11,color:C.muted,marginTop:2}}>kies een onderwerp om aan te passen</div>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {b&&!b.bezig&&b.antwoord&&b.antwoord.soort==='antwoord'&&(()=>{
+                      const a=b.antwoord
+                      const CAT={begrip:'Uitleg',instelling:'Instelling',engine:'Hoe de tool rekent',werkwijze:'Werkwijze',functiekamers:'Functiekamers',vuistregel:'Vuistregel',status:'Uit je raster',hulp:'Hulp'}
+                      return(
+                        <div data-antwoord style={{marginTop:16,animation:'pmUp 0.22s ease both'}}>
+                          <div style={{border:`1.5px solid ${C.primary}`,background:C.white,borderRadius:13,overflow:'hidden'}}>
+                            <div style={{padding:'10px 15px',background:C.blueAccent,borderBottom:`1px solid ${C.border}`,display:'flex',alignItems:'center',gap:8}}>
+                              <span style={{fontSize:9.5,fontWeight:800,color:C.primary,letterSpacing:'0.1em',textTransform:'uppercase'}}>{CAT[a.cat]||'Antwoord'}</span>
+                              <span style={{fontSize:13,fontWeight:700,color:C.text}}>{a.titel}</span>
+                              {a.bron==='status'&&<span style={{marginLeft:'auto',fontSize:10,color:C.muted}}>berekend uit het huidige raster</span>}
+                            </div>
+                            <div style={{padding:'13px 15px'}}>
+                              <div style={{fontSize:13,lineHeight:1.7,color:C.text,whiteSpace:'pre-line'}}>{a.tekst}</div>
+                              {(a.acties||[]).length>0&&(
+                                <div style={{display:'flex',gap:7,flexWrap:'wrap',marginTop:12}}>
+                                  {a.acties.map((x,i)=>(
+                                    <button key={i} onClick={()=>doeActie(x)}
+                                      style={{padding:'7px 13px',borderRadius:10,border:'none',cursor:'pointer',fontSize:12,fontWeight:700,color:'#fff',
+                                        background:x.opdr?'linear-gradient(135deg,#1C6EA4,#39C6AC)':C.primary}}>{x.opdr?'⚙ ':x.nav!=null||x.actie||x.modus||x.dag!=null?'→ ':'? '}{x.l}</button>
+                                  ))}
+                                </div>
+                              )}
+                              {((a.zieOok||[]).length>0||(a.alternatieven||[]).length>0)&&(
+                                <div style={{marginTop:12,paddingTop:10,borderTop:`1px solid ${C.border}`,fontSize:11.5,color:C.muted,display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}}>
+                                  <span>{(a.alternatieven||[]).length?'Bedoelde je misschien:':'Zie ook:'}</span>
+                                  {[...(a.alternatieven||[]),...(a.zieOok||[])].filter((z,i,arr)=>z.kennis!==a.id&&arr.findIndex(y=>y.kennis===z.kennis)===i).map((z,i)=>(
+                                    <button key={i} onClick={()=>doeActie(z)} style={{padding:'4px 9px',borderRadius:12,border:`1px solid ${C.border}`,background:C.surface2,cursor:'pointer',fontSize:11,color:C.text}}>{z.l}</button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <div style={{display:'flex',gap:8,marginTop:8,alignItems:'center'}}>
+                            <button onClick={()=>setBijstuur(null)} style={{padding:'7px 12px',borderRadius:10,border:`1px solid ${C.border}`,background:C.white,cursor:'pointer',fontSize:11.5,fontWeight:600,color:C.muted}}>Nog een vraag</button>
+                            <button onClick={()=>setBijstuur({op:{type:'antwoord'},index:true})} style={{padding:'7px 12px',borderRadius:10,border:`1px solid ${C.border}`,background:C.white,cursor:'pointer',fontSize:11.5,fontWeight:600,color:C.muted}}>📚 Alle onderwerpen</button>
+                          </div>
+                        </div>
+                      )
+                    })()}
+
+                    {b&&b.bezig&&(
+                      <div style={{marginTop:16,fontSize:12.5,color:C.muted}}>Ik reken de mogelijkheden door…</div>
+                    )}
+                    {b&&!b.bezig&&b.fout&&(
+                      <div style={{marginTop:16,padding:'10px 12px',borderRadius:9,background:'#FBE9E6',border:'1px solid #E0A090',color:'#9A2A1A',fontSize:12.5}}>
+                        ⚠️ Het doorrekenen is niet gelukt: {b.fout}{' '}
+                        <button onClick={()=>zoekVoorstel(b.op)} style={{marginLeft:8,padding:'4px 10px',borderRadius:7,border:'1px solid #E0A090',background:C.white,cursor:'pointer',fontSize:11.5,fontWeight:700,color:'#9A2A1A'}}>↻ Opnieuw</button>
+                      </div>
+                    )}
+                    {b&&!b.bezig&&b.kandidaten&&wiz.laatsteLezing&&(
+                      <div style={{marginTop:12,fontSize:11.5,color:C.muted,fontStyle:'italic'}}>{wiz.laatsteLezing}</div>
+                    )}
+
+                    {/* GESPREK — geen doodlopend "kan niet", maar doorvragen tot er
+                        een uitvoerbare opdracht ligt. */}
+                    {b&&!b.bezig&&(b.op.type==='onbekend'||b.op.type==='onderwerp')&&(()=>{
+                      const knoop=VRAAGBOOM[b.op.knoop]||VRAAGBOOM.start
+                      const isStart=(b.op.knoop||'start')==='start'
+                      const context=[b.op.dag!=null&&DAGS_NL[b.op.dag], b.op.kamer!=null&&`kamer ${b.op.kamer+1}`,
+                        b.op.pct!=null&&`${b.op.pct}%`].filter(Boolean)
+                      return(
+                        <div style={{marginTop:16,animation:'pmUp 0.22s ease both'}}>
+                          <div style={{border:`1.5px solid ${C.primary}`,background:C.white,borderRadius:13,overflow:'hidden'}}>
+                            <div style={{padding:'11px 15px',background:C.blueAccent,borderBottom:`1px solid ${C.border}`}}>
+                              <div style={{fontSize:9.5,fontWeight:800,color:C.primary,letterSpacing:'0.1em',textTransform:'uppercase'}}>
+                                {b.op.type==='onbekend'&&isStart?'Ik wil je goed begrijpen':'Even doorvragen'}
+                              </div>
+                              <div style={{fontSize:13.5,fontWeight:700,color:C.text,marginTop:3}}>{knoop.v}</div>
+                              {knoop.u&&<div style={{fontSize:11.5,color:C.muted,marginTop:2,lineHeight:1.5}}>{knoop.u}</div>}
+                              {context.length>0&&(
+                                <div style={{fontSize:11.5,color:C.muted,marginTop:4}}>
+                                  Ik onthoud alvast: <b style={{color:C.text}}>{context.join(' · ')}</b>
+                                </div>
+                              )}
+                            </div>
+                            <div style={{padding:'13px 15px',display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(215px,1fr))',gap:8}}>
+                              {knoop.o.map((o,i)=>(
+                                <button key={i} onClick={()=>{
+                                    if(o.volg) setBijstuur({op:{...b.op, type:'onderwerp', knoop:o.volg}})
+                                    else { const opdr={...o.opdr}
+                                      if(opdr.dag==null&&b.op.dag!=null) opdr.dag=b.op.dag
+                                      if(opdr.kamer==null&&b.op.kamer!=null) opdr.kamer=b.op.kamer
+                                      zoekVoorstel(opdr) } }}
+                                  style={{textAlign:'left',padding:'11px 13px',borderRadius:11,cursor:'pointer',
+                                    border:`1.5px solid ${C.border}`,background:C.white,transition:'all 0.12s'}}
+                                  onMouseEnter={e=>{e.currentTarget.style.borderColor=C.primary;e.currentTarget.style.background=C.blueAccent;e.currentTarget.style.transform='translateY(-1px)'}}
+                                  onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.background=C.white;e.currentTarget.style.transform='none'}}>
+                                  <div style={{fontSize:12.5,fontWeight:700,color:C.text}}>{o.l}{o.volg?' →':''}</div>
+                                  {o.s&&<div style={{fontSize:11,color:C.muted,marginTop:2,lineHeight:1.35}}>{o.s}</div>}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          {!isStart&&(
+                            <button onClick={()=>setBijstuur({op:{...b.op, type:'onderwerp', knoop:'start'}})}
+                              style={{marginTop:8,padding:'7px 12px',borderRadius:10,border:`1px solid ${C.border}`,
+                                background:C.white,cursor:'pointer',fontSize:11.5,fontWeight:600,color:C.muted}}>
+                              ← Toch een ander onderwerp</button>
+                          )}
+                        </div>
+                      )
+                    })()}
+
+                    {b&&!b.bezig&&b.kandidaten&&b.kandidaten.length>0&&keuze&&(<>
+                      <div style={{marginTop:16,border:`1.5px solid ${C.primary}`,background:C.white,borderRadius:13,overflow:'hidden'}}>
+                        <div style={{padding:'10px 15px',background:C.blueAccent,borderBottom:`1px solid ${C.border}`}}>
+                          <div style={{fontSize:9.5,fontWeight:800,color:C.primary,letterSpacing:'0.1em',textTransform:'uppercase'}}>Zo lees ik je opdracht</div>
+                          <div style={{fontSize:13,fontWeight:700,color:C.text,marginTop:3}}>{opdrachtOmschrijving(b.op)}</div>
+                        </div>
+                        <div style={{padding:'13px 15px'}}>
+                          {b.toegepast&&(
+                            <div style={{fontSize:12.5,fontWeight:700,color:C.green,marginBottom:9}}>
+                              ✓ Toegepast — je raster is bijgewerkt.</div>
+                          )}
+                          <div style={{fontSize:9.5,fontWeight:800,color:C.muted,letterSpacing:'0.1em',
+                            textTransform:'uppercase',marginBottom:6}}>Wat ik daarvoor {b.toegepast?'heb gedaan':'ga doen'}</div>
+                          {keuze.knoppen.map((k,i)=>(
+                            <div key={i} style={{fontSize:12,color:C.text,lineHeight:1.7}}>· {k}</div>
+                          ))}
+                          <div style={{marginTop:11,paddingTop:11,borderTop:`1px solid ${C.border}`}}>
+                            <div style={{fontSize:9.5,fontWeight:800,color:C.muted,letterSpacing:'0.1em',
+                              textTransform:'uppercase',marginBottom:6}}>Wat dat oplevert</div>
+                            <div style={{fontSize:12.5,lineHeight:1.8,color:C.text}}>
+                              <div style={{display:'flex',gap:8,alignItems:'baseline',flexWrap:'wrap'}}>
+                                <span style={{color:C.muted,minWidth:104}}>Waar je om vroeg</span>
+                                <span style={{fontWeight:700,color:keuze.doel&&keuze.doel.gehaald?C.green:'#8A6A12'}}>
+                                  {keuze.doel&&keuze.doel.gehaald?'✓ ':'△ '}{keuze.doel?keuze.doel.tekst:'—'}
+                                </span>
+                              </div>
+                              <div style={{display:'flex',gap:8,alignItems:'baseline',flexWrap:'wrap'}}>
+                                <span style={{color:C.muted,minWidth:104}}>Was</span>
+                                <span>{b.huidig.doel?b.huidig.doel.tekst:'—'}</span>
+                              </div>
+                              <div style={{display:'flex',gap:8,alignItems:'baseline',flexWrap:'wrap',marginTop:5}}>
+                                <span style={{color:C.muted,minWidth:104}}>Ingepland</span>
+                                <Getal voor={b.huidig.alg.placed} na={keuze.alg.placed}/>
+                              </div>
+                              <div style={{display:'flex',gap:8,alignItems:'baseline',flexWrap:'wrap'}}>
+                                <span style={{color:C.muted,minWidth:104}}>Restlijst</span>
+                                <Getal voor={b.huidig.alg.ntp} na={keuze.alg.ntp} omlaagGoed/>
+                              </div>
+                              <div style={{display:'flex',gap:8,alignItems:'baseline',flexWrap:'wrap'}}>
+                                <span style={{color:C.muted,minWidth:104}}>Kamer-dagen</span>
+                                <Getal voor={b.huidig.alg.kamerDagen} na={keuze.alg.kamerDagen} omlaagGoed/>
+                              </div>
+                              <div style={{display:'flex',gap:8,alignItems:'baseline',flexWrap:'wrap'}}>
+                                <span style={{color:C.muted,minWidth:104}}>Benutting week</span>
+                                <Getal voor={b.huidig.alg.benut} na={keuze.alg.benut} eenheid="%"/>
+                              </div>
+                            </div>
+                            {(()=>{
+                              // Wat kost dit? Een winst op het ene punt gaat vaak ten koste
+                              // van het andere — dat hoort in woorden te staan, niet alleen
+                              // in een rood getal.
+                              const dNtp=keuze.alg.ntp-b.huidig.alg.ntp
+                              const dKd=keuze.alg.kamerDagen-b.huidig.alg.kamerDagen
+                              if(dNtp<=0&&dKd<=0) return null
+                              const delen=[]
+                              if(dNtp>0) delen.push(`${dNtp} afspra${dNtp===1?'ak':'ken'} méér op de restlijst`)
+                              if(dKd>0) delen.push(`${dKd} kamer-dag${dKd===1?'':'en'} extra`)
+                              return(
+                                <div style={{marginTop:9,fontSize:11.5,color:'#8A6A12',lineHeight:1.55,
+                                  background:'#FDF6E3',border:'1px solid #EBD08A',borderRadius:9,padding:'8px 11px'}}>
+                                  <b>Dit kost je wel iets:</b> {delen.join(' en ')}. Weegt dat op tegen wat je vroeg?
+                                  Bekijk anders de andere manieren hieronder — die maken een andere afweging.
+                                </div>
+                              )
+                            })()}
+                            {keuze.doel&&!keuze.doel.gehaald&&(
+                              <div style={{marginTop:9,fontSize:11.5,color:'#8A6A12',lineHeight:1.55,
+                                background:'#FDF6E3',border:'1px solid #EBD08A',borderRadius:9,padding:'8px 11px'}}>
+                                Dit haalt je doel niet helemaal. Dit is wél de instelling die er het dichtst bij komt —
+                                verder gaan kost je iets anders (meer op de restlijst of een kamer meer). Bekijk de
+                                andere mogelijkheden hieronder, of pas je vraag aan.
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {b.kandidaten.length>1&&(
+                        <div style={{marginTop:12}}>
+                          <div style={{fontSize:9.5,fontWeight:800,color:C.muted,letterSpacing:'0.1em',
+                            textTransform:'uppercase',marginBottom:7}}>Andere manieren om dit te bereiken</div>
+                          {b.kandidaten.map((k,i)=>i===(b.keuze||0)?null:(
+                            <button key={i} onClick={()=>setBijstuur(x=>({...x,keuze:i,toegepast:false}))}
+                              style={{display:'block',width:'100%',textAlign:'left',marginBottom:7,padding:'10px 13px',
+                                borderRadius:11,cursor:'pointer',border:`1px solid ${C.border}`,background:C.white}}
+                              onMouseEnter={e=>e.currentTarget.style.borderColor=C.primary}
+                              onMouseLeave={e=>e.currentTarget.style.borderColor=C.border}>
+                              <div style={{fontSize:12.5,fontWeight:700,color:C.text}}>
+                                {k.doel&&k.doel.gehaald?'✓ ':'△ '}{k.l}</div>
+                              <div style={{fontSize:11.5,color:C.muted,marginTop:2}}>
+                                {k.doel?k.doel.tekst:'—'} · restlijst {k.alg.ntp} · {k.alg.kamerDagen} kamer-dagen · {k.alg.benut}% benut
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </>)}
+
+                    {b&&!b.bezig&&b.kandidaten&&b.kandidaten.length===0&&(
+                      <div style={{marginTop:16,border:'1px solid #EBD08A',background:'#FDF6E3',borderRadius:12,padding:'13px 15px',
+                        fontSize:12.5,color:C.text,lineHeight:1.6}}>
+                        Ik begrijp de opdracht wel, maar ik kan er met de knoppen die ik heb niets zinnigs voor
+                        doorrekenen. Probeer het concreter te maken, of pas het handmatig aan in de panelen links.
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{padding:'12px 24px',borderTop:`1px solid ${C.border}`,background:C.white,
+                    display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+                    {b&&b.kandidaten&&b.kandidaten.length>0&&!b.toegepast&&(<>
+                      <button onClick={()=>{setBijstuur(null);setWiz({modus:'bijsturen'})}}
+                        style={{padding:'9px 14px',borderRadius:10,border:`1px solid ${C.border}`,background:C.white,
+                          cursor:'pointer',fontSize:12,fontWeight:600,color:C.muted}}>Toch niet</button>
+                      <button onClick={()=>{ pasVoorstelToe(keuze); setBijstuur(x=>({...x,toegepast:true})) }}
+                        style={{marginLeft:'auto',padding:'11px 20px',borderRadius:11,border:'none',background:C.primary,
+                          color:'#fff',cursor:'pointer',fontSize:12.5,fontWeight:700}}>Doe maar — pas dit toe →</button>
+                    </>)}
+                    {b&&b.toegepast&&(<>
+                      <button onClick={()=>{setBijstuur(null);setWiz({modus:'bijsturen'})}}
+                        style={{padding:'9px 14px',borderRadius:10,border:`1px solid ${C.border}`,background:C.white,
+                          cursor:'pointer',fontSize:12,fontWeight:600,color:C.text}}>Nog iets bijsturen</button>
+                      <button onClick={()=>{setWiz(null);setBijstuur(null)}}
+                        style={{marginLeft:'auto',padding:'11px 20px',borderRadius:11,border:'none',background:C.primary,
+                          color:'#fff',cursor:'pointer',fontSize:12.5,fontWeight:700}}>Naar het raster →</button>
+                    </>)}
+                    {(!b||!b.kandidaten)&&(
+                      <span style={{fontSize:11,color:C.muted}}>Er verandert niets aan je raster voordat jij op "pas dit toe" klikt.</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )
+        }
+
+        const alleRows=[...newRows,...ctrlRows]
+        const heeftSpoed=alleRows.some(r=>r.spoed)
+        const heeftDig=alleRows.some(r=>r.digitaal||(r.modaliteit&&r.modaliteit!=='fysiek'))
+        const A=wiz.ant||{}
+        const spec=wiz.spec!==undefined&&wiz.spec!==null?wiz.spec:(poli.specialisme||'')
+        const her=mem.intake[specKey(spec)]||{}
+
+        // ── toepassers ───────────────────────────────────────────────────────
+        const zetDagen=keys=>{
+          const n=keys.length||1, basis=Math.floor(100/n), rest=100-basis*n
+          const d={ma:0,di:0,wo:0,do:0,vr:0}
+          keys.forEach((k,i)=>{ d[k]=basis+(i<rest?1:0) })
+          setM2(m=>({...m,days:d}))
+        }
+        const zetDuur=(nw,ct)=>{
+          if(nw) setNewRows(rs=>rs.map(r=>({...r,duur:nw})))
+          if(ct) setCtrlRows(rs=>rs.map(r=>({...r,duur:ct})))
+        }
+        const basisNew=()=>A.newPat&&A.newPat.val!=null?A.newPat.val:cfg.newPat
+        const basisCtrl=()=>A.ctrlPat&&A.ctrlPat.val!=null?A.ctrlPat.val:cfg.ctrlPat
+        const zetMarge=p=>setCfg(c=>({...c,
+          newPat:Math.max(1,Math.round(basisNew()*(1+p/100))),
+          ctrlPat:Math.max(1,Math.round(basisCtrl()*(1+p/100)))}))
+
+        // ── de vragen ────────────────────────────────────────────────────────
+        // `o` = knoppen, `vrij` = het handmatige alternatief (altijd aanwezig).
+        const bouw=({spoed,dig})=>{
+          const S=[]
+          S.push({k:'spec', sec:'Poli', v:'Voor welke poli maken we dit raster?',
+            u:'Kies een specialisme en ik laad meteen een realistische set afspraakcodes met duur, verdeling en modaliteit. Staat jouw poli er niet bij, vul dan hieronder je eigen naam in — dan begin je met een lege codelijst.',
+            o:[...SPECIALISMEN.map(sp=>({l:sp, spec:sp, fn:()=>kiesSpecialisme(sp)})),
+               {l:'Leeg beginnen', s:'geen voorbeeldcodes', spec:'', fn:()=>{}}],
+            vrij:{uitleg:'Een eigen poli die niet in de lijst staat. Je voert de afspraakcodes daarna zelf in bij Gegevens.',
+              velden:[{k:'naam',type:'tekst',label:'Naam van de poli',ph:'bijv. Pijnpoli, Prikpoli, MDL',def:'',verplicht:true}],
+              fn:w=>{ setPoli(p=>({...p,naam:w.naam,specialisme:''})); return {l:w.naam, spec:''} }}})
+
+          S.push({k:'newPat', sec:'Zorgvraag', v:'Hoeveel NIEUWE patiënten per week?',
+            u:'Het weektotaal over alle nieuwe-patiëntcodes samen. De verdeling over dagen en dagdelen regelt de tool zelf.',
+            o:[10,25,50,75,100,150].map(n=>({l:String(n), val:n, fn:()=>setCfg(c=>({...c,newPat:n}))})),
+            vrij:{uitleg:'Vul het exacte aantal in dat jullie per week zien.',
+              velden:[{k:'n',type:'nummer',label:'Nieuwe patiënten',min:1,max:5000,unit:'per week',def:cfg.newPat}],
+              fn:w=>{ setCfg(c=>({...c,newPat:w.n})); return {l:`${w.n} per week`, val:w.n} }}})
+
+          S.push({k:'ctrlPat', sec:'Zorgvraag', v:'Hoeveel CONTROLE patiënten per week?',
+            u:'Ook het weektotaal — inclusief telefonische en video-controles als die codes bestaan.',
+            o:[20,50,100,150,200,300].map(n=>({l:String(n), val:n, fn:()=>setCfg(c=>({...c,ctrlPat:n}))})),
+            vrij:{uitleg:'Vul het exacte aantal controles per week in.',
+              velden:[{k:'n',type:'nummer',label:'Controles',min:1,max:5000,unit:'per week',def:cfg.ctrlPat}],
+              fn:w=>{ setCfg(c=>({...c,ctrlPat:w.n})); return {l:`${w.n} per week`, val:w.n} }}})
+
+          S.push({k:'duur', sec:'Zorgvraag', v:'Kloppen de consultduren?',
+            u:'De duur per consult bepaalt alles: hoeveel er in een spreekuur past, hoeveel kamers je nodig hebt en hoeveel er op de restlijst belandt.',
+            o:[{l:'Laat staan zoals ze zijn', s:'de geladen of ingevoerde duren blijven ongewijzigd', fn:()=>{}},
+               {l:'Nieuw 30 · controle 15', s:'ruime nieuwe intake', fn:()=>zetDuur(30,15)},
+               {l:'Nieuw 20 · controle 15', s:'gangbaar', fn:()=>zetDuur(20,15)},
+               {l:'Nieuw 15 · controle 10', s:'kort spreekuur', fn:()=>zetDuur(15,10)}],
+            vrij:{uitleg:'Zet je eigen duur per categorie. Dit overschrijft de duur van álle codes in die categorie — losse codes stel je daarna bij Gegevens fijn af.',
+              velden:[{k:'nw',type:'nummer',label:'Nieuw',min:5,max:120,unit:'min',def:20},
+                      {k:'ct',type:'nummer',label:'Controle',min:5,max:120,unit:'min',def:15}],
+              fn:w=>{ zetDuur(w.nw,w.ct); return {l:`Nieuw ${w.nw} · controle ${w.ct} min`} }}})
+
+          S.push({k:'groei', sec:'Zorgvraag', v:'Reken je met een marge bovenop deze aantallen?',
+            u:`Een opslag voor groei, vakantie-inhaal of onzekerheid. De marge wordt gerekend over ${basisNew()} nieuwe en ${basisCtrl()} controles — opnieuw antwoorden stapelt dus niet.`,
+            o:[{l:'Nee, exacte aantallen', fn:()=>zetMarge(0)},
+               {l:'+5%', s:'lichte groei', fn:()=>zetMarge(5)},
+               {l:'+10%', s:'duidelijke groei of inhaalzorg', fn:()=>zetMarge(10)},
+               {l:'+20%', s:'fors — test of het dan nog past', fn:()=>zetMarge(20)}],
+            vrij:{uitleg:'Vul je eigen marge in; ook een negatieve waarde mag, bijvoorbeeld bij krimp of een vakantieweek.',
+              velden:[{k:'p',type:'nummer',label:'Marge',min:-50,max:100,unit:'%',def:0}],
+              fn:w=>{ zetMarge(w.p); return {l:`${w.p>0?'+':''}${w.p}%`} }}})
+
+          S.push({k:'dagen', sec:'Tijden', v:'Op welke dagen draait de poli?',
+            u:'Bepaalt over hoeveel dagen de weekvraag wordt verdeeld. Minder dagen betekent vollere dagen en meer kamers.',
+            o:[{l:'5 dagen', s:'ma t/m vr', fn:()=>zetDagen(['ma','di','wo','do','vr'])},
+               {l:'4 dagen', s:'ma t/m do', fn:()=>zetDagen(['ma','di','wo','do'])},
+               {l:'3 dagen', s:'ma, wo, vr', fn:()=>zetDagen(['ma','wo','vr'])},
+               {l:'2 dagen', s:'di, do', fn:()=>zetDagen(['di','do'])}],
+            vrij:{uitleg:'Klik precies de dagen aan waarop deze poli draait. De weekvraag wordt gelijk over die dagen verdeeld; een ongelijke verdeling stel je daarna bij Tijden in.',
+              velden:[{k:'d',type:'dagen',label:'Poli-dagen',def:['ma','di','wo','do','vr']}],
+              fn:w=>{ zetDagen(w.d); return {l:w.d.map(x=>x.toUpperCase()).join(', ')} }}})
+
+          S.push({k:'ochtend', sec:'Tijden', v:'Hoe laat loopt het ochtendspreekuur?',
+            u:'Het bruto tijdvak van het ochtenddagdeel. Binnen dit venster plant de tool tot je doelbenutting.',
+            o:[{l:'08:30 – 12:00', fn:()=>setM2(m=>({...m,ochStart:'08:30',ochEnd:'12:00'}))},
+               {l:'08:00 – 12:30', s:'ruimer', fn:()=>setM2(m=>({...m,ochStart:'08:00',ochEnd:'12:30'}))},
+               {l:'09:00 – 12:30', s:'latere start', fn:()=>setM2(m=>({...m,ochStart:'09:00',ochEnd:'12:30'}))}],
+            vrij:{uitleg:'Vul de exacte begin- en eindtijd van het ochtendspreekuur in.',
+              velden:[{k:'a',type:'tijd',label:'Begin',def:m2.ochStart},{k:'b',type:'tijd',label:'Einde',def:m2.ochEnd}],
+              fn:w=>{ setM2(m=>({...m,ochStart:w.a,ochEnd:w.b})); return {l:`${w.a} – ${w.b}`} }}})
+
+          S.push({k:'middag', sec:'Tijden', v:'En het middagspreekuur?',
+            u:'Het bruto tijdvak van het middagdagdeel.',
+            o:[{l:'13:00 – 16:30', fn:()=>setM2(m=>({...m,midStart:'13:00',midEnd:'16:30'}))},
+               {l:'13:30 – 17:00', s:'latere start', fn:()=>setM2(m=>({...m,midStart:'13:30',midEnd:'17:00'}))},
+               {l:'12:30 – 17:00', s:'ruimer', fn:()=>setM2(m=>({...m,midStart:'12:30',midEnd:'17:00'}))}],
+            vrij:{uitleg:'Vul de exacte begin- en eindtijd van het middagspreekuur in.',
+              velden:[{k:'a',type:'tijd',label:'Begin',def:m2.midStart},{k:'b',type:'tijd',label:'Einde',def:m2.midEnd}],
+              fn:w=>{ setM2(m=>({...m,midStart:w.a,midEnd:w.b})); return {l:`${w.a} – ${w.b}`} }}})
+
+          S.push({k:'avond', sec:'Tijden', v:'Is er een avondspreekuur?',
+            u:'Een avonddagdeel neemt een deel van de weekvraag over en verlicht de dag.',
+            o:[{l:'Nee', fn:()=>setM2(m=>({...m,avondOn:false,verAvond:0}))},
+               {l:'Ja — 17:00 tot 20:00', s:'10% van de vraag', fn:()=>setM2(m=>({...m,avondOn:true,avondStart:'17:00',avondEnd:'20:00',verAvond:10}))},
+               {l:'Ja — 18:00 tot 20:30', s:'15% van de vraag', fn:()=>setM2(m=>({...m,avondOn:true,avondStart:'18:00',avondEnd:'20:30',verAvond:15}))}],
+            vrij:{uitleg:'Eigen avondvenster en eigen aandeel van de weekvraag dat daarnaartoe gaat.',
+              velden:[{k:'a',type:'tijd',label:'Begin',def:m2.avondStart},{k:'b',type:'tijd',label:'Einde',def:m2.avondEnd},
+                      {k:'p',type:'nummer',label:'Aandeel',min:0,max:60,unit:'%',def:m2.verAvond||10}],
+              fn:w=>{ setM2(m=>({...m,avondOn:w.p>0,avondStart:w.a,avondEnd:w.b,verAvond:w.p}))
+                return {l:w.p>0?`${w.a} – ${w.b} · ${w.p}%`:'Nee'} }}})
+
+          S.push({k:'verdeling', sec:'Tijden', v:'Hoe verdeel je de vraag over ochtend en middag?',
+            u:'Het aandeel dat in de ochtend wordt gepland; de rest gaat naar de middag (en eventueel de avond).',
+            o:[{l:'50 / 50', s:'gelijk', fn:()=>setM2(m=>({...m,verOch:50}))},
+               {l:'60 / 40', s:'ochtend zwaarder', fn:()=>setM2(m=>({...m,verOch:60}))},
+               {l:'40 / 60', s:'middag zwaarder', fn:()=>setM2(m=>({...m,verOch:40}))}],
+            vrij:{uitleg:'Vul zelf het ochtendaandeel in.',
+              velden:[{k:'p',type:'nummer',label:'Ochtendaandeel',min:0,max:100,unit:'%',def:m2.verOch}],
+              fn:w=>{ setM2(m=>({...m,verOch:w.p})); return {l:`${w.p} / ${100-w.p}`} }}})
+
+          S.push({k:'benutting', sec:'Capaciteit', v:'Welke benutting streef je na per spreekuur?',
+            u:'De tool vult elk spreekuur tot dit percentage (±2,5 procentpunt). Wat overblijft is flexruimte voor uitloop.',
+            o:[{l:'80%', s:'ruim, veel opvang'},{l:'85%', s:'gangbaar'},{l:'90%', s:'strak, weinig marge'}]
+               .map(x=>({...x, val:parseInt(x.l), fn:()=>setM2(m=>({...m,benutting:parseInt(x.l)}))})),
+            vrij:{uitleg:'Een eigen doelbenutting — bijvoorbeeld 75% bij veel onzekere consulten of 95% bij een strak protocol.',
+              velden:[{k:'p',type:'nummer',label:'Benutting',min:50,max:100,unit:'%',def:m2.benutting}],
+              fn:w=>{ setM2(m=>({...m,benutting:w.p})); return {l:`${w.p}%`, val:w.p} }}})
+
+          S.push({k:'kamers', sec:'Capaciteit', v:'Hoeveel behandelkamers zijn er beschikbaar?',
+            u:'"Automatisch" laat het rooster groeien tot precies wat de vraag nodig heeft. Bij een vast aantal gaat wat niet past naar de restlijst — dat is juist informatief.',
+            o:[{l:'Automatisch', s:'groeit mee met de vraag', fn:()=>setCapacity(c=>({...c,mode:'auto'}))},
+               ...[2,3,4,5,6].map(n=>({l:`Vast: ${n} kamers`, val:n, fn:()=>setCapacity({mode:'vast',kamers:n})}))],
+            vrij:{uitleg:'Meer dan zes kamers, of een ander aantal? Vul het hier in.',
+              velden:[{k:'n',type:'nummer',label:'Kamers',min:1,max:40,unit:'kamers',def:capacity.kamers||3}],
+              fn:w=>{ setCapacity({mode:'vast',kamers:w.n}); return {l:`Vast: ${w.n} kamers`, val:w.n} }}})
+
+          S.push({k:'opening', sec:'Volgorde', v:'Waarmee moet een spreekuur openen?',
+            u:'De eerste afspraak na een eventueel spoedblok. Openen met een nieuwe patiënt geeft de arts een rustige start; openen met controles komt sneller op gang.',
+            o:[{l:'Geen voorkeur', fn:()=>setRules(p=>({...p,startNieuw:false,startControle:false}))},
+               {l:'Met een nieuwe afspraak', fn:()=>setRules(p=>({...p,startNieuw:true,startControle:false,startNieuwWaar:'both'}))},
+               {l:'Met een controle afspraak', fn:()=>setRules(p=>({...p,startNieuw:false,startControle:true,startControleWaar:'both'}))}],
+            vrij:{uitleg:'Wil je het per dagdeel verschillend? Kies waarmee er geopend wordt én in welk dagdeel die regel geldt.',
+              velden:[{k:'wat',type:'keuze',label:'Openen met',def:'nieuw',opts:[{v:'nieuw',l:'Een nieuwe afspraak'},{v:'controle',l:'Een controle afspraak'},{v:'geen',l:'Geen voorkeur'}]},
+                      {k:'waar',type:'keuze',label:'Geldt in',def:'both',opts:[{v:'both',l:'Ochtend + middag'},{v:'och',l:'Alleen de ochtend'},{v:'mid',l:'Alleen de middag'}]}],
+              fn:w=>{ setRules(p=>({...p, startNieuw:w.wat==='nieuw', startControle:w.wat==='controle',
+                  startNieuwWaar:w.waar, startControleWaar:w.waar}))
+                const waarL={both:'ochtend + middag',och:'alleen ochtend',mid:'alleen middag'}[w.waar]
+                return {l: w.wat==='geen'?'Geen voorkeur':`${w.wat==='nieuw'?'Nieuwe':'Controle'} afspraak · ${waarL}`} }}})
+
+          S.push({k:'mix', sec:'Volgorde', v:'Nieuw en controle door elkaar plannen?',
+            u:'Afwisselen naar rato van de aantallen, of eerst de ene categorie afmaken en dan de andere.',
+            o:[{l:'Ja, afwisselen', s:'N, C, C, N, C, C…', fn:()=>setRules(p=>({...p,mixNC:true,mixWaar:'both'}))},
+               {l:'Nee, ongemengd', s:'eerst alle nieuwe, dan de controles', fn:()=>setRules(p=>({...p,mixNC:false}))}],
+            vrij:{uitleg:'Afwisselen in maar één dagdeel — bijvoorbeeld gemengd in de ochtend en blokken in de middag.',
+              velden:[{k:'waar',type:'keuze',label:'Afwisselen in',def:'both',opts:[{v:'both',l:'Ochtend + middag'},{v:'och',l:'Alleen de ochtend'},{v:'mid',l:'Alleen de middag'}]}],
+              fn:w=>{ setRules(p=>({...p,mixNC:true,mixWaar:w.waar}))
+                return {l:`Afwisselen · ${{both:'ochtend + middag',och:'alleen ochtend',mid:'alleen middag'}[w.waar]}`} }}})
+
+          if(spoed) S.push({k:'spoed', sec:'Volgorde', v:'Moeten spoedafspraken vooraan in het spreekuur?',
+            u:'Spoed komt dan vóór alle andere afspraken en belandt nooit op de restlijst.',
+            o:[{l:'Ja — ochtend + middag', fn:()=>setRules(p=>({...p,spoedFirst:true,spoedDagdeel:'both'}))},
+               {l:'Ja — alleen de ochtend', fn:()=>setRules(p=>({...p,spoedFirst:true,spoedDagdeel:'och'}))},
+               {l:'Ja — alleen de middag', fn:()=>setRules(p=>({...p,spoedFirst:true,spoedDagdeel:'mid'}))},
+               {l:'Nee', s:'spoed schuift gewoon mee in de rij', fn:()=>setRules(p=>({...p,spoedFirst:false}))}],
+            vrij:{uitleg:'Zelf bepalen of spoed vooraan gaat en in welk dagdeel die regel geldt.',
+              velden:[{k:'aan',type:'keuze',label:'Spoed eerst',def:'ja',opts:[{v:'ja',l:'Ja'},{v:'nee',l:'Nee'}]},
+                      {k:'waar',type:'keuze',label:'Geldt in',def:'both',opts:[{v:'both',l:'Ochtend + middag'},{v:'och',l:'Alleen de ochtend'},{v:'mid',l:'Alleen de middag'}]}],
+              fn:w=>{ setRules(p=>({...p,spoedFirst:w.aan==='ja',spoedDagdeel:w.waar}))
+                return {l: w.aan==='nee'?'Nee':`Ja · ${{both:'ochtend + middag',och:'alleen ochtend',mid:'alleen middag'}[w.waar]}`} }}})
+
+          if(dig) S.push({k:'digitaal', sec:'Volgorde', v:'Waar wil je de digitale consulten?',
+            u:'Telefonische en videoconsulten. Deze keuzes leveren echt verschillende roosters op — clusteren spaart wisselingen, verspreiden houdt de dag gelijkmatig.',
+            o:[{l:'Verdelen over de dag', s:'één voor één tussen de fysieke afspraken', fn:()=>setRules(p=>({...p,digitalMode:'spread',digitalWaar:'both'}))},
+               {l:'Eigen digitaal spreekuur', s:'alle telefonische consulten samen in één spreekuur', fn:()=>setRules(p=>({...p,digitalMode:'cluster',digitalWaar:'both'}))},
+               {l:'Aan het einde', s:'één blok in het laatste tijdvenster', fn:()=>setRules(p=>({...p,digitalMode:'end',digitalWaar:'both'}))}],
+            vrij:{uitleg:'Kies de plaatsing, in welk dagdeel die geldt, en hoe breed het eindvenster is als je voor "aan het einde" kiest.',
+              velden:[{k:'mode',type:'keuze',label:'Plaatsing',def:'spread',opts:[{v:'spread',l:'Verdelen over de dag'},{v:'cluster',l:'Eigen digitaal spreekuur'},{v:'end',l:'Aan het einde'}]},
+                      {k:'waar',type:'keuze',label:'Geldt in',def:'both',opts:[{v:'both',l:'Ochtend + middag'},{v:'och',l:'Alleen de ochtend'},{v:'mid',l:'Alleen de middag'}]},
+                      {k:'min',type:'nummer',label:'Eindvenster',min:10,max:180,step:5,unit:'min',def:rules.digitalEndMinutes}],
+              fn:w=>{ setRules(p=>({...p,digitalMode:w.mode,digitalWaar:w.waar,digitalEndMinutes:w.min}))
+                const modeL={spread:'verdelen',cluster:'clusteren',end:`einde (${w.min} min)`}[w.mode]
+                return {l:`${modeL} · ${{both:'ochtend + middag',och:'alleen ochtend',mid:'alleen middag'}[w.waar]}`} }}})
+
+          S.push({k:'flex', sec:'Ruimte', v:'Waar wil je de flexruimte?',
+            u:'De ruimte die binnen de benutting overblijft — je opvang voor uitloop en inloop.',
+            o:[{l:'Eén blok aan het einde', s:'uitlooptijd aan de staart', fn:()=>setRules(p=>({...p,flexMode:'end',flexWaar:'both'}))},
+               {l:'Verspreid tussen de afspraken', s:'vangt uitloop gedurende de dag op', fn:()=>setRules(p=>({...p,flexMode:'spread',flexWaar:'both'}))}],
+            vrij:{uitleg:'Zelf de verdeling bepalen: hoe groot elk flexblokje is en hoe lang aan het begin van een spreekuur geen flex mag vallen.',
+              velden:[{k:'mode',type:'keuze',label:'Verdeling',def:'spread',opts:[{v:'end',l:'Eén blok aan het einde'},{v:'spread',l:'Verspreid tussen de afspraken'}]},
+                      {k:'blok',type:'nummer',label:'Blokgrootte',min:5,max:60,step:5,unit:'min',def:rules.flexBlokMin},
+                      {k:'start',type:'nummer',label:'Niet in eerste',min:0,max:180,step:5,unit:'min',def:rules.flexNoFirstMin},
+                      {k:'waar',type:'keuze',label:'Geldt in',def:'both',opts:[{v:'both',l:'Ochtend + middag'},{v:'och',l:'Alleen de ochtend'},{v:'mid',l:'Alleen de middag'}]}],
+              fn:w=>{ setRules(p=>({...p,flexMode:w.mode,flexBlokMin:w.blok,flexNoFirstMin:w.start,flexWaar:w.waar}))
+                return {l:`${w.mode==='end'?'Blok aan het einde':`Verspreid, ${w.blok} min`} · niet in eerste ${w.start} min`} }}})
+
+          S.push({k:'drempel', sec:'Ruimte', v:'Vanaf welke bezetting mag een spreekuur opengaan?',
+            u:'Onder deze drempel gaat een dagdeel niet open — die afspraken worden gebundeld in plaats van een half lege kamer te openen. Dit is een beleidskeuze, geen rekenknop.',
+            o:[...[70,75,80].map(n=>({l:`${n}%`, val:n, s:n===75?'aanbevolen':undefined, fn:()=>setRules(p=>({...p,restOpruimen:true,minBezetting:n}))})),
+               {l:'Geen drempel', s:'elk dagdeel gaat open, ook half gevuld', fn:()=>setRules(p=>({...p,restOpruimen:false}))}],
+            vrij:{uitleg:'Een eigen drempel — bijvoorbeeld 60% als een half spreekuur bij jullie prima te doen is, of 85% als een kamer echt vol moet.',
+              velden:[{k:'p',type:'nummer',label:'Minimumbezetting',min:0,max:100,unit:'%',def:rules.minBezetting??75}],
+              fn:w=>{ setRules(p=>({...p,restOpruimen:true,minBezetting:w.p})); return {l:`${w.p}%`, val:w.p} }}})
+
+          S.push({k:'restdag', sec:'Ruimte', v:'Mag de restvraag op één dag gebundeld worden?',
+            u:'Wat niet in de gewone spreekuren past, kan op één dag worden samengebracht — dat scheelt half gevulde kamers verspreid over de week.',
+            o:[{l:'Nee, niet bundelen', fn:()=>setRules(p=>({...p,restDag:'uit'}))},
+               {l:'Automatisch kiezen', s:'de tool zoekt de gunstigste dag', fn:()=>setRules(p=>({...p,restDag:'auto'}))},
+               {l:'Op vrijdag', fn:()=>setRules(p=>({...p,restDag:'vr'}))}],
+            vrij:{uitleg:'Kies zelf de vaste dag waarop de restvraag wordt gebundeld.',
+              velden:[{k:'d',type:'keuze',label:'Rest-dag',def:'wo',opts:WEEKDAY_KEYS.map((d,i)=>({v:d,l:DAYS[i]}))}],
+              fn:w=>{ setRules(p=>({...p,restDag:w.d})); return {l:`Op ${DAYS[WEEKDAY_KEYS.indexOf(w.d)].toLowerCase()}`} }}})
+
+          S.push({k:'kamerverdeling', sec:'Ruimte', v:'Hoe moeten de kamers gevuld worden?',
+            u:'Kamer voor kamer volmaken houdt het aantal kamer-dagen laag; gelijk verdelen geeft rustiger, gelijkmatiger spreekuren.',
+            o:[{l:'Dagdeel voor dagdeel', s:'eerst deze kamer vol, dan de volgende', fn:()=>setRules(p=>({...p,kamerVerdeling:'dagdeel'}))},
+               {l:'Gelijk verdelen', s:'alle kamers even zwaar belasten', fn:()=>setRules(p=>({...p,kamerVerdeling:'gelijk'}))}],
+            vrij:{uitleg:'Deze vraag heeft maar twee zinvolle antwoorden. Kies hier expliciet welke, dan staat je keuze vast in de samenvatting.',
+              velden:[{k:'v',type:'keuze',label:'Vullen',def:'dagdeel',opts:[{v:'dagdeel',l:'Dagdeel voor dagdeel'},{v:'gelijk',l:'Gelijk verdelen'}]}],
+              fn:w=>{ setRules(p=>({...p,kamerVerdeling:w.v})); return {l:w.v==='gelijk'?'Gelijk verdelen':'Dagdeel voor dagdeel'} }}})
+
+          S.push({k:'doel', sec:'Afronden', v:'Waar moet ik straks op optimaliseren?',
+            u:'Na het genereren zoek ik alle combinaties van rest-dag × drempel × kamerverdeling door. Wat is voor jou "het beste"?',
+            o:[{l:'Balans', s:'één kamer-dag weegt op tegen ± 20 afspraken', val:'balans', fn:()=>{}},
+               {l:'Alles inplannen', s:'zo min mogelijk op de restlijst', val:'plannen', fn:()=>{}},
+               {l:'Minste kamers', s:'zo min mogelijk kamer-dagen', val:'kamers', fn:()=>{}},
+               {l:'Niet optimaliseren', s:'toon alleen het raster met mijn instellingen', val:'geen', fn:()=>{}}],
+            vrij:{uitleg:'Hetzelfde als hierboven, maar expliciet vastgelegd.',
+              velden:[{k:'d',type:'keuze',label:'Optimaliseren op',def:'balans',opts:[{v:'balans',l:'Balans'},{v:'plannen',l:'Alles inplannen'},{v:'kamers',l:'Minste kamers'},{v:'geen',l:'Niet optimaliseren'}]}],
+              fn:w=>({l:{balans:'Balans',plannen:'Alles inplannen',kamers:'Minste kamers',geen:'Niet optimaliseren'}[w.d], val:w.d})}})
+          return S
+        }
+
+        const S=bouw({spoed:heeftSpoed,dig:heeftDig})
+        const klaar=wiz.stap>=S.length
+        const huidig=klaar?null:S[wiz.stap]
+        const beantwoord=S.filter(s=>A[s.k]).length
+        const pct=Math.round(Math.min(wiz.stap,S.length)/S.length*100)
+        const secties=[...new Set(S.map(s=>s.sec))]
+        const secIndex=huidig?secties.indexOf(huidig.sec):secties.length
+
+        // ── antwoord vastleggen ──────────────────────────────────────────────
+        const kies=(s,o,vrijW)=>{
+          const nwSpec = s.k==='spec' ? (o.spec!==undefined?o.spec:spec) : spec
+          if(o.fn) o.fn()
+          onthoudIntake(nwSpec, s.k, o.l, vrijW||null)
+          setWiz(w=>({...w, spec:nwSpec, vrijOpen:false, stap:w.stap+1,
+            ant:{...w.ant,[s.k]:{l:o.l, vrij:vrijW||null, val:o.val!=null?o.val:null}}}))
+        }
+        const vrijKlaar=(s,w)=>{
+          const r=s.vrij.fn(w)
+          const o=typeof r==='string'?{l:r}:r
+          kies(s,{...o,fn:null},w)
+        }
+        // Alles van een vorige keer overnemen — antwoorden worden letterlijk
+        // opnieuw toegepast, inclusief wat je toen zelf invulde.
+        const neemOver=bronSpec=>{
+          const bron=mem.intake[specKey(bronSpec)]||{}
+          const reg=bouw({spoed:true,dig:true})
+          const ant={}
+          reg.forEach(s=>{
+            const h=bron[s.k]; if(!h) return
+            try{
+              if(h.vrij&&s.vrij) s.vrij.fn(h.vrij)
+              else { const o=(s.o||[]).find(x=>x.l===h.label); if(o&&o.fn) o.fn() }
+            }catch(e){}
+            ant[s.k]={l:h.label, vrij:h.vrij||null, val:null}
+          })
+          setWiz(w=>({...w, spec:bronSpec, ant, stap:999, vrijOpen:false}))
+        }
+        const bekendeSpecs=Object.keys(mem.intake).filter(k=>Object.keys(mem.intake[k]||{}).length>=3)
+        const doelKeuze=(A.doel&&A.doel.val)||({'Balans':'balans','Alles inplannen':'plannen','Minste kamers':'kamers','Niet optimaliseren':'geen'}[A.doel&&A.doel.l])||'balans'
+        const afronden=metOptim=>{
+          setWiz(null); setActive(3); setVisited(p=>new Set([...p,0,1,2,3]))
+          setTimeout(()=>{ doGenerate()
+            if(metOptim&&doelKeuze!=='geen') setTimeout(()=>startOptimiser(doelKeuze),350) },60)
+        }
+
+        const OptieKaart=({o,s,i})=>(
+          <button key={i} onClick={()=>kies(s,o)} title={o.s||''}
+            style={{padding:'12px 14px',borderRadius:12,cursor:'pointer',textAlign:'left',
+              background:C.white,color:C.text,border:`1.5px solid ${C.border}`,transition:'all 0.12s',
+              display:'flex',flexDirection:'column',gap:2,minHeight:52}}
+            onMouseEnter={e=>{e.currentTarget.style.borderColor=C.primary;e.currentTarget.style.background=C.blueAccent;e.currentTarget.style.transform='translateY(-1px)'}}
+            onMouseLeave={e=>{e.currentTarget.style.borderColor=C.border;e.currentTarget.style.background=C.white;e.currentTarget.style.transform='none'}}>
+            <span style={{fontSize:13,fontWeight:700,letterSpacing:'-0.01em'}}>{o.l}</span>
+            {o.s&&<span style={{fontSize:11,color:C.muted,fontWeight:400,lineHeight:1.35}}>{o.s}</span>}
+          </button>
+        )
+
+        return(
+          <div data-assistent style={{position:'fixed',inset:0,background:'rgba(10,22,34,0.6)',backdropFilter:'blur(7px)',
+            display:'flex',alignItems:'center',justifyContent:'center',zIndex:2100,padding:20}}>
+            <div style={{background:C.white,borderRadius:20,width:'min(1040px,100%)',height:'min(90vh,780px)',
+              display:'flex',boxShadow:C.shadowLg,border:`1px solid ${C.border}`,overflow:'hidden'}}>
+
+              {/* ── LINKERKOLOM: secties + wat er al staat ── */}
+              <aside style={{width:262,flexShrink:0,background:'linear-gradient(170deg,#0E3450 0%,#124D74 60%,#0F5F8C 100%)',
+                color:'#fff',display:'flex',flexDirection:'column',padding:'20px 0 14px'}}>
+                <div style={{padding:'0 20px 16px',borderBottom:'1px solid rgba(255,255,255,0.13)'}}>
+                  <div style={{display:'flex',alignItems:'center',gap:9}}>
+                    <div style={{width:34,height:34,borderRadius:11,background:'linear-gradient(140deg,#39C6AC,#1C8FBF)',
+                      display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,flexShrink:0}}>✨</div>
+                    <div style={{minWidth:0}}>
+                      <div style={{fontSize:13.5,fontWeight:800,letterSpacing:'-0.01em'}}>Assistent</div>
+                      <div style={{fontSize:10,color:'#8FD8C6',letterSpacing:'0.05em'}}>
+                        {klaar?'alles staat klaar':`vraag ${wiz.stap+1} van ${S.length}`}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div style={{padding:'14px 14px 10px'}}>
+                  {secties.map((sec,i)=>{
+                    const stappen=S.filter(s=>s.sec===sec)
+                    const gedaan=stappen.filter(s=>A[s.k]).length
+                    const nu=i===secIndex&&!klaar
+                    return(
+                      <div key={sec} style={{display:'flex',alignItems:'center',gap:9,padding:'7px 8px',borderRadius:9,
+                        background:nu?'rgba(255,255,255,0.14)':'transparent',marginBottom:2}}>
+                        <span style={{width:19,height:19,borderRadius:'50%',flexShrink:0,fontSize:9.5,fontWeight:800,
+                          display:'flex',alignItems:'center',justifyContent:'center',
+                          background:gedaan===stappen.length?'#39C6AC':nu?'#fff':'rgba(255,255,255,0.18)',
+                          color:gedaan===stappen.length?'#04120D':nu?'#0E3450':'rgba(255,255,255,0.75)'}}>
+                          {gedaan===stappen.length?'✓':i+1}</span>
+                        <span style={{fontSize:11.5,fontWeight:nu?700:600,color:nu?'#fff':'rgba(255,255,255,0.72)',flex:1}}>{sec}</span>
+                        <span style={{fontSize:9.5,color:'rgba(255,255,255,0.5)',fontVariantNumeric:'tabular-nums'}}>{gedaan}/{stappen.length}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+                {/* live samenvatting — klikbaar om terug te springen */}
+                <div style={{flex:1,overflowY:'auto',padding:'6px 14px 10px',borderTop:'1px solid rgba(255,255,255,0.11)'}}>
+                  <div style={{fontSize:9,fontWeight:800,letterSpacing:'0.14em',color:'rgba(255,255,255,0.45)',
+                    textTransform:'uppercase',margin:'10px 6px 7px'}}>Jouw antwoorden</div>
+                  {beantwoord===0&&<div style={{fontSize:11,color:'rgba(255,255,255,0.45)',padding:'0 6px',lineHeight:1.5}}>
+                    Nog niets ingevuld. Elk antwoord verschijnt hier — klik erop om het te wijzigen.</div>}
+                  {S.map((s,i)=>A[s.k]&&(
+                    <button key={s.k} onClick={()=>setWiz(w=>({...w,stap:i,vrijOpen:false}))}
+                      title="Terug naar deze vraag"
+                      style={{display:'block',width:'100%',textAlign:'left',border:'none',background:'transparent',
+                        cursor:'pointer',padding:'4px 6px',borderRadius:7,color:'#fff'}}
+                      onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,0.09)'}
+                      onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                      <div style={{fontSize:9.5,color:'rgba(255,255,255,0.5)',letterSpacing:'0.04em'}}>{INTAKE_LABELS[s.k]||s.k}</div>
+                      <div style={{fontSize:11.5,fontWeight:600,lineHeight:1.35}}>{A[s.k].l}</div>
+                    </button>
+                  ))}
+                </div>
+              </aside>
+
+              {/* ── RECHTERKOLOM: de vraag ── */}
+              <div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column',background:C.surface2}}>
+                <div style={{padding:'14px 24px 0',display:'flex',alignItems:'center',gap:10,background:C.white}}>
+                  <span style={{fontSize:9.5,fontWeight:800,color:C.primary,letterSpacing:'0.14em',textTransform:'uppercase'}}>
+                    {klaar?'Samenvatting':huidig.sec}
+                  </span>
+                  <div style={{flex:1}}/>
+                  <button onClick={()=>setWiz(null)} title="Sluiten — je instellingen blijven staan"
+                    style={{width:28,height:28,borderRadius:9,border:`1px solid ${C.border}`,background:C.white,
+                      color:C.muted,cursor:'pointer',fontSize:15,lineHeight:1}}>×</button>
+                </div>
+                <div style={{background:C.white,padding:'10px 24px 12px'}}>
+                  <div style={{height:4,background:C.surface2,borderRadius:3,overflow:'hidden'}}>
+                    <div style={{height:'100%',width:pct+'%',background:'linear-gradient(90deg,#1C6EA4,#39C6AC)',transition:'width 0.25s'}}/>
+                  </div>
+                </div>
+
+                <div style={{flex:1,overflowY:'auto',padding:'20px 24px 24px'}}>
+                  {huidig&&(<>
+                    <div style={{fontFamily:"'Newsreader',Georgia,serif",fontSize:25,fontWeight:500,color:C.text,
+                      lineHeight:1.25,letterSpacing:'-0.01em',marginBottom:8}}>{huidig.v}</div>
+                    {huidig.u&&<p style={{fontSize:12.5,color:C.muted,lineHeight:1.6,margin:'0 0 16px',maxWidth:620}}>{huidig.u}</p>}
+
+                    {/* wat koos je hier de vorige keer? */}
+                    {her[huidig.k]&&(
+                      <div style={{display:'flex',alignItems:'center',gap:9,flexWrap:'wrap',marginBottom:14,
+                        border:'1px solid #C9B6F0',background:'#F7F3FE',borderRadius:11,padding:'8px 12px'}}>
+                        <span style={{fontSize:10,fontWeight:800,color:'#6D28D9',letterSpacing:'0.08em',textTransform:'uppercase'}}>★ Vorige keer</span>
+                        <span style={{fontSize:12,color:C.text,fontWeight:600}}>{her[huidig.k].label}</span>
+                        {(her[huidig.k].keer||1)>1&&<span style={{fontSize:10.5,color:'#6D28D9',fontWeight:700}}>{her[huidig.k].keer}× gekozen</span>}
+                        <button onClick={()=>{
+                            const h=her[huidig.k]
+                            if(h.vrij&&huidig.vrij) vrijKlaar(huidig,h.vrij)
+                            else { const o=(huidig.o||[]).find(x=>x.l===h.label); kies(huidig, o||{l:h.label,fn:null}) }
+                          }}
+                          style={{marginLeft:'auto',padding:'5px 12px',borderRadius:14,border:'none',background:'#6D28D9',
+                            color:'#fff',cursor:'pointer',fontSize:11,fontWeight:700}}>Weer zo doen</button>
+                      </div>
+                    )}
+
+                    {/* eerste vraag: alles van een vorige keer overnemen */}
+                    {wiz.stap===0&&bekendeSpecs.length>0&&(
+                      <div style={{marginBottom:16,border:`1px solid #C9B6F0`,background:'#FBF9FF',borderRadius:12,padding:'12px 14px'}}>
+                        <div style={{fontSize:11.5,color:C.muted,marginBottom:8,lineHeight:1.5}}>
+                          Ik heb een eerdere intake onthouden. In één klik neem ik álle antwoorden daarvan over —
+                          je kunt daarna nog elke vraag los aanpassen.
+                        </div>
+                        <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                          {bekendeSpecs.map(sp=>(
+                            <button key={sp} onClick={()=>neemOver(sp==='(geen specialisme)'?'':sp)}
+                              style={{padding:'8px 14px',borderRadius:11,cursor:'pointer',fontSize:12,fontWeight:700,
+                                background:'#F7F3FE',color:'#6D28D9',border:'1.5px solid #C9B6F0'}}>
+                              ★ Overnemen van {sp} ({Object.keys(mem.intake[sp]).length} antwoorden)
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {/* de knoppen */}
+                    <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(198px,1fr))',gap:9}}>
+                      {huidig.o.map((o,i)=><OptieKaart key={i} o={o} s={huidig} i={i}/>)}
+                    </div>
+
+                    {/* het handmatige alternatief — bij ELKE vraag */}
+                    {huidig.vrij&&(
+                      <div style={{marginTop:14}}>
+                        <button onClick={()=>setWiz(w=>({...w,vrijOpen:!w.vrijOpen}))}
+                          style={{padding:'9px 15px',borderRadius:11,cursor:'pointer',fontSize:12,fontWeight:700,
+                            background:wiz.vrijOpen?C.primary:C.white,color:wiz.vrijOpen?'#fff':C.primary,
+                            border:`1.5px dashed ${C.primary}`,display:'flex',alignItems:'center',gap:7}}>
+                          ✎ Staat mijn antwoord er niet bij — zelf invullen {wiz.vrijOpen?'▴':'▾'}
+                        </button>
+                        {wiz.vrijOpen&&(
+                          <VrijPaneel key={huidig.k} vrij={huidig.vrij} onKlaar={w=>vrijKlaar(huidig,w)}/>
+                        )}
+                      </div>
+                    )}
+
+                  </>)}
+
+                  {klaar&&(<>
+                    <div style={{fontFamily:"'Newsreader',Georgia,serif",fontSize:25,fontWeight:500,color:C.text,
+                      lineHeight:1.25,marginBottom:6}}>Dit heb ik voor je klaargezet</div>
+                    <p style={{fontSize:12.5,color:C.muted,lineHeight:1.6,margin:'0 0 16px',maxWidth:620}}>
+                      Klik op een regel om dat antwoord alsnog te wijzigen. Alles is achteraf ook gewoon in de panelen links aan te passen.
+                    </p>
+                    {secties.map(sec=>{
+                      const rijen=S.map((s,i)=>({s,i})).filter(({s})=>s.sec===sec&&A[s.k])
+                      if(!rijen.length) return null
+                      return(
+                        <div key={sec} style={{marginBottom:12,border:`1px solid ${C.border}`,borderRadius:12,
+                          background:C.white,overflow:'hidden'}}>
+                          <div style={{padding:'8px 14px',background:C.surface2,fontSize:9.5,fontWeight:800,
+                            color:C.muted,letterSpacing:'0.12em',textTransform:'uppercase'}}>{sec}</div>
+                          {rijen.map(({s,i})=>(
+                            <button key={s.k} onClick={()=>setWiz(w=>({...w,stap:i,vrijOpen:false}))}
+                              style={{display:'flex',width:'100%',gap:12,alignItems:'center',padding:'9px 14px',
+                                border:'none',borderTop:`1px solid ${C.border}`,background:C.white,cursor:'pointer',textAlign:'left'}}
+                              onMouseEnter={e=>e.currentTarget.style.background=C.blueAccent}
+                              onMouseLeave={e=>e.currentTarget.style.background=C.white}>
+                              <span style={{fontSize:11.5,color:C.muted,width:132,flexShrink:0}}>{INTAKE_LABELS[s.k]||s.k}</span>
+                              <span style={{fontSize:12.5,fontWeight:700,color:C.text,flex:1,minWidth:0}}>{A[s.k].l}</span>
+                              {A[s.k].vrij&&<span style={{fontSize:9,fontWeight:800,color:C.primary,background:C.blueAccent,
+                                padding:'2px 7px',borderRadius:9,whiteSpace:'nowrap'}}>ZELF INGEVULD</span>}
+                              <span style={{fontSize:11,color:C.muted}}>wijzigen ›</span>
+                            </button>
+                          ))}
+                        </div>
+                      )
+                    })}
+                    <div style={{fontSize:11.5,color:C.muted,lineHeight:1.6,marginTop:4}}>
+                      Deze antwoorden zijn onthouden voor <b style={{color:C.text}}>{specKey(spec)}</b>. Een volgende keer
+                      staan ze bij de eerste vraag klaar om in één klik over te nemen.
+                    </div>
+                  </>)}
+                </div>
+
+                {/* ── voettekst ── */}
+                <div style={{padding:'12px 24px',borderTop:`1px solid ${C.border}`,background:C.white,
+                  display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+                  {wiz.stap>0&&(
+                    <button onClick={()=>setWiz(w=>({...w,stap:Math.max(0,Math.min(w.stap,S.length)-1),vrijOpen:false}))}
+                      style={{padding:'9px 14px',borderRadius:10,border:`1px solid ${C.border}`,background:C.white,
+                        cursor:'pointer',fontSize:12,fontWeight:600,color:C.muted}}>← Vorige</button>
+                  )}
+                  {!klaar&&(<>
+                    <button onClick={()=>setWiz(w=>({...w,stap:w.stap+1,vrijOpen:false}))}
+                      title="Deze vraag overslaan — de huidige instelling blijft staan"
+                      style={{padding:'9px 14px',borderRadius:10,border:`1px solid ${C.border}`,background:C.white,
+                        cursor:'pointer',fontSize:12,fontWeight:600,color:C.muted}}>Deze vraag overslaan</button>
+                    <button onClick={()=>setWiz(w=>({...w,stap:S.length,vrijOpen:false}))}
+                      style={{padding:'9px 14px',borderRadius:10,border:'none',background:'transparent',
+                        cursor:'pointer',fontSize:12,fontWeight:600,color:C.muted}}>Alle resterende overslaan →</button>
+                    <span style={{marginLeft:'auto',fontSize:11,color:C.muted}}>{beantwoord} van {S.length} beantwoord</span>
+                  </>)}
+                  {klaar&&(<>
+                    <button onClick={()=>afronden(false)}
+                      style={{padding:'10px 16px',borderRadius:10,border:`1px solid ${C.border}`,background:C.white,
+                        cursor:'pointer',fontSize:12,fontWeight:700,color:C.text}}>Alleen het raster tonen</button>
+                    <button onClick={()=>afronden(true)}
+                      style={{marginLeft:'auto',padding:'11px 20px',borderRadius:11,border:'none',background:C.primary,
+                        color:'#fff',cursor:'pointer',fontSize:12.5,fontWeight:700}}>
+                      {doelKeuze==='geen'?'Raster tonen →':'Raster tonen & beste instelling zoeken →'}</button>
+                  </>)}
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* Full reset dialog */}
+      {showFullReset&&(
+        <div style={{position:'fixed',inset:0,background:'rgba(20,30,40,0.5)',backdropFilter:'blur(6px)',
+          display:'flex',alignItems:'center',justifyContent:'center',zIndex:2000}}>
+          <div style={{background:C.white,borderRadius:12,padding:30,width:420,boxShadow:C.shadowLg,border:`1px solid ${C.border}`}}>
+            <div style={{fontSize:17,fontWeight:700,color:C.text,marginBottom:8,letterSpacing:'-0.01em'}}>Alles wissen?</div>
+            <p style={{fontSize:13,color:C.muted,lineHeight:1.7,marginBottom:24}}>
+              Alle ingevoerde gegevens, codes, instellingen en het gegenereerde raster worden gewist.
+              U begint opnieuw bij stap 1. <b style={{color:C.text}}>Dit kan niet ongedaan worden gemaakt.</b>
+            </p>
+            <div style={{display:'flex',gap:10,justifyContent:'flex-end'}}>
+              <Btn variant="secondary" onClick={()=>setShowFullReset(false)}>Annuleren</Btn>
+              <Btn onClick={handleFullReset} style={{background:C.danger,border:`1px solid ${C.danger}`}}>Ja, alles wissen</Btn>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+

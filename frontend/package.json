@@ -1,0 +1,24 @@
+{
+  "name": "poliraster-frontend",
+  "private": true,
+  "version": "2.3.0",
+  "description": "PoliRaster Studio — de React-frontend als Vite-project (bron in src/).",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:api": "vite build --mode api",
+    "build:simpel": "vite build --mode simpel",
+    "preview": "vite preview",
+    "test:build": "node test_vite_build.mjs"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^5.4.11"
+  }
+}

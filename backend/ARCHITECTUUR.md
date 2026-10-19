@@ -1,7 +1,8 @@
 # PoliRaster backend in Python — architectuur en afspraken
 
 Dit document is de leidraad voor de Python-port van de rekenkern van PoliRaster
-Studio. De frontend (React, `raster_model_2.jsx`) blijft zoals hij is; alleen het
+Studio. De frontend (React, `frontend/src/`; `raster_model_2.jsx` in de hoofdmap is een
+doorgeefluik naar `frontend/src/engine/poli.js` en `App.jsx`) blijft zoals hij is; alleen het
 rekenen verhuist naar Python. De JavaScript-engine blijft als referentie bestaan:
 voor élke invoer moet Python exact hetzelfde raster opleveren als JavaScript.
 Dat wordt bewezen met de pariteitstest (`backend/tests/pariteit/`).
@@ -13,10 +14,10 @@ De tool heeft geen server; alles draait in de browser. Met "backend" bedoelen we
 
 | JavaScript (referentie) | Python (port) | Taak |
 |---|---|---|
-| `computeRasterEngine(cfg,newRows,ctrlRows,m2,rules,capacity)` in `raster_model_2.jsx` | `poliraster.bereken_raster(cfg, newRows, ctrlRows, m2, rules, capacity)` | poli-spreekuren: weekraster uit zorgvraag, tijden, planregels en capaciteit |
-| `fkBerekenAdvies({kamers,codes,m2,regels})` in `functiekamers.js` | `poliraster.bereken_functiekamers(kamers, codes, m2, regels)` | functiekamers: welke onderzoeken in welke gekwalificeerde kamer, welke dagdelen open |
+| `computeRasterEngine(cfg,newRows,ctrlRows,m2,rules,capacity)` in `frontend/src/engine/poli.js` | `poliraster.bereken_raster(cfg, newRows, ctrlRows, m2, rules, capacity)` | poli-spreekuren: weekraster uit zorgvraag, tijden, planregels en capaciteit |
+| `fkBerekenAdvies({kamers,codes,m2,regels})` in `frontend/src/engine/functiekamers.js` | `poliraster.bereken_functiekamers(kamers, codes, m2, regels)` | functiekamers: welke onderzoeken in welke gekwalificeerde kamer, welke dagdelen open |
 
-De assistent (`assistent.js`: kennisbank en vraaganalyse) is onderdeel van de
+De assistent (`frontend/src/assistent/assistent.js`: kennisbank en vraaganalyse) is onderdeel van de
 interface en blijft in JavaScript.
 
 ## 2. Pakketindeling
@@ -27,7 +28,7 @@ backend/
   README.md                installeren, starten, testen, fouten opsporen
   DOCUMENTATIE.md          per module: wat, invoer, uitvoer, stappen, waar het mis kan gaan
   server.py                FastAPI: POST /api/raster, POST /api/functiekamers, POST /api/batch, GET /api/health,
-                           en serveert de frontend (dist/polimodel-api.html) op /
+                           en serveert de frontend (frontend/dist/, anders dist/polimodel-api.html) op /
   poliraster/
     __init__.py            publieke API: bereken_raster, bereken_functiekamers
     hulp/
@@ -147,7 +148,10 @@ tussenresultaten van JavaScript te zien.
   `POST /api/functiekamers` met `{kamers,codes,m2,regels,trace?}`, `POST /api/batch` met `{jobs:[{type,args,meet?}]}`
   (zelfde jobvorm als `engineClient.js`), `GET /api/health`. CORS open. Fouten komen terug als
   `{ok:false, fout, stap, spoor}` zodat de frontend ze toont.
-- Frontend: `engineClient.js` krijgt een derde modus naast worker en synchroon: **http**. Staat
-  `window.__POLIRASTER_API` (basis-URL, '' = zelfde herkomst), dan gaan alle jobs via `fetch` naar de server.
-  `build.js` maakt `dist/polimodel-api.html` met die vlag; `server.py` serveert dat bestand op `/`.
-  De rest van de frontend verandert niet.
+- Frontend: de engine-client (`frontend/src/engine/client.js`; `engineClient.js` in de hoofdmap is een
+  doorgeefluik) kent een derde modus naast worker en synchroon: **http**. Is de optie `api` een string
+  (basis-URL, '' = zelfde herkomst) — `App.jsx` leest die uit `import.meta.env.VITE_POLIRASTER_API`, met
+  `window.__POLIRASTER_API` als terugval — dan gaan alle jobs via `fetch` naar de server.
+  `cd frontend && VITE_POLIRASTER_API='' npm run build` levert `frontend/dist/`, dat `server.py` op `/`
+  serveert (met `/assets/*`); bestaat die map niet, dan serveert hij `dist/polimodel-api.html` uit
+  `build.js` (zelfde vlag als `window.__POLIRASTER_API=''`). De rest van de frontend verandert niet.
