@@ -213,3 +213,41 @@ def json_kloon(x: Any) -> Any:
 def includes(lijst: Optional[Iterable[Any]], x: Any) -> bool:
     """``arr.includes(x)`` met de nuance dat ``None`` (ontbrekende lijst) onwaar geeft."""
     return lijst is not None and x in lijst
+
+
+# ── Objectidentiteit ──────────────────────────────────────────────────────────
+# JavaScript vergelijkt objecten in ``indexOf``/``includes``/``Set`` op IDENTITEIT.
+# Python's ``list.index`` en ``in`` vergelijken dicts op INHOUD (en traag). De engine
+# bewaart dezelfde afspraak-instanties in meerdere lijsten en zoekt ze terug met
+# ``indexOf``; deze helpers doen dat op identiteit, zoals JavaScript.
+
+def index_identiek(lijst: list, x: Any) -> int:
+    """``arr.indexOf(x)`` op objectidentiteit; -1 als het object er niet in zit."""
+    for i, y in enumerate(lijst):
+        if y is x:
+            return i
+    return -1
+
+
+def bevat_identiek(lijst: Iterable[Any], x: Any) -> bool:
+    """``arr.includes(x)`` op objectidentiteit."""
+    return any(y is x for y in lijst)
+
+
+def verwijder_identiek(lijst: list, x: Any) -> None:
+    """``arr.splice(arr.indexOf(x),1)``: verwijdert het object (als het erin zit) op identiteit.
+
+    Let op: ``splice(-1,1)`` zou in JavaScript het láátste element verwijderen als ``x``
+    ontbreekt; in de engine komt dat niet voor (``x`` komt altijd uit ``arr``), maar om
+    dezelfde semantiek te houden doen we dat hier ook.
+    """
+    i = index_identiek(lijst, x)
+    if i >= 0:
+        del lijst[i]
+    elif lijst:
+        lijst.pop()
+
+
+def js_getal_tekst(v: Any) -> str:
+    """``${x}`` voor getallen in meldingsteksten: 75 → '75', 57.5 → '57.5', 60.0 → '60'."""
+    return js_tekst(v)

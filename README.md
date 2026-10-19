@@ -437,6 +437,23 @@ klik op een vak opent die dag). `build.js` zet daarvoor de vlag
 `window.__POLIRASTER_SIMPEL=true` in de pagina; `raster_model_2.jsx` leest die vlag
 (`SIMPEL`) en laat de assistent-ingangen weg. Beide varianten komen uit één bundel.
 
+## Python-backend (rekenkern in Python)
+
+De rekenkern bestaat ook als Python-pakket in `backend/` (zie `backend/README.md`,
+`backend/ARCHITECTUUR.md` en `backend/DOCUMENTATIE.md`). Het pakket `poliraster` levert
+`bereken_raster` (poli-engine) en `bereken_functiekamers` (functiekamer-engine), modulair
+per fase en per module gedocumenteerd. `backend/server.py` (FastAPI) biedt die functies aan
+via een API en serveert `dist/polimodel-api.html`: dezelfde frontend, maar het rekenen
+gebeurt op de server. De JavaScript-engine blijft de referentie: 226 pariteitscases
+(`backend/tests/pariteit/`) bewijzen dat Python exact hetzelfde raster geeft.
+
+```
+cd backend
+pip install -r requirements.txt
+python server.py            # http://127.0.0.1:8000  (frontend + API)
+python -m pytest tests -q   # 255 tests, waaronder de 226 pariteitscases
+```
+
 ## Losse HTML-versie bouwen
 
 `dist/polimodel.html` is volledig zelfstandig (React + xlsx ingebundeld) en opent direct
