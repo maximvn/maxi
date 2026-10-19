@@ -23,6 +23,12 @@
 //  • Waakhond: duurt één berekening langer dan WAAKHOND_MS, dan wordt de worker
 //    afgebroken en krijgt de aanroeper een duidelijke fout — nooit een stilletjes
 //    hangend raster. De eerstvolgende opdracht start een verse worker.
+//  • Derde modus 'http': staat window.__POLIRASTER_API (een string; de basis-URL,
+//    '' = dezelfde herkomst), dan gaan alle opdrachten via fetch naar de Python-
+//    backend (backend/server.py): /api/raster, /api/functiekamers en /api/batch.
+//    De gebruiker koos dan bewust voor Python, dus bij een netwerkfout vallen we
+//    NIET stil terug op de worker, maar melden we een duidelijke fout (liveFout).
+//    rekenSync blijft ook dan synchroon JavaScript (voor tests en vergelijking).
 
 const WAAKHOND_MS=60000     // één berekening mag nooit zó lang duren
 const HANDDRUK_MS=5000      // zo lang wachten we op "ready" van een nieuwe worker
@@ -63,8 +69,8 @@ export function startEngineWorker(runners){
 //  runners   — {poli, functie, meet}: dezelfde rekenaars als in de worker (terugval)
 //  scriptBron— functie die {src} of {text} teruggeeft (of null): waar staat de bundel?
 export function maakEngineClient({runners, scriptBron}){
-  let modus='onbekend'          // 'worker' | 'sync'
-  let bron=null                 // 'src' | 'blob' | null
+  let modus='onbekend'          // 'worker' | 'sync' | 'http'
+  let bron=null                 // 'src' | 'blob' | basis-URL (http) | null
   let reden=null                // waarom (eventueel) teruggevallen op synchroon
   let teller=0
   const nieuwId=()=>++teller
@@ -135,6 +141,37 @@ export function maakEngineClient({runners, scriptBron}){
 
   const live=maakKanaal('live')
 
+  // ── http-modus: de Python-backend ───────────────────────────────────────────
+  // Zelfde jobvorm als de worker: {type:'poli'|'functie', args, meet?}. Eén job gaat
+  // naar het eigen eindpunt, een batch (optimiser, bijsturen) naar /api/batch dat
+  // per job {ok,res|err} teruggeeft — precies wat de worker ook levert.
+  const apiBasis=(typeof window!=='undefined'&&typeof window.__POLIRASTER_API==='string')
+    ? window.__POLIRASTER_API.replace(/\/+$/,'') : null
+  const viaHttp=apiBasis!=null
+  if(viaHttp){ modus='http'; bron=apiBasis||(typeof location!=='undefined'?location.origin:'') }
+  const httpPost=(pad,body,signal)=>fetch(apiBasis+pad,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal})
+    .then(r=>{ if(!r.ok) throw new Error('De Python-backend antwoordt met HTTP '+r.status+' op '+pad); return r.json() },
+          e=>{ if(e&&e.name==='AbortError') throw e
+               throw new Error('De Python-backend is niet bereikbaar ('+(bron||'zelfde herkomst')+'): '+foutTekst(e)) })
+    .then(d=>{ if(d&&d.ok===false) throw new Error('Rekenfout in de Python-backend: '+(d.fout||'onbekend')); return d })
+  const httpJob=job=>{
+    if(!job||!runners[job.type]) return Promise.reject(new Error('Onbekende rekenopdracht: '+(job&&job.type)))
+    if(job.meet) return httpPost('/api/batch',{jobs:[job]}).then(d=>{ const u=d&&d.uit&&d.uit[0]
+      if(!u) throw new Error('Leeg antwoord van de Python-backend'); if(!u.ok) throw new Error('Rekenfout in de Python-backend: '+(u.err||'onbekend')); return u.res })
+    const a=job.args||[]
+    if(job.type==='poli'){ const [cfg,newRows,ctrlRows,m2,rules,capacity]=a; return httpPost('/api/raster',{cfg,newRows,ctrlRows,m2,rules,capacity}) }
+    const {kamers,codes,m2,regels}=a[0]||{}
+    return httpPost('/api/functiekamers',{kamers,codes,m2,regels})
+  }
+  // De server streamt geen voortgang: melden bij start (0) en bij het einde (totaal).
+  const httpBatch=(jobs,onVoortgang,signal)=>{
+    if(onVoortgang) onVoortgang(0,jobs.length)
+    return httpPost('/api/batch',{jobs},signal).then(d=>{ if(onVoortgang) onVoortgang(jobs.length,jobs.length); return (d&&d.uit)||[] })
+  }
+  // Controle of de server er is; de modus blijft http, alleen `reden` vertelt wat er mis is.
+  const httpPing=()=>fetch(apiBasis+'/api/health').then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.json() })
+    .then(d=>{ reden=null; meld(); return d }, e=>{ reden='De Python-backend is niet bereikbaar ('+(bron||'zelfde herkomst')+'): '+foutTekst(e); meld(); throw new Error(reden) })
+
   // ── synchrone terugval ──────────────────────────────────────────────────────
   const valTerug=e=>{ if(modus!=='sync'){ modus='sync'; bron=null; reden=foutTekst(e); meld() } }
   const syncJob=job=>new Promise((resolve,reject)=>{
@@ -158,6 +195,7 @@ export function maakEngineClient({runners, scriptBron}){
   // ── publieke API ────────────────────────────────────────────────────────────
   // Eén berekening; het resultaat komt als belofte.
   const bereken=job=>{
+    if(modus==='http') return httpJob(job)
     if(modus==='sync') return syncJob(job)
     // Kon de worker niet starten? Dan synchroon verder (en dat zo melden). Een fout
     // tíjdens het rekenen (waakhond, rekenfout) gaat wél naar de aanroeper.
@@ -184,7 +222,12 @@ export function maakEngineClient({runners, scriptBron}){
   const berekenBatch=(jobs,onVoortgang)=>{
     const id=nieuwId()
     let promise
-    if(modus==='sync'){ promise=syncBatch(jobs,onVoortgang) }
+    if(modus==='http'){
+      const ac=typeof AbortController!=='undefined'?new AbortController():null
+      batches.set(id,{sluit:()=>{ if(ac) ac.abort() }})
+      promise=httpBatch(jobs,onVoortgang,ac?ac.signal:undefined).finally(()=>batches.delete(id))
+    }
+    else if(modus==='sync'){ promise=syncBatch(jobs,onVoortgang) }
     else{
       const k=maakKanaal('batch'+id)
       batches.set(id,k)
@@ -200,12 +243,16 @@ export function maakEngineClient({runners, scriptBron}){
   const rekenSync=job=>voerJobUit(runners,job)
 
   // Probeer na een terugval opnieuw een worker te krijgen.
-  const herstart=()=>{ live.sluit('Herstart'); modus='onbekend'; reden=null; return live.start().then(()=>info(),e=>{ valTerug(e); return info() }) }
+  const herstart=()=>{
+    if(viaHttp) return httpPing().then(()=>info(),()=>info())
+    live.sluit('Herstart'); modus='onbekend'; reden=null; return live.start().then(()=>info(),e=>{ valTerug(e); return info() }) }
 
-  const info=()=>({modus, bron, reden, liveKlaar:live.klaar, batches:batches.size})
+  const info=()=>({modus, bron, reden, liveKlaar:viaHttp?true:live.klaar, batches:batches.size})
   const opStatus=f=>{ luisteraars.add(f); return ()=>luisteraars.delete(f) }
   // Warm de worker alvast op, zodat de eerste berekening niet op de start wacht.
-  const warmOp=()=>{ if(modus==='onbekend') live.start().catch(e=>valTerug(e)) }
+  // In http-modus: controleer meteen of de server bereikbaar is.
+  const warmOp=()=>{ if(viaHttp){ httpPing().catch(()=>{}); return }
+    if(modus==='onbekend') live.start().catch(e=>valTerug(e)) }
 
   return {bereken, berekenLaatste, berekenBatch, annuleer, rekenSync, herstart, info, opStatus, warmOp}
 }

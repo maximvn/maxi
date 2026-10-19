@@ -24,6 +24,14 @@ async function main() {
     .replace('<script>\n__BUNDLE__', () => '<script>window.__POLIRASTER_SIMPEL=true</script>\n<script>\n' + bundle)
   fs.writeFileSync('dist/polimodel-simpel.html', simpel)
   console.log('Built dist/polimodel-simpel.html')
+  // Python-backend-variant: dezelfde bundel, met de vlag die alle rekenwerk via
+  // fetch naar backend/server.py stuurt ('' = dezelfde herkomst; de server serveert
+  // dit bestand op /). Zie engineClient.js (modus 'http').
+  const api = shell
+    .replace('<title>PoliRaster Studio</title>', '<title>PoliRaster Studio — Python-backend</title>')
+    .replace('<script>\n__BUNDLE__', () => "<script>window.__POLIRASTER_API=''</script>\n<script>\n" + bundle)
+  fs.writeFileSync('dist/polimodel-api.html', api)
+  console.log('Built dist/polimodel-api.html')
 }
 
 main().catch(err => { console.error(err); process.exit(1) })
