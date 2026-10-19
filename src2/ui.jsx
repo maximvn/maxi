@@ -234,37 +234,52 @@ export const DragProvider = ({ children }) => {
   const [drag, setDrag] = useState(null)
   const ref = useRef(null)
   const pend = useRef(null)
+  const ghostRef = useRef(null)
+  const raf = useRef(0)
+  const plaatsGhost = (d) => { const g = ghostRef.current; if (!g) return; g.style.transform = `translate(${d.x - Math.min(d.grab.x, 140)}px, ${d.y - Math.min(d.grab.y, 30)}px) rotate(-1.2deg) scale(1.02)` }
   const startDrag = useCallback((e, payload) => {
+    if (e.button != null && e.button !== 0) return
     const x = e.clientX, y = e.clientY
     const rect = e.currentTarget?.getBoundingClientRect?.()
     pend.current = { payload, x0: x, y0: y, grab: rect ? { x: x - rect.left, y: y - rect.top, w: rect.width, h: rect.height } : { x: 10, y: 10 } }
     const move = (ev) => {
       const px = ev.clientX, py = ev.clientY
       if (pend.current) {
-        if (Math.hypot(px - pend.current.x0, py - pend.current.y0) < 4) return
-        const d = { ...pend.current, x: px, y: py, over: null }
+        if (Math.hypot(px - pend.current.x0, py - pend.current.y0) < 3) return
+        const d = { ...pend.current, x: px, y: py, over: null, overEl: null }
         pend.current = null
         ref.current = d; setDrag(d)
         document.body.style.userSelect = 'none'; document.body.style.cursor = 'grabbing'
+        window.getSelection?.()?.removeAllRanges?.()
       }
       if (!ref.current) return
-      const els = document.elementsFromPoint(px, py)
-      const el = els.find((n) => n.dataset && n.dataset.drop != null) || null
-      const over = el ? el.dataset.drop : null
-      if (el && ref.current.payload.onHover) ref.current.payload.onHover(el, { x: px, y: py })
-      const nd = { ...ref.current, x: px, y: py, over, overEl: el }
-      ref.current = nd; setDrag(nd)
       ev.preventDefault()
+      const cur = ref.current
+      cur.x = px; cur.y = py
+      plaatsGhost(cur)
+      if (raf.current) return
+      raf.current = requestAnimationFrame(() => {
+        raf.current = 0
+        const c = ref.current; if (!c) return
+        const els = document.elementsFromPoint(c.x, c.y)
+        const el = els.find((n) => n.dataset && n.dataset.drop != null) || null
+        const over = el ? el.dataset.drop : null
+        if (el && c.payload.onHover) c.payload.onHover(el, { x: c.x, y: c.y })
+        const nd = { ...c, over, overEl: el }
+        ref.current = nd; setDrag(nd)
+      })
     }
     const up = (ev) => {
       window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up)
       document.body.style.userSelect = ''; document.body.style.cursor = ''
+      if (raf.current) { cancelAnimationFrame(raf.current); raf.current = 0 }
       const d = ref.current
       pend.current = null; ref.current = null; setDrag(null)
       if (!d) return
       const px = ev.clientX ?? d.x, py = ev.clientY ?? d.y
+      window.__rp2JustDragged = true; setTimeout(() => { window.__rp2JustDragged = false }, 0)
       const el = document.elementsFromPoint(px, py).find((n) => n.dataset && n.dataset.drop != null) || null
-      if (el) d.payload.onDrop(el, { x: px, y: py })
+      if (el) d.payload.onDrop(el, { x: px, y: py, grab: d.grab })
       else d.payload.onCancel?.()
     }
     window.addEventListener('pointermove', move, { passive: false }); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up)
@@ -273,7 +288,7 @@ export const DragProvider = ({ children }) => {
     <DragCtx.Provider value={{ drag, startDrag }}>
       {children}
       {drag && (
-        <div className="drag-ghost" style={{ transform: `translate(${drag.x - Math.min(drag.grab.x, 140)}px, ${drag.y - Math.min(drag.grab.y, 30)}px) rotate(-1.5deg) scale(1.02)`, width: drag.grab.w ? Math.min(drag.grab.w, 280) : undefined }}>
+        <div ref={(n) => { ghostRef.current = n; if (n) plaatsGhost(drag) }} className="drag-ghost" style={{ width: drag.grab.w ? Math.min(drag.grab.w, 280) : undefined }}>
           {drag.payload.ghost}
         </div>
       )}

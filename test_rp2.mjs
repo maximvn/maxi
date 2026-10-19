@@ -226,6 +226,26 @@ test('Zwevende intervalflex: 5 min per 30 min kost geen extra gaten', () => {
   assert.equal(rest.length, 20 - appts.length)
 })
 
+test('plaatsOpTijd: landt op het losgelaten moment, latere afspraken schuiven op om flex heen', () => {
+  const s = { id: 'x', start: '08:00', eind: '12:00', dag: 'ma', dagdeel: 'ochtend' }
+  const entry = { appts: [{ id: 'a1', pgId: 'A', start: 480, end: 500 }, { id: 'a2', pgId: 'A', start: 500, end: 520 }, { id: 'a3', pgId: 'B', start: 520, end: 535 }], flex: [{ id: 'f', start: 540, end: 550 }] }
+  // los op 08:20 (= start van a2) → nieuwe komt vóór a2, a2 en a3 schuiven op, a3 springt over het flexblok heen
+  const r = E.plaatsOpTijd(s, entry, { pgId: 'C', duur: 15 }, 500)
+  assert.ok(r); const by = Object.fromEntries(r.appts.map((a) => [a.id, a]))
+  assert.equal(r.appt.start, 500); assert.equal(by.a1.start, 480); assert.equal(by.a2.start, 515); assert.equal(by.a3.start, 550)
+  r.appts.forEach((a) => r.appts.forEach((b) => { if (a !== b) assert.ok(a.end <= b.start || b.end <= a.start) }))
+  // los in de tweede helft van a1 → erna
+  const r2 = E.plaatsOpTijd(s, entry, { pgId: 'C', duur: 15 }, 495)
+  assert.equal(r2.appt.start, 500)
+  // verplaatsen binnen dezelfde sessie: a3 naar 08:00 → a1/a2 schuiven op, gat waar a3 stond
+  const r3 = E.plaatsOpTijd(s, entry, { id: 'a3', pgId: 'B', duur: 15, appt: entry.appts[2] }, 480)
+  const b3 = Object.fromEntries(r3.appts.map((a) => [a.id, a]))
+  assert.equal(b3.a3.start, 480); assert.equal(b3.a1.start, 495); assert.equal(b3.a2.start, 515); assert.equal(r3.appts.length, 3)
+  // past niet meer → null
+  const vol = { appts: Array.from({ length: 12 }, (_, i) => ({ id: 'v' + i, pgId: 'A', start: 480 + i * 20, end: 500 + i * 20 })), flex: [] }
+  assert.equal(E.plaatsOpTijd(s, vol, { pgId: 'C', duur: 20 }, 600), null)
+})
+
 test('Bailey-Welch + wave + korte afspraken eerst', () => {
   const ct2 = state.kamers.find((k) => k.naam === 'CT 2')
   const s = E.kamerSessies(state, ct2.id)[0]

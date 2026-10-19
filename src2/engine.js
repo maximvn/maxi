@@ -1,5 +1,5 @@
 // Planmotor — pure functies op de state. Geen React, geen DOM.
-import { toMin, fmt, uid, snap, sum, DAGEN, DAGDELEN, DAG_LABEL, DAGDEEL_LABEL, dagIdx, dagdeelIdx } from './util.js'
+import { toMin, fmt, uid, snap, clamp, sum, DAGEN, DAGDELEN, DAG_LABEL, DAGDEEL_LABEL, dagIdx, dagdeelIdx } from './util.js'
 import { DEFAULT_PLANREGELS } from './data.js'
 
 export const STAP = 5 // minuten-raster waarop afspraken en flex uitgelijnd worden
@@ -159,6 +159,72 @@ export function vrijePlek(sessie, entry, duur, vanaf = null, negeerId = null) {
   return null
 }
 
+// Effectief startmoment voor een afspraak die op tijdstip t wordt losgelaten: binnen de sessie, op het
+// 5-minutenraster, vóór een bestaande afspraak als je in de eerste helft loslaat (anders erna) en nooit in
+// een vast flexblok.
+export function landing(sessie, entry, t, duur, negeerId = null) {
+  const s0 = toMin(sessie.start), s1 = toMin(sessie.eind)
+  const d = Math.max(STAP, duur)
+  const vast = (entry.flex || []).filter((f) => !f.floating)
+  const rest = (entry.appts || []).filter((a) => a.id !== negeerId)
+  const naFlex = (st) => { let x = st, g = 0; while (g++ < 60) { const f = vast.find((f) => x < f.end && x + d > f.start); if (!f) return x; x = f.end } return x }
+  let start = clamp(snap(t, STAP), s0, Math.max(s0, s1 - d))
+  const raak = rest.find((a) => start >= a.start && start < a.end)
+  if (raak) start = start < (raak.start + raak.end) / 2 ? raak.start : raak.end
+  start = naFlex(start)
+  return start + d <= s1 ? start : null
+}
+
+// Plaatst een afspraak op het losgelaten tijdstip. Alles wat ervoor staat blijft staan; de nieuwe afspraak
+// en alles wat erna komt wordt vanaf dat punt aaneensluitend herlegd — om de vaste flexblokken heen, terwijl
+// de zwevende (interval-)flexblokken opnieuw meelopen. Past het niet meer in de sessie, dan null.
+export function plaatsOpTijd(sessie, entry, item, t) {
+  const s1 = toMin(sessie.eind)
+  const duur = Math.max(STAP, item.duur)
+  const start = landing(sessie, entry, t, duur, item.id || null)
+  if (start == null) return null
+  const rest = entry.appts.filter((a) => a.id !== item.id).map((a) => (a.partner === item.id ? { ...a, double: false, partner: null } : a))
+  const vast = (entry.flex || []).filter((f) => !f.floating)
+  const zwevend = (entry.flex || []).filter((f) => f.floating)
+  // dubbel geboekte paren als één blok
+  const blokken = []
+  rest.forEach((a) => { if (a.double && rest.some((p) => p.id === a.partner)) return; const d = rest.find((x) => x.partner === a.id); const groep = d ? [a, d] : [a]; blokken.push({ appts: groep, start: Math.min(...groep.map((x) => x.start)), end: Math.max(...groep.map((x) => x.end)) }) })
+  blokken.sort((a, b) => a.start - b.start)
+  const voor = blokken.filter((b) => b.end <= start)
+  const staart = blokken.filter((b) => b.end > start)
+  const zwVoor = zwevend.filter((f) => f.end <= start)
+  const pending = zwevend.filter((f) => f.end > start).sort((a, b) => (a.anchor ?? a.start) - (b.anchor ?? b.start))
+  const tmp = { appts: voor.flatMap((b) => b.appts), flex: [...vast, ...zwVoor] }
+  const out = [...tmp.appts]
+  const flexOut = [...tmp.flex]
+  let cursor = start
+  const zweef = () => {
+    while (pending.length && cursor >= (pending[0].anchor ?? pending[0].end) - (pending[0].end - pending[0].start)) {
+      const f = pending.shift(); const len = f.end - f.start
+      const tf = vrijePlek(sessie, tmp, len, cursor)
+      if (tf == null || tf + len > s1) break
+      const nf = { ...f, start: tf, end: tf + len }
+      tmp.flex.push(nf); flexOut.push(nf); cursor = tf + len
+    }
+  }
+  const leg = (appts, d, exact = null) => {
+    const t0 = exact != null ? exact : vrijePlek(sessie, tmp, d, cursor)
+    if (t0 == null || t0 + d > s1) return false
+    const delta = t0 - Math.min(...appts.map((a) => a.start))
+    appts.forEach((a) => { const n = { ...a, start: a.start + delta, end: a.end + delta }; tmp.appts.push(n); out.push(n) })
+    cursor = t0 + d
+    zweef()
+    return true
+  }
+  const nieuw = { ...(item.appt || { id: uid('a'), pgId: item.pgId }), start, end: start + duur, double: false, partner: null }
+  if (!leg([nieuw], duur, start)) return null
+  for (const b of staart) if (!leg(b.appts, b.end - b.start)) return null
+  // zwevende blokken die niet meer 'bereikt' zijn: op hun ankerplek als die vrij is
+  pending.forEach((f) => { const len = f.end - f.start; const tf = vrijePlek(sessie, tmp, len, f.start); if (tf != null && tf + len <= s1) { const nf = { ...f, start: tf, end: tf + len }; tmp.flex.push(nf); flexOut.push(nf) } })
+  const geplaatst = out.find((a) => a.id === nieuw.id)
+  return { appts: out.sort((a, b) => a.start - b.start), flex: flexOut.sort((a, b) => a.start - b.start), appt: geplaatst }
+}
+
 export function voegAfspraakToe(state, sessieId, pgId, vanaf = null) {
   const sessie = (state.rooster.sessies || []).find((s) => s.id === sessieId)
   const pg = pgById(state, pgId)
@@ -168,6 +234,10 @@ export function voegAfspraakToe(state, sessieId, pgId, vanaf = null) {
   if (!regel.ok) return { state, error: regel.reden }
   const entry = getEntry(state.plan, sessieId)
   const duur = Math.max(STAP, pg.duur || STAP)
+  if (vanaf != null) {
+    const r = plaatsOpTijd(sessie, entry, { pgId, duur }, vanaf)
+    if (r) return { state: { ...state, plan: { ...state.plan, [sessieId]: { ...entry, appts: r.appts, flex: r.flex } } }, appt: r.appt }
+  }
   let t = vrijePlek(sessie, entry, duur, vanaf)
   if (t == null && vanaf != null) t = vrijePlek(sessie, entry, duur, null)
   if (t == null) return { state, error: `Geen ruimte meer in deze sessie voor ${pg.naam} (${duur} min).` }
@@ -204,6 +274,10 @@ export function verplaatsAfspraak(state, vanSessieId, apptId, naarSessieId, vana
   const duur = appt.end - appt.start
   const tussen = verwijderAfspraak(state, vanSessieId, apptId)
   const naarEntry = getEntry(tussen.plan, naarSessieId)
+  if (vanaf != null) {
+    const r = plaatsOpTijd(naarSessie, naarEntry, { id: appt.id, pgId: appt.pgId, duur, appt: { id: appt.id, pgId: appt.pgId } }, vanaf)
+    if (r) return { state: { ...tussen, plan: { ...tussen.plan, [naarSessieId]: { ...naarEntry, appts: r.appts, flex: r.flex } } }, moved: r.appt }
+  }
   let t = vrijePlek(naarSessie, naarEntry, duur, vanaf)
   if (t == null && vanaf != null) t = vrijePlek(naarSessie, naarEntry, duur, null)
   if (t == null) return { state, error: `Geen ruimte in deze sessie voor ${pg.naam} (${duur} min).` }

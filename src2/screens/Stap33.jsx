@@ -24,7 +24,7 @@ export default function Stap33({ state, setState, mod, modId, setModId, toast, o
   const [kamerId, setKamerId] = useState(null)
   const kamer = kamers.find((k) => k.id === kamerId) || kamers[0] || null
   const [weergave, setWeergave] = useState('globaal')
-  const [zoom, setZoom] = useState(1.6)
+  const [zoom, setZoom] = useState(2)
   const [selSessie, setSelSessie] = useState(null)
   const [selPg, setSelPg] = useState(null)
   const [selAppt, setSelAppt] = useState(null)
@@ -65,26 +65,28 @@ export default function Stap33({ state, setState, mod, modId, setModId, toast, o
   }
 
   // ---- drag & drop
-  const dropTijd = (el, y) => {
+  // Tijd onder de muis in een sessie. Bij een gesleepte afspraak telt de bovenkant van het blok (muis min grijp-offset).
+  const dropTijd = (el, pos, metOffset = false) => {
     const sid = el.dataset.drop.split('|')[1]
     const s = state.rooster.sessies.find((x) => x.id === sid)
     if (!s || weergave !== 'detail') return { sid, t: null }
     const r = el.getBoundingClientRect()
-    return { sid, t: snap(toMin(s.start) + (y - r.top) / zoom, 5) }
+    const offset = metOffset ? Math.min(pos.grab?.y || 0, 24) : 0
+    return { sid, t: snap(toMin(s.start) + (pos.y - offset - r.top) / zoom, 5) }
   }
   const hoverTab = (el) => { if (el.dataset.drop.startsWith('tab|')) { const id = el.dataset.drop.split('|')[1]; if (id !== kamerId && kamers.some((k) => k.id === id)) setKamerId(id) } }
   const dragPg = (e, pg) => startDrag(e, {
     type: 'pg', pgId: pg.id,
     ghost: <div className="appt" style={{ position: 'static', '--tint': colorOf(pg.id), background: colorOf(pg.id), height: 28, width: 200, padding: '0 10px' }}>{pg.naam}<small>{pg.duur}′</small></div>,
     onHover: hoverTab,
-    onDrop: (el, pos) => { if (el.dataset.drop.startsWith('sess|')) { const { sid, t } = dropTijd(el, pos.y); addAppt(sid, pg.id, t) } },
+    onDrop: (el, pos) => { if (el.dataset.drop.startsWith('sess|')) { const { sid, t } = dropTijd(el, pos); addAppt(sid, pg.id, t) } },
   })
   const dragAppt = (e, a, vanSid) => startDrag(e, {
     type: 'appt', apptId: a.id,
     ghost: <div className="appt" style={{ position: 'static', background: colorOf(a.pgId), height: Math.max(22, (a.end - a.start) * zoom), width: 200, padding: '0 10px' }}>{E.pgById(state, a.pgId)?.naam}<small>{a.end - a.start}′</small></div>,
     onHover: hoverTab,
     onDrop: (el, pos) => {
-      if (el.dataset.drop.startsWith('sess|')) { const { sid, t } = dropTijd(el, pos.y); if (sid === vanSid && t != null) { setState((s) => { const r = E.verplaatsAfspraak(s, vanSid, a.id, sid, t); return r.state }) } else moveAppt(vanSid, a.id, sid, t) }
+      if (el.dataset.drop.startsWith('sess|')) { const { sid, t } = dropTijd(el, pos, true); if (sid === vanSid && t != null) { setState((s) => { const r = E.verplaatsAfspraak(s, vanSid, a.id, sid, t); return r.state }) } else moveAppt(vanSid, a.id, sid, t) }
       else if (el.dataset.drop === 'bin') removeAppt(vanSid, a.id)
     },
   })
@@ -94,7 +96,7 @@ export default function Stap33({ state, setState, mod, modId, setModId, toast, o
     onDrop: (el, pos) => {
       if (el.dataset.drop === 'bin') { setState((s) => E.zetFlex(s, sid, E.getEntry(s.plan, sid).flex.filter((x) => x.id !== f.id))); return }
       if (!el.dataset.drop.startsWith('sess|')) return
-      const { sid: naar, t } = dropTijd(el, pos.y)
+      const { sid: naar, t } = dropTijd(el, pos, true)
       if (naar !== sid || t == null) return
       setState((s) => {
         const sess = s.rooster.sessies.find((x) => x.id === sid)
@@ -224,6 +226,15 @@ const bereik = (sessies) => {
   return { lo: Math.floor(lo / 60) * 60, hi: Math.ceil(hi / 60) * 60 }
 }
 
+// Tijdens het slepen van een plangroep of afspraak: mag die in deze sessie? ('kan' / 'kan-niet' / '')
+const sleepKlasse = (state, drag, kamer, s) => {
+  if (!drag || !drag.payload) return ''
+  const pgId = drag.payload.pgId || (drag.payload.apptId ? (state.rooster.sessies.flatMap((x) => E.getEntry(state.plan, x.id).appts).find((a) => a.id === drag.payload.apptId) || {}).pgId : null)
+  if (!pgId) return ''
+  const pg = E.pgById(state, pgId)
+  return pg && E.toegestaan(pg, kamer, s).ok ? 'kan' : 'kan-niet'
+}
+
 function Globaal({ state, kamer, sessies, dagen, pal, pgs, colorOf, drag, selSessie, setSelSessie, addAppt, removeLast, flash, selPg, onEdit }) {
   const { lo, hi } = bereik(sessies)
   const pxm = 1.05
@@ -245,7 +256,7 @@ function Globaal({ state, kamer, sessies, dagen, pal, pgs, colorOf, drag, selSes
             const top = (toMin(s.start) - lo) * pxm, h = (toMin(s.eind) - toMin(s.start)) * pxm
             const over = drag && drag.over === `sess|${s.id}`
             return (
-              <div key={s.id} className={`gsess ${selSessie === s.id ? 'sel' : ''} ${over ? 'over' : ''} ${!lijst.length ? 'empty-sess' : ''}`} style={{ top, height: h, '--tint': pal.bg, '--tint-soft': pal.soft, '--tint-ink': pal.ink, outline: flash === s.id ? '2px solid var(--danger)' : undefined }} data-drop={`sess|${s.id}`}>
+              <div key={s.id} className={`gsess ${selSessie === s.id ? 'sel' : ''} ${over ? 'over' : ''} ${!lijst.length ? 'empty-sess' : ''} ${sleepKlasse(state, drag, kamer, s)}`} style={{ top, height: h, '--tint': pal.bg, '--tint-soft': pal.soft, '--tint-ink': pal.ink, outline: flash === s.id ? '2px solid var(--danger)' : undefined }} data-drop={`sess|${s.id}`}>
                 <div className="gh" onClick={() => setSelSessie(selSessie === s.id ? null : s.id)} title="Klik voor details, benutting en acties">
                   <b>{DAGDEEL_LABEL[s.dagdeel]}</b><span className="t">{s.start}–{s.eind}</span>
                   <button type="button" className="iconbtn" style={{ color: '#fff', width: 22, height: 22 }} title="Sessie bewerken (tijden, dag, kamer)" onClick={(ev) => { ev.stopPropagation(); onEdit(s.id) }}><Icon name="clock" size={12} /></button>
@@ -288,7 +299,17 @@ function Detail({ state, kamer, sessies, dagen, pal, pgs, colorOf, zoom, drag, s
   if (drag && drag.overEl && drag.over?.startsWith('sess|') && (drag.payload.type === 'pg' || drag.payload.type === 'appt' || drag.payload.type === 'flex')) {
     const sid = drag.over.split('|')[1]
     const s = sessies.find((x) => x.id === sid)
-    if (s) { const r = drag.overEl.getBoundingClientRect(); dropline = { sid, t: clamp(snap(toMin(s.start) + (drag.y - r.top) / zoom, 5), toMin(s.start), toMin(s.eind)) } }
+    if (s) {
+      const r = drag.overEl.getBoundingClientRect()
+      const offset = drag.payload.type === 'appt' || drag.payload.type === 'flex' ? Math.min(drag.grab?.y || 0, 24) : 0
+      const ruw = toMin(s.start) + (drag.y - offset - r.top) / zoom
+      const e = E.getEntry(state.plan, s.id)
+      let duur = 15
+      if (drag.payload.type === 'pg') duur = E.pgById(state, drag.payload.pgId)?.duur || 15
+      else { const a = state.rooster.sessies.flatMap((x) => E.getEntry(state.plan, x.id).appts).find((x) => x.id === drag.payload.apptId); if (a) duur = a.end - a.start }
+      const land = drag.payload.type === 'flex' ? clamp(snap(ruw, 5), toMin(s.start), toMin(s.eind)) : E.landing(s, e, ruw, duur, drag.payload.apptId || null)
+      dropline = { sid, t: land == null ? clamp(snap(ruw, 5), toMin(s.start), toMin(s.eind)) : land, past: land != null }
+    }
   }
   return (
     <div className="detail" style={{ '--cols': dagen.length, '--hourpx': `${60 * zoom}px` }}>
@@ -303,7 +324,7 @@ function Detail({ state, kamer, sessies, dagen, pal, pgs, colorOf, zoom, drag, s
             const s0 = toMin(s.start), top = (s0 - lo) * zoom, h = (toMin(s.eind) - s0) * zoom
             const over = drag && drag.over === `sess|${s.id}`
             return (
-              <div key={s.id} className={`dsess ${over ? 'over' : ''}`} style={{ top, height: h, '--tint': pal.bg, '--tint-soft': pal.soft, outline: flash === s.id ? '2px solid var(--danger)' : selSessie === s.id ? `2px solid ${pal.bg}` : undefined }} data-drop={`sess|${s.id}`} onClick={(ev) => { if (ev.target === ev.currentTarget) { setSelSessie(selSessie === s.id ? null : s.id); setSelAppt(null) } }} title={`${DAGDEEL_LABEL[s.dagdeel]} ${s.start}–${s.eind} · benutting ${st.benutting}%`}>
+              <div key={s.id} className={`dsess ${over ? 'over' : ''} ${sleepKlasse(state, drag, kamer, s)}`} style={{ top, height: h, '--tint': pal.bg, '--tint-soft': pal.soft, outline: flash === s.id ? '2px solid var(--danger)' : selSessie === s.id ? `2px solid ${pal.bg}` : undefined }} data-drop={`sess|${s.id}`} onClick={(ev) => { if (ev.target === ev.currentTarget) { setSelSessie(selSessie === s.id ? null : s.id); setSelAppt(null) } }} title={`${DAGDEEL_LABEL[s.dagdeel]} ${s.start}–${s.eind} · benutting ${st.benutting}%`}>
                 <div className="dh"><span>{DAGDEEL_LABEL[s.dagdeel]} · {st.benutting}%</span></div>
                 {e.flex.map((f) => (
                   <div key={f.id} className={`fx ${drag?.payload?.flexId === f.id ? 'dragging' : ''}`} style={{ top: (f.start - s0) * zoom, height: Math.max(8, (f.end - f.start) * zoom), touchAction: 'none' }} onPointerDown={(ev) => { if (ev.button === 0) dragFlex(ev, f, s.id) }} title={`Flexibele tijd ${fmt(f.start)}–${fmt(f.end)} (${f.end - f.start} min)${f.bron === 'regel' ? ' · uit planregels' : ' · handmatig'}. Sleep om te verplaatsen, trek aan de randen om te verlengen/inkorten.`}>
@@ -318,13 +339,13 @@ function Detail({ state, kamer, sessies, dagen, pal, pgs, colorOf, zoom, drag, s
                   const hh = Math.max(10, (a.end - a.start) * zoom)
                   return (
                     <div key={a.id} className={`appt ${dbl ? 'dbl' : ''} ${second ? 'second' : ''} ${selAppt === a.id ? 'sel' : ''} ${drag?.payload?.apptId === a.id ? 'dragging' : ''}`} style={{ top: (a.start - s0) * zoom + 1, height: hh - 2, '--tint': colorOf(a.pgId), background: colorOf(a.pgId), opacity: selPg && selPg !== a.pgId ? .3 : 1, fontSize: hh < 18 ? 10 : 11.5, touchAction: 'none' }}
-                      onPointerDown={(ev) => { if (ev.button === 0) dragAppt(ev, a, s.id) }} onClick={(ev) => { ev.stopPropagation(); setSelAppt(selAppt === a.id ? null : a.id); setSelSessie(s.id) }} title={`${pgNaam(a.pgId)} · ${fmt(a.start)}–${fmt(a.end)} (${a.end - a.start} min)${a.double ? ' · dubbel geboekt (Bailey-Welch)' : ''}. Sleep om te verplaatsen; naar de prullenbak rechts om te verwijderen.`}>
+                      onPointerDown={(ev) => { if (ev.button === 0) dragAppt(ev, a, s.id) }} onClick={(ev) => { ev.stopPropagation(); if (ev.detail === 0 || window.__rp2JustDragged) return; setSelAppt(selAppt === a.id ? null : a.id); setSelSessie(s.id) }} title={`${pgNaam(a.pgId)} · ${fmt(a.start)}–${fmt(a.end)} (${a.end - a.start} min)${a.double ? ' · dubbel geboekt (Bailey-Welch)' : ''}. Sleep om te verplaatsen; naar de prullenbak rechts om te verwijderen.`}>
                       <span className="truncate">{pgNaam(a.pgId)}</span>{hh >= 16 && <small>{fmt(a.start)}</small>}
                       <button type="button" className="x" title="Verwijderen" onPointerDown={(ev) => ev.stopPropagation()} onClick={(ev) => { ev.stopPropagation(); removeAppt(s.id, a.id) }}><Icon name="x" size={10} /></button>
                     </div>
                   )
                 })}
-                {dropline && dropline.sid === s.id && <div className="dropline" data-t={fmt(dropline.t)} style={{ top: (dropline.t - s0) * zoom }} />}
+                {dropline && dropline.sid === s.id && (() => { const nee = sleepKlasse(state, drag, kamer, s) === 'kan-niet'; const vol = !dropline.past && drag.payload.type !== 'flex'; return <div className="dropline" data-t={`${fmt(dropline.t)}${nee ? ' · niet toegestaan' : vol ? ' · past niet' : ''}`} style={{ top: (dropline.t - s0) * zoom, color: nee || vol ? 'var(--danger)' : undefined }} /> })()}
               </div>
             )
           })}
