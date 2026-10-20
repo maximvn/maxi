@@ -1,3 +1,22 @@
+/**
+ * ═══ VRIJPANEEL — "zelf invullen" bij een intakevraag ═══════════════════════
+ *
+ * Wat doet dit onderdeel
+ *   Het handmatige alternatief naast de knoppen van elke intakevraag: generieke velden
+ *   (nummer, tijd, tekst, keuze, dagen) volgens vrij.velden, met controle op bereik en
+ *   verplichte velden. Bij "Gebruik dit" gaan de genormaliseerde waarden naar onKlaar.
+ *
+ * Plaats in de tool
+ *   assistent/IntakeVraag.jsx, onder de antwoordknoppen.
+ *
+ * Props                    vrij ({uitleg, velden}), onKlaar(waarden), kleur
+ *
+ * Waar kan het misgaan en hoe zie je dat
+ *   - "Gebruik dit" doet niets → een veld voldoet niet; de foutregel onder het paneel zegt
+ *     welk.
+ *   - Een getal komt als tekst binnen → alleen type "nummer" wordt omgezet
+ *     (genormaliseerd).
+ */
 import React, { useState } from 'react'
 import { C } from './kleuren.js'
 import { WEEKDAY_KEYS, DAY_ABBR } from '../lib/tijd.js'
@@ -7,7 +26,18 @@ import { WEEKDAY_KEYS, DAY_ABBR } from '../lib/tijd.js'
 // staat het antwoord er niet tussen, dan vul je het hier gewoon zelf in. De
 // velden zijn generiek beschreven (nummer / tijd / tekst / keuze / dagen), zodat
 // élke vraag een echte handmatige route heeft in plaats van alleen drie knoppen.
+/**
+ * Breedte per veldtype in het paneel.
+ */
 export const VELD_BREEDTE = { nummer: 150, tijd: 130, tekst: 280, keuze: 244, dagen: '100%' }
+/**
+ * Invulpaneel met generieke velden en validatie.
+ * @param {object} props
+ * @param props.vrij {uitleg, velden:[{k, type, label, def, min, max, step, unit, opts, ph, verplicht}]}
+ * @param props.onKlaar krijgt {k: waarde} na geldige invoer
+ * @param props.kleur accentkleur
+ * @returns {JSX.Element}
+ */
 export const VrijPaneel = ({ vrij, onKlaar, kleur = C.primary }) => {
   const [w, setW] = useState(() => {
     const o = {}

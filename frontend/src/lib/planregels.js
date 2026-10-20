@@ -1,5 +1,32 @@
-// ─── PLANREGELS EN MODULES — beschrijvingen van de regels en de navigatie ─────
+/**
+ * ═══ PLANREGELS — beschrijvingen van de regels en de navigatie ══════════════
+ *
+ * Wat doet dit onderdeel
+ *   De teksten bij de planregels (label, type, uitleg en opties: PLAN_INFO), welke regels
+ *   schakelaars of keuzes zijn (TOGGLE_KEYS, RADIO_KEYS), de vier stappen (MODULES) en de
+ *   leesbare namen van de rest-dag (RESTDAG_LABEL).
+ *
+ * Plaats in de tool
+ *   modules/Regels*.jsx (labels en uitleg), lib/exportExcel.js (configuratieblad),
+ *   OptimiserTabel.jsx en GeheugenPaneel.jsx (RESTDAG_LABEL).
+ *
+ * Invoer
+ *   — (data).
+ * Uitvoer
+ *   PLAN_INFO, TOGGLE_KEYS, RADIO_KEYS, MODULES, RESTDAG_LABEL.
+ *
+ * Hoe het werkt
+ *   1. Een sleutel in PLAN_INFO is dezelfde als in rules; de engine leest de waarde, deze
+ *      lijst alleen de uitleg.
+ *
+ * Waar kan het misgaan en hoe zie je dat
+ *   - Een regel staat niet in de module Regels of in de export → de sleutel ontbreekt in
+ *     PLAN_INFO.
+ */
 // Volgorde: eerst de spreekuurtijden (het kader), dan de gegevens die erin passen.
+/**
+ * De vier stappen van de tool, in volgorde.
+ */
 export const MODULES = [
   { id: 0, title: 'Spreekuurtijden', icon: '⏰', short: 'Tijden' },
   { id: 1, title: 'Gegevens invoer', icon: '📋', short: 'Gegevens' },
@@ -7,6 +34,9 @@ export const MODULES = [
   { id: 3, title: 'Rasterproces', icon: '📅', short: 'Raster' },
 ]
 
+/**
+ * Label, type, uitleg en opties per planregel (sleutel = rules-sleutel).
+ */
 export const PLAN_INFO = {
   // ── Planning volgorde ──────────────────────────────────────────────────────
   spoedFirst: {
@@ -63,7 +93,13 @@ export const PLAN_INFO = {
 }
 
 // Which keys are boolean toggles vs radio
+/**
+ * Planregels die aan/uit-schakelaars zijn.
+ */
 export const TOGGLE_KEYS = ['spoedFirst', 'startNieuw', 'startControle', 'mixNC']
+/**
+ * Planregels met een keuze uit opties.
+ */
 export const RADIO_KEYS = ['kamerVerdeling', 'digitalMode', 'flexMode']
 
 // Leesbare naam van de rest-dag-instelling (scenario-optimiser en geheugen).

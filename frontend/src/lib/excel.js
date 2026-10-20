@@ -1,4 +1,36 @@
-// ─── EXCEL: EXPORT-HULPEN, OPSLAAN VIA DE VIEWER EN IMPORT VAN SPREEKUURGEGEVENS ─
+/**
+ * ═══ EXCEL — downloadlinks, opslaan via de viewer en spreekuur-import ═══════
+ *
+ * Wat doet dit onderdeel
+ *   Hulpen rond Excel: een echte Blob-downloadlink van een werkmap, de werkmap als CSV (per
+ *   blad of alles in één), opslaan via de viewer van een gedeelde pagina (eerst .xlsx,
+ *   anders CSV) met een eerlijke melding per uitkomst, en het inlezen van een vrij
+ *   opgemaakte spreekuur-Excel met fuzzy kolomherkenning.
+ *
+ * Plaats in de tool
+ *   hooks/useImportExport.js (wbNaarHref, parseSpreekuurRows, SPREEKUUR_VOORBEELD),
+ *   dialogen/ExportDialoog.jsx en GegevensAantallen.jsx (viewer-opslaan), App.jsx
+ *   (viewerDownloadsKlaar).
+ *
+ * Invoer
+ *   een XLSX-werkmap, of een array van rijen (aoa) uit een blad.
+ * Uitvoer
+ *   zie de JSDoc per functie.
+ *
+ * Hoe het werkt
+ *   1. Blob-URL i.p.v. data:-URI: grote data:-URI's worden geweigerd en in een afgeschermde
+ *      iframe geblokkeerd.
+ *   2. De viewer geeft "downloads" asynchroon vrij (viewerDownloadsKlaar); tot dan gedraagt
+ *      de tool zich als los bestand.
+ *   3. parseSpreekuurRows zoekt in de eerste 15 regels een kopregel en herkent kolommen op
+ *      deelwoorden (NL of EN).
+ *
+ * Waar kan het misgaan en hoe zie je dat
+ *   - "Het bestand is leeg" of geen codes → de kopregel is niet gevonden; gebruik het
+ *     voorbeeld (SPREEKUUR_VOORBEELD) als sjabloon.
+ *   - Opslaan in de gedeelde pagina geeft geenXlsx → die weergave staat .xlsx niet toe; de
+ *     dialoog biedt dan één CSV.
+ */
 import * as XLSX from 'xlsx'
 import { clamp } from './tijd.js'
 import { defaultRow } from './presets.js'
@@ -8,6 +40,11 @@ import { defaultRow } from './presets.js'
 // browsers geweigerd en top-level navigatie ernaartoe wordt in een afgeschermde
 // iframe (gedeelde artifact) geblokkeerd. Een blob:-URL is same-origin en werkt
 // met het download-attribuut in alle omgevingen.
+/**
+ * Maakt een downloadbare blob:-URL van een werkmap.
+ * @param {object} wb XLSX-werkmap
+ * @returns {string} object-URL
+ */
 export const wbNaarHref = wb => {
   const data = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
   return URL.createObjectURL(
@@ -32,7 +69,17 @@ export const viewerDownloadsKlaar =
         })
         .catch(() => null)
     : Promise.resolve(null)
+/**
+ * Kan deze pagina via de viewer opslaan (gedeelde pagina)?
+ * @returns {boolean}
+ */
 export const kanViewerOpslaan = () => !!viewerDownloads
+/**
+ * Eén blad als CSV met puntkomma als scheidingsteken.
+ * @param {object} wb werkmap
+ * @param {string} blad bladnaam
+ * @returns {string}
+ */
 export const wbNaarCsv = (wb, blad) => {
   const ws = wb.Sheets[blad]
   return ws ? XLSX.utils.sheet_to_csv(ws, { FS: ';' }) : ''
@@ -40,6 +87,11 @@ export const wbNaarCsv = (wb, blad) => {
 // ÉÉN bestand met ALLE tabbladen onder elkaar, met een duidelijke scheiding. Dit is
 // de terugval voor de gedeelde pagina: die mag geen .xlsx wegschrijven, maar het
 // moet wél één bestand blijven — geen stapel losse downloads.
+/**
+ * Alle bladen (behalve _rasterdata) onder elkaar in één CSV.
+ * @param {object} wb werkmap
+ * @returns {string}
+ */
 export const wbNaarEenCsv = wb =>
   wb.SheetNames.filter(n => n !== '_rasterdata')
     .map(n => `=== TABBLAD: ${n} ===\n` + wbNaarCsv(wb, n))
@@ -47,6 +99,12 @@ export const wbNaarEenCsv = wb =>
 // Probeer eerst een ECHTE .xlsx weg te schrijven. Lukt dat niet omdat deze weergave
 // dat bestandstype niet toestaat, dan zeggen we dat eerlijk en bieden we hetzelfde
 // in één CSV aan. Zo proberen we het altijd, in plaats van het bij voorbaat op te geven.
+/**
+ * Probeert een echte .xlsx op te slaan via de viewer.
+ * @param {string} basisnaam bestandsnaam zonder extensie
+ * @param {object} wb werkmap
+ * @returns {Promise<{ok:boolean, msg:string, xlsx?:boolean, geenXlsx?:boolean}>}
+ */
 export const viewerOpslaanXlsx = async (basisnaam, wb) => {
   try {
     const data = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
@@ -76,6 +134,13 @@ export const viewerOpslaanXlsx = async (basisnaam, wb) => {
 }
 // Opslaan via de viewer, met een eerlijke melding per uitkomst. Staat .csv niet
 // aan in deze weergave, dan bieden we exact dezelfde inhoud als .txt aan.
+/**
+ * Slaat tekst op via de viewer (standaard .csv, anders .txt).
+ * @param {string} basisnaam bestandsnaam zonder extensie
+ * @param {string} tekst inhoud
+ * @param {string} [ext='csv'] extensie
+ * @returns {Promise<{ok:boolean, msg:string}>}
+ */
 export const viewerOpslaan = async (basisnaam, tekst, ext = 'csv') => {
   try {
     await viewerDownloads.save({ filename: `${basisnaam}.${ext}`, data: tekst })
@@ -102,6 +167,9 @@ export const viewerOpslaan = async (basisnaam, tekst, ext = 'csv') => {
 // Leest een gewone Excel/CSV met kolommen (in willekeurige volgorde, NL of EN):
 // code/afkorting · naam/omschrijving · categorie · duur · aantal (per week) ·
 // verdeling% · modaliteit · dagen (weekdagen) · dagdelen · onzekerheid.
+/**
+ * De kolommen die de spreekuur-import herkent.
+ */
 export const SPREEKUUR_KOLOMMEN = [
   'code',
   'naam',
@@ -114,6 +182,9 @@ export const SPREEKUUR_KOLOMMEN = [
   'dagdelen',
   'onzekerheid',
 ]
+/**
+ * Voorbeeldrijen voor het spreekuur-sjabloon.
+ */
 export const SPREEKUUR_VOORBEELD = [
   [
     'NP',
@@ -132,6 +203,11 @@ export const SPREEKUUR_VOORBEELD = [
   ['TC', 'Telefonisch consult', 'Controle', 10, 12, '', 'Telefonisch', 'DI DO', 'Middag', 'zeker'],
   ['VER', 'Kleine verrichting', 'Controle', 20, 8, '', 'Fysiek', 'MA WO', 'Ochtend', 'gemiddeld'],
 ]
+/**
+ * Leest spreekuurgegevens uit de rijen van een blad.
+ * @param {Array<Array>} aoa rijen (XLSX.utils.sheet_to_json met header:1)
+ * @returns {{newRows:Array, ctrlRows:Array, newPat:number, ctrlPat:number}}
+ */
 export function parseSpreekuurRows(aoa) {
   if (!aoa || !aoa.length) throw new Error('Het bestand is leeg.')
   const norm = s =>

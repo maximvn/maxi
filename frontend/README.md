@@ -10,37 +10,137 @@ komen uit **dezelfde** bron: `build.js` bundelt `src/entry-losse-html.jsx` (zie 
 frontend/
   index.html                 de pagina (één #root, licht thema), laadt src/main.jsx
   vite.config.js             React-plugin, base './', dev-proxy /api → http://127.0.0.1:8000
-  package.json               react, react-dom, xlsx; dev: vite, @vitejs/plugin-react
+  package.json               react, react-dom, xlsx; dev: vite, @vitejs/plugin-react, prettier (npm run format)
+  .prettierrc                opmaak: printWidth 100, geen puntkomma's, enkele quotes (CONVENTIES.md §4)
   .env.api / .env.simpel     de twee varianten (zie onder)
+  CONVENTIES.md              de norm voor bestanden, kopblokken, JSDoc en uitgeschreven code
   test_vite_build.mjs        browsercontrole van de build (worker én http), zie "Tests"
   src/
     main.jsx                 React-root; zet de paginatitel per variant
-    App.jsx                  de RasterTool-component (de hele interface, één component)
-    ui/
-      kleuren.js             C (design-tokens), NEW_PALETTE, CTRL_PALETTE, FK_PALETTE, BUF_COLOR, FLEX_COLOR, FLEX_STRIPE
-      basis.jsx              Btn, Card, Lbl, H2, H3, Tip, IBtn, NumStepper
+    App.jsx                  de schil: alle useState's, de hooks in vaste volgorde, de AppContext-waarde, welke module zichtbaar is
+    bouwvlaggen.js           SIMPEL en API_VLAG uit import.meta.env of window.__POLIRASTER_*; BOUWVLAGGEN
+    engineInstantie.js       ENGINE — de ene engine-client (worker / sync / http), aangemaakt bij het laden
+    entry-losse-html.jsx     ingang voor build.js (losse HTML): pagina óf worker, zie "Engine"
+    context/
+      AppContext.jsx         AppProvider en useApp(): de gedeelde toestand en handelingen (één object uit App.jsx)
+    hooks/                   gedrag zonder opmaak, één hook per verantwoordelijkheid
+      useLiveRaster.js       bouwJob, rekenLive (gedebounced, generatieteller), doGenerate, liveBezig/liveFout, herbouwNu + toast, engineStatus
+      useOptimiser.js        "Kan dit beter?": 70 scenario's als batch, rangschikking per doel, kosten per voorkeursregel, geheugen-koppeling
+      useBijsturen.js        bijstuur-state; kandidaten doorrekenen (batch), sorteren, pasVoorstelToe
+      useAssistent.js        gesprek, assistentCtx, verwerkVraag (vraaganalyse → opdracht/antwoord/wedervraag), toonKennis, doeActie
+      useRasterBewerking.js  slepen, verplaatsen, verlengen, verwijderen, addToRoom, dagdeel verplaatsen/ruilen in de bezettingskaart
+      useImportExport.js     sessie-import (_rasterdata), spreekuur-Excel, voorbeeld-Excel, export (via lib/exportExcel.js), functiekamer-import/sjabloon
+      useGeheugen.js         mem (localStorage): scenario's toegepast/afgewezen, intake-antwoorden, ijkpunten; wisGeheugen
+      useFunctiekamers.js    fkKamers/fkCodes/fkReg, fkZet*, fkLaadPreset, fkWeekVan, fkKleur, fkSamenvatting
+      useTestHaken.js        alle window.__*-haken voor de tests (test_*.mjs, test_vite_build.mjs, test_frontend_http.mjs)
+    modules/                 de vier stappen van de tool
+      Tijden.jsx             stap 1 (active 0): schil + weekdagverdeling + samenvatting
+      TijdenDagoverzicht.jsx tijdlijn-preview van de dag
+      TijdenDagdelen.jsx     per dagdeel tijden en weekdagen
+      TijdenVerdeling.jsx    verdeling ochtend/middag/avond en benutting
+      Gegevens.jsx           stap 2 (active 1, poli): schil, verborgen file-inputs, import-badge
+      GegevensStart.jsx      startkaarten "Nieuw raster" / "Bestaand raster"
+      GegevensAantallen.jsx  stap 2.1: aantallen per week, Excel-route, naar stap 2.2
+      GegevensCodes.jsx      stap 2.2: overzicht van alle afspraaktypen + twee CodeTabellen
+      CodeTabel.jsx          de afspraakcodes van één categorie (nieuw of controle)
+      GegevensFunctiekamers.jsx  stap 2 (functiekamer-modus): startscherm of invulscherm met kamers en onderzoeken
+      functiekamers/
+        FkStartscherm.jsx    Excel inladen of een basisset per vakgroep
+        FkKamerLijst.jsx     kamers: naam, omschrijving, in gebruik, dagdelen × weekdagen
+        FkCodeLijst.jsx      onderzoekscodes: aantallen, duur, kamers, uitklapbare details, zoeken/filteren
+        FkDagenGrid.jsx      vinkjesraster dagdelen × weekdagen
+        fkUi.jsx             Stap, Lab en de gedeelde invoerstijl
+      Regels.jsx             stap 3 (active 2, poli): schil + actieve instellingen
+      RegelsVoorbeeld.jsx    live voorbeeld-spreekuur
+      RegelsVolgorde.jsx     spoed eerst, starten met, afwisselen (met bereik)
+      RegelsDigitaal.jsx     digitale consulten, eigen digitale spreekuren (dag × dagdeel), eindvenster
+      RegelsKamers.jsx       kamerverdeling, rest-dag, minimumbezetting
+      RegelsFlex.jsx         flex-tijd verdeling
+      RegelsSamenspel.jsx    samenspel van de regels per as
+      RegelsFunctiekamers.jsx  stap 3 (functiekamer-modus): vulwijze, bijzondere regels, planregels
+      Raster.jsx             stap 4: wachtstand, analyse + geometrie, alle panelen onder elkaar
+      raster/
+        RasterKop.jsx        titel, assistent-knop, dag/week, zoom, live-status, herbouw, export
+        Capaciteitsbalk.jsx  automatisch / vast aantal kamers + past-advies
+        Kerncijfers.jsx      KPI-paneel (inklapbaar)
+        PanelKop.jsx         inklapbare paneelkop (openPanels)
+        FunctiekamerAdvies.jsx  rasteradvies per functiekamer in gewone taal
+        Bezettingskaart.jsx  de week als kaart: cellen per kamer × dag × dagdeel, telling, signalen, slepen
+        OptimiserPaneel.jsx  "Kan dit beter?" — één zin, één knop
+        OptimiserDetails.jsx scenario-optimiser met doelkeuze, gewoonte, tabellen en kosten per regel
+        OptimiserTabel.jsx   de scenariotabel (badges, verschillen, toepassen / niet voor ons)
+        GeheugenPaneel.jsx   wat de tool van jou heeft geleerd (scenario's, intake, ijkpunten)
+        EngineOverzicht.jsx  meldingen, aanpassingen en regelrapport van de engine
+        Analyse.jsx          vraag/capaciteit, modaliteitsmix, adviezen
+        RegelsLive.jsx       snelle regel-schakelaars bij het raster
+        RasterWeek.jsx       de week als tijdrooster (WeekBlok)
+        Dagtabs.jsx          kies de dag
+        Palet.jsx            statuschip + sleepbare afspraakcodes
+        RasterDag.jsx        het dagraster: tijdas + kamerkolommen
+        RasterKamerKolom.jsx één kamerkolom (RoomColumn) met kop, ToevoegMenu, dropzones en blokken
+        RasterBlok.jsx       één blok (Block) met sleep- en resize-handvatten
+        Restlijst.jsx        "nog te plannen"
+        RasterLegenda.jsx    legenda en weektotalen
+        SleepGhost.jsx       zwevende sleep-indicatoren
+    assistent/
+      AssistentModal.jsx     de schil: keuzescherm, bijstuur-schil (signalen links, voet met "pas dit toe"), dispatch op wiz.modus
+      Bijsturen.jsx          rechterkolom van het bijsturen: invoer, "dit begrijp ik", kennis, gesprek, voorstel
+      Kennis.jsx             KennisIndex, Wedervraag, Antwoord
+      Gesprek.jsx            de gespreksboom (VRAAGBOOM) tot er een uitvoerbare opdracht ligt
+      Voorstel.jsx           het doorgerekende voorstel: was → wordt, kosten, andere manieren
+      Intake.jsx             de begeleide intake (wizard): secties, antwoorden, voet
+      IntakeVraag.jsx        één vraag: knoppen, "vorige keer", overnemen, vrij invullen
+      IntakeSamenvatting.jsx dit heb ik voor je klaargezet
+      intakeVragen.js        de vragen deel 1 (poli, zorgvraag, tijden) + toepassers; maakIntakeVragen
+      intakeVragenRegels.js  de vragen deel 2 (capaciteit, volgorde, ruimte, afronden)
+      signalen.js            "wat mij nu opvalt" uit het raster
+      assistent.js           vraaganalyse (analyseerVraag, zoekKennis, antwoordVoor, kennisPerCategorie); de ene ingang, exporteert ook door
+      kennisbank.js          KENNIS (~90 onderwerpen) en VOORBEELDVRAGEN — data, daarom bewust groot
+      status.js              STATUS (antwoorden uit het raster), meethulpen, beantwoordStatus
+      taal.js                dagnamen, normaliseer, leesEntiteiten, IS_VRAAG/HOE_DOE_IK, NAV
+    layout/
+      Rail.jsx               het linkermenu (planmodus, assistent, stappen, export, opnieuw)
+      InstellingenPaneel.jsx het schuifpaneel met de actieve module en "Analyseer & herbouw"
+      Kopbalk.jsx            bovenbalk: planmodus, poli-naam, specialisme, import-badge, LIVE, klok
+      Toast.jsx              melding na "Analyseer & herbouw"
+      Welkom.jsx             canvas vóór het eerste raster
+      GlobaleStijl.jsx       lettertypen, keyframes, focus, scrollbalken
+    dialogen/
+      ExportDialoog.jsx      Excel export (downloadlink of opslaan via de viewer)
+      ResetDialoog.jsx       alles wissen
+    ui/                      kleine bouwstenen
+      kleuren.js             C (design-tokens), paletten, FLEX_COLOR/FLEX_STRIPE, getColor
+      basis.jsx              Btn, Card, Lbl, H2, H3, Tip, IBtn, NumStepper, zweef
+      MiniHero.jsx           compacte module-kop
       OpdrachtInvoer.jsx     invoerveld voor een losse opdracht aan de assistent
       VrijPaneel.jsx         "zelf invullen"-paneel van de intake
     lib/                     zuivere helpers, geen React
       tijd.js                toMin, toTime, clamp, snapMin, DAYS, DAY_ABBR, WEEKDAY_KEYS, DAGS_NL, DEF_DD_DAGEN, ddDagenVan
-      planregels.js          PLAN_INFO, TOGGLE_KEYS, RADIO_KEYS, MODULES
+      planregels.js          PLAN_INFO, TOGGLE_KEYS, RADIO_KEYS, MODULES, RESTDAG_LABEL
       presets.js             defaultRow, starterRow, mkRow, SPEC_PRESETS, SPECIALISMEN, MODALITEITEN, modInfo
       excel.js               wbNaarHref, wbNaarCsv, wbNaarEenCsv, viewerOpslaan(Xlsx), kanViewerOpslaan, parseSpreekuurRows, SPREEKUUR_*
+      exportExcel.js         bouwExportWerkmap: agenda per dag, totaal agenda, alle afspraken, configuratie, functiekamer-advies, _rasterdata
       geheugen.js            MEM_KEY, memLees, memSchrijf, scenSleutel, specKey, INTAKE_LABELS, datumKort
-      meting.js              DD_INFO, celMeting, dagMeting, bandKleur
+      meting.js              DD_INFO, celMeting, dagMeting, bandKleur, kamerInGebruik
       opdracht.js            parseOpdracht, VRAAGBOOM, ONDERWERP_WOORDEN, opdrachtOmschrijving
-    entry-losse-html.jsx     ingang voor build.js (losse HTML): pagina óf worker, zie "Engine"
+      bijsturen.js           dagShare, codesMetDag, bouwKandidaten, meetDoel (zuiver; de hook rekent door)
+      palet.js               bouwPalet: sleepbronnen uit de codes
+      spreekuurcijfers.js    spreekuurCijfers (m2c): bruto/netto/flex per dagdeel en week
+      rasteranalyse.js       analyseerRaster: tellingen, vraag vs. capaciteit, adviezen
+      rastergeometrie.js     bouwGeometrie (tijd → pixels, regio's, rasterlijnen), layoutOverlap
     engine/                  de rekenkern — geen React-import, draait ook in de worker
       poli.js                computeRasterInner, computeRasterEngine, engineSleutel, meetRasterPuur, CMB_TOT/CMB_STRAF
       functiekamers.js       de functiekamer-engine en de voorbeeldsets
       runners.js             ENGINE_RUNNERS {poli, functie, meet}
       client.js              maakEngineClient (modi worker / sync / http), startEngineWorker
       engine.worker.js       de Web Worker: startEngineWorker(ENGINE_RUNNERS)
-    assistent/
-      assistent.js           kennisbank, vraaganalyse, statusvragen
 ```
 
-`App.jsx` maakt de engine-client aan met
+Elk bestand begint met het kopblok uit `CONVENTIES.md` §2 (wat doet dit onderdeel, plaats in de
+tool, leest uit / schrijft naar de context, waar kan het misgaan). Opmaak: `npm run format`
+(Prettier, `.prettierrc`); `npm run format:check` controleert zonder te schrijven.
+
+`src/engineInstantie.js` maakt de engine-client aan met
 `maakWorker: () => new Worker(new URL('./engine/engine.worker.js', import.meta.url), {type:'module'})`;
 Vite bundelt de worker als apart bestand (`dist/assets/engine.worker-*.js`). In de losse
 HTML-bestanden (esbuild, `build.js`) bestaat die URL niet en valt de client terug op de

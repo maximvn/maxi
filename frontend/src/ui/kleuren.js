@@ -1,4 +1,32 @@
-// ─── DESIGN TOKENS ────────────────────────────────────────────────────────────
+/**
+ * ═══ KLEUREN — design-tokens en paletten van de tool ════════════════════════
+ *
+ * Wat doet dit onderdeel
+ *   Alle kleuren van de tool op één plek: de design-tokens (C), de paletten voor nieuwe en
+ *   controle-afspraken en voor onderzoekscodes, de buffer- en flexkleuren, en getColor die
+ *   per afspraakblok de kleur kiest.
+ *
+ * Plaats in de tool
+ *   Geïmporteerd door vrijwel elke component; getColor door RasterBlok, RasterWeek,
+ *   Restlijst, SleepGhost en RasterKamerKolom.
+ *
+ * Invoer
+ *   — (constanten); getColor(appt) krijgt een afspraak of flexblok.
+ * Uitvoer
+ *   C, NEW_PALETTE, CTRL_PALETTE, BUF_COLOR, FK_PALETTE, FLEX_COLOR, FLEX_STRIPE, getColor.
+ *
+ * Hoe het werkt
+ *   1. De tool heeft één, licht thema; inline-styles lezen hun kleuren uit C.
+ *   2. Paletten worden per code-index (ci) doorlopen: dezelfde code heeft overal dezelfde
+ *      kleur.
+ *
+ * Waar kan het misgaan en hoe zie je dat
+ *   - Een blok heeft een andere kleur dan in het palet → ci verschilt; beide komen uit de
+ *     index van de code in newRows/ctrlRows (lib/palet.js).
+ */
+/**
+ * Design-tokens: de basiskleuren, randen, schaduwen en tekstkleuren.
+ */
 export const C = {
   primary: '#1C6EA4', // clean professional blue
   primaryDark: '#155888',
@@ -24,6 +52,9 @@ export const C = {
   halfHour: '#A8B4BE',
   blueAccent: '#E4F0F8',
 }
+/**
+ * Tinten voor nieuwe-patiëntcodes, per code-index (ci) doorlopen.
+ */
 export const NEW_PALETTE = [
   { bg: '#DDEAF5', brd: '#A4C4DE', fg: '#1C4E72' },
   { bg: '#D4E3F0', brd: '#99BBD8', fg: '#184567' },
@@ -32,6 +63,9 @@ export const NEW_PALETTE = [
   { bg: '#DAE7F3', brd: '#A0C0DA', fg: '#1D4F73' },
   { bg: '#E6EFF7', brd: '#B2CFE6', fg: '#23577C' },
 ]
+/**
+ * Tinten voor controlecodes, per code-index (ci) doorlopen.
+ */
 export const CTRL_PALETTE = [
   { bg: '#DBEBE0', brd: '#A6CBB2', fg: '#296547' },
   { bg: '#D4E7DB', brd: '#9CC4A9', fg: '#245A3F' },
@@ -40,6 +74,9 @@ export const CTRL_PALETTE = [
   { bg: '#D8ECE4', brd: '#A0CCBC', fg: '#225A4D' },
   { bg: '#DDEEDF', brd: '#AAD0B2', fg: '#2B6647' },
 ]
+/**
+ * Kleur van een buffer-blok.
+ */
 export const BUF_COLOR = { bg: '#F0F3F6', brd: '#D2DBE3', fg: '#6A7A88' }
 // Functiekamers: onderzoekscodes krijgen elk een eigen, rustige tint (12 kleuren, daarna herhaald).
 export const FK_PALETTE = [
@@ -58,11 +95,22 @@ export const FK_PALETTE = [
 ]
 // Flexruimte / buffer — licht oranje, duidelijk te onderscheiden van de afspraken
 export const FLEX_COLOR = { bg: '#FFF1DE', bg2: '#FFF9F0', brd: '#F0B96B', fg: '#8A5312' }
+/**
+ * Gestreepte achtergrond voor flexblokken.
+ * @param {number} [a=6] breedte van de eerste streep (px)
+ * @param {number} [b=13] einde van het streeppatroon (px)
+ * @returns {string} een CSS repeating-linear-gradient
+ */
 export const FLEX_STRIPE = (a = 6, b = 13) =>
   `repeating-linear-gradient(45deg,${FLEX_COLOR.bg},${FLEX_COLOR.bg} ${a}px,${FLEX_COLOR.bg2} ${a}px,${FLEX_COLOR.bg2} ${b}px)`
 
 // Kleur van een afspraakblok in raster, palet en restlijst: flex, buffer, onderzoek
 // (functiekamers), digitale controle, nieuw, controle — of een neutrale terugval.
+/**
+ * Kiest de kleur van een afspraakblok: flex, buffer, onderzoek, digitale controle, nieuw, controle of neutraal.
+ * @param {object} appt afspraak of flexblok (isFlex, isBuffer, category, ci, digitaal)
+ * @returns {{bg:string, brd:string, fg:string}}
+ */
 export const getColor = appt => {
   if (appt.isFlex) return { bg: FLEX_COLOR.bg, brd: FLEX_COLOR.brd, fg: FLEX_COLOR.fg }
   if (appt.isBuffer) return BUF_COLOR

@@ -1,3 +1,36 @@
+/**
+ * ═══ OPDRACHT — de opdracht-lezer en de gespreksboom ════════════════════════
+ *
+ * Wat doet dit onderdeel
+ *   Leest een losse instructie in gewoon Nederlands ("dinsdag ook inplannen", "kamer 3 op
+ *   maandag naar 85%") en zet die om in een opdracht {type, …} die de bijstuur-keten kan
+ *   doorrekenen. Daarnaast de gespreksboom (VRAAGBOOM) die doorvraagt tot er een
+ *   uitvoerbare opdracht ligt, en de omschrijving van een opdracht in gewone taal.
+ *
+ * Plaats in de tool
+ *   hooks/useAssistent.js (via analyseerVraag), Bezettingskaart.jsx (opdracht uit een cel),
+ *   assistent/Gesprek.jsx (VRAAGBOOM), Voorstel.jsx (opdrachtOmschrijving), useTestHaken.js
+ *   (window.__parse, __boom).
+ *
+ * Invoer
+ *   een zin (string), of een opdracht-object.
+ * Uitvoer
+ *   parseOpdracht → {type: 'dag-open' | 'benutting' | 'kamers' | … | 'onderwerp' |
+ *   'onbekend', dag?, kamer?, dd?, pct?, …}.
+ *
+ * Hoe het werkt
+ *   1. Eerst de entiteiten (dag, kamer, dagdeel, percentage); bij percentages wint een
+ *      woord dat een richting aangeeft.
+ *   2. Dan de soort opdracht op trefwoorden; wat niet herkend wordt is "onbekend" of een
+ *      onderwerp — nooit een gok.
+ *   3. VRAAGBOOM: elke knoop heeft opties die óf naar een volgende knoop (volg) óf naar een
+ *      opdracht (opdr) leiden.
+ *
+ * Waar kan het misgaan en hoe zie je dat
+ *   - Een opdracht wordt verkeerd gelezen → test hem met window.__parse("…") in de console.
+ *   - Een keuze in het gesprek leidt nergens toe → de knoop in volg bestaat niet in
+ *     VRAAGBOOM.
+ */
 import { clamp, DAGS_NL } from './tijd.js'
 import { DD_INFO } from './meting.js'
 
@@ -7,6 +40,9 @@ import { DD_INFO } from './meting.js'
 // verzinsels: wat niet herkend wordt, wordt als "niet begrepen" teruggegeven in
 // plaats van gegokt. De herkende opdracht wordt altijd eerst teruggelezen aan de
 // gebruiker vóór er iets verandert.
+/**
+ * Dagnamen met hun afkorting, voor de herkenning in een zin.
+ */
 export const DAG_PAT = [
   ['maandag', 'ma'],
   ['dinsdag', 'di'],
@@ -14,6 +50,11 @@ export const DAG_PAT = [
   ['donderdag', 'do'],
   ['vrijdag', 'vr'],
 ]
+/**
+ * Zet een zin om in een uitvoerbare opdracht.
+ * @param {string} tekst de opdracht in gewone taal
+ * @returns {object} de opdracht ({type, …}); 'onbekend' als niets herkend is
+ */
 export const parseOpdracht = tekst => {
   const t = (tekst || '').toLowerCase().replace(/[.;!]/g, ' ')
   if (!t.trim()) return { type: 'onbekend', knoop: 'start' }
@@ -185,6 +226,9 @@ export const parseOpdracht = tekst => {
 // tot er een uitvoerbare opdracht ligt. Elke knop hieronder eindigt óf in een
 // vervolgvraag (`volg`) óf in een opdracht die echt doorgerekend wordt (`opdr`).
 // Zo is er nooit een doodlopend "dat kan ik niet".
+/**
+ * De gespreksboom: per knoop een vraag (v), uitleg (u) en opties (o) met volg of opdr.
+ */
 export const VRAAGBOOM = {
   start: {
     v: 'Waar gaat het over?',
@@ -431,6 +475,9 @@ export const VRAAGBOOM = {
 }
 // Woorden die naar een knoop in de boom wijzen — de brug tussen vrije tekst en
 // de gespreksboom.
+/**
+ * Woorden die naar een knoop in de gespreksboom wijzen.
+ */
 export const ONDERWERP_WOORDEN = [
   ['verdeling', /verdeling|verdeeld|verdelen|spreiding|scheef|ongelijk|onevenwichtig|balans/],
   ['verdeling-dagdeel', /ochtend.{0,20}middag|middag.{0,20}ochtend|voor de lunch|na de lunch/],
@@ -447,6 +494,11 @@ export const ONDERWERP_WOORDEN = [
   ['flex', /flex|buffer|uitloop|marge|ruimte/],
   ['vraagkant', /aantal|patiënt|patient|duur|consultduur|drukker|rustiger|groei/],
 ]
+/**
+ * Beschrijft een opdracht in één zin ("Zo lees ik je opdracht").
+ * @param {object} op de opdracht
+ * @returns {string}
+ */
 export const opdrachtOmschrijving = op => {
   const d = op.dag != null ? DAGS_NL[op.dag] : null
   const k = op.kamer != null ? `kamer ${op.kamer + 1}` : null

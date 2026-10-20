@@ -1,4 +1,35 @@
-// ─── STARTRIJEN, MODALITEITEN EN SPECIALISME-VOORBEELDSETS ────────────────────
+/**
+ * ═══ PRESETS — startrijen, modaliteiten en voorbeeldsets per specialisme ════
+ *
+ * Wat doet dit onderdeel
+ *   De vorm van een afspraakcode (defaultRow), de startcodes bij een nieuwe lijst
+ *   (starterRow), de modaliteiten (fysiek, telefonisch, video) en de voorbeeldsets per
+ *   specialisme (SPEC_PRESETS) waarmee de keuze van een specialisme realistische codes
+ *   laadt.
+ *
+ * Plaats in de tool
+ *   App.jsx (kiesSpecialisme), CodeTabel.jsx en GegevensAantallen.jsx (starterRow),
+ *   lib/excel.js (defaultRow), Kopbalk.jsx en de intake (SPECIALISMEN).
+ *
+ * Invoer
+ *   aantal codes (n), categorie, of een presetrij [code, oms, duur, pct, mod, spoed].
+ * Uitvoer
+ *   Rijen {afspraakcode, omschrijving, duur, digitaal, modaliteit, spoed, percentage,
+ *   weekdagen, dagdelen, onzeker}.
+ *
+ * Hoe het werkt
+ *   1. Een rij heeft altijd alle velden, zodat de engine niets hoeft aan te vullen.
+ *   2. digitaal is afgeleid van de modaliteit (alles behalve fysiek).
+ *
+ * Waar kan het misgaan en hoe zie je dat
+ *   - Na een preset telt de verdeling niet op tot 100 → de percentages per groep in
+ *     SPEC_PRESETS kloppen niet.
+ */
+/**
+ * Een lege afspraakcode met standaardwaarden.
+ * @param {number} n aantal codes in de groep (bepaalt het standaardpercentage)
+ * @returns {object} een rij
+ */
 export const defaultRow = n => ({
   afspraakcode: '',
   omschrijving: '',
@@ -24,6 +55,13 @@ export const CTRL_STARTERS = [
   ['VER', 'Verrichting', 20],
   ['VCO', 'Video-controle', 15, 'video'],
 ]
+/**
+ * Een startcode met zinvolle naam, code en duur.
+ * @param {'nieuw'|'controle'} cat categorie
+ * @param {number} i positie in de lijst
+ * @param {number} n aantal codes in de groep
+ * @returns {object} een rij
+ */
 export const starterRow = (cat, i, n) => {
   const lst = cat === 'nieuw' ? NIEUW_STARTERS : CTRL_STARTERS
   const s = lst[i] || [
@@ -44,17 +82,30 @@ export const starterRow = (cat, i, n) => {
 
 // Modaliteiten: fysiek consult, telefonisch, of beeldbellen. "digitaal" = niet-fysiek
 // (blijft bestaan voor de engine/kleuren); modaliteit voegt het onderscheid tel/video toe.
+/**
+ * De drie modaliteiten met label, pictogram en of ze digitaal zijn.
+ */
 export const MODALITEITEN = [
   { v: 'fysiek', l: 'Fysiek', ico: '', dig: false },
   { v: 'telefonisch', l: 'Telefonisch', ico: '☎', dig: true },
   { v: 'video', l: 'Beeldbellen', ico: '📹', dig: true },
 ]
+/**
+ * Zoekt de modaliteit op; onbekend wordt fysiek.
+ * @param {string} m 'fysiek' | 'telefonisch' | 'video'
+ * @returns {{v:string, l:string, ico:string, dig:boolean}}
+ */
 export const modInfo = m => MODALITEITEN.find(x => x.v === m) || MODALITEITEN[0]
 
 // ─── SPECIALISME-VOORBEELDSETS ─────────────────────────────────────────────────
 // Rij = [code, omschrijving, duur, verdeling%, modaliteit, spoed]. Het kiezen van
 // een specialisme laadt hiermee realistische startcodes, zodat de poli-keuze het
 // model écht aanstuurt. Verdeling% telt per groep (nieuw / controle) op tot 100.
+/**
+ * Maakt een rij uit een presetregel.
+ * @param {Array} rij [code, omschrijving, duur, verdeling%, modaliteit, spoed]
+ * @returns {object} een rij
+ */
 export const mkRow = ([code, oms, duur, pct, mod = 'fysiek', spoed = false]) => ({
   ...defaultRow(1),
   afspraakcode: code,
@@ -186,4 +237,7 @@ export const SPEC_PRESETS = {
     ],
   },
 }
+/**
+ * De namen van de specialismen met een voorbeeldset.
+ */
 export const SPECIALISMEN = Object.keys(SPEC_PRESETS)

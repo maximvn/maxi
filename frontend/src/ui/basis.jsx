@@ -1,8 +1,34 @@
-// ─── KLEINE UI-BOUWSTENEN — knoppen, kaarten, koppen, tooltips, getalveld ──────
+/**
+ * ═══ BASIS — kleine UI-bouwstenen ═══════════════════════════════════════════
+ *
+ * Wat doet dit onderdeel
+ *   Knoppen (Btn), kaarten (Card), labels en koppen (Lbl, H2, H3), tooltips (Tip, IBtn),
+ *   het getalveld met −/+ (NumStepper) en de zweef-helper (zweef).
+ *
+ * Plaats in de tool
+ *   Gebruikt door alle modules, layout- en dialoogcomponenten.
+ *
+ * Props                    zie de JSDoc per component
+ *
+ * Waar kan het misgaan en hoe zie je dat
+ *   - Een getal typen lukt maar voor één cijfer → NumStepper moet op moduleniveau staan
+ *     (hieronder uitgelegd), nooit binnen een render.
+ *   - Een tooltip valt buiten beeld → Tip klemt de positie op de vensterbreedte (left).
+ */
 import React, { useState, useRef } from 'react'
 import { C } from './kleuren.js'
 
 // ─── MICRO COMPONENTS ─────────────────────────────────────────────────────────
+/**
+ * Knop in twee varianten (primary / secondary), met zweefkleur.
+ * @param {object} props
+ * @param props.variant 'primary' | 'secondary'
+ * @param props.small kleinere knop
+ * @param props.disabled uitgeschakeld
+ * @param props.onClick klik-handler
+ * @param props.style extra stijl
+ * @returns {JSX.Element}
+ */
 export const Btn = ({ children, variant = 'primary', onClick, disabled, small, style = {} }) => {
   const [h, sH] = useState(false)
   const base =
@@ -42,6 +68,13 @@ export const Btn = ({ children, variant = 'primary', onClick, disabled, small, s
     </button>
   )
 }
+/**
+ * Witte kaart met rand en zachte schaduw.
+ * @param {object} props
+ * @param props.style extra stijl
+ * @param props.children inhoud
+ * @returns {JSX.Element}
+ */
 export const Card = ({ children, style = {} }) => (
   <div
     style={{
@@ -56,6 +89,12 @@ export const Card = ({ children, style = {} }) => (
     {children}
   </div>
 )
+/**
+ * Klein label in hoofdletters boven een veld.
+ * @param {object} props
+ * @param props.children tekst
+ * @returns {JSX.Element}
+ */
 export const Lbl = ({ children }) => (
   <div
     style={{
@@ -70,6 +109,12 @@ export const Lbl = ({ children }) => (
     {children}
   </div>
 )
+/**
+ * Kop van niveau 2.
+ * @param {object} props
+ * @param props.children tekst
+ * @returns {JSX.Element}
+ */
 export const H2 = ({ children }) => (
   <h2
     style={{
@@ -83,6 +128,13 @@ export const H2 = ({ children }) => (
     {children}
   </h2>
 )
+/**
+ * Kop van niveau 3 (hoofdletters).
+ * @param {object} props
+ * @param props.children tekst
+ * @param props.style extra stijl
+ * @returns {JSX.Element}
+ */
 export const H3 = ({ children, style = {} }) => (
   <h3
     style={{
@@ -98,6 +150,13 @@ export const H3 = ({ children, style = {} }) => (
     {children}
   </h3>
 )
+/**
+ * Tooltip die bij muis-over boven het element verschijnt (position: fixed).
+ * @param {object} props
+ * @param props.text de uitleg
+ * @param props.children het element waarbij de tip hoort
+ * @returns {JSX.Element}
+ */
 export const Tip = ({ text, children }) => {
   const [pos, setPos] = useState(null)
   const ref = useRef(null)
@@ -149,6 +208,12 @@ export const Tip = ({ text, children }) => {
     </div>
   )
 }
+/**
+ * Een "i"-bolletje met tooltip.
+ * @param {object} props
+ * @param props.tip de uitleg
+ * @returns {JSX.Element}
+ */
 export const IBtn = ({ tip }) => (
   <Tip text={tip}>
     <span
@@ -183,6 +248,18 @@ export const IBtn = ({ tip }) => (
 // nog niet af is ("", "2" op weg naar "27") mag even bestaan; pas bij een geldig
 // getal geven we het door, en bij verlaten van het veld ronden we af binnen
 // min/max. Zo werkt typen, plakken en wissen net zo vanzelfsprekend als de pijltjes.
+/**
+ * Getalveld met − en + dat tijdens het typen zijn eigen tekst vasthoudt.
+ * @param {object} props
+ * @param props.val huidige waarde
+ * @param props.on setter, krijgt het geklemde getal
+ * @param props.suffix eenheid achter het veld
+ * @param props.step stapgrootte van −/+
+ * @param props.min minimum
+ * @param props.max maximum
+ * @param props.breed breedte van het veld (px)
+ * @returns {JSX.Element}
+ */
 export const NumStepper = ({ val, on, suffix, step = 5, min = 0, max = 999, breed = 48 }) => {
   const [tekst, setTekst] = useState(null) // null = toon de echte waarde
   const toon = tekst !== null ? tekst : String(val)

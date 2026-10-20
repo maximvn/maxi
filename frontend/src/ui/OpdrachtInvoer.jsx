@@ -1,8 +1,32 @@
+/**
+ * ═══ OPDRACHTINVOER — tekstveld voor een opdracht of vraag aan de assistent ═══
+ *
+ * Wat doet dit onderdeel
+ *   Een tekstveld met de knop "Ga ermee aan de slag" (of ⌘/Ctrl + Enter). Houdt zijn eigen
+ *   tekst bij, zodat typen niet het hele raster laat herrekenen.
+ *
+ * Plaats in de tool
+ *   assistent/Bijsturen.jsx, bovenaan de rechterkolom.
+ *
+ * Props                    onZoek(tekst), bezig (bool), initieel (string)
+ *
+ * Waar kan het misgaan en hoe zie je dat
+ *   - De tekst blijft na een klik op een signaal staan → Bijsturen geeft
+ *     key={voorstelTekst} mee, zodat het veld opnieuw begint met de nieuwe tekst.
+ */
 import React, { useState } from 'react'
 import { C } from './kleuren.js'
 
 // Invoerveld voor een losse opdracht — eigen state, zodat typen niet het hele
 // raster laat herrekenen.
+/**
+ * Invoerveld voor een losse opdracht of vraag.
+ * @param {object} props
+ * @param {function} props.onZoek wordt aangeroepen met de getypte tekst
+ * @param {boolean} props.bezig toont "aan het doorrekenen" en blokkeert de knop
+ * @param {string} props.initieel begintekst
+ * @returns {JSX.Element}
+ */
 export const OpdrachtInvoer = ({ onZoek, bezig, initieel }) => {
   const [t, setT] = useState(initieel || '')
   const start = () => {

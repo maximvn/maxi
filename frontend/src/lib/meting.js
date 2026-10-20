@@ -1,12 +1,49 @@
-// ═══ BEZETTING PER CEL ═══════════════════════════════════════════════════════
+/**
+ * ═══ METING — bezetting per cel en per dag ══════════════════════════════════
+ *
+ * Wat doet dit onderdeel
+ *   Eén meting van één kamer op één dag in één dagdeel (celMeting), van een hele dag
+ *   (dagMeting), de kleurband ten opzichte van doel en drempel (bandKleur) en of een kamer
+ *   op een dag een echt spreekuur heeft (kamerInGebruik). Dit is de basis onder de
+ *   bezettingskaart én onder de bijstuur-opdrachten: allebei praten over dezelfde cel, met
+ *   hetzelfde getal.
+ *
+ * Plaats in de tool
+ *   Bezettingskaart.jsx, FunctiekamerAdvies.jsx, lib/bijsturen.js, assistent/signalen.js,
+ *   RasterDag.jsx, RasterWeek.jsx, useTestHaken.js.
+ *
+ * Invoer
+ *   een raster (days, numRooms, ochDur, midDur, avDur), dagindex, kamerindex, dagdeelindex.
+ * Uitvoer
+ *   celMeting → {open, min, flex, appts, cap, pct}; dagMeting → {open, appts, kamers, pct}.
+ *
+ * Hoe het werkt
+ *   1. Een cel is open als er minstens één afspraak (geen flex) in staat.
+ *   2. Dubbelboekingen (overbook) tellen wel als afspraak, niet als minuten.
+ *
+ * Waar kan het misgaan en hoe zie je dat
+ *   - De kaart toont een ander percentage dan de kolomkop in het dagraster → de kolomkop
+ *     rekent met de bruto duur zonder overbook-correctie; deze meting is leidend.
+ */
 // Eén meting van één kamer op één dag in één dagdeel. Dit is de basis onder de
 // bezettingskaart én onder de bijstuur-opdrachten van de assistent: allebei
 // praten over dezelfde cel, met hetzelfde getal.
+/**
+ * Per dagdeelindex het slot-prefix, de naam en de afkorting.
+ */
 export const DD_INFO = [
   { c: 'o', l: 'Ochtend', kort: 'och' },
   { c: 'm', l: 'Middag', kort: 'mid' },
   { c: 'a', l: 'Avond', kort: 'avo' },
 ]
+/**
+ * Meet één cel: kamer room op dag di in dagdeel ddIdx.
+ * @param {object} r raster
+ * @param {number} di dagindex 0..4
+ * @param {number} room kamerindex
+ * @param {number} ddIdx 0 ochtend, 1 middag, 2 avond
+ * @returns {{open:boolean, min:number, flex:number, appts:number, cap:number, pct:number}|null}
+ */
 export const celMeting = (r, di, room, ddIdx) => {
   if (!r || !r.days) return null
   const dur = ddIdx === 0 ? r.ochDur : ddIdx === 1 ? r.midDur : r.avDur
@@ -33,6 +70,12 @@ export const celMeting = (r, di, room, ddIdx) => {
   }
 }
 // Meting van een hele dag (alle kamers, alle dagdelen) — voor "dinsdag is leeg".
+/**
+ * Meet een hele dag over alle kamers en dagdelen.
+ * @param {object} r raster
+ * @param {number} di dagindex
+ * @returns {{open:boolean, appts:number, kamers:number, pct:number}}
+ */
 export const dagMeting = (r, di) => {
   if (!r) return { open: false, appts: 0, pct: 0, kamers: 0 }
   const n = r.numRooms || 1
@@ -57,6 +100,13 @@ export const dagMeting = (r, di) => {
   }
 }
 // Kleurband: waar zit deze cel ten opzichte van jouw doel en jouw drempel?
+/**
+ * De kleurband van een cel: boven doel, op doel, onder doel of onder drempel.
+ * @param {number} pct bezetting %
+ * @param {number} doel doelbenutting %
+ * @param {number} drempel minimumbezetting % (0 = geen)
+ * @returns {{bg:string, brd:string, fg:string, l:string}}
+ */
 export const bandKleur = (pct, doel, drempel) =>
   pct >= doel + 6
     ? { bg: '#EDF1FB', brd: '#B9C6EA', fg: '#33509B', l: 'boven doel' }
@@ -69,6 +119,13 @@ export const bandKleur = (pct, doel, drempel) =>
 // Heeft kamer r op dag di een echt spreekuur (iets anders dan flex)? Een kamer die
 // op een andere dag wel wordt gebruikt maar hier leeg is, telt niet mee — anders
 // staar je in het dagraster naar lege kolommen die niets betekenen.
+/**
+ * Heeft kamer r op dag di een spreekuur (iets anders dan flex)?
+ * @param {object} raster raster
+ * @param {number} di dagindex
+ * @param {number} r kamerindex
+ * @returns {boolean}
+ */
 export const kamerInGebruik = (raster, di, r) => {
   const sl = raster.days[di]
   if (!sl) return false
