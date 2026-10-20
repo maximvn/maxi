@@ -4,7 +4,7 @@ Wat doet dit onderdeel
 ----------------------
 De frontend (React) kan haar rekenwerk op drie manieren laten doen: in een Web Worker,
 synchroon in de pagina, of via deze server. Deze server neemt dezelfde "jobs" aan als
-``engineClient.js`` in de browser maakt en geeft precies hetzelfde raster-JSON terug als
+``frontend/src/engine/client.js`` in de browser maakt en geeft precies hetzelfde raster-JSON terug als
 de JavaScript-engine. Daarnaast serveert hij de gebouwde frontend, zodat één adres volstaat:
 bij voorkeur de Vite-build ``frontend/dist/`` (gebouwd met ``VITE_POLIRASTER_API=''``, zie
 ``frontend/README.md``), anders het losse bestand ``dist/polimodel-api.html`` met de vlag
@@ -21,7 +21,16 @@ Eindpunten
 
 Fouten komen terug als HTTP 200 met ``{ok:false, fout, type, spoor}`` (``spoor`` = de
 stacktrace als lijst regels), zodat de frontend ze in de live-banner toont; de volledige
-stacktrace gaat ook naar het logboek. CORS staat open.
+stacktrace gaat ook naar het logboek.
+
+Beveiliging
+-----------
+Zie ``beveiliging.py`` en ``BEVEILIGING.md``: met ``POLIRASTER_WACHTWOORD`` ingesteld vereist
+alles een login (sessiecookie) of een Bearer-token; daarnaast gelden bodygrootte-, batch-,
+invoer-, tijd- en verzoeklimieten, een CSRF-controle op elke POST en beveiligingskoppen
+(CSP, nosniff, geen frames, HSTS achter HTTPS). CORS staat dicht, behalve voor herkomsten
+in ``POLIRASTER_ORIGINS``. Zonder wachtwoord (intranet, ontwikkelen) blijven de limieten en
+koppen gelden maar is er geen login.
 
 Starten
 -------
@@ -50,6 +59,8 @@ from importlib import import_module
 from pathlib import Path
 from typing import Any
 
+import asyncio
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
@@ -59,6 +70,7 @@ HIER = Path(__file__).resolve().parent
 sys.path.insert(0, str(HIER))
 
 import poliraster  # noqa: E402
+from beveiliging import Beveiliging, Instellingen  # noqa: E402
 from poliraster.meting import meet_raster_puur  # noqa: E402
 
 logging.basicConfig(level=os.environ.get("POLIRASTER_LOG", "INFO").upper(),
@@ -69,8 +81,14 @@ FRONTEND = HIER.parent / "dist" / "polimodel-api.html"          # losse HTML-var
 VITE_DIST = HIER.parent / "frontend" / "dist"                     # Vite-build (frontend/, VITE_POLIRASTER_API='')
 VITE_INDEX = VITE_DIST / "index.html"
 
-app = FastAPI(title="PoliRaster Studio — Python-backend", version=poliraster.__version__)
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+INST = Instellingen()
+app = FastAPI(title="PoliRaster Studio — Python-backend", version=poliraster.__version__,
+              docs_url=None, redoc_url=None, openapi_url=None)   # geen openbare API-docs op internet
+# CORS alleen voor expliciet toegestane herkomsten (standaard: dicht, alleen eigen herkomst).
+if INST.origins:
+    app.add_middleware(CORSMiddleware, allow_origins=INST.origins, allow_methods=["GET", "POST"],
+                       allow_headers=["content-type", "authorization"], allow_credentials=True)
+REKENSLOT = asyncio.Semaphore(max(1, INST.gelijktijdig))   # maximaal aantal gelijktijdige berekeningen
 
 
 # ── JSON zoals JavaScript het schrijft ──────────────────────────────────────────
@@ -106,7 +124,7 @@ def poli_beschikbaar() -> bool:
         return False
 
 
-# ── De rekenaars: dezelfde jobvorm als engineClient.js ─────────────────────────
+# ── De rekenaars: dezelfde jobvorm als frontend/src/engine/client.js ─────────────────────────
 def reken_poli(args: list, trace: bool = False) -> dict[str, Any]:
     """Job ``{type:'poli', args:[cfg,newRows,ctrlRows,m2,rules,capacity]}``."""
     if not isinstance(args, list) or len(args) < 6:
@@ -124,21 +142,75 @@ def reken_functie(args: list, trace: bool = False) -> dict[str, Any]:
 
 RUNNERS = {"poli": reken_poli, "functie": reken_functie}
 
+# ── Invoerlimieten: de engines zijn CPU-zwaar; onzinnig grote invoer wordt geweigerd ───────
+MAX_RIJEN = 200          # codes per categorie
+MAX_PATIENTEN = 20000    # afspraken per week per categorie
+MAX_KAMERS = 100
+MAX_CODES_FK = 500
+
+
+def controleer_invoer(job: dict) -> None:
+    """Weiger invoer die de rekenkern onredelijk lang zou bezighouden (``ValueError`` met uitleg)."""
+    args = job.get("args") or []
+    if job.get("type") == "poli" and len(args) >= 6:
+        cfg, nr, cr, m2, rules, cap = args[:6]
+        for naam, rijen in (("newRows", nr), ("ctrlRows", cr)):
+            if rijen is not None and (not isinstance(rijen, list) or len(rijen) > MAX_RIJEN):
+                raise ValueError(f"{naam}: maximaal {MAX_RIJEN} codes.")
+        for naam in ("newPat", "ctrlPat"):
+            v = (cfg or {}).get(naam, 0)
+            if not isinstance(v, (int, float)) or v < 0 or v > MAX_PATIENTEN:
+                raise ValueError(f"cfg.{naam}: een getal tussen 0 en {MAX_PATIENTEN}.")
+        k = (cap or {}).get("kamers", 1)
+        if not isinstance(k, (int, float)) or k < 0 or k > MAX_KAMERS:
+            raise ValueError(f"capacity.kamers: een getal tussen 0 en {MAX_KAMERS}.")
+    elif job.get("type") == "functie" and args and isinstance(args[0], dict):
+        a = args[0]
+        if len(a.get("kamers") or []) > MAX_KAMERS:
+            raise ValueError(f"kamers: maximaal {MAX_KAMERS}.")
+        if len(a.get("codes") or []) > MAX_CODES_FK:
+            raise ValueError(f"codes: maximaal {MAX_CODES_FK}.")
+
+
+async def reken_met_limiet(fn, *args):
+    """Voer een berekening uit in een werkthread, met het gelijktijdigheidsslot en de tijdslimiet.
+
+    Verloopt de tijdslimiet, dan krijgt de aanvrager een ``TimeoutError``; de thread rekent op de
+    achtergrond nog door tot hij klaar is (Python kan een thread niet afbreken) — daarom is de
+    limiet op het aantal gelijktijdige berekeningen er ook.
+    """
+    async with REKENSLOT:
+        return await asyncio.wait_for(asyncio.to_thread(fn, *args), timeout=INST.timeout)
+
 
 def voer_job_uit(job: dict | None) -> Any:
     """JS ``voerJobUit``: één job uitvoeren; met ``meet:true`` alleen de meting teruggeven."""
     if not isinstance(job, dict) or job.get("type") not in RUNNERS:
         raise ValueError(f"Onbekende rekenopdracht: {job.get('type') if isinstance(job, dict) else job}")
+    controleer_invoer(job)
     res = RUNNERS[job["type"]](job.get("args") or [], trace=bool(job.get("trace")))
     return meet_raster_puur(res) if job.get("meet") else res
 
 
 async def lees_body(request: Request) -> dict:
-    """De JSON-body als dict; een kapotte body geeft een ``ValueError`` met een duidelijke tekst."""
+    """De JSON-body als dict; een kapotte body geeft een ``ValueError`` met een duidelijke tekst.
+
+    De grootte wordt hier nogmaals begrensd (de middleware kijkt alleen naar Content-Length).
+    """
     try:
-        body = await request.json()
+        ruw = await request.body()
+        if len(ruw) > INST.max_body:
+            raise ValueError(f"De aanvraag is te groot (max {INST.max_body // 1024} kB).")
+        import json
+
+        try:
+            body = json.loads(ruw)
+        except Exception as e:  # noqa: BLE001 — JSONDecodeError e.d.
+            raise ValueError(f"De body is geen geldige JSON: {e}") from e
+    except ValueError:
+        raise
     except Exception as e:  # noqa: BLE001
-        raise ValueError(f"De body is geen geldige JSON: {e}") from e
+        raise ValueError(f"De body kon niet worden gelezen: {e}") from e
     if not isinstance(body, dict):
         raise ValueError("De body moet een JSON-object zijn.")
     return body
@@ -166,7 +238,10 @@ async def api_raster(request: Request) -> Response:
         if ontbreekt:
             raise ValueError(f"De body mist: {', '.join(ontbreekt)}.")
         log.debug("POST /api/raster: newRows=%d ctrlRows=%d", len(args[1] or []), len(args[2] or []))
-        return antwoord(reken_poli(args, trace=bool(b.get("trace"))))
+        job = {"type": "poli", "args": args, "trace": bool(b.get("trace"))}
+        return antwoord(await reken_met_limiet(voer_job_uit, job))
+    except asyncio.TimeoutError:
+        return antwoord({"ok": False, "fout": f"De berekening duurde langer dan {INST.timeout} s en is afgebroken.", "type": "TimeoutError", "spoor": []})
     except Exception as e:  # noqa: BLE001
         return antwoord(fout_antwoord(e))
 
@@ -177,7 +252,10 @@ async def api_functiekamers(request: Request) -> Response:
     try:
         b = await lees_body(request)
         log.debug("POST /api/functiekamers: kamers=%d codes=%d", len(b.get("kamers") or []), len(b.get("codes") or []))
-        return antwoord(reken_functie([b], trace=bool(b.get("trace"))))
+        job = {"type": "functie", "args": [b], "trace": bool(b.get("trace"))}
+        return antwoord(await reken_met_limiet(voer_job_uit, job))
+    except asyncio.TimeoutError:
+        return antwoord({"ok": False, "fout": f"De berekening duurde langer dan {INST.timeout} s en is afgebroken.", "type": "TimeoutError", "spoor": []})
     except Exception as e:  # noqa: BLE001
         return antwoord(fout_antwoord(e))
 
@@ -193,15 +271,24 @@ async def api_batch(request: Request) -> Response:
         jobs = b.get("jobs")
         if not isinstance(jobs, list):
             raise ValueError("De body moet een lijst 'jobs' bevatten.")
-        uit = []
-        for job in jobs:
-            try:
-                uit.append({"ok": True, "res": voer_job_uit(job)})
-            except Exception as e:  # noqa: BLE001
-                log.warning("batch-job mislukt: %s: %s", type(e).__name__, e)
-                uit.append({"ok": False, "err": f"{type(e).__name__}: {e}" if str(e) else type(e).__name__})
+        if len(jobs) > INST.max_jobs:
+            raise ValueError(f"Maximaal {INST.max_jobs} jobs per batch.")
+
+        def draai_alle() -> list:
+            uit = []
+            for job in jobs:
+                try:
+                    uit.append({"ok": True, "res": voer_job_uit(job)})
+                except Exception as e:  # noqa: BLE001
+                    log.warning("batch-job mislukt: %s: %s", type(e).__name__, e)
+                    uit.append({"ok": False, "err": f"{type(e).__name__}: {e}" if str(e) else type(e).__name__})
+            return uit
+
+        uit = await reken_met_limiet(draai_alle)
         log.debug("POST /api/batch: %d jobs, %d gelukt", len(jobs), sum(1 for u in uit if u["ok"]))
         return antwoord({"uit": uit})
+    except asyncio.TimeoutError:
+        return antwoord({"ok": False, "fout": f"De batch duurde langer dan {INST.timeout} s en is afgebroken.", "type": "TimeoutError", "spoor": []})
     except Exception as e:  # noqa: BLE001
         return antwoord(fout_antwoord(e))
 
@@ -232,6 +319,10 @@ def frontend() -> Response:
 if (VITE_DIST / "assets").is_dir():
     app.mount("/assets", StaticFiles(directory=str(VITE_DIST / "assets")), name="assets")
 
+# De beveiligingslaag om de hele app heen (login, limieten, CSRF, koppen). ``inline_script``
+# vertelt de CSP of de geserveerde frontend een inline script heeft (losse HTML) of niet (Vite).
+app.add_middleware(Beveiliging, inst=INST, inline_script=lambda: not VITE_INDEX.exists())
+
 
 def main(argv: list[str] | None = None) -> None:
     """``python server.py [--host 127.0.0.1] [--port 8000]``: start uvicorn zelf."""
@@ -241,8 +332,12 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--host", default=os.environ.get("POLIRASTER_HOST", "127.0.0.1"))
     ap.add_argument("--port", type=int, default=int(os.environ.get("POLIRASTER_PORT", "8000")))
     a = ap.parse_args(argv)
-    log.info("PoliRaster-server op http://%s:%d/  (poli-engine: %s)", a.host, a.port, "ja" if poli_beschikbaar() else "nog niet")
-    uvicorn.run(app, host=a.host, port=a.port, log_level=os.environ.get("POLIRASTER_LOG", "info").lower())
+    log.info("PoliRaster-server op http://%s:%d/  (poli-engine: %s, login: %s)", a.host, a.port,
+             "ja" if poli_beschikbaar() else "nog niet", "aan" if INST.login_aan else "UIT — alleen voor intranet")
+    if a.host not in ("127.0.0.1", "localhost") and not INST.login_aan:
+        log.warning("De server luistert op %s zonder wachtwoord. Zet POLIRASTER_WACHTWOORD voordat je dit op internet zet.", a.host)
+    uvicorn.run(app, host=a.host, port=a.port, log_level=os.environ.get("POLIRASTER_LOG", "info").lower(),
+                proxy_headers=INST.achter_proxy, forwarded_allow_ips="*" if INST.achter_proxy else None)
 
 
 if __name__ == "__main__":

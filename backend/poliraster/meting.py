@@ -1,4 +1,4 @@
-"""Zuivere meting van een raster (JS: ``meetRasterPuur`` in ``raster_model_2.jsx``).
+"""Zuivere meting van een raster (JS: ``meetRasterPuur`` in ``frontend/src/engine/poli.js``).
 
 Wat doet dit onderdeel
 ----------------------

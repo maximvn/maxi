@@ -69,7 +69,7 @@ Waar kan het misgaan en hoe zie je dat
 --------------------------------------
 Zet ``trace=True``: ``res["spoor"]`` toont per stap de kerngetallen (aantal afspraken,
 spreekuren per dag, restlijst) en de laatste stap zegt welke variant is gekozen. Vergelijk
-die cijfers met de JavaScript-engine (console.log in een kopie van ``raster_model_2.jsx``)
+die cijfers met de JavaScript-engine (console.log in een kopie van ``frontend/src/engine/poli.js``)
 om de afwijkende fase te vinden. Elke module beschrijft onderaan zijn docstring de eigen
 symptomen.
 """
@@ -126,7 +126,6 @@ def compute_raster_inner(cfg: dict, new_rows: list, ctrl_rows: list, m2: dict, r
             # correct geordend wordt.
             built[di][dd] = [list(r) for r in rooms]
             ctx.max_rooms = max(ctx.max_rooms, len(rooms))
-            ctx.per_dagdeel_need.append({"day": di, "dd": dd, "need": len(rooms), "placed": len(rooms), "over": 0})
         for a in res1["over"]:
             overflow.append({**a, "day": di, "dd": a["ddOpties"][0], "edited": False})
         # Benodigde kamers = wat er nodig zou zijn zonder limiet
@@ -147,10 +146,6 @@ def compute_raster_inner(cfg: dict, new_rows: list, ctrl_rows: list, m2: dict, r
         ctx.gedwongen_open += len(mb.get("gedwongen") or [])
         for dd in odd:
             built[di][dd] = mb["R"][dd]
-        for a in mb["rest"]:
-            overflow.append({**a, "day": di, "dd": (a["ddOpties"][0] if a.get("ddOpties") else None) or odd[0],
-                             "edited": False, "_restKamer": True})
-        ctx.naar_restlijst += len(mb["rest"])
         na = sum(sum(1 for rm in (built[di].get(dd) or []) if rm) for dd in odd)
         ctx.dichtgezet_dd += max(0, voor - na)
     spoor.stap("minimumbezetting", dichtgezet=ctx.dichtgezet_dd, gedwongen=ctx.gedwongen_open, restlijst=len(overflow))

@@ -154,9 +154,41 @@ Overboekte afspraken tellen als geplaatst maar openen geen kamer-dag (zoals Java
 
 ---
 
+## `beveiliging.py` — login, sessies, limieten en beveiligingskoppen
+
+**Wat**: de laag om de server heen die hem geschikt maakt voor internet. Eén ASGI-middleware
+(`Beveiliging`) plus helpers voor sessietokens, wachtwoordvergelijking en tellers per adres.
+
+**Invoer**: omgevingsvariabelen (`Instellingen`): `POLIRASTER_WACHTWOORD`, `POLIRASTER_GEHEIM`,
+`POLIRASTER_TOKEN`, `POLIRASTER_ORIGINS`, `POLIRASTER_ACHTER_PROXY`, `POLIRASTER_HTTPS`,
+`POLIRASTER_SESSIE_UREN`, `POLIRASTER_MAX_BODY`, `POLIRASTER_MAX_JOBS`, `POLIRASTER_GELIJKTIJDIG`,
+`POLIRASTER_TIMEOUT`, `POLIRASTER_LIMIET`, `POLIRASTER_CSP`.
+
+**Uitvoer**: per verzoek een beslissing (doorlaten, 401 inloggen, 403 herkomst, 413 te groot,
+429 te veel) en beveiligingskoppen op elk antwoord; `/login` en `/logout` worden hier afgehandeld.
+
+**Stappen per verzoek**:
+1. verzoeklimiet per adres (glijdend venster van een minuut);
+2. bodygrootte op `Content-Length` (de app leest de body daarna nogmaals begrensd);
+3. login: `/login` (GET toont het formulier, POST controleert het wachtwoord in constante tijd,
+   zet de HMAC-ondertekende cookie, blokkeert een adres na tien fouten), `/logout`, en voor alle
+   andere paden behalve `/api/health` de cookie of het Bearer-token;
+4. CSRF op schrijvende verzoeken: `Sec-Fetch-Site` (same-origin/none → goed, cross-site → fout),
+   anders `Origin`/`Referer` tegen de eigen herkomst of `POLIRASTER_ORIGINS`;
+5. de app, met CSP, nosniff, DENY, Referrer-Policy same-origin, Permissions-Policy, no-store voor
+   de API en HSTS achter HTTPS op het antwoord.
+
+**Waar kan het misgaan**: zie de module-docstring (cookie niet geaccepteerd achter een proxy,
+403 herkomst, 429, 413, CSP-fouten in de console). Elke weigering staat in het logboek met de
+waarden die de server zag (origin, eigen herkomst, Sec-Fetch-Site).
+
+**Test**: `tests/test_beveiliging.py` (pytest, server in beveiligde stand) en
+`tests/test_beveiligd_e2e.mjs` (Playwright: loginscherm, fout en goed wachtwoord, API met en
+zonder sessie).
+
 ## `server.py` — FastAPI
 
-**Wat.** De rekenkern als HTTP-API, met dezelfde jobvorm als `engineClient.js`, en de frontend op `/`.
+**Wat.** De rekenkern als HTTP-API, met dezelfde jobvorm als `frontend/src/engine/client.js`, en de frontend op `/`.
 
 **Eindpunten.**
 - `GET /api/health` → `{ok:true, versie, engines:{poli, functie}}` (poli = `poliraster.poli.engine` importeerbaar)
@@ -186,7 +218,7 @@ functiekamer-advies via Python is berekend en gelijk is aan de synchrone JavaScr
 
 ## Frontend-koppeling (`../frontend/src/engine/client.js`, `../build.js`)
 
-De engine-client (`frontend/src/engine/client.js`; `../engineClient.js` is een doorgeefluik) kent naast
+De engine-client (`frontend/src/engine/client.js`) kent naast
 `worker` en `sync` de modus **`http`**: is de optie `api` een string (basis-URL, `''` = zelfde herkomst;
 `App.jsx` leest `import.meta.env.VITE_POLIRASTER_API`, terugval `window.__POLIRASTER_API`), dan gaan `bereken(job)` naar `/api/raster` of
 `/api/functiekamers` en `berekenBatch(jobs, onVoortgang)` naar `/api/batch` (voortgang bij start en
@@ -282,7 +314,7 @@ Dict met dezelfde sleutels als JavaScript: ``numRooms``, ``mUsable``, ``aUsable`
 
 Zet ``trace=True``: ``res["spoor"]`` toont per stap de kerngetallen (aantal afspraken,
 spreekuren per dag, restlijst) en de laatste stap zegt welke variant is gekozen. Vergelijk
-die cijfers met de JavaScript-engine (console.log in een kopie van ``raster_model_2.jsx``)
+die cijfers met de JavaScript-engine (console.log in een kopie van ``frontend/src/engine/poli.js``)
 om de afwijkende fase te vinden. Elke module beschrijft onderaan zijn docstring de eigen
 symptomen.
 

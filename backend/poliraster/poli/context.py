@@ -147,7 +147,6 @@ class PlanContext:
         self.grouped: dict[int, list[dict]] = {}
         self.built: dict[int, Any] = {}
         self.overflow_inst: list[dict] = []
-        self.per_dagdeel_need: list[dict] = []
         self.max_rooms = 1
         self.needed_rooms = 1
         self.dig_plan: dict = {"gepland": [], "mogelijk": 0, "rest": 0, "gevraagd": 0, "nietGelukt": [], "aan": False}
@@ -156,7 +155,6 @@ class PlanContext:
         self.week_dagen: list[int] = []
         # tellers voor meldingen en rapport
         self.dichtgezet_dd = 0
-        self.naar_restlijst = 0
         self.gedwongen_open = 0
         self.navul_totaal = 0
         self.ruil_totaal = 0

@@ -108,3 +108,16 @@ De valkuilen (afronden, sleutelvolgorde, sorteren als tekst, `||`) staan in
    JavaScript te zien.
 5. **De tool toont "Python-backend niet bereikbaar"**: de server draait niet op de herkomst van de
    pagina; start `server.py` en open de tool via `http://127.0.0.1:8000/` (niet als `file://`).
+
+
+## Op internet zetten (beveiligd)
+
+Zie `BEVEILIGING.md`. Kort: login met wachtwoord en sessiecookie (`POLIRASTER_WACHTWOORD`,
+`POLIRASTER_GEHEIM`), limieten tegen overbelasting, CSRF-controle en beveiligingskoppen zitten
+in `beveiliging.py`; HTTPS komt van Caddy (`deploy/docker-compose.yml`, `deploy/Caddyfile`).
+
+```
+cp deploy/.env.example deploy/.env            # domein, wachtwoord, geheim invullen
+cd frontend && npm run build -- --mode api    # frontend die via de server rekent
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
+```

@@ -1,0 +1,19 @@
+# Reverse proxy met automatisch HTTPS (Let's Encrypt) voor PoliRaster Studio.
+# Het domein komt uit deploy/.env (POLIRASTER_DOMEIN). Alles gaat door naar de rekenserver;
+# die doet zelf login, limieten en beveiligingskoppen (backend/beveiliging.py).
+{$POLIRASTER_DOMEIN} {
+    encode gzip
+    # Caddy zet X-Forwarded-For/Proto/Host; de server vertrouwt die met POLIRASTER_ACHTER_PROXY=1.
+    reverse_proxy poliraster:8000 {
+        header_up X-Forwarded-Proto {scheme}
+        header_up X-Forwarded-Host {host}
+    }
+    # Grote uploads zijn niet nodig; dit is een extra slot vóór de server.
+    request_body {
+        max_size 4MB
+    }
+    log {
+        output stdout
+        format console
+    }
+}

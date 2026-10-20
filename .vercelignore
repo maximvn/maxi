@@ -1,0 +1,11 @@
+# Niet nodig op Vercel: tests, referentiebundels, losse HTML-bouw, node_modules van de hoofdmap.
+node_modules
+frontend/node_modules
+backend/tests
+backend/Dockerfile
+deploy
+dist
+test_*.mjs
+build.js
+html-shell.html
+.claude

@@ -7,9 +7,9 @@ een vervanging. De sterke punten van het origineel zijn behouden en er zijn geri
 De bron staat in `frontend/` (Vite-project, zie `frontend/README.md`): `src/App.jsx` (de
 React-component), `src/engine/` (de poli-engine `poli.js`, `functiekamers.js`, de engine-client
 `client.js` en de Web Worker), `src/assistent/assistent.js` (kennisbank en vraaganalyse), `src/lib/`
-(zuivere helpers) en `src/ui/` (kleuren en kleine bouwstenen). De wortelbestanden
-`raster_model_2.jsx`, `functiekamers.js`, `assistent.js` en `engineClient.js` zijn dunne
-doorgeefluiken naar die bron, zodat `build.js` en de tests blijven werken.
+(zuivere helpers) en `src/ui/` (kleuren en kleine bouwstenen). De hoofdmap bevat alleen
+nog de bouw en de tests: `build.js` + `html-shell.html` (losse HTML-bestanden), `package.json`
+(esbuild, playwright), de `test_*.mjs`-browsertests en `backend/` (Python-port, pariteit).
 Losse, klikbare versie: `dist/polimodel.html` (alles ingebundeld, direct in de browser te openen).
 
 ## Altijd live — rekenen buiten de UI-thread (nieuw in 2.3)
@@ -33,7 +33,7 @@ Wat er is veranderd:
 
 - **Web Worker.** In het Vite-project is de worker een eigen bestand
   (`frontend/src/engine/engine.worker.js`); in de losse HTML-bestanden draait dezelfde bundel
-  óók als worker (`entry.jsx` herkent de context). De engine-client
+  óók als worker (`frontend/src/entry-losse-html.jsx` herkent de context). De engine-client
   (`frontend/src/engine/client.js`) stuurt elke berekening daarheen. Eén vaste worker voor het live-raster,
   een eigen worker per batch (optimiser, bijsturen) zodat een lange reeks scenario's het
   live-raster nooit blokkeert. Werkt vanaf één HTML-bestand (Blob-worker) en vanaf een
@@ -476,21 +476,33 @@ node test_vite_build.mjs         # browsercontrole: worker-modus én http-modus
 
 Zie `frontend/README.md` voor de mappenstructuur, de vlaggen en de tests.
 
+## Op internet zetten
+
+**Vercel (aanbevolen voor een snelle, veilige start)**: `vercel.json`, `middleware.js` (login
+met gebruikersnaam en wachtwoord uit omgevingsvariabelen) en `api/index.py` staan klaar; de
+stappen voor project, login en eigen domein (bijv. rastertool.nl) staan in `deploy/VERCEL.md`.
+
+**Eigen server**: de Python-server heeft een beveiligde stand (login met wachtwoord, limieten, CSRF-controle,
+beveiligingskoppen) en een hostingpakket met Caddy voor automatisch HTTPS: zie
+`backend/BEVEILIGING.md` en de map `deploy/`.
+
 ## Losse HTML-versie bouwen
 
 `dist/polimodel.html` is volledig zelfstandig (React + xlsx ingebundeld) en opent direct
 in de browser — ook via `file://`, wat de Playwright-tests in de hoofdmap gebruiken. De bron
-is dezelfde als die van het Vite-project (`frontend/src/`); de wortelbestanden
-`raster_model_2.jsx`, `functiekamers.js`, `assistent.js`, `engineClient.js` en `entry.jsx` zijn
-dunne doorgeefluiken daarnaartoe. Opnieuw bouwen na een wijziging in `frontend/src/`:
+is dezelfde als die van het Vite-project (`frontend/src/`); de ingang voor de losse bundel is
+`frontend/src/entry-losse-html.jsx` (herkent of hij in de pagina of in de worker draait).
+Opnieuw bouwen na een wijziging in `frontend/src/`:
 
 ```
-npm install                      # in de hoofdmap (esbuild, playwright) …
-(cd frontend && npm install)     # … en in frontend/ (react, react-dom, xlsx)
+npm install                      # in de hoofdmap: alleen esbuild en playwright …
+(cd frontend && npm install)     # … react, react-dom en xlsx staan alleen in frontend/
 npm run build                    # = node build.js
 ```
 
-`build.js` bundelt `entry.jsx` met esbuild en injecteert het in `html-shell.html`; het
+`build.js` bundelt `frontend/src/entry-losse-html.jsx` met esbuild (react, react-dom en xlsx
+uit `frontend/node_modules`, zodat er precies één React in de bundel zit) en injecteert het in
+`html-shell.html`; het
 schrijft `dist/polimodel.html`, `dist/polimodel-simpel.html` (vlag `window.__POLIRASTER_SIMPEL`)
 en `dist/polimodel-api.html` (vlag `window.__POLIRASTER_API=''`). Dezelfde vlaggen heten in
 het Vite-project `VITE_POLIRASTER_SIMPEL` en `VITE_POLIRASTER_API`.

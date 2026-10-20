@@ -6,7 +6,7 @@ Alle tijd in de engine is "minuten sinds middernacht" (08:30 → 510). Dit besta
 zet tijdteksten om, kent de weekdagen in de twee spellingen die de invoer gebruikt
 ('ma' in de tijden-module, 'MA' in de codetabel) en de drie dagdelen (O/M/A:
 ochtend, middag, avond). Het is de port van de gelijknamige helpers bovenin
-``raster_model_2.jsx`` en ``functiekamers.js``.
+``frontend/src/engine/poli.js`` en ``frontend/src/engine/functiekamers.js``.
 
 Plaats in de keten
 ------------------

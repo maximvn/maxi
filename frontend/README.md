@@ -2,8 +2,7 @@
 
 De interface van PoliRaster Studio als gewoon React-project. De bron staat in `src/`;
 de losse HTML-bestanden in de hoofdmap (`dist/polimodel*.html`, gebouwd met `node build.js`)
-komen uit **dezelfde** bron — de wortelbestanden `raster_model_2.jsx`, `functiekamers.js`,
-`assistent.js`, `engineClient.js` zijn alleen nog dunne doorgeefluiken naar `frontend/src/`.
+komen uit **dezelfde** bron: `build.js` bundelt `src/entry-losse-html.jsx` (zie "Engine").
 
 ## Structuur
 
@@ -30,7 +29,7 @@ frontend/
       geheugen.js            MEM_KEY, memLees, memSchrijf, scenSleutel, specKey, INTAKE_LABELS, datumKort
       meting.js              DD_INFO, celMeting, dagMeting, bandKleur
       opdracht.js            parseOpdracht, VRAAGBOOM, ONDERWERP_WOORDEN, opdrachtOmschrijving
-      layout.js              layoutBlocks, PX_PER_MIN, MIN_BLOCK_H
+    entry-losse-html.jsx     ingang voor build.js (losse HTML): pagina óf worker, zie "Engine"
     engine/                  de rekenkern — geen React-import, draait ook in de worker
       poli.js                computeRasterInner, computeRasterEngine, engineSleutel, meetRasterPuur, CMB_TOT/CMB_STRAF
       functiekamers.js       de functiekamer-engine en de voorbeeldsets
@@ -98,3 +97,38 @@ De bestaande Playwright-tests in de hoofdmap (`test_live.mjs`, `test_invariants.
 `node build.js` en daarna bijvoorbeeld `node test_live.mjs`. De pariteit met de Python-rekenkern:
 `cd backend && node tests/js_referentie/bouw_bundels.cjs && python3 -m tests.pariteit.vergelijk`.
 Chromium wordt verwacht op `/opt/pw-browsers/chromium` (`PW_CHROMIUM` om af te wijken).
+
+## Engine
+
+De rekenkern staat in `src/engine/` en importeert geen React: dezelfde bestanden draaien in de
+pagina, in de Web Worker en (gebundeld met esbuild, `backend/tests/js_referentie/bouw_bundels.cjs`)
+in Node voor de pariteitstest met de Python-port.
+
+- `poli.js` — `computeRasterInner` is één doorrekening in fasen; elke fase heeft een kopblok in
+  de stijl van `CONVENTIES.md` §2 (wat doet deze fase, plaats in de keten, invoer, uitvoer, waar
+  kan het misgaan) en elke inner-functie een JSDoc. De fasen heten hetzelfde als de bestanden
+  van de Python-port (`backend/poliraster/poli/`): instanties → band → digitaal → vulDag
+  (met samenstellen: kiesVoor / repareer / componeer) → drempel → weekOpt/bundelen →
+  bandPlan → opbouw per dag → selectie → volgorde → tijdlayout → kpi/notices → varianten.
+  `computeRasterEngine` is de ingang met memo per aanroep; `meetRasterPuur` de meting voor de
+  optimiser.
+- `functiekamers.js` — `fkBerekenAdvies` (toewijzing → dagdelen → tijdlayout + advies), de
+  voorbeeldsets en de Excel-import (`fkParseCodes`, `fkParseKamers`).
+- `client.js` — `maakEngineClient` (worker / sync / http) en `startEngineWorker`;
+  `runners.js` koppelt de opdrachttypen aan de rekenfuncties; `engine.worker.js` is de
+  Vite-worker.
+- `src/entry-losse-html.jsx` — de ingang voor `build.js`: in een worker start alleen de
+  rekenlus, in de pagina wordt `main.jsx` geladen en de scriptbron vastgelegd
+  (`window.__POLIRASTER_SCRIPT`) zodat de client dezelfde bundel als Blob-worker kan starten.
+
+Opmaak: Prettier met `frontend/.prettierrc` (`npx prettier --write src/engine`). Gedrag
+veranderen mag alleen met de pariteitstest als bewijs:
+
+```
+cd backend && node tests/js_referentie/bouw_bundels.cjs && python3 -m tests.pariteit.vergelijk   # 226/226
+node test_invariants.mjs                                                                          # vanuit de hoofdmap
+```
+
+Dode code in de engine is opgeruimd (ongebruikte helpers als `packRooms`, `uScore`, `kiesPhys`,
+een altijd lege `rest`-uitvoer van `pasMinBezettingToe`, een nooit gelezen `perDagdeelNeed`);
+de Python-port is daarin gespiegeld, zodat beide talen dezelfde stappen dragen.

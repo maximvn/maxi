@@ -32,7 +32,7 @@ Uitvoer
 -------
 ``ctx.band_plan`` = ``{N, perDag, doel, perSlot, gL, gU}``; herschikte ``ctx.grouped``;
 gewijzigde ``ctx.built`` en ``ctx.overflow_inst``; tellers ``ctx.navul_totaal``,
-``ctx.ruil_totaal``; ``ctx.per_dagdeel_need`` bijgewerkt door de nabrander.
+``ctx.ruil_totaal``.
 
 Hoe het werkt
 -------------
@@ -453,9 +453,6 @@ def weekbrede_nabrander(ctx: PlanContext) -> None:
                 for i in range(len(overflow) - 1, -1, -1):
                     if overflow[i]["id"] in ids:
                         del overflow[i]
-                pd = next((x for x in ctx.per_dagdeel_need if x["day"] == di and x["dd"] == dd), None)
-                if pd:
-                    pd["need"] = pd["placed"] = len(built[di][dd])
                 gelukt = True
                 geopend += 1
                 break

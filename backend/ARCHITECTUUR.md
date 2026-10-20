@@ -1,8 +1,8 @@
 # PoliRaster backend in Python — architectuur en afspraken
 
 Dit document is de leidraad voor de Python-port van de rekenkern van PoliRaster
-Studio. De frontend (React, `frontend/src/`; `raster_model_2.jsx` in de hoofdmap is een
-doorgeefluik naar `frontend/src/engine/poli.js` en `App.jsx`) blijft zoals hij is; alleen het
+Studio. De frontend (React, `frontend/src/`; de rekenkern staat in
+`frontend/src/engine/poli.js`, de interface in `App.jsx`) blijft zoals hij is; alleen het
 rekenen verhuist naar Python. De JavaScript-engine blijft als referentie bestaan:
 voor élke invoer moet Python exact hetzelfde raster opleveren als JavaScript.
 Dat wordt bewezen met de pariteitstest (`backend/tests/pariteit/`).
@@ -138,7 +138,7 @@ python -m pytest tests -q
 Werk van klein naar groot: eerst `--filter "poli|30-48|standaard|basis"` tot dat
 identiek is, dan de regelvarianten, dan de grote weken, dan functiekamers. Bij een
 afwijking: `--vol` toont het eerste pad dat verschilt; het `spoor` laat zien in
-welke stap de cijfers uiteenlopen. Een kopie van `raster_model_2.jsx` in de
+welke stap de cijfers uiteenlopen. Een kopie van `frontend/src/engine/poli.js` in de
 scratchmap mag je instrumenteren met `console.log` en opnieuw bundelen om
 tussenresultaten van JavaScript te zien.
 
@@ -146,10 +146,9 @@ tussenresultaten van JavaScript te zien.
 
 - `server.py` (FastAPI, uvicorn): `POST /api/raster` met body `{cfg,newRows,ctrlRows,m2,rules,capacity,trace?}`,
   `POST /api/functiekamers` met `{kamers,codes,m2,regels,trace?}`, `POST /api/batch` met `{jobs:[{type,args,meet?}]}`
-  (zelfde jobvorm als `engineClient.js`), `GET /api/health`. CORS open. Fouten komen terug als
+  (zelfde jobvorm als `frontend/src/engine/client.js`), `GET /api/health`. CORS open. Fouten komen terug als
   `{ok:false, fout, stap, spoor}` zodat de frontend ze toont.
-- Frontend: de engine-client (`frontend/src/engine/client.js`; `engineClient.js` in de hoofdmap is een
-  doorgeefluik) kent een derde modus naast worker en synchroon: **http**. Is de optie `api` een string
+- Frontend: de engine-client (`frontend/src/engine/client.js`) kent een derde modus naast worker en synchroon: **http**. Is de optie `api` een string
   (basis-URL, '' = zelfde herkomst) — `App.jsx` leest die uit `import.meta.env.VITE_POLIRASTER_API`, met
   `window.__POLIRASTER_API` als terugval — dan gaan alle jobs via `fetch` naar de server.
   `cd frontend && VITE_POLIRASTER_API='' npm run build` levert `frontend/dist/`, dat `server.py` op `/`

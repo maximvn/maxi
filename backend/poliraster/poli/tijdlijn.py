@@ -53,7 +53,6 @@ from poliraster.poli.volgorde import in_bereik
 
 log = logging.getLogger(__name__)
 
-FLEX_BLOK = 10   # verspreide flex bestaat uit blokken van 10 min
 FLEX_MIN = 5     # kleiner dan dit renderen we niet
 _B36 = "0123456789abcdefghijklmnopqrstuvwxyz"
 

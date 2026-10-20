@@ -1,0 +1,59 @@
+# PoliRaster Studio op internet: de Python-server achter Caddy (automatisch HTTPS via Let's Encrypt).
+#
+#   cp deploy/.env.example deploy/.env      # vul domein, wachtwoord en geheim in
+#   cd frontend && npm install && npm run build -- --mode api && cd ..
+#   docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
+#
+# Caddy vraagt zelf een certificaat aan voor POLIRASTER_DOMEIN (poort 80 en 443 moeten open
+# staan en het domein moet naar deze machine wijzen). De rekenserver luistert alleen binnen het
+# Docker-netwerk; de buitenwereld praat uitsluitend met Caddy over HTTPS.
+services:
+  poliraster:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    environment:
+      POLIRASTER_HOST: 0.0.0.0
+      POLIRASTER_PORT: "8000"
+      POLIRASTER_WACHTWOORD: ${POLIRASTER_WACHTWOORD:?zet POLIRASTER_WACHTWOORD in deploy/.env}
+      POLIRASTER_GEHEIM: ${POLIRASTER_GEHEIM:?zet POLIRASTER_GEHEIM in deploy/.env}
+      POLIRASTER_TOKEN: ${POLIRASTER_TOKEN:-}
+      POLIRASTER_ACHTER_PROXY: "1"
+      POLIRASTER_HTTPS: "1"
+      POLIRASTER_SESSIE_UREN: ${POLIRASTER_SESSIE_UREN:-12}
+      POLIRASTER_GELIJKTIJDIG: ${POLIRASTER_GELIJKTIJDIG:-2}
+      POLIRASTER_TIMEOUT: ${POLIRASTER_TIMEOUT:-120}
+      POLIRASTER_LIMIET: ${POLIRASTER_LIMIET:-120}
+      POLIRASTER_LOG: ${POLIRASTER_LOG:-INFO}
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=5).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 1g
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - poliraster
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      POLIRASTER_DOMEIN: ${POLIRASTER_DOMEIN:?zet POLIRASTER_DOMEIN in deploy/.env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

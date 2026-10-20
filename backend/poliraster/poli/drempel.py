@@ -28,9 +28,11 @@ van die dag.
 
 Uitvoer
 -------
-``{"R": kopie van per_dd met de dunne kamers leeggehaald, "rest": [] (altijd leeg),
-"gedwongen": [{dd, r}] dunne kamers die open bleven}``. Zonder minimumbezetting
-ontbreekt ``gedwongen`` (zoals in JavaScript).
+``{"R": kopie van per_dd met de dunne kamers leeggehaald, "gedwongen": [{dd, r}] dunne
+kamers die open bleven}``. Zonder minimumbezetting ontbreekt ``gedwongen`` (zoals in
+JavaScript). Een dunne kamer gaat alleen dicht als ál zijn afspraken elders passen, dus
+deze stap zet zelf nooit iets op de restlijst (de vroegere, altijd lege ``rest``-uitvoer
+is daarom weggehaald).
 
 Hoe het werkt (cascade, over ÁLLE kamers — niet alleen de laatste)
 -------------
@@ -60,9 +62,8 @@ log = logging.getLogger(__name__)
 def pas_min_bezetting_toe(ctx: PlanContext, per_dd: dict, odd: list[str]) -> dict:
     """JS ``pasMinBezettingToe(perDd, odd)``."""
     R: dict[str, list[list[dict]]] = {dd: [list(x or []) for x in (per_dd.get(dd) or [])] for dd in odd}
-    rest: list[dict] = []
     if not ctx.min_bez_aan:
-        return {"R": R, "rest": rest}
+        return {"R": R}
 
     def vul(dd: str, r: int) -> float:
         kamers = R.get(dd) or []
@@ -110,4 +111,4 @@ def pas_min_bezetting_toe(ctx: PlanContext, per_dd: dict, odd: list[str]) -> dic
             R[p[0]][int(p[1])].append(a)
         R[dd][r] = []
     gedwongen = [{"dd": k.split("|")[0], "r": int(k.split("|")[1])} for k in geblokkeerd]
-    return {"R": R, "rest": rest, "gedwongen": gedwongen}
+    return {"R": R, "gedwongen": gedwongen}

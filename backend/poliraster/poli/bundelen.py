@@ -137,8 +137,7 @@ def herverdeel_naar_volle_kamers(ctx: PlanContext) -> None:
             return {"n": 0, "lastAppts": [], "frac": 1, "over": 0, "verlies": 0, "perDdN": {}, "restItems": []}
         res = vul_dag(ctx, di, pool)
         odd = open_dd_of(di)
-        mb = pas_min_bezetting_toe(ctx, res["perDd"], odd)
-        R, rest = mb["R"], mb["rest"]
+        R = pas_min_bezetting_toe(ctx, res["perDd"], odd)["R"]
         gebruikte_kamers: set[int] = set()
         for dd in odd:
             for r, rm in enumerate(R.get(dd) or []):
@@ -146,9 +145,9 @@ def herverdeel_naar_volle_kamers(ctx: PlanContext) -> None:
                     gebruikte_kamers.add(r)
         n = len(gebruikte_kamers)
         over = res["over"] or []
-        verlies = len(over) + len(rest)
+        verlies = len(over)
         per_dd_n = {dd: sum(1 for rm in (R.get(dd) or []) if rm) for dd in odd}
-        rest_items = list(over) + list(rest)
+        rest_items = list(over)
         if n == 0:
             return {"n": 0, "lastAppts": [], "frac": 1, "over": len(over), "verlies": verlies, "perDdN": per_dd_n, "restItems": rest_items}
         L = max(gebruikte_kamers)
@@ -422,9 +421,8 @@ def bundel_restlijst_op_restdag(ctx: PlanContext) -> None:
     kand_gebruikt = gekozen
     pool = huidig + [{**a, "day": dr, "_verhuisd": a["day"]} for a in kand_gebruikt]
     res = vul_dag(ctx, dr, pool)
-    mb = pas_min_bezetting_toe(ctx, res["perDd"], odd)
-    R, rest = mb["R"], mb["rest"]
-    nieuw_verlies = len(res["over"] or []) + len(rest)
+    R = pas_min_bezetting_toe(ctx, res["perDd"], odd)["R"]
+    nieuw_verlies = len(res["over"] or [])
     # Alleen doorvoeren als er per saldo méér afspraken ingepland raken.
     if kand_gebruikt and nieuw_verlies < len(kand_gebruikt):
         for dd in odd:
@@ -433,7 +431,7 @@ def bundel_restlijst_op_restdag(ctx: PlanContext) -> None:
         for i in range(len(overflow) - 1, -1, -1):
             if overflow[i]["id"] in kand_ids:
                 del overflow[i]
-        for a in list(res["over"] or []) + list(rest):
+        for a in list(res["over"] or []):
             overflow.append({**a, "day": dr, "dd": (a["ddOpties"][0] if a.get("ddOpties") else None) or odd[0],
                              "edited": False, "_restKamer": True})
         ctx.rest_dag_gebundeld = len(kand_gebruikt) - nieuw_verlies
