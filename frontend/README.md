@@ -15,6 +15,12 @@ frontend/
   .env.api / .env.simpel     de twee varianten (zie onder)
   CONVENTIES.md              de norm voor bestanden, kopblokken, JSDoc en uitgeschreven code
   test_vite_build.mjs        browsercontrole van de build (worker én http), zie "Tests"
+  test_middleware.mjs        middleware.js (Vercel) in Node: vrije paden, 302/401, tokens uit Python, fail-closed
+  test_accounts_e2e.mjs      eind-tot-eind met backend/server.py: login, Start, autosave, ander apparaat, beheer, uitloggen
+  public/                    statische bestanden, ongewijzigd naar dist/ gekopieerd
+    login.html               de inlogpagina (geen React, geen inline script; CSP)
+    login.js                 POST /api/auth/login, foutmelding en blokkade, daarna naar ?naar= (alleen eigen paden)
+    login.css                huisstijl van de inlogpagina (kleuren uit ui/kleuren.js), werkt op een telefoon
   src/
     main.jsx                 React-root; zet de paginatitel per variant
     App.jsx                  de schil: alle useState's, de hooks in vaste volgorde, de AppContext-waarde, welke module zichtbaar is
@@ -29,11 +35,15 @@ frontend/
       useBijsturen.js        bijstuur-state; kandidaten doorrekenen (batch), sorteren, pasVoorstelToe
       useAssistent.js        gesprek, assistentCtx, verwerkVraag (vraaganalyse → opdracht/antwoord/wedervraag), toonKennis, doeActie
       useRasterBewerking.js  slepen, verplaatsen, verlengen, verwijderen, addToRoom, dagdeel verplaatsen/ruilen in de bezettingskaart
-      useImportExport.js     sessie-import (_rasterdata), spreekuur-Excel, voorbeeld-Excel, export (via lib/exportExcel.js), functiekamer-import/sjabloon
+      useImportExport.js     pasSessieToe (de ene weg terug: Excel-import én opgeslagen stand), sessie-import (_rasterdata), spreekuur-Excel, voorbeeld-Excel, export (via lib/exportExcel.js), functiekamer-import/sjabloon
       useGeheugen.js         mem (localStorage): scenario's toegepast/afgewezen, intake-antwoorden, ijkpunten; wisGeheugen
       useFunctiekamers.js    fkKamers/fkCodes/fkReg, fkZet*, fkLaadPreset, fkWeekVan, fkKleur, fkSamenvatting
       useTestHaken.js        alle window.__*-haken voor de tests (test_*.mjs, test_vite_build.mjs, test_frontend_http.mjs)
-    modules/                 de vier stappen van de tool
+      useAccount.js          GET /api/auth/ik → accountmodus / naar login (401) / lokale modus (geen server); uitloggen
+      useStand.js            stand ophalen (Start: kiezen), toepassen via pasSessieToe, autosave 2 s + bij pagehide, versies
+    modules/                 het startscherm en de vier stappen van de tool
+      Start.jsx              startscherm (active START = -1): verder waar je was, nieuw beginnen, inladen, eerdere versies
+      StartKaart.jsx         een grote keuzekaart en de samenvatting van een opgeslagen stand
       Tijden.jsx             stap 1 (active 0): schil + weekdagverdeling + samenvatting
       TijdenDagoverzicht.jsx tijdlijn-preview van de dag
       TijdenDagdelen.jsx     per dagdeel tijden en weekdagen
@@ -82,6 +92,13 @@ frontend/
         Restlijst.jsx        "nog te plannen"
         RasterLegenda.jsx    legenda en weektotalen
         SleepGhost.jsx       zwevende sleep-indicatoren
+      beheer/                alleen voor rol "beheer" (knop Beheer in de rail)
+        Beheer.jsx           schil: samenvattingstegels (/api/beheer/overzicht) en tabbladen
+        BeheerGebruikers.jsx lijst, aanmaken, blokkeren/deblokkeren, wachtwoord resetten, rol
+        BeheerLogboek.jsx    logboek: tabel, filter op soort en gebruiker, meer laden
+        BeheerSessies.jsx    actieve sessies, intrekken (bevestiging in de pagina)
+        BeheerStand.jsx      "bekijk laatste stand" van een gebruiker (alleen lezen)
+        beheerUi.jsx         useBeheerData, Melding, Knop, tabelstijlen, namen van de logboeksoorten
     assistent/
       AssistentModal.jsx     de schil: keuzescherm, bijstuur-schil (signalen links, voet met "pas dit toe"), dispatch op wiz.modus
       Bijsturen.jsx          rechterkolom van het bijsturen: invoer, "dit begrijp ik", kennis, gesprek, voorstel
@@ -99,11 +116,16 @@ frontend/
       status.js              STATUS (antwoorden uit het raster), meethulpen, beantwoordStatus
       taal.js                dagnamen, normaliseer, leesEntiteiten, IS_VRAAG/HOE_DOE_IK, NAV
     layout/
-      Rail.jsx               het linkermenu (planmodus, assistent, stappen, export, opnieuw)
+      Rail.jsx               het linkermenu (planmodus, assistent, Start + stappen, export, opnieuw, accountblok)
+      RailAccount.jsx        naam van de gebruiker, Beheer, Wachtwoord, Uitloggen onderaan de rail (accountmodus)
       InstellingenPaneel.jsx het schuifpaneel met de actieve module en "Analyseer & herbouw"
-      Kopbalk.jsx            bovenbalk: planmodus, poli-naam, specialisme, import-badge, LIVE, klok
+      Kopbalk.jsx            bovenbalk: planmodus, poli-naam, specialisme, opslaglabel, import-badge, LIVE, klok
+      OpslagLabel.jsx        "opgeslagen 11:42" / "opslaan…" / "opslaan mislukt — opnieuw" + knop versies (accountmodus)
+      VersieLijst.jsx        eerdere versies met terugzetten (bevestiging in de pagina); in de kopbalk en op Start
+      StandLaden.jsx         "je werk wordt geladen" / laadfout met opnieuw proberen (accountmodus)
+      WachtwoordWijzigen.jsx wachtwoord wijzigen: verplicht na een reset, of vrijwillig via de rail
       Toast.jsx              melding na "Analyseer & herbouw"
-      Welkom.jsx             canvas vóór het eerste raster
+      Welkom.jsx             canvas vóór het eerste raster, met een verwijzing naar Start
       GlobaleStijl.jsx       lettertypen, keyframes, focus, scrollbalken
     dialogen/
       ExportDialoog.jsx      Excel export (downloadlink of opslaan via de viewer)
@@ -116,10 +138,12 @@ frontend/
       VrijPaneel.jsx         "zelf invullen"-paneel van de intake
     lib/                     zuivere helpers, geen React
       tijd.js                toMin, toTime, clamp, snapMin, DAYS, DAY_ABBR, WEEKDAY_KEYS, DAGS_NL, DEF_DD_DAGEN, ddDagenVan
-      planregels.js          PLAN_INFO, TOGGLE_KEYS, RADIO_KEYS, MODULES, RESTDAG_LABEL
+      planregels.js          PLAN_INFO, TOGGLE_KEYS, RADIO_KEYS, MODULES, START (-1), RESTDAG_LABEL
       presets.js             defaultRow, starterRow, mkRow, SPEC_PRESETS, SPECIALISMEN, MODALITEITEN, modInfo
       excel.js               wbNaarHref, wbNaarCsv, wbNaarEenCsv, viewerOpslaan(Xlsx), kanViewerOpslaan, parseSpreekuurRows, SPREEKUUR_*
       exportExcel.js         bouwExportWerkmap: agenda per dag, totaal agenda, alle afspraken, configuratie, functiekamer-advies, _rasterdata
+      sessie.js              bouwSessieState (één vorm voor _rasterdata én de opgeslagen stand), vatSessieSamen
+      api.js                 api(pad, {methode, body, keepalive}) met JSON en cookie, ApiFout met de servertekst; tijdTekst
       geheugen.js            MEM_KEY, memLees, memSchrijf, scenSleutel, specKey, INTAKE_LABELS, datumKort
       meting.js              DD_INFO, celMeting, dagMeting, bandKleur, kamerInGebruik
       opdracht.js            parseOpdracht, VRAAGBOOM, ONDERWERP_WOORDEN, opdrachtOmschrijving
@@ -191,6 +215,32 @@ node test_vite_build.mjs       # bouwt twee keer en controleert in Chromium:
                                #  • api-build via backend/server.py (poort 8010): modus 'http', raster door de server berekend
                                # laat de api-build in frontend/dist/ staan
 ```
+
+```
+node test_middleware.mjs       # middleware.js in Node (geen browser, geen Vercel)
+node test_accounts_e2e.mjs     # bouwt dist/, start backend/server.py met accounts (tijdelijke SQLite) en loopt
+                               # het hele verhaal door in Chromium; daarna de lokale modus via ../dist/polimodel.html
+                               # (eerst `node build.js` in de hoofdmap)
+```
+
+## Accounts, startscherm en opgeslagen stand
+
+De tool kent twee modi (`hooks/useAccount.js`; ontwerp en API in `backend/ACCOUNTS.md`):
+
+- **Accountmodus** — `GET /api/auth/ik` geeft een gebruiker. Naam, Wachtwoord, Uitloggen (en
+  Beheer voor beheerders) staan onderaan de rail, rechtsboven het opslaglabel. Na het inloggen
+  opent de tool op **Start**; de opgehaalde stand wordt pas toegepast als je *Verder waar je was*
+  kiest (of een stap in de rail aanklikt) — tot dan wordt niets opgeslagen. Daarna slaat
+  `useStand` 2 s na elke wijziging op, en bij het verlaten van de pagina (keepalive). *Nieuw
+  raster beginnen*, *inladen* en *een versie terugzetten* sturen bij de eerste opslag
+  `nieuwe_versie: true`; andere autosaves werken de nieuwste versie bij (de server bewaart één
+  versie per werkblok van 10 minuten).
+- **Lokale modus** — geen server met accounts (netwerkfout, 404, geen JSON, `file://`, de
+  artifact): precies het oude gedrag. De tool opent op Tijden (de bestaande tests rekenen daarop);
+  Start staat als stap in de rail met *Nieuw* en *Inladen*, zonder *Verder* en zonder versies.
+
+Start heeft het id `START = -1` (`lib/planregels.js`), zodat de stappen 0..3 hun index houden
+(`window.__nav(3)` is nog steeds Raster).
 
 De bestaande Playwright-tests in de hoofdmap (`test_live.mjs`, `test_invariants.mjs`, …) laden
 `dist/polimodel.html` via `file://` en testen dus dezelfde bron via de esbuild-route:

@@ -4,7 +4,8 @@
  * Wat doet dit onderdeel
  *   Merk en versie, de planmodus-schakelaar, de functiekamer-samenvatting, de naam van de
  *   poli (vrij invulbaar) en het specialisme (laadt voorbeeldcodes, met bevestiging als er
- *   al codes staan), de import-badge, de LIVE-indicator en de klok.
+ *   al codes staan), het opslaglabel (alleen in de accountmodus, OpslagLabel.jsx), de
+ *   import-badge, de LIVE-indicator en de klok.
  *
  * Plaats in de tool
  *   App.jsx, bovenaan het canvas (sticky).
@@ -21,6 +22,7 @@ import { useApp } from '../context/AppContext.jsx'
 import { FK_PRESETS, fkCodeLabel } from '../engine/functiekamers.js'
 import { SPECIALISMEN, SPEC_PRESETS } from '../lib/presets.js'
 import { C } from '../ui/kleuren.js'
+import { OpslagLabel } from './OpslagLabel.jsx'
 
 /**
  * Bovenbalk van het canvas.
@@ -229,6 +231,8 @@ export function Kopbalk() {
         · live — wijzigingen links worden direct doorgerekend
       </span>
       <div style={{ flex: 1 }} />
+      {/* accountmodus: "opgeslagen 11:42" + eerdere versies (in de lokale modus niets) */}
+      <OpslagLabel />
       {importBadge && (
         <span
           style={{

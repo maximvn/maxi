@@ -154,65 +154,362 @@ Overboekte afspraken tellen als geplaatst maar openen geen kamer-dag (zoals Java
 
 ---
 
-## `beveiliging.py` — login, sessies, limieten en beveiligingskoppen
+## `server.py` — FastAPI: rekenen, accounts, stand, beheer en de frontend
 
-**Wat**: de laag om de server heen die hem geschikt maakt voor internet. Eén ASGI-middleware
-(`Beveiliging`) plus helpers voor sessietokens, wachtwoordvergelijking en tellers per adres.
+_PoliRaster-server: de Python-rekenkern achter een HTTP-API, accounts en opgeslagen stand, plus de frontend._
 
-**Invoer**: omgevingsvariabelen (`Instellingen`): `POLIRASTER_WACHTWOORD`, `POLIRASTER_GEHEIM`,
-`POLIRASTER_TOKEN`, `POLIRASTER_ORIGINS`, `POLIRASTER_ACHTER_PROXY`, `POLIRASTER_HTTPS`,
-`POLIRASTER_SESSIE_UREN`, `POLIRASTER_MAX_BODY`, `POLIRASTER_MAX_JOBS`, `POLIRASTER_GELIJKTIJDIG`,
-`POLIRASTER_TIMEOUT`, `POLIRASTER_LIMIET`, `POLIRASTER_CSP`.
+### Wat doet dit onderdeel
+De frontend (React) kan haar rekenwerk op drie manieren laten doen: in een Web Worker,
+synchroon in de pagina, of via deze server. Deze server neemt dezelfde "jobs" aan als
+`frontend/src/engine/client.js` in de browser maakt en geeft precies hetzelfde raster-JSON terug als
+de JavaScript-engine. Daarnaast regelt hij persoonlijke accounts, de automatisch opgeslagen
+stand per gebruiker ("verder waar je was") en het beheerlogboek (`ACCOUNTS.md`), en
+serveert hij de gebouwde frontend, zodat één adres volstaat: bij voorkeur de Vite-build
+`frontend/dist/` (`index.html`, `login.html`/`.js`/`.css`, `/assets/*`), anders het
+losse bestand `dist/polimodel-api.html` met de vlag `window.__POLIRASTER_API=''`.
 
-**Uitvoer**: per verzoek een beslissing (doorlaten, 401 inloggen, 403 herkomst, 413 te groot,
-429 te veel) en beveiligingskoppen op elk antwoord; `/login` en `/logout` worden hier afgehandeld.
+### Plaats in de keten
+Browser → `beveiliging.Beveiliging` (limieten, toegang, CSRF, koppen) → de routes hieronder →
+rekenkern (`poliraster/`), `accounts.py` en `stand.py` → `opslag.py` (SQLite of Turso).
+Op Vercel laadt `api/index.py` deze app als serverless-functie.
 
-**Stappen per verzoek**:
-1. verzoeklimiet per adres (glijdend venster van een minuut);
-2. bodygrootte op `Content-Length` (de app leest de body daarna nogmaals begrensd);
-3. login: `/login` (GET toont het formulier, POST controleert het wachtwoord in constante tijd,
-   zet de HMAC-ondertekende cookie, blokkeert een adres na tien fouten), `/logout`, en voor alle
-   andere paden behalve `/api/health` de cookie of het Bearer-token;
-4. CSRF op schrijvende verzoeken: `Sec-Fetch-Site` (same-origin/none → goed, cross-site → fout),
-   anders `Origin`/`Referer` tegen de eigen herkomst of `POLIRASTER_ORIGINS`;
-5. de app, met CSP, nosniff, DENY, Referrer-Policy same-origin, Permissions-Policy, no-store voor
-   de API en HSTS achter HTTPS op het antwoord.
+### Invoer
+HTTP-verzoeken (zie Eindpunten) en de omgevingsvariabelen uit `beveiliging.py`,
+`opslag.py` en `accounts.py` (samengevat in `ACCOUNTS.md` §7 en `README.md`).
 
-**Waar kan het misgaan**: zie de module-docstring (cookie niet geaccepteerd achter een proxy,
-403 herkomst, 429, 413, CSP-fouten in de console). Elke weigering staat in het logboek met de
-waarden die de server zag (origin, eigen herkomst, Sec-Fetch-Site).
+### Uitvoer
+#### Eindpunten
+Rekenen (ongewijzigd; met de bestaande limieten):
 
-**Test**: `tests/test_beveiliging.py` (pytest, server in beveiligde stand) en
-`tests/test_beveiligd_e2e.mjs` (Playwright: loginscherm, fout en goed wachtwoord, API met en
-zonder sessie).
+- `GET  /api/health`        → `{ok:true, versie, engines:{poli, functie}, accounts:bool}`
+- `POST /api/raster`        body `{cfg,newRows,ctrlRows,m2,rules,capacity,trace?}` → raster-JSON (poli-engine)
+- `POST /api/functiekamers` body `{kamers,codes,m2,regels,trace?}` → raster-JSON (functiekamer-engine)
+- `POST /api/batch`         body `{jobs:[{type:'poli'|'functie', args:[...], meet?:bool}]}` → `{uit:[{ok,res|err}]}`
 
-## `server.py` — FastAPI
+  Fouten bij het rekenen komen terug als HTTP 200 met `{ok:false, fout, type, spoor}` (`spoor` =
+  de stacktrace als lijst regels), zodat de frontend ze in de live-banner toont.
 
-**Wat.** De rekenkern als HTTP-API, met dezelfde jobvorm als `frontend/src/engine/client.js`, en de frontend op `/`.
+Accounts, stand en beheer (`ACCOUNTS.md` §5; fouten als `{ok:false, fout}` met HTTP 400/401/403/404/409/413/429/503):
 
-**Eindpunten.**
-- `GET /api/health` → `{ok:true, versie, engines:{poli, functie}}` (poli = `poliraster.poli.engine` importeerbaar)
-- `POST /api/raster` `{cfg,newRows,ctrlRows,m2,rules,capacity,trace?}` → raster-JSON
-- `POST /api/functiekamers` `{kamers,codes,m2,regels,trace?}` → raster-JSON
-- `POST /api/batch` `{jobs:[{type,args,meet?,trace?}]}` → `{uit:[{ok:true,res}|{ok:false,err}]}` — één mislukte job maakt de batch niet stuk
-- `GET /` → `frontend/dist/index.html` (+ `/assets/*`) als de Vite-build er is, anders `dist/polimodel-api.html`, anders een korte uitleg hoe je bouwt
+- `POST /api/auth/login` · `POST /api/auth/logout` · `GET /api/auth/ik` · `POST /api/auth/wachtwoord`
+- `GET|PUT /api/stand` · `GET /api/stand/versies` · `GET /api/stand/{id}`
+- `GET /api/beheer/overzicht` · `GET|POST /api/beheer/gebruikers` · `PATCH /api/beheer/gebruikers/{id}`
+  · `GET /api/beheer/logboek` · `GET /api/beheer/sessies` · `DELETE /api/beheer/sessies/{id}`
+  · `GET /api/beheer/stand/{gebruiker_id}`
 
-**Fouten.** HTTP 200 met `{ok:false, fout:'Type: tekst', type, spoor:[stacktrace-regels]}`; de stacktrace
-staat ook in de serverlog. Een kapotte JSON-body of een body die velden mist geeft een `ValueError`
-met een leesbare tekst. `NaN`/`Infinity` in uitvoer worden `null` (zoals `JSON.stringify`).
+Frontend: `GET /` → `frontend/dist/index.html` (anders `dist/polimodel-api.html`, anders een
+korte uitleg); `GET /<bestand>` en `GET /assets/<pad>` → bestanden uit `frontend/dist`.
 
-**Starten.** `uvicorn server:app --port 8000` of `python server.py [--host] [--port]`;
-`POLIRASTER_LOG=DEBUG` voor het stappenlogboek.
+### Hoe het werkt
+1. `Beveiliging` (`beveiliging.py`) beslist per verzoek of het door mag en legt de sessie in
+   `request.state.sessie`. Accounts staan aan zodra `POLIRASTER_GEHEIM` is gezet; zonder
+   geheim draait de server in de open ontwikkelstand zonder login (en geven `/api/auth/*`,
+   `/api/stand*`, `/api/beheer/*` een nette 503).
+2. `DIENSTEN` maakt bij het eerste gebruik de opslag (`opslag_uit_omgeving`), `Accounts` en
+   `Standen`, en de eerste beheerder uit de omgeving. Lukt dat niet (bv. op Vercel geen
+   Turso), dan krijgt elk accountverzoek 503 met de reden en wordt het bij het volgende verzoek
+   opnieuw geprobeerd. De rekenendpoints werken dan gewoon door.
+3. De account-routes lezen de body begrensd, doen het databasewerk in een werkthread
+   (`asyncio.to_thread`) en vertalen `accounts.Fout` naar `{ok:false, fout}` met de status.
+4. Statische bestanden komen alleen uit `frontend/dist` (pad binnen die map, geen verborgen
+   bestanden, alleen een vaste lijst extensies) — zie `statisch_pad`.
 
-**Waar kan het misgaan.** `engines.poli:false` → de poli-port ontbreekt nog; `/api/raster` geeft dan `ok:false`
-met de importfout. `type:'KeyError'`/`'TypeError'` → de body heeft een andere vorm dan de frontend stuurt;
-`spoor` wijst de regel aan. `/` toont de uitleg → eerst bouwen: `cd frontend && VITE_POLIRASTER_API='' npm run build`
-(of `node build.js` in de hoofdmap).
+### Starten
+```
+cd backend
+uvicorn server:app --port 8000          # of: python server.py [--port 8000] [--host 127.0.0.1]
+POLIRASTER_LOG=DEBUG python server.py   # met stappenlogboek van de engines in de terminal
+```
 
-**Tests.** `tests/test_server.py` (TestClient): health, functiekamers (ook `trace`), batch (gewone job, `meet`,
-onbekend type), foutpaden, `/`, en de poli-endpoint (overgeslagen zolang de poli-engine ontbreekt).
-`tests/test_frontend_http.mjs`: start de server, opent de tool in Chromium en controleert dat het
-functiekamer-advies via Python is berekend en gelijk is aan de synchrone JavaScript-berekening.
+### Waar kan het misgaan en hoe zie je dat
+- `/api/health` geeft `engines.poli:false`: `poliraster.poli.engine` is (nog) niet importeerbaar;
+  `POST /api/raster` geeft dan `ok:false` met de importfout als `fout`.
+- `ok:false` met `type:'KeyError'` of `'TypeError'`: de body mist een veld of heeft een andere vorm
+  dan de frontend stuurt; `spoor` wijst de regel aan.
+- `GET /` toont de uitleg in plaats van de tool: bouw eerst de frontend
+  (`cd frontend && VITE_POLIRASTER_API='' npm run build`, of `node build.js` in de hoofdmap).
+- `503 Accounts niet ingesteld` op `/api/auth/ik`: `POLIRASTER_GEHEIM` ontbreekt (open stand).
+- `503` met "Geen database ingesteld" of "Turso …": zie `opslag.py`; de serverlog
+  (`poliraster.server`) meldt "accounts niet beschikbaar" met de reden.
+- `/login.html` geeft 404: de frontend-build heeft (nog) geen `login.html`; bouw de frontend opnieuw.
+- Bij het starten "ZONDER ACCOUNTS op …": de server staat open op een netwerkadres; zet
+  `POLIRASTER_GEHEIM` of luister alleen op 127.0.0.1.
+
+
+---
+
+## `beveiliging.py` — toegangscontrole, limieten, CSRF en beveiligingskoppen
+
+_Beveiliging van de server: toegangscontrole met accounts, limieten, CSRF en beveiligingskoppen._
+
+### Wat doet dit onderdeel
+De rekenserver (`server.py`) mag op internet alleen gebruikt worden door wie een account
+heeft, de rekenkracht mag niet door een vreemde worden leeggetrokken, en de browser moet weten
+wat hij wél en niet mag laden. Dit bestand bundelt die maatregelen in één ASGI-middleware
+(`Beveiliging`) plus een paar helpers. Het inloggen zelf (gebruikers, wachtwoorden, sessies in
+de database) zit in `accounts.py`; deze middleware vraagt per verzoek alleen "is deze
+sessiecookie geldig?" via een functie die `server.py` meegeeft. De vroegere login met één
+gedeeld wachtwoord (`POLIRASTER_WACHTWOORD`, `/login`) is vervallen.
+
+### Plaats in de keten
+Buitenste laag om de FastAPI-app: browser → (Caddy/nginx of Vercel) → `Beveiliging` → de
+routes in `server.py` → `accounts.py` / `stand.py` / de rekenkern.
+
+### Invoer
+- Omgeving (`Instellingen`, zie onder) en per verzoek de ASGI-`scope` (pad, methode, koppen).
+- `controleer_sessie(token) → Sessie | None`: de volledige sessiecontrole van `accounts.py`
+  (mag `OpslagFout` geven als de database weg is).
+
+### Uitvoer
+Per verzoek een beslissing — doorlaten, `302` naar `/login.html?naar=…`, `401` (API zonder
+sessie), `403` (CSRF), `413` (te groot), `429` (te veel), `503` (accounts/database niet
+ingesteld) — en beveiligingskoppen op elk antwoord. Doorgelaten verzoeken krijgen in
+`scope["state"]`: `sessie` (of `None`), `adres` (IP), `https` en `via_token`.
+
+### Hoe het werkt (per verzoek)
+1. Verzoeklimiet per adres (glijdend venster van een minuut) → 429.
+2. Bodygrootte op `Content-Length` → 413 (de app leest de body daarna nogmaals begrensd).
+3. Toegang:
+   - **Accounts aan** (`POLIRASTER_GEHEIM` gezet): vrij zijn `/login.html`, `/login.js`,
+     `/login.css`, `/favicon.ico`, `/api/health` en `POST /api/auth/login` (ACCOUNTS.md §4).
+     Al het andere vereist een geldige cookie `poliraster_sessie`; de reken-API
+     (`/api/raster`, `/api/functiekamers`, `/api/batch`) mag ook met
+     `Authorization: Bearer <POLIRASTER_TOKEN>`. Zonder sessie: HTML → `302` naar
+     `/login.html?naar=<pad>`, `/api/*` → `401 {"ok":false,"fout":"Niet ingelogd."}`.
+   - **Accounts uit** (open ontwikkelstand): geen login; `/api/auth/*`, `/api/stand*` en
+     `/api/beheer/*` geven `503 accounts niet ingesteld`. Met
+     `POLIRASTER_ACCOUNTS_VERPLICHT=1` (zo staat `api/index.py` op Vercel) is de open stand
+     verboden: alles behalve `/api/health` geeft dan 503.
+4. CSRF bij `POST`/`PUT`/`PATCH`/`DELETE`: `Sec-Fetch-Site` (same-origin/none → goed,
+   cross-site → fout), anders `Origin`/`Referer` tegen de eigen herkomst of `POLIRASTER_ORIGINS` → 403.
+5. De app, met CSP, nosniff, `X-Frame-Options: DENY`, `Referrer-Policy: same-origin`,
+   `Permissions-Policy`, `Cache-Control: no-store` voor de API en HSTS achter HTTPS.
+
+### Instellingen (omgevingsvariabelen)
+`POLIRASTER_GEHEIM`       sleutel voor de sessiecookie (48+ tekens); gezet = accounts aan
+`POLIRASTER_ACCOUNTS_VERPLICHT` 1 = zonder geheim niets doorlaten (Vercel)
+`POLIRASTER_TOKEN`        optioneel Bearer-token voor scripts (alleen de reken-API)
+`POLIRASTER_ORIGINS`      komma-lijst van extra toegestane herkomsten (CORS); leeg = alleen eigen herkomst
+`POLIRASTER_ACHTER_PROXY` 1 = vertrouw X-Forwarded-*-koppen
+`POLIRASTER_HTTPS`        1 = ga uit van HTTPS (Secure-cookie, HSTS) ook als de proxy dat niet doorgeeft
+`POLIRASTER_SESSIE_UREN`  geldigheid van een sessie (standaard 12)
+`POLIRASTER_MAX_BODY`     maximale bodygrootte in bytes (standaard 2 MB)
+`POLIRASTER_MAX_JOBS`     maximaal aantal jobs per batch (standaard 100)
+`POLIRASTER_GELIJKTIJDIG` maximaal aantal gelijktijdige berekeningen (standaard 2)
+`POLIRASTER_TIMEOUT`      tijdslimiet per berekening in seconden (standaard 120)
+`POLIRASTER_LIMIET`       verzoeken per minuut per adres (standaard 120; 0 = uit)
+`POLIRASTER_CSP`          eigen Content-Security-Policy (overschrijft de standaard)
+
+### Waar kan het misgaan en hoe zie je dat
+- Na het inloggen direct weer het loginscherm: de cookie wordt niet geaccepteerd. Meestal
+  draait de server achter een HTTPS-proxy zonder `POLIRASTER_ACHTER_PROXY=1` (cookie is dan
+  Secure terwijl de server zelf HTTP ziet) — of andersom: `POLIRASTER_HTTPS=1` terwijl je
+  lokaal over HTTP test. Of het geheim verschilt tussen processen. Logboek
+  `poliraster.beveiliging` (DEBUG): "geen geldige sessie".
+- `403 Herkomst niet toegestaan`: de frontend staat op een andere host dan de API; zet die
+  host in `POLIRASTER_ORIGINS`. De weigering staat in het logboek met origin en eigen herkomst.
+- `503 Accounts niet ingesteld`: `POLIRASTER_GEHEIM` ontbreekt. `503 Database …`: zie `opslag.py`.
+- `429`: verzoeklimiet; verhoog `POLIRASTER_LIMIET` of kijk of een script de API hamert.
+- `413`: body groter dan `POLIRASTER_MAX_BODY`.
+- Lege pagina met CSP-fouten in de browserconsole: de frontend laadt iets dat de CSP niet
+  toestaat (bv. een ander lettertype-domein); pas `POLIRASTER_CSP` aan.
+
+
+---
+
+## `accounts.py` — gebruikers, wachtwoorden, login met blokkade, sessies, logboek
+
+_Accounts: gebruikers, wachtwoorden, inloggen met blokkade, sessies en het beheerlogboek._
+
+### Wat doet dit onderdeel
+Alles rond "wie ben je en wat mag je" voor PoliRaster Studio, volgens `ACCOUNTS.md`:
+persoonlijke accounts (rol `beheer` of `gebruiker`), wachtwoorden als PBKDF2-hash, inloggen
+met een blokkade na te veel mislukte pogingen, sessies in de database plus een ondertekend
+cookie-token, en een logboek dat de beheerder kan doorzoeken. De HTTP-kant (routes, cookies
+zetten) zit in `server.py`; dit bestand is zuivere logica bovenop `opslag.py`.
+
+### Plaats in de keten
+`server.py` (routes `/api/auth/*` en `/api/beheer/*`) en `beveiliging.py` (de
+sessiecontrole per verzoek, via `Accounts.controleer_token`) → dit bestand → `opslag.py`
+(SQLite of Turso). `stand.py` gebruikt `Fout` en `Accounts.log` hieruit.
+
+### Invoer
+- Een `Opslag` (`opslag.py`), het geheim `POLIRASTER_GEHEIM` en de sessieduur in uren.
+- Omgeving voor de eerste beheerder: `POLIRASTER_BEHEER_GEBRUIKER` + `POLIRASTER_BEHEER_WACHTWOORD`.
+- Per aanroep: gebruikersnaam/wachtwoord, een `Bron` (IP-adres en browser) voor het logboek.
+
+### Uitvoer
+- `login` → `(gebruiker, token, sessie)`; `gebruiker = {id, gebruikersnaam, naam, rol,
+  moet_wachtwoord_wijzigen}`; `token` gaat in de cookie `poliraster_sessie`.
+- `controleer_token(token)` → `Sessie` of `None`.
+- Lijsten voor beheer (gebruikers met afgeleide kolommen, sessies, logboek met paginering).
+- Fouten als `Fout(status, tekst)` — `server.py` maakt daar `{ok:false, fout}` met die
+  HTTP-status van.
+
+### Hoe het werkt
+1. **Wachtwoord**: PBKDF2-HMAC-SHA256, 310.000 iteraties, 16 bytes zout, opgeslagen als
+   `pbkdf2_sha256$<iter>$<zout b64>$<hash b64>` (standaard-base64 met `=`); vergelijken met
+   `hmac.compare_digest`. Minimaal 10 tekens.
+2. **Login**: (a) blokkade? — mislukte pogingen (`login_fout`) uit het logboek van de laatste
+   15 minuten: 5 voor dezelfde naam (geteld sinds de laatste geslaagde login van die naam) of
+   20 vanaf hetzelfde IP → `Fout(429)` en een regel `login_geblokkeerd`; (b) gebruiker
+   opzoeken (onbekend → toch een hash rekenen, zodat de duur niets verraadt); (c) wachtwoord
+   controleren; (d) inactief account → fout; (e) sessie-rij aanmaken en token maken;
+   `login_ok` in het logboek.
+3. **Token** (exact `ACCOUNTS.md` §3): `b64url(payload_json) + "." +
+   b64url(HMAC_SHA256(geheim, b64url(payload_json)))` met `payload = {"sid","uid","rol","exp"}`
+   compact (`separators=(",",":")`), b64url zonder `=`.
+4. **Sessiecontrole** (elk beschermd verzoek): handtekening en `exp`; daarna in de database:
+   sessie bestaat, niet ingetrokken, niet verlopen, gebruiker actief. De rol komt uit de
+   database (niet uit het token). `laatst_gezien` wordt hooguit eens per 5 minuten bijgewerkt.
+5. **Intrekken**: uitloggen, blokkeren, wachtwoord resetten of wijzigen en een rolwijziging
+   trekken sessies in (`ingetrokken=1`), zodat ook het token in de Vercel-middleware
+   (die alleen handtekening en `exp` ziet) bij de volgende API-aanroep niets meer waard is.
+6. **Eerste beheerder**: is er geen actieve beheerder, dan maakt `zorg_voor_eerste_beheerder`
+   er één uit de omgeving; een bestaand account met die naam wordt nooit overschreven.
+7. **Laatste beheerder**: de laatste actieve beheerder kan niet worden gedegradeerd of
+   geblokkeerd (`Fout(409)`).
+
+### Waar kan het misgaan en hoe zie je dat
+- Iedereen krijgt 401 direct na het inloggen: `POLIRASTER_GEHEIM` verschilt tussen de
+  processen (bv. Vercel-middleware en Python-functie) — de handtekening klopt dan niet.
+  Logboek `poliraster.accounts`: "token geweigerd: handtekening".
+- Een gebruiker is "geblokkeerd" terwijl hij het goede wachtwoord typt: 5 fouten in 15 minuten
+  voor die naam (of 20 vanaf het IP, bv. een heel ziekenhuis achter één NAT-adres). Kijk in het
+  beheerlogboek naar `login_fout`/`login_geblokkeerd`; de blokkade vervalt vanzelf.
+- Geen beheerder na de eerste start: `POLIRASTER_BEHEER_GEBRUIKER`/`_WACHTWOORD` ontbreken
+  of het wachtwoord is korter dan 10 tekens — de serverlog meldt "eerste beheerder niet aangemaakt".
+- `Fout(409) Dit is de laatste actieve beheerder`: maak eerst een tweede beheerder aan.
+
+
+---
+
+## `stand.py` — opgeslagen stand per gebruiker (verder waar je was)
+
+_Stand: "verder waar je was" — de opgeslagen werkstand per gebruiker, met eerdere versies._
+
+### Wat doet dit onderdeel
+De frontend slaat de stand van de tool (invoer, regels, capaciteit, modus, functiekamers,
+actieve module) automatisch op via `PUT /api/stand`. Dit bestand bewaart die stand per
+gebruiker als JSON-tekst in de tabel `standen`, houdt de laatste 30 versies, en geeft de
+nieuwste, de lijst van versies of één versie terug. De beheerder kan de nieuwste stand van
+een gebruiker inzien (om mee te kijken bij een vraag). De inhoud zelf bekijkt de backend
+niet, alleen de grootte.
+
+### Plaats in de keten
+`server.py` (routes `/api/stand*` en `/api/beheer/stand/{id}`) → dit bestand →
+`opslag.py`. Het logboek (`stand_hersteld`, `stand_bekeken`) gaat via `accounts.Accounts.log`.
+
+### Invoer
+- `opslaan(gebruiker_id, data, module, modus)`: `data` = het state-object van de frontend
+  (een JSON-object; dezelfde vorm als de sessie-export van `useImportExport`), `module` =
+  nummer van de actieve module (of `None`), `modus` = korte tekst (bv. `"poli"`).
+
+### Uitvoer
+- `opslaan` → `{id, tijd}`;
+- `nieuwste` / `een` → `{id, tijd, module, modus, data}` of `None`;
+- `versies` → `[{id, tijd, module, modus, grootte}]`, nieuwste eerst.
+
+### Hoe het werkt
+1. `data` wordt compact als JSON-tekst geschreven (UTF-8); groter dan 1 MB → `Fout(413)`.
+   `NaN`/`Infinity` worden geweigerd (`Fout(400)`) — die kan de browser niet teruglezen.
+2. Nieuwe rij in `standen`; daarna worden in dezelfde transactie alle rijen van deze
+   gebruiker buiten de nieuwste 30 verwijderd.
+3. Lezen kan alleen de eigen standen (`gebruiker_id` in elke query); een vreemd `id` geeft
+   `Fout(404)`, net als een id dat niet bestaat, zodat niet te raden is welke ids bestaan.
+
+### Waar kan het misgaan en hoe zie je dat
+- `413 De stand is te groot` → de frontend stuurt meer dan 1 MB; meestal een grote
+  importlijst. Kijk naar `grootte` in `GET /api/stand/versies`.
+- `GET /api/stand` geeft `stand: null` terwijl er wel opgeslagen is → de gebruiker is met
+  een ander account ingelogd (standen zijn per gebruiker).
+- Oudere versies "verdwijnen": er worden er maar 30 bewaard; elke automatische opslag is een
+  versie. Logboek `poliraster.stand` (DEBUG) meldt elke opslag met de grootte.
+
+
+---
+
+## `opslag.py` — database: SQLite of Turso achter één interface
+
+_Opslag: de database-laag voor accounts, opgeslagen stand en het logboek._
+
+### Wat doet dit onderdeel
+Eén kleine interface voor alle database-toegang, met twee uitvoeringen die precies dezelfde
+SQL (gewone SQLite-SQL met `?`-parameters) uitvoeren:
+
+- `SqliteOpslag`: een SQLite-bestand via de standaardmodule `sqlite3` — voor een eigen
+  server, lokaal ontwikkelen en de tests. Pad: `POLIRASTER_DB_PAD` (standaard
+  `backend/data/poliraster.db`).
+- `TursoOpslag`: Turso (gehoste SQLite, libSQL) via de HTTP-pipeline-API
+  `POST {url}/v2/pipeline` — voor Vercel, waar geen blijvende schijf is. Alleen `urllib`
+  uit de standaardbibliotheek, geen extra pakket.
+
+De rest van de backend (`accounts.py`, `stand.py`) weet niet welke van de twee draait.
+
+### Plaats in de keten
+Onderste laag. `server.py` maakt via `opslag_uit_omgeving()` één opslag per proces;
+`accounts.py` en `stand.py` krijgen die mee. De rekenkern (`poliraster/`) gebruikt
+geen database.
+
+### Invoer
+- Omgeving: `POLIRASTER_DB_URL` + `POLIRASTER_DB_TOKEN` (of `TURSO_DATABASE_URL` +
+  `TURSO_AUTH_TOKEN`, de namen die de Vercel-Turso-koppeling zet) → Turso;
+  anders `POLIRASTER_DB_PAD` → SQLite. `VERCEL=1` zonder URL → `OpslagFout`.
+- Per aanroep: een SQL-tekst en een tuple/lijst argumenten (`None`, `bool`, `int`,
+  `float`, `str`, `bytes`).
+
+### Uitvoer
+- `voer_uit(sql, args)` → `Uitkomst(laatste_id, aantal)` (rowid van de laatste INSERT en
+  het aantal gewijzigde rijen);
+- `haal(sql, args)` → lijst dicts (kolomnaam → waarde);
+- `haal_een(sql, args)` → één dict of `None`;
+- `transactie()` → contextmanager met dezelfde drie methoden; alles of niets.
+
+### Hoe het werkt
+1. `opslag_uit_omgeving()` kiest de uitvoering en maakt het schema aan (`zorg_voor_schema`):
+   `CREATE TABLE IF NOT EXISTS` + indexen + `instellingen.schema_versie`, eenmalig per
+   opslag-object (dus eenmalig per proces).
+2. SQLite: één verbinding per proces (`check_same_thread=False`) achter een slot, in
+   autocommit-stand; WAL-journaal en `PRAGMA foreign_keys=ON`. Een transactie is
+   `BEGIN IMMEDIATE` … `COMMIT` (of `ROLLBACK` bij een uitzondering) onder hetzelfde slot.
+3. Turso: elke losse opdracht is één pipeline `[execute, close]`. Argumenten gaan als
+   Hrana-waarden: `{"type":"text","value":…}`, `{"type":"integer","value":"<getal als
+   tekst>"}`, `{"type":"float","value":…}`, `{"type":"blob","base64":…}`,
+   `{"type":"null"}`. Het resultaat (`cols` + `rows`) wordt terugvertaald naar dicts.
+   Een transactie houdt de stream open met de `baton` uit elk antwoord (en volgt een
+   eventuele `base_url`): `BEGIN` … opdrachten … `COMMIT` + `close`.
+4. Fouten (SQL-fout, HTTP-fout, geen verbinding) worden `OpslagFout` met de tekst van de
+   server erin, zodat `server.py` er een nette 503 van maakt.
+
+### Waar kan het misgaan en hoe zie je dat
+- `OpslagFout: Geen database ingesteld: koppel Turso …` → op Vercel ontbreekt
+  `POLIRASTER_DB_URL`/`TURSO_DATABASE_URL`; koppel Turso in Vercel en deploy opnieuw.
+- `OpslagFout: Turso antwoordde HTTP 401 …` → het token klopt niet of is verlopen
+  (`POLIRASTER_DB_TOKEN`/`TURSO_AUTH_TOKEN`).
+- `OpslagFout: Turso niet bereikbaar …` → verkeerde URL of geen netwerk; de URL moet
+  `libsql://…`, `https://…` (of voor tests `http://…`) zijn.
+- `OpslagFout: … UNIQUE constraint failed …` → dubbele gebruikersnaam; `accounts.py`
+  vangt dat af als 409.
+- `database is locked` bij SQLite → een tweede proces schrijft tegelijk in hetzelfde bestand;
+  WAL en de `busy_timeout` (5 s) vangen korte botsingen op. Draai één serverproces per bestand.
+- Logboek: `poliraster.opslag` meldt bij het starten welke opslag gekozen is (DEBUG: elke
+  SQL-opdracht met de duur).
+
+### Tests
+
+- `tests/test_server.py` (TestClient, open stand): health, functiekamers (ook `trace`), batch, foutpaden, `/`, poli.
+- `tests/test_opslag.py`: dezelfde testset over SQLite en Turso; Turso via `NepHrana` in `tests/conftest.py`
+  (een `http.server` die `/v2/pipeline` uitvoert tegen SQLite in het geheugen), zodat de echte HTTP-code draait.
+- `tests/test_accounts.py`: hash, token met de vaste testvector (`ACCOUNTS.md` §3), login, blokkade per naam en
+  per IP, sessiecontrole, eerste beheerder, laatste-beheerder-bescherming, logboek en paginering.
+- `tests/test_stand.py`: opslaan, versies (30), alleen eigen standen, 1 MB, beheer-inzage.
+- `tests/test_beheer_api.py`: alle routes via de TestClient met rollen (401/403/404/409/413/429/503),
+  statische bestanden en padtraversal, de open stand, Vercel zonder geheim of database, de hele keten met Turso,
+  en `api/index.py`.
+- `tests/test_beveiliging.py`: toegang zonder sessie (302/401), Bearer alleen voor de reken-API, CSRF op alle
+  schrijvende methoden, limieten, koppen, achter een HTTPS-proxy, de startwaarschuwing.
+- `tests/test_beveiligd_e2e.mjs` (Playwright): echte loginpagina, fout en goed wachtwoord, de tool, stand, uitloggen.
+- `tests/test_frontend_http.mjs`: de tool via de server in de open stand (vereist een build met `VITE_POLIRASTER_API=''`).
 
 ---
 

@@ -1,47 +1,38 @@
-"""Tests voor de beveiligingslaag (beveiliging.py + server.py in beveiligde stand).
+"""Tests voor de beveiligingslaag (beveiliging.py + server.py met accounts aan).
 
-De server wordt hier met een wachtwoord en strenge limieten gestart (omgevingsvariabelen
-vóór de import), zodat we het gedrag op internet nabootsen: zonder login geen API, login
-met het juiste wachtwoord geeft een sessiecookie, te grote of te veel aanvragen worden
-geweigerd, en elk antwoord draagt de beveiligingskoppen.
+De server wordt met accounts (``POLIRASTER_GEHEIM``), een eerste beheerder en strenge limieten
+opnieuw geïmporteerd, zodat we het gedrag op internet nabootsen: zonder sessie geen API en een
+doorverwijzing naar ``/login.html``, inloggen geeft een sessiecookie, scripts mogen met een
+Bearer-token alleen de reken-API, te grote of te veel aanvragen worden geweigerd, CSRF geldt voor
+alle schrijvende methoden, en elk antwoord draagt de beveiligingskoppen. De account-routes zelf
+staan in ``test_beheer_api.py``.
 """
 from __future__ import annotations
 
-import importlib
-import os
-import sys
-from pathlib import Path
+import logging
 
 import pytest
+from fastapi.testclient import TestClient
 
-HIER = Path(__file__).resolve().parent
-sys.path.insert(0, str(HIER.parent))
+from tests.conftest import GEHEIM, maak_server
 
-WACHTWOORD = "een-lange-wachtzin-voor-de-test"
+BEHEER_WW = "beheer-wachtwoord-123"
+TOKEN = "script-token-123"
 
 
 @pytest.fixture(scope="module")
-def client():
-    os.environ.update({
-        "POLIRASTER_WACHTWOORD": WACHTWOORD,
-        "POLIRASTER_GEHEIM": "x" * 40,
-        "POLIRASTER_TOKEN": "script-token-123",
-        "POLIRASTER_MAX_BODY": str(64 * 1024),
-        "POLIRASTER_MAX_JOBS": "3",
-        "POLIRASTER_LIMIET": "0",
-    })
-    # server.py leest de instellingen bij import: verse import met deze omgeving.
-    for m in ("server", "beveiliging"):
-        sys.modules.pop(m, None)
-    server = importlib.import_module("server")
-    from fastapi.testclient import TestClient
+def server(tmp_path_factory):
+    tmp = tmp_path_factory.mktemp("bev")
+    with maak_server({"POLIRASTER_GEHEIM": GEHEIM, "POLIRASTER_TOKEN": TOKEN, "POLIRASTER_MAX_BODY": str(64 * 1024),
+                      "POLIRASTER_MAX_JOBS": "3", "POLIRASTER_DB_PAD": str(tmp / "b.db"),
+                      "POLIRASTER_BEHEER_GEBRUIKER": "beheerder", "POLIRASTER_BEHEER_WACHTWOORD": BEHEER_WW}) as srv:
+        yield srv
 
+
+@pytest.fixture()
+def client(server):
     with TestClient(server.app, base_url="http://testserver") as c:
         yield c
-    for k in ("POLIRASTER_WACHTWOORD", "POLIRASTER_GEHEIM", "POLIRASTER_TOKEN", "POLIRASTER_MAX_BODY", "POLIRASTER_MAX_JOBS", "POLIRASTER_LIMIET"):
-        os.environ.pop(k, None)
-    for m in ("server", "beveiliging"):
-        sys.modules.pop(m, None)
 
 
 def _fk_body():
@@ -53,53 +44,67 @@ def _fk_body():
             "regels": {**fk_standaard_regels(), "planregels": p.get("planregels", [])}}
 
 
+def _login(c):
+    r = c.post("/api/auth/login", json={"gebruikersnaam": "beheerder", "wachtwoord": BEHEER_WW}, headers={"origin": "http://testserver"})
+    assert r.status_code == 200, r.text
+    return r
+
+
 def test_zonder_login_geen_api(client):
     r = client.post("/api/functiekamers", json=_fk_body())
-    assert r.status_code == 401 and r.json()["ok"] is False
+    assert r.status_code == 401 and r.json() == {"ok": False, "fout": "Niet ingelogd."}
     r = client.get("/", follow_redirects=False)
-    assert r.status_code == 302 and r.headers["location"].startswith("/login")
+    assert r.status_code == 302 and r.headers["location"] == "/login.html?naar=%2F"
+    r = client.get("/iets?x=1&y=2", follow_redirects=False)
+    assert r.headers["location"] == "/login.html?naar=%2Fiets%3Fx%3D1%26y%3D2"
     assert client.get("/api/health").status_code == 200  # health blijft bereikbaar (monitoring)
+    # Een POST naar een pagina (geen API) zonder sessie: 401, geen doorverwijzing.
+    assert client.post("/", follow_redirects=False).status_code == 401
 
 
-def test_loginpagina_en_fout_wachtwoord(client):
-    r = client.get("/login")
-    assert r.status_code == 200 and "Wachtwoord" in r.text and 'name="wachtwoord"' in r.text
-    r = client.post("/login", data={"wachtwoord": "fout", "naar": "/"}, headers={"origin": "http://testserver"})
-    assert r.status_code == 401 and "onjuist" in r.text
-    assert "poliraster_sessie" not in r.headers.get("set-cookie", "")
+def test_oude_wachtwoordlogin_is_weg(client):
+    assert client.get("/login", follow_redirects=False).status_code == 302   # gewone beschermde pagina, geen loginformulier meer
+    assert client.post("/login", data={"wachtwoord": "x"}).status_code == 401
 
 
 def test_login_geeft_sessie_en_dan_werkt_api(client):
-    r = client.post("/login", data={"wachtwoord": WACHTWOORD, "naar": "/"}, headers={"origin": "http://testserver"}, follow_redirects=False)
-    assert r.status_code == 302 and r.headers["location"] == "/"
+    r = _login(client)
     cookie = r.headers["set-cookie"]
     assert "HttpOnly" in cookie and "SameSite=Strict" in cookie and "poliraster_sessie=" in cookie
     r = client.post("/api/functiekamers", json=_fk_body(), headers={"origin": "http://testserver"})
     assert r.status_code == 200 and r.json().get("fk")
-    # Uitloggen wist de cookie
-    r = client.get("/logout", follow_redirects=False)
-    assert r.status_code == 302 and "Max-Age=0" in r.headers["set-cookie"]
+    assert client.get("/", follow_redirects=False).status_code == 200
 
 
-def test_bearer_token_voor_scripts(client):
+def test_bearer_token_alleen_voor_reken_api(client):
     client.cookies.clear()
-    r = client.post("/api/functiekamers", json=_fk_body(), headers={"authorization": "Bearer script-token-123"})
-    assert r.status_code == 200 and r.json().get("fk")
-    r = client.post("/api/functiekamers", json=_fk_body(), headers={"authorization": "Bearer verkeerd"})
-    assert r.status_code == 401
+    kop = {"authorization": f"Bearer {TOKEN}"}
+    assert client.post("/api/functiekamers", json=_fk_body(), headers=kop).json().get("fk")
+    assert client.post("/api/batch", json={"jobs": []}, headers=kop).status_code == 200
+    assert client.post("/api/functiekamers", json=_fk_body(), headers={"authorization": "Bearer verkeerd"}).status_code == 401
+    assert client.get("/api/auth/ik", headers=kop).status_code == 401
+    assert client.get("/", headers=kop, follow_redirects=False).status_code == 302
 
 
 def test_csrf_vreemde_herkomst_geweigerd(client):
-    r = client.post("/api/functiekamers", json=_fk_body(),
-                    headers={"authorization": "Bearer script-token-123", "origin": "https://kwaadwillend.example"})
+    kop = {"authorization": f"Bearer {TOKEN}"}
+    r = client.post("/api/functiekamers", json=_fk_body(), headers={**kop, "origin": "https://kwaadwillend.example"})
     assert r.status_code == 403
-    r = client.post("/api/functiekamers", json=_fk_body(),
-                    headers={"authorization": "Bearer script-token-123", "sec-fetch-site": "cross-site"})
+    r = client.post("/api/functiekamers", json=_fk_body(), headers={**kop, "sec-fetch-site": "cross-site"})
     assert r.status_code == 403
+    r = client.post("/api/functiekamers", json=_fk_body(), headers={**kop, "origin": "null"})
+    assert r.status_code == 403
+    _login(client)
+    for methode in ("put", "patch", "delete"):
+        r = getattr(client, methode)("/api/stand", headers={"origin": "https://kwaadwillend.example"})
+        assert r.status_code == 403, methode
+    # Eigen herkomst en same-origin zijn goed.
+    assert client.put("/api/stand", json={"data": {}}, headers={"sec-fetch-site": "same-origin"}).status_code == 200
+    assert client.put("/api/stand", json={"data": {}}, headers={"referer": "http://testserver/"}).status_code == 200
 
 
 def test_limieten(client):
-    kop = {"authorization": "Bearer script-token-123"}
+    kop = {"authorization": f"Bearer {TOKEN}"}
     # te grote body
     r = client.post("/api/functiekamers", content=b"{" + b" " * (70 * 1024) + b"}", headers={**kop, "content-type": "application/json"})
     assert r.status_code == 413
@@ -119,6 +124,30 @@ def test_beveiligingskoppen(client):
     assert "content-security-policy" in h and "frame-ancestors 'none'" in h["content-security-policy"]
     assert h["x-content-type-options"] == "nosniff" and h["x-frame-options"] == "DENY"
     assert h["referrer-policy"] == "same-origin" and h["cache-control"] == "no-store"
+    assert "strict-transport-security" not in h
+    # Ook op weigeringen van de middleware zelf.
+    h2 = client.get("/api/stand").headers
+    assert h2["x-frame-options"] == "DENY" and h2["cache-control"] == "no-store"
+
+
+def test_achter_https_proxy(tmp_path):
+    with maak_server({"POLIRASTER_GEHEIM": GEHEIM, "POLIRASTER_ACHTER_PROXY": "1", "POLIRASTER_DB_PAD": str(tmp_path / "p.db"),
+                      "POLIRASTER_BEHEER_GEBRUIKER": "beheerder", "POLIRASTER_BEHEER_WACHTWOORD": BEHEER_WW}) as srv:
+        c = TestClient(srv.app)
+        kop = {"x-forwarded-proto": "https", "x-forwarded-for": "203.0.113.5, 10.0.0.1", "x-forwarded-host": "raster.example.nl",
+               "origin": "https://raster.example.nl"}
+        r = c.post("/api/auth/login", json={"gebruikersnaam": "beheerder", "wachtwoord": BEHEER_WW}, headers=kop)
+        assert r.status_code == 200 and "Secure" in r.headers["set-cookie"]
+        assert r.headers["strict-transport-security"].startswith("max-age=")
+        tok = r.headers["set-cookie"].split(";")[0].split("=", 1)[1]
+        regels = c.get("/api/beheer/logboek", params={"soort": "login_ok"}, headers={**kop, "cookie": f"poliraster_sessie={tok}"}).json()["regels"]
+        assert regels[0]["ip"] == "203.0.113.5"   # het echte adres, niet dat van de proxy
+
+
+def test_verzoeklimiet_middleware(tmp_path):
+    with maak_server({"POLIRASTER_LIMIET": "3", "POLIRASTER_DB_PAD": str(tmp_path / "l.db")}) as srv:
+        c = TestClient(srv.app)
+        assert [c.get("/api/health").status_code for _ in range(4)] == [200, 200, 200, 429]
 
 
 def test_verzoeklimiet():
@@ -131,12 +160,34 @@ def test_verzoeklimiet():
     assert t.tel("b", nu=103) is True   # ander adres
 
 
-def test_sessie_token_vervalt_en_vervalst():
-    from beveiliging import Instellingen, maak_sessie, sessie_geldig
+def test_hulpfuncties():
+    from beveiliging import Instellingen, is_vrij, sessie_cookie, token_klopt
 
-    inst = Instellingen(wachtwoord="w" * 12, geheim="g" * 40, sessie_uren=1)
-    tok = maak_sessie(inst, nu=1000)
-    assert sessie_geldig(inst, tok, nu=1000 + 3500)
-    assert not sessie_geldig(inst, tok, nu=1000 + 3700)
-    assert not sessie_geldig(inst, tok[:-2] + "zz", nu=1000)
-    assert not sessie_geldig(Instellingen(wachtwoord="w" * 12, geheim="ander" * 8), tok, nu=1000)
+    assert sessie_cookie("abc", 60, True) == "poliraster_sessie=abc; Path=/; HttpOnly; SameSite=Strict; Max-Age=60; Secure"
+    assert "Secure" not in sessie_cookie("", 0, False)
+    assert is_vrij("/login.html", "GET") and is_vrij("/api/health", "GET") and is_vrij("/api/auth/login", "POST")
+    assert not is_vrij("/api/auth/login", "GET") and not is_vrij("/", "GET") and not is_vrij("/api/auth/ik", "GET")
+    inst = Instellingen(geheim="g" * 48, token="t-123")
+    assert inst.accounts_aan and token_klopt(inst, "Bearer t-123") and not token_klopt(inst, "Bearer t-12") and not token_klopt(inst, "t-123")
+    assert not token_klopt(Instellingen(geheim="", token=""), "Bearer ")
+    assert not Instellingen(geheim="  ").accounts_aan
+
+
+def test_oud_wachtwoord_alleen_waarschuwing(caplog):
+    with caplog.at_level(logging.WARNING, logger="poliraster.beveiliging"):
+        with maak_server({"POLIRASTER_WACHTWOORD": "oude-gedeelde-wachtzin"}) as srv:
+            assert srv.INST.accounts_aan is False
+    assert any("POLIRASTER_WACHTWOORD wordt niet meer gebruikt" in r.message for r in caplog.records)
+
+
+def test_luide_waarschuwing_open_op_netwerk(monkeypatch, caplog):
+    import uvicorn
+
+    monkeypatch.setattr(uvicorn, "run", lambda *a, **k: None)
+    with maak_server({}) as srv:
+        with caplog.at_level(logging.WARNING, logger="poliraster.server"):
+            srv.main(["--host", "127.0.0.1"])
+            assert not any("ZONDER ACCOUNTS" in r.message for r in caplog.records)
+            srv.main(["--host", "0.0.0.0"])
+            assert any("ZONDER ACCOUNTS" in r.message for r in caplog.records)
+    assert srv.is_lokaal_adres("::1") and srv.is_lokaal_adres("localhost") and not srv.is_lokaal_adres("192.168.1.2")

@@ -13,7 +13,7 @@
  * Invoer
  *   — (data).
  * Uitvoer
- *   PLAN_INFO, TOGGLE_KEYS, RADIO_KEYS, MODULES, RESTDAG_LABEL.
+ *   PLAN_INFO, TOGGLE_KEYS, RADIO_KEYS, MODULES, START, RESTDAG_LABEL.
  *
  * Hoe het werkt
  *   1. Een sleutel in PLAN_INFO is dezelfde als in rules; de engine leest de waarde, deze
@@ -27,6 +27,12 @@
 /**
  * De vier stappen van de tool, in volgorde.
  */
+/**
+ * Id van het startscherm (modules/Start.jsx). Bewust geen 0..3: de vier stappen houden hun
+ * index (window.__nav(3) is nog steeds Raster), Start staat er los voor.
+ */
+export const START = -1
+
 export const MODULES = [
   { id: 0, title: 'Spreekuurtijden', icon: '⏰', short: 'Tijden' },
   { id: 1, title: 'Gegevens invoer', icon: '📋', short: 'Gegevens' },

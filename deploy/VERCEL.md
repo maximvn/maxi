@@ -1,102 +1,154 @@
-# PoliRaster Studio op Vercel, met login en eigen domein
+# PoliRaster Studio op Vercel — met persoonlijke accounts, opgeslagen stand en eigen domein
 
-Dit is de snelste manier om de tool veilig op internet te zetten: Vercel bouwt de
-frontend uit GitHub, zet er automatisch HTTPS op, en de Edge Middleware vraagt een
-gebruikersnaam en wachtwoord vóór alles (de tool én de API).
+Vercel bouwt de frontend uit GitHub, zet er automatisch HTTPS op en draait de Python-API als
+serverless-functie. Iedereen logt in met een **eigen account**; de tool slaat de stand van elke
+gebruiker automatisch op in een **Turso-database** (gehoste SQLite), zodat je op elk apparaat
+verdergaat waar je was. Een beheerder maakt gebruikers aan en ziet in het logboek wie wanneer
+inlogde. Het ontwerp en alle API-afspraken staan in `backend/ACCOUNTS.md`.
 
 ## Wat er in de repo klaarstaat
 
 | Bestand | Doet |
 |---|---|
 | `vercel.json` | bouwopdracht (`frontend/`), uitvoermap `frontend/dist`, `/api/*` naar de Python-functie, beveiligingskoppen (CSP, HSTS, geen frames) |
-| `middleware.js` | login met gebruikersnaam/wachtwoord (HTTP Basic Auth) uit de omgevingsvariabelen `BASIC_AUTH_USER` en `BASIC_AUTH_PASS`; zonder die variabelen laat hij niemand binnen |
-| `api/index.py` + `requirements.txt` | de Python-API (`/api/health`, `/api/raster`, `/api/functiekamers`, `/api/batch`) als serverless-functie |
+| `middleware.js` | Edge Middleware vóór elk verzoek: controleert de sessiecookie (HMAC-SHA256 met `POLIRASTER_GEHEIM`, vervaltijd). Zonder sessie: pagina → `/login.html`, API → 401. Zonder `POLIRASTER_GEHEIM` laat hij niemand binnen (503) |
+| `frontend/public/login.html`, `login.js`, `login.css` | de inlogpagina (statisch, komt via de build in `frontend/dist/`) |
+| `api/index.py` + `requirements.txt` | de Python-API: rekenen, inloggen, opgeslagen stand, beheer |
 | `.vercelignore` | wat niet mee hoeft (tests, Docker, losse HTML-bouw) |
 
-Standaard rekent de tool op Vercel **in de browser** (de JavaScript-engine in een Web
-Worker). Dat is bewust: een Vercel-functie mag 10 s rekenen op het gratis plan en 60 s op
-Pro, en de zwaarste week kost de Python-engine ~6 s. De Python-API staat er wel naast,
-voor scripts en voor wie op Pro de frontend via Python wil laten rekenen (zie onderaan).
+Standaard rekent de tool op Vercel **in de browser** (de JavaScript-engine in een Web Worker);
+de API doet de accounts en de opslag. Rekenen via Python kan ook (zie onderaan).
 
-## Stap 1 — project aanmaken (eenmalig, ~5 minuten)
+## Stap 1 — project aanmaken (eenmalig)
 
-1. Ga naar <https://vercel.com/new>, kies **Import Git Repository** en selecteer
-   `maximvn/maxi`. Kies de branch die je wilt publiceren (nu
-   `claude/raster-tool-expansion-gx8e0w`, later `main` na het samenvoegen).
-   Geef het project de naam **`rastertool`**: dan staat de tool op
-   **`https://rastertool.vercel.app`** (gratis, met HTTPS). Is die naam al bezet,
-   dan kiest Vercel iets als `rastertool-xyz.vercel.app`; je kunt de naam later
-   wijzigen onder Settings → General → Project Name, of onder Settings → Domains een
-   eigen `.vercel.app`-adres toevoegen.
-2. **Root Directory** laat je op de hoofdmap staan (daar staan `vercel.json` en
-   `middleware.js`). Framework Preset: *Other*. Build- en output-instellingen komen uit
-   `vercel.json`; laat ze leeg.
-3. Open **Environment Variables** en voeg toe (voor Production én Preview):
+1. Ga naar <https://vercel.com/new>, kies **Import Git Repository** en selecteer `maximvn/maxi`
+   (de branch die je wilt publiceren). Geef het project de naam **`rastertool`**: dan staat de
+   tool op `https://rastertool.vercel.app`.
+2. **Root Directory**: de hoofdmap (daar staan `vercel.json` en `middleware.js`). Framework
+   Preset: *Other*. Build- en output-instellingen komen uit `vercel.json`; laat ze leeg.
+3. Klik nog **niet** op Deploy als het scherm daarom vraagt zonder de stappen hieronder: zonder
+   database en geheim krijg je een nette foutmelding (503), maar je kunt niet inloggen.
+   (Deploy je toch al, geen probleem: na stap 2 en 3 doe je *Redeploy*.)
 
-   | Naam | Waarde |
-   |---|---|
-   | `BASIC_AUTH_USER` | de gebruikersnaam (bv. `SZ`) |
-   | `BASIC_AUTH_PASS` | het wachtwoord (bv. `SZ2026!`) |
+## Stap 2 — database koppelen: Turso via de Vercel Marketplace
 
-   De waarden staan bewust niet in de code: de repo staat op GitHub.
-4. Klik **Deploy**. Na een minuut staat de tool op `https://rastertool.vercel.app` en vraagt
-   de browser om in te loggen.
-5. Zet de branch als productiebranch: Settings → Git → **Production Branch** →
-   `claude/raster-tool-expansion-gx8e0w` (of `main` na het samenvoegen). Dan publiceert
-   elke push automatisch naar `rastertool.vercel.app`.
+1. Open het project in Vercel → tabblad **Storage** → **Create Database** (of *Browse
+   Marketplace*) → kies **Turso** → *Continue* / *Install*.
+2. Volg de stappen: maak (gratis) een Turso-account via Vercel, kies een regio dicht bij je
+   gebruikers (bijv. Frankfurt of Amsterdam) en geef de database een naam, bijv. `poliraster`.
+3. Koppel de database aan het project `rastertool`, voor **Production** en **Preview**.
+4. Vercel zet daarmee zelf de omgevingsvariabelen **`TURSO_DATABASE_URL`** en
+   **`TURSO_AUTH_TOKEN`**. Die hoef je dus niet over te typen; de API leest ze automatisch
+   (`POLIRASTER_DB_URL` / `POLIRASTER_DB_TOKEN` mogen ook, als je liever eigen namen gebruikt).
+
+De tabellen (gebruikers, sessies, standen, logboek) maakt de API zelf aan bij het eerste
+gebruik. Zonder database weigert de API met "Geen database ingesteld: koppel Turso …" in
+plaats van stil iets tijdelijks te gebruiken waarin alles verdwijnt.
+
+## Stap 3 — omgevingsvariabelen
+
+Project → **Settings → Environment Variables** → voor *Production* én *Preview*:
+
+| Naam | Waarde |
+|---|---|
+| `POLIRASTER_GEHEIM` | een lange willekeurige sleutel (48+ tekens) voor de sessiecookie. Maak er één met `python3 -c "import secrets; print(secrets.token_urlsafe(48))"` of `openssl rand -base64 48`. Middleware én API lezen dezelfde variabele. |
+| `POLIRASTER_BEHEER_GEBRUIKER` | `SZ` — de eerste beheerder |
+| `POLIRASTER_BEHEER_WACHTWOORD` | het wachtwoord van SZ — **vul je alleen hier in Vercel in, nooit in de code** (de repo staat op GitHub). Dit is het **startwachtwoord**: het eerder gekozen `SZ2026!` werkt. Is het korter dan 10 tekens (minimaal 6), dan vraagt de tool bij de eerste login van SZ om een nieuw wachtwoord van minimaal 10 tekens; daarna geldt dat nieuwe wachtwoord en doet deze variabele niets meer (hij wordt alleen gebruikt zolang er nog geen beheerder bestaat). |
+| `POLIRASTER_SESSIE_UREN` | optioneel: hoe lang een login geldig blijft (standaard `12`) |
+
+Weg mogen: **`BASIC_AUTH_USER`** en **`BASIC_AUTH_PASS`** — die gebruikt de middleware niet meer
+(de gedeelde Basic-Auth-login is vervangen door persoonlijke accounts).
+
+De eerste beheerder wordt alleen aangemaakt zolang er nog géén actieve beheerder is; een
+bestaand account wordt nooit overschreven. Je kunt de twee `POLIRASTER_BEHEER_*`-variabelen na
+de eerste login dus laten staan of weghalen.
+
+## Stap 4 — deployen en inloggen
+
+1. **Deployments → Redeploy** (of de eerste *Deploy*). Na een minuut staat de tool op
+   `https://rastertool.vercel.app`.
+2. Open die in een privévenster: je komt op de inlogpagina. Log in als **SZ** met het
+   wachtwoord uit stap 3. Je komt op het startscherm (*Verder waar je was* / *Nieuw raster
+   beginnen* / *Raster of sessie inladen*).
+3. Klik in het linkermenu op **Beheer** → **+ Nieuwe gebruiker**: vul gebruikersnaam, naam,
+   rol (`gebruiker` of `beheer`) en een tijdelijk wachtwoord in (de knop ⟳ maakt er een).
+   Geef het wachtwoord veilig door. Met **Wachtwoord resetten** krijgt een gebruiker een
+   nieuw tijdelijk wachtwoord en moet hij bij de volgende login zelf een eigen kiezen.
+4. Zet de branch als productiebranch: Settings → Git → **Production Branch**. Elke push
+   publiceert dan automatisch.
 
 Liever vanaf de commandoregel: `npm i -g vercel`, `vercel login`, `vercel link`,
-`vercel env add BASIC_AUTH_USER`, `vercel env add BASIC_AUTH_PASS`, `vercel --prod`.
+`vercel env add POLIRASTER_GEHEIM`, `vercel env add POLIRASTER_BEHEER_GEBRUIKER`,
+`vercel env add POLIRASTER_BEHEER_WACHTWOORD`, `vercel --prod`. (De Turso-koppeling doe je in
+het dashboard, stap 2.)
 
-## Stap 2 (optioneel) — eigen domein, bijv. rastertool.nl
+## Stap 5 (optioneel) — eigen domein, bijv. rastertool.nl
 
-1. Registreer het domein. Dat kan rechtstreeks in Vercel (Project → **Domains** →
-   *Buy*), of bij een Nederlandse registrar (TransIP, Mijndomein, Versio, …).
-   `rastertool.nl` had op het moment van schrijven geen DNS-record; of het vrij is, zie je
-   bij de registrar.
-2. In Vercel: Project → **Settings → Domains → Add** → `rastertool.nl` (Vercel voegt
-   `www.rastertool.nl` erbij en stuurt die door).
-3. Bij de registrar (alleen als je het domein niet via Vercel kocht) zet je de DNS die
-   Vercel toont, meestal:
+1. Registreer het domein, in Vercel (Project → **Domains** → *Buy*) of bij een registrar
+   (TransIP, Mijndomein, Versio, …).
+2. In Vercel: **Settings → Domains → Add** → `rastertool.nl` (Vercel voegt `www.` toe en stuurt
+   die door).
+3. Bij de registrar (als je het domein niet via Vercel kocht) de DNS die Vercel toont, meestal:
 
    | Type | Naam | Waarde |
    |---|---|---|
    | A | `@` | `76.76.21.21` |
    | CNAME | `www` | `cname.vercel-dns.com` |
 
-   Of je zet de nameservers van het domein op `ns1.vercel-dns.com` en `ns2.vercel-dns.com`;
-   dan regelt Vercel alles.
+   Of zet de nameservers op `ns1.vercel-dns.com` en `ns2.vercel-dns.com`.
 4. Binnen enkele minuten tot een uur is `https://rastertool.nl` live met een geldig
-   certificaat (automatisch verlengd).
+   certificaat. De sessiecookie werkt per domein: wie wisselt tussen `vercel.app` en het eigen
+   domein, logt op elk apart in.
 
-## Stap 3 — controleren
+## Controleren
 
-- Open `https://rastertool.vercel.app` (of je eigen domein) in een privévenster: eerst de inlogprompt, daarna de tool.
-- `https://rastertool.vercel.app/api/health` vraagt ook om de login en geeft dan
-  `{"ok":true,…,"engines":{"poli":true,"functie":true}}`.
+- Privévenster → `https://rastertool.vercel.app` → de inlogpagina, niet de tool.
+- `https://rastertool.vercel.app/api/health` is vrij toegankelijk en geeft
+  `{"ok":true,…,"accounts":true}`.
+- `https://rastertool.vercel.app/api/stand` zonder login → `401 {"ok":false,"fout":"Niet ingelogd."}`.
+- Inloggen, iets wijzigen: rechtsboven staat na een paar seconden "opgeslagen 11:42". Log in
+  op een ander apparaat: op het startscherm staat **Verder waar je was**.
+- Beheer → Logboek toont de logins (gelukt en mislukt) met tijd, IP-adres en browser.
 - <https://securityheaders.com> moet een A geven (CSP, HSTS, nosniff, geen frames).
 
-## Beheer
+## Beheer in het dagelijks gebruik
 
-- **Wachtwoord wijzigen**: Settings → Environment Variables → waarde aanpassen →
-  Deployments → *Redeploy*. Een nieuw wachtwoord geldt direct; gebruikers loggen opnieuw in.
-- **Nieuwe versie publiceren**: elke push naar de gekozen branch bouwt en publiceert
-  automatisch. Een pull request krijgt een eigen voorbeeld-URL (ook achter de login).
-- **Gebruikers**: Basic Auth is één gedeelde login. Wil je per persoon inloggen met het
-  ziekenhuisaccount, dan is Vercel's eigen *Deployment Protection* met SSO of een
-  identiteitslaag (Entra ID via Auth0/Clerk) de volgende stap; `middleware.js` is dan de
-  plek om dat in te bouwen.
+- **Wachtwoord vergeten**: de beheerder doet *Wachtwoord resetten*; de gebruiker kiest bij de
+  volgende login zelf een nieuw wachtwoord. Zelf wijzigen kan via **Wachtwoord** in het menu.
+- **Te veel mislukte pogingen**: na 5 mislukte pogingen voor één gebruikersnaam (of 20 vanaf
+  één adres) binnen 15 minuten volgt een blokkade van een kwartier; de inlogpagina meldt dat.
+- **Iemand de toegang ontnemen**: Beheer → *Blokkeren* (open sessies vervallen direct), of
+  Beheer → Sessies → *Intrekken* voor één apparaat.
+- **Iedereen uitloggen**: wijzig `POLIRASTER_GEHEIM` en *Redeploy*; alle cookies zijn dan
+  ongeldig.
+- **Oudere versie terug**: elke gebruiker ziet bij *versies* (rechtsboven, en op het
+  startscherm) de laatste versies van zijn werk en kan er één terugzetten.
+- **Meekijken bij een vraag**: Beheer → Gebruikers → *Bekijk laatste stand* (alleen lezen).
+
+## Waar kan het misgaan en hoe zie je dat
+
+| Wat je ziet | Oorzaak en oplossing |
+|---|---|
+| "Login niet ingesteld" (503) op elke pagina | `POLIRASTER_GEHEIM` ontbreekt of er is niet opnieuw gedeployd |
+| Inloggen lukt, maar je staat direct weer op de inlogpagina | de middleware en de API zien een ander geheim (variabele alleen in Production gezet terwijl je een Preview-URL gebruikt?), of de cookie wordt niet bewaard |
+| "Geen database ingesteld: koppel Turso …" | stap 2 niet gedaan, of de database niet aan dit project/deze omgeving gekoppeld |
+| SZ kan niet inloggen ("onjuist") op een nieuwe database | het beheerwachtwoord is korter dan 6 tekens (de beheerder is dan niet aangemaakt; zie de functielog in Vercel), of `POLIRASTER_BEHEER_*` ontbreken. Na de eerste login geldt het nieuwe wachtwoord dat SZ zelf koos, niet meer de waarde in Vercel |
+| Opslaan mislukt — "te groot" (413) | de stand is groter dan 1 MB (heel veel codes); exporteer naar Excel als reservekopie |
 
 ## Rekenen via Python op Vercel (optioneel, Pro-plan)
 
-1. Zet in Vercel de omgevingsvariabele `VITE_POLIRASTER_API` op een lege waarde (dus wél
-   aanwezig, zonder tekst) en `POLIRASTER_TIMEOUT` op `55`.
+1. Zet `VITE_POLIRASTER_API` op een lege waarde (wél aanwezig, zonder tekst) en
+   `POLIRASTER_TIMEOUT` op `55`.
 2. Voeg in `vercel.json` toe: `"functions": {"api/index.py": {"maxDuration": 60}}`.
-3. Redeploy. De frontend stuurt elke berekening nu naar `/api/raster`; de middleware
-   beschermt die route met dezelfde login.
+3. Redeploy. De frontend stuurt elke berekening nu naar `/api/raster`; de middleware en de
+   sessie beschermen die route net als de rest.
+
+Op het gratis plan mag een functie 10 s rekenen; de zwaarste week kost de Python-engine ~6 s.
+Daarom rekent de tool standaard in de browser.
 
 ## Wat Vercel niet doet
 
-- Geen server die blijft draaien: de Python-functie start per aanroep (koude start ~1 s).
-- Geen opslag: de tool bewaart niets op de server; export en geheugen zitten in de browser
-  van de gebruiker. Dat is voor deze tool precies goed.
+- Geen server die blijft draaien: de Python-functie start per aanroep (koude start ~1 s); de
+  database staat daarom bij Turso, niet op de functie.
+- Bestanden (Excel-export) blijven in de browser van de gebruiker; op de server staat alleen de
+  opgeslagen stand (laatste 30 versies per gebruiker) en het logboek.

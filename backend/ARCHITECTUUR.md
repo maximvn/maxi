@@ -148,6 +148,9 @@ tussenresultaten van JavaScript te zien.
   `POST /api/functiekamers` met `{kamers,codes,m2,regels,trace?}`, `POST /api/batch` met `{jobs:[{type,args,meet?}]}`
   (zelfde jobvorm als `frontend/src/engine/client.js`), `GET /api/health`. CORS open. Fouten komen terug als
   `{ok:false, fout, stap, spoor}` zodat de frontend ze toont.
+- Accounts, opgeslagen stand en beheerlogboek: `accounts.py`, `stand.py`, `opslag.py` (SQLite of Turso),
+  toegangscontrole in `beveiliging.py`; afspraken met de frontend in `ACCOUNTS.md`, uitleg per module in
+  `DOCUMENTATIE.md`. CORS staat inmiddels dicht (alleen `POLIRASTER_ORIGINS`).
 - Frontend: de engine-client (`frontend/src/engine/client.js`) kent een derde modus naast worker en synchroon: **http**. Is de optie `api` een string
   (basis-URL, '' = zelfde herkomst) — `App.jsx` leest die uit `import.meta.env.VITE_POLIRASTER_API`, met
   `window.__POLIRASTER_API` als terugval — dan gaan alle jobs via `fetch` naar de server.

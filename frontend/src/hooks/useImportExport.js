@@ -9,22 +9,25 @@
  *   sjabloon downloaden.
  *
  * Plaats in de tool
- *   App.jsx roept de hook aan; Gegevens*.jsx (verborgen file-inputs, voorbeeld),
- *   ExportDialoog.jsx (handleExport, exportLink, dlMelding) en FkStartscherm.jsx /
+ *   App.jsx roept de hook aan; useStand.js gebruikt pasSessieToe; Gegevens*.jsx (verborgen
+ *   file-inputs, voorbeeld), ExportDialoog.jsx (handleExport, exportLink, dlMelding) en
+ *   FkStartscherm.jsx /
  *   GegevensFunctiekamers.jsx (fkImporteer, fkVoorbeeldExcel) gebruiken de functies.
  *
  * Invoer
- *   deps: setters van alle gegevens plus {raster, cfg, newRows, ctrlRows, m2, rules, modus,
- *   fk, poli, m2c, kamerNaam, expName, fkKamers, fkCodes, fkReg, fkZet}.
+ *   deps: setters van alle gegevens (ook setCapacity, setPoli, setRoomNames) plus {raster,
+ *   cfg, newRows, ctrlRows, m2, rules, modus, fk, poli, m2c, kamerNaam, expName, fkKamers,
+ *   fkCodes, fkReg, fkZet}.
  * Uitvoer
- *   {handleImport, handleSpreekuur, downloadSpreekuurTemplate, handleExport, fkImporteer,
+ *   {pasSessieToe, handleImport, handleSpreekuur, downloadSpreekuurTemplate, handleExport, fkImporteer,
  *   fkVoorbeeldExcel, exporting, exportLink, setExportLink, tplLink, setTplLink, dlMelding,
  *   setDlMelding}.
  *
  * Hoe het werkt
- *   1. handleImport leest het blad _rasterdata, zet alle instellingen terug met
- *      migratie-standaarden voor oudere bestanden en navigeert naar Gegevens; het raster wordt
- *      niet opgeslagen maar opnieuw berekend.
+ *   1. handleImport leest het blad _rasterdata, zet alle instellingen terug via
+ *      pasSessieToe (migratie-standaarden voor oudere bestanden) en navigeert naar Gegevens;
+ *      het raster wordt niet opgeslagen maar opnieuw berekend. pasSessieToe is ook de weg
+ *      waarlangs hooks/useStand.js de opgeslagen stand na het inloggen terugzet.
  *   2. handleSpreekuur kiest het eerste blad met inhoud en laat lib/excel.js
  *      parseSpreekuurRows de codes vullen.
  *   3. handleExport bouwt de werkmap (lib/exportExcel.js) en maakt een echte Blob-URL; in
@@ -64,6 +67,9 @@ export function useImportExport(deps) {
     setRules,
     setFk,
     setModus,
+    setCapacity,
+    setPoli,
+    setRoomNames,
     setRaster,
     setImportBadge,
     setM1Mode,
@@ -91,6 +97,82 @@ export function useImportExport(deps) {
   const [exportLink, setExportLink] = useState(null) // {wb, href, basis, filename}
   const [dlMelding, setDlMelding] = useState(null) // uitkomst van opslaan via de gedeelde pagina
   const [tplLink, setTplLink] = useState(null) // voorbeeld-Excel {href, filename}
+  // ── SESSIE TERUGZETTEN ──────────────────────────────────────────────────────
+  /**
+   * Zet een sessie-state (het object uit _rasterdata, of de opgeslagen stand uit
+   * GET /api/stand) terug in de tool, met migratie-standaarden voor oudere bestanden. De
+   * ene weg terug: handleImport (Excel) en useStand (na het inloggen) roepen allebei deze
+   * functie aan. Navigeert niet en meldt niets; dat doet de aanroeper.
+   * @param {object} state — {cfg, newRows, ctrlRows, m2, rules, modus, fk, capacity?, poli?, roomNames?}
+   * @param {{bron: string}} opties — bron: naam voor de functiekamer-melding ("hersteld uit …")
+   */
+  const pasSessieToe = (state, { bron }) => {
+    // Restore all config state (with migration defaults for older files)
+    const migRow = r => ({
+      onzeker: 'gemiddeld',
+      dagdelen: { O: true, M: true, A: false },
+      modaliteit: r.modaliteit || (r.digitaal ? 'telefonisch' : 'fysiek'),
+      ...r,
+    })
+    if (state.cfg) setCfg(state.cfg)
+    if (state.newRows) setNewRows(state.newRows.map(migRow))
+    if (state.ctrlRows) setCtrlRows(state.ctrlRows.map(migRow))
+    if (state.m2)
+      setM2({
+        avondOn: false,
+        avondStart: '17:00',
+        avondEnd: '20:00',
+        verAvond: 0,
+        ...state.m2,
+        ddDagen: ddDagenVan(state.m2),
+      })
+    if (state.rules) {
+      const sr = state.rules
+      setRules({
+        spoedFirst: false,
+        startNieuw: false,
+        startControle: false,
+        mixNC: true,
+        digitalMode: 'spread',
+        flexMode: 'end',
+        kamerVerdeling: 'dagdeel',
+        restDag: 'uit',
+        restOpruimen: true,
+        minBezetting: 75,
+        spoedDagdeel: 'both',
+        startNieuwWaar: 'both',
+        startControleWaar: 'both',
+        mixWaar: 'both',
+        digitalWaar: 'both',
+        flexWaar: 'both',
+        flexNoFirstMin: 60,
+        flexBlokMin: 10,
+        digitalEndMinutes: 30,
+        ...sr,
+        ...(sr.kamerVerdeling === 'kamer' ? { kamerVerdeling: 'dagdeel' } : {}),
+      })
+    }
+    if (state.fk && (state.fk.kamers || []).length) {
+      setFk({
+        kamers: state.fk.kamers || [],
+        codes: (state.fk.codes || []).map(c => fkNieuweCode(c)),
+        regels: { ...fkStandaardRegels(), ...(state.fk.regels || {}) },
+        preset: state.fk.preset || '',
+        badge: { t: `Kamers en codes hersteld uit ${bron}.` },
+        open: null,
+        mode: 'excel',
+        sectie: 2,
+      })
+    }
+    if (state.modus === 'functie' || state.modus === 'poli') setModus(state.modus)
+    // Velden die alleen de opgeslagen stand meestuurt (lib/sessie.js); een Excel-export
+    // heeft ze niet, dus voor de bestandsimport verandert er niets.
+    if (state.capacity && typeof state.capacity === 'object') setCapacity(state.capacity)
+    if (state.poli && typeof state.poli === 'object') setPoli(state.poli)
+    if (state.roomNames && typeof state.roomNames === 'object') setRoomNames(state.roomNames)
+    // Note: raster is not stored (too large), it will be auto-generated
+    setRaster(null)
+  }
   // ── IMPORT ──────────────────────────────────────────────────────────────────
   const handleImport = e => {
     const file = e.target.files[0]
@@ -109,66 +191,7 @@ export function useImportExport(deps) {
         const rows = XLSX.utils.sheet_to_json(ws, { header: 1 })
         if (!rows || !rows[0] || !rows[0][0]) throw new Error('Hersteldata is leeg of beschadigd.')
         const state = JSON.parse(rows[0][0])
-        // Restore all config state (with migration defaults for older files)
-        const migRow = r => ({
-          onzeker: 'gemiddeld',
-          dagdelen: { O: true, M: true, A: false },
-          modaliteit: r.modaliteit || (r.digitaal ? 'telefonisch' : 'fysiek'),
-          ...r,
-        })
-        if (state.cfg) setCfg(state.cfg)
-        if (state.newRows) setNewRows(state.newRows.map(migRow))
-        if (state.ctrlRows) setCtrlRows(state.ctrlRows.map(migRow))
-        if (state.m2)
-          setM2({
-            avondOn: false,
-            avondStart: '17:00',
-            avondEnd: '20:00',
-            verAvond: 0,
-            ...state.m2,
-            ddDagen: ddDagenVan(state.m2),
-          })
-        if (state.rules) {
-          const sr = state.rules
-          setRules({
-            spoedFirst: false,
-            startNieuw: false,
-            startControle: false,
-            mixNC: true,
-            digitalMode: 'spread',
-            flexMode: 'end',
-            kamerVerdeling: 'dagdeel',
-            restDag: 'uit',
-            restOpruimen: true,
-            minBezetting: 75,
-            spoedDagdeel: 'both',
-            startNieuwWaar: 'both',
-            startControleWaar: 'both',
-            mixWaar: 'both',
-            digitalWaar: 'both',
-            flexWaar: 'both',
-            flexNoFirstMin: 60,
-            flexBlokMin: 10,
-            digitalEndMinutes: 30,
-            ...sr,
-            ...(sr.kamerVerdeling === 'kamer' ? { kamerVerdeling: 'dagdeel' } : {}),
-          })
-        }
-        if (state.fk && (state.fk.kamers || []).length) {
-          setFk({
-            kamers: state.fk.kamers || [],
-            codes: (state.fk.codes || []).map(c => fkNieuweCode(c)),
-            regels: { ...fkStandaardRegels(), ...(state.fk.regels || {}) },
-            preset: state.fk.preset || '',
-            badge: { t: `Kamers en codes hersteld uit ${file.name}.` },
-            open: null,
-            mode: 'excel',
-            sectie: 2,
-          })
-        }
-        if (state.modus === 'functie' || state.modus === 'poli') setModus(state.modus)
-        // Note: raster is not stored (too large), it will be auto-generated
-        setRaster(null)
+        pasSessieToe(state, { bron: file.name })
         setImportBadge({
           filename: file.name,
           date: state.exportDate
@@ -472,6 +495,7 @@ export function useImportExport(deps) {
     a.click()
   }
   return {
+    pasSessieToe,
     handleImport,
     handleSpreekuur,
     downloadSpreekuurTemplate,

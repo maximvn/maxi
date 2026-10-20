@@ -478,9 +478,23 @@ Zie `frontend/README.md` voor de mappenstructuur, de vlaggen en de tests.
 
 ## Op internet zetten
 
-**Vercel (aanbevolen voor een snelle, veilige start)**: `vercel.json`, `middleware.js` (login
-met gebruikersnaam en wachtwoord uit omgevingsvariabelen) en `api/index.py` staan klaar; de
-stappen voor project, login en eigen domein (bijv. rastertool.nl) staan in `deploy/VERCEL.md`.
+**Vercel (aanbevolen voor een snelle, veilige start)**: `vercel.json`, `middleware.js` en
+`api/index.py` staan klaar. Iedereen logt in met een **persoonlijk account** (inlogpagina
+`frontend/public/login.html`; de middleware controleert de sessiecookie), de tool slaat de stand
+per gebruiker automatisch op en opent na het inloggen op een startscherm met **Verder waar je
+was**, en een beheerder beheert gebruikers en ziet het logboek (knop **Beheer**). Kort:
+
+1. Project importeren in Vercel (hoofdmap, preset *Other*).
+2. **Storage → Turso** koppelen via de Vercel Marketplace; dat zet `TURSO_DATABASE_URL` en
+   `TURSO_AUTH_TOKEN`.
+3. Omgevingsvariabelen: `POLIRASTER_GEHEIM` (48+ willekeurige tekens),
+   `POLIRASTER_BEHEER_GEBRUIKER=SZ` en `POLIRASTER_BEHEER_WACHTWOORD` (alleen in Vercel, nooit in
+   de code; een kort startwachtwoord zoals `SZ2026!` mag, dan vraagt de tool bij de eerste login om een nieuw wachtwoord van minimaal 10 tekens). `BASIC_AUTH_USER`/`BASIC_AUTH_PASS` mogen weg.
+4. Deployen, inloggen als SZ, in **Beheer** de gebruikers aanmaken.
+
+De volledige stappen (ook eigen domein, bijv. rastertool.nl, en wat te doen als iets misgaat)
+staan in `deploy/VERCEL.md`; het ontwerp en de API in `backend/ACCOUNTS.md`. Zonder server
+(losse HTML, artifact, `file://`) werkt de tool zoals altijd, zonder login en zonder opslag.
 
 **Eigen server**: de Python-server heeft een beveiligde stand (login met wachtwoord, limieten, CSRF-controle,
 beveiligingskoppen) en een hostingpakket met Caddy voor automatisch HTTPS: zie

@@ -3,8 +3,10 @@
  *
  * Wat doet dit onderdeel
  *   De donkere zijbalk: merk, planmodus (poli / functiekamers), de assistent-knop (niet in
- *   de simpele variant), de vier stappen met voortgangsvinkjes, en de acties Export en
- *   Opnieuw.
+ *   de simpele variant), de knop Start (het beginscherm, modules/Start.jsx), de vier
+ *   stappen met voortgangsvinkjes, de acties Export en
+ *   Opnieuw, en in de accountmodus het accountblok (RailAccount.jsx: naam, Beheer,
+ *   wachtwoord, uitloggen).
  *
  * Plaats in de tool
  *   App.jsx, helemaal links.
@@ -21,6 +23,8 @@ import React from 'react'
 import { SIMPEL } from '../bouwvlaggen.js'
 import { useApp } from '../context/AppContext.jsx'
 import { fkCodeLabel } from '../engine/functiekamers.js'
+import { START } from '../lib/planregels.js'
+import { RailAccount } from './RailAccount.jsx'
 
 // De vier stappen met hun pictogram.
 const RAIL = [
@@ -104,6 +108,34 @@ const RAIL = [
     ),
   },
 ]
+// Het pictogram van Start (een huisje) en de streep links van de actieve stap.
+const START_ICOON = (
+  <svg
+    width="19"
+    height="19"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M3 11l9-7 9 7" />
+    <path d="M5 10v10h14V10" />
+    <path d="M10 20v-6h4v6" />
+  </svg>
+)
+const ACTIEF_STREEP = {
+  position: 'absolute',
+  left: 0,
+  top: '50%',
+  transform: 'translateY(-50%)',
+  width: 3,
+  height: 22,
+  borderRadius: 3,
+  background: '#5ED6BC',
+}
+
 /**
  * Zijbalk met navigatie.
  * @returns {JSX.Element|null}
@@ -282,8 +314,42 @@ export function Rail() {
           ✨ Assistent
         </button>
       )}
-      {/* stappen */}
+      {/* stappen — Start (eigen id START, zie lib/planregels.js) en daarna de vier stappen */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
+        <button
+          data-stap-start
+          onClick={() => nav(START)}
+          title="Start — verder waar je was, nieuw beginnen of een raster inladen"
+          aria-current={active === START ? 'page' : undefined}
+          style={{
+            position: 'relative',
+            padding: '9px 4px 7px',
+            borderRadius: 13,
+            border: 'none',
+            cursor: 'pointer',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 4,
+            background: active === START ? 'rgba(255,255,255,0.17)' : 'transparent',
+            color: active === START ? '#fff' : 'rgba(255,255,255,0.6)',
+            transition: 'all 0.14s',
+          }}
+          onMouseEnter={e => stapZweefAan(e, active === START)}
+          onMouseLeave={e => stapZweefUit(e, active === START)}
+        >
+          {active === START && <span style={ACTIEF_STREEP} />}
+          {START_ICOON}
+          <span
+            style={{
+              fontSize: 9.5,
+              fontWeight: active === START ? 700 : 600,
+              letterSpacing: '0.02em',
+            }}
+          >
+            Start
+          </span>
+        </button>
         {RAIL.map((r, i) => {
           const on = active === r.id
           const done =
@@ -428,6 +494,8 @@ export function Rail() {
           ↺ Opnieuw
         </button>
       </div>
+      {/* accountmodus: naam, Beheer, wachtwoord, uitloggen (in de lokale modus niets) */}
+      <RailAccount />
     </nav>
   )
 }

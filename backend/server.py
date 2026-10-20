@@ -1,36 +1,66 @@
-"""PoliRaster-server: de Python-rekenkern achter een HTTP-API, plus de frontend.
+"""PoliRaster-server: de Python-rekenkern achter een HTTP-API, accounts en opgeslagen stand, plus de frontend.
 
 Wat doet dit onderdeel
 ----------------------
 De frontend (React) kan haar rekenwerk op drie manieren laten doen: in een Web Worker,
 synchroon in de pagina, of via deze server. Deze server neemt dezelfde "jobs" aan als
 ``frontend/src/engine/client.js`` in de browser maakt en geeft precies hetzelfde raster-JSON terug als
-de JavaScript-engine. Daarnaast serveert hij de gebouwde frontend, zodat één adres volstaat:
-bij voorkeur de Vite-build ``frontend/dist/`` (gebouwd met ``VITE_POLIRASTER_API=''``, zie
-``frontend/README.md``), anders het losse bestand ``dist/polimodel-api.html`` met de vlag
-``window.__POLIRASTER_API=''``.
+de JavaScript-engine. Daarnaast regelt hij persoonlijke accounts, de automatisch opgeslagen
+stand per gebruiker ("verder waar je was") en het beheerlogboek (``ACCOUNTS.md``), en
+serveert hij de gebouwde frontend, zodat één adres volstaat: bij voorkeur de Vite-build
+``frontend/dist/`` (``index.html``, ``login.html``/``.js``/``.css``, ``/assets/*``), anders het
+losse bestand ``dist/polimodel-api.html`` met de vlag ``window.__POLIRASTER_API=''``.
 
+Plaats in de keten
+------------------
+Browser → ``beveiliging.Beveiliging`` (limieten, toegang, CSRF, koppen) → de routes hieronder →
+rekenkern (``poliraster/``), ``accounts.py`` en ``stand.py`` → ``opslag.py`` (SQLite of Turso).
+Op Vercel laadt ``api/index.py`` deze app als serverless-functie.
+
+Invoer
+------
+HTTP-verzoeken (zie Eindpunten) en de omgevingsvariabelen uit ``beveiliging.py``,
+``opslag.py`` en ``accounts.py`` (samengevat in ``ACCOUNTS.md`` §7 en ``README.md``).
+
+Uitvoer
+-------
 Eindpunten
-----------
-- ``GET  /api/health``        → ``{ok:true, versie, engines:{poli:bool, functie:bool}}``
+~~~~~~~~~~
+Rekenen (ongewijzigd; met de bestaande limieten):
+
+- ``GET  /api/health``        → ``{ok:true, versie, engines:{poli, functie}, accounts:bool}``
 - ``POST /api/raster``        body ``{cfg,newRows,ctrlRows,m2,rules,capacity,trace?}`` → raster-JSON (poli-engine)
 - ``POST /api/functiekamers`` body ``{kamers,codes,m2,regels,trace?}`` → raster-JSON (functiekamer-engine)
 - ``POST /api/batch``         body ``{jobs:[{type:'poli'|'functie', args:[...], meet?:bool}]}`` → ``{uit:[{ok,res|err}]}``
-- ``GET  /``                  → ``frontend/dist/index.html`` (+ ``/assets/*``) als die build er is,
-                                anders ``dist/polimodel-api.html`` als dat bestaat, anders een korte uitleg.
 
-Fouten komen terug als HTTP 200 met ``{ok:false, fout, type, spoor}`` (``spoor`` = de
-stacktrace als lijst regels), zodat de frontend ze in de live-banner toont; de volledige
-stacktrace gaat ook naar het logboek.
+  Fouten bij het rekenen komen terug als HTTP 200 met ``{ok:false, fout, type, spoor}`` (``spoor`` =
+  de stacktrace als lijst regels), zodat de frontend ze in de live-banner toont.
 
-Beveiliging
------------
-Zie ``beveiliging.py`` en ``BEVEILIGING.md``: met ``POLIRASTER_WACHTWOORD`` ingesteld vereist
-alles een login (sessiecookie) of een Bearer-token; daarnaast gelden bodygrootte-, batch-,
-invoer-, tijd- en verzoeklimieten, een CSRF-controle op elke POST en beveiligingskoppen
-(CSP, nosniff, geen frames, HSTS achter HTTPS). CORS staat dicht, behalve voor herkomsten
-in ``POLIRASTER_ORIGINS``. Zonder wachtwoord (intranet, ontwikkelen) blijven de limieten en
-koppen gelden maar is er geen login.
+Accounts, stand en beheer (``ACCOUNTS.md`` §5; fouten als ``{ok:false, fout}`` met HTTP 400/401/403/404/409/413/429/503):
+
+- ``POST /api/auth/login`` · ``POST /api/auth/logout`` · ``GET /api/auth/ik`` · ``POST /api/auth/wachtwoord``
+- ``GET|PUT /api/stand`` · ``GET /api/stand/versies`` · ``GET /api/stand/{id}``
+- ``GET /api/beheer/overzicht`` · ``GET|POST /api/beheer/gebruikers`` · ``PATCH /api/beheer/gebruikers/{id}``
+  · ``GET /api/beheer/logboek`` · ``GET /api/beheer/sessies`` · ``DELETE /api/beheer/sessies/{id}``
+  · ``GET /api/beheer/stand/{gebruiker_id}``
+
+Frontend: ``GET /`` → ``frontend/dist/index.html`` (anders ``dist/polimodel-api.html``, anders een
+korte uitleg); ``GET /<bestand>`` en ``GET /assets/<pad>`` → bestanden uit ``frontend/dist``.
+
+Hoe het werkt
+-------------
+1. ``Beveiliging`` (``beveiliging.py``) beslist per verzoek of het door mag en legt de sessie in
+   ``request.state.sessie``. Accounts staan aan zodra ``POLIRASTER_GEHEIM`` is gezet; zonder
+   geheim draait de server in de open ontwikkelstand zonder login (en geven ``/api/auth/*``,
+   ``/api/stand*``, ``/api/beheer/*`` een nette 503).
+2. ``DIENSTEN`` maakt bij het eerste gebruik de opslag (``opslag_uit_omgeving``), ``Accounts`` en
+   ``Standen``, en de eerste beheerder uit de omgeving. Lukt dat niet (bv. op Vercel geen
+   Turso), dan krijgt elk accountverzoek 503 met de reden en wordt het bij het volgende verzoek
+   opnieuw geprobeerd. De rekenendpoints werken dan gewoon door.
+3. De account-routes lezen de body begrensd, doen het databasewerk in een werkthread
+   (``asyncio.to_thread``) en vertalen ``accounts.Fout`` naar ``{ok:false, fout}`` met de status.
+4. Statische bestanden komen alleen uit ``frontend/dist`` (pad binnen die map, geen verborgen
+   bestanden, alleen een vaste lijst extensies) — zie ``statisch_pad``.
 
 Starten
 -------
@@ -46,32 +76,43 @@ Waar kan het misgaan en hoe zie je dat
   dan de frontend stuurt; ``spoor`` wijst de regel aan.
 - ``GET /`` toont de uitleg in plaats van de tool: bouw eerst de frontend
   (``cd frontend && VITE_POLIRASTER_API='' npm run build``, of ``node build.js`` in de hoofdmap).
+- ``503 Accounts niet ingesteld`` op ``/api/auth/ik``: ``POLIRASTER_GEHEIM`` ontbreekt (open stand).
+- ``503`` met "Geen database ingesteld" of "Turso …": zie ``opslag.py``; de serverlog
+  (``poliraster.server``) meldt "accounts niet beschikbaar" met de reden.
+- ``/login.html`` geeft 404: de frontend-build heeft (nog) geen ``login.html``; bouw de frontend opnieuw.
+- Bij het starten "ZONDER ACCOUNTS op …": de server staat open op een netwerkadres; zet
+  ``POLIRASTER_GEHEIM`` of luister alleen op 127.0.0.1.
 """
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import math
 import os
 import sys
+import threading
 import traceback
+from contextlib import asynccontextmanager
 from importlib import import_module
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Optional
 
 import asyncio
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
-from fastapi.staticfiles import StaticFiles
 
 HIER = Path(__file__).resolve().parent
 sys.path.insert(0, str(HIER))
 
 import poliraster  # noqa: E402
-from beveiliging import Beveiliging, Instellingen  # noqa: E402
+from accounts import Accounts, Bron, Fout, Sessie  # noqa: E402
+from beveiliging import Beveiliging, Instellingen, sessie_cookie  # noqa: E402
+from opslag import Opslag, OpslagFout, opslag_uit_omgeving  # noqa: E402
 from poliraster.meting import meet_raster_puur  # noqa: E402
+from stand import MAX_STAND_BYTES, Standen  # noqa: E402
 
 logging.basicConfig(level=os.environ.get("POLIRASTER_LOG", "INFO").upper(),
                     format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -82,13 +123,73 @@ VITE_DIST = HIER.parent / "frontend" / "dist"                     # Vite-build (
 VITE_INDEX = VITE_DIST / "index.html"
 
 INST = Instellingen()
+
+
+# ── Accounts en stand: lui aangemaakt, één keer per proces ─────────────────────
+class Diensten:
+    """Houdt de opslag, ``Accounts`` en ``Standen`` van dit proces bij; maakt ze bij het eerste gebruik.
+
+    Een mislukte poging (database niet bereikbaar) wordt niet onthouden: het volgende verzoek
+    probeert opnieuw. Tests kunnen met ``zet_opslag`` een eigen opslag inzetten.
+    """
+
+    def __init__(self, inst: Instellingen) -> None:
+        self.inst = inst
+        self._slot = threading.Lock()
+        self._db: Optional[Opslag] = None
+        self._accounts: Optional[Accounts] = None
+        self._standen: Optional[Standen] = None
+
+    def zet_opslag(self, db: Optional[Opslag]) -> None:
+        """Gebruik ``db`` in plaats van de opslag uit de omgeving (``None`` = opnieuw uit de omgeving)."""
+        with self._slot:
+            self._db, self._accounts, self._standen = db, None, None
+
+    def krijg(self) -> tuple[Accounts, Standen]:
+        """``(accounts, standen)``; ``Fout(503)`` zonder geheim, ``OpslagFout`` als de database niet lukt."""
+        if not self.inst.accounts_aan:
+            raise Fout(503, "Accounts niet ingesteld: zet POLIRASTER_GEHEIM.")
+        if self._accounts is not None and self._standen is not None:
+            return self._accounts, self._standen
+        with self._slot:
+            if self._accounts is None or self._standen is None:
+                try:
+                    db = self._db or opslag_uit_omgeving()
+                    acc = Accounts(db, self.inst.geheim, self.inst.sessie_uren)
+                    acc.zorg_voor_eerste_beheerder()
+                except OpslagFout as e:
+                    log.error("accounts niet beschikbaar: %s", e)
+                    raise
+                self._db, self._accounts, self._standen = db, acc, Standen(db, acc)
+            return self._accounts, self._standen
+
+    def controleer_sessie(self, token: Optional[str]) -> Optional[Sessie]:
+        """Voor de middleware: volledige sessiecontrole (handtekening, exp, database)."""
+        return self.krijg()[0].controleer_token(token)
+
+
+DIENSTEN = Diensten(INST)
+
+
+@asynccontextmanager
+async def _levensloop(_app: FastAPI):
+    """Bij het starten alvast de database en de eerste beheerder klaarzetten (fouten alleen loggen)."""
+    if INST.accounts_aan:
+        try:
+            await asyncio.to_thread(DIENSTEN.krijg)
+        except (Fout, OpslagFout) as e:
+            log.error("accounts bij het starten niet beschikbaar: %s", getattr(e, "tekst", e))
+    yield
+
+
 app = FastAPI(title="PoliRaster Studio — Python-backend", version=poliraster.__version__,
-              docs_url=None, redoc_url=None, openapi_url=None)   # geen openbare API-docs op internet
+              docs_url=None, redoc_url=None, openapi_url=None, lifespan=_levensloop)   # geen openbare API-docs op internet
 # CORS alleen voor expliciet toegestane herkomsten (standaard: dicht, alleen eigen herkomst).
 if INST.origins:
-    app.add_middleware(CORSMiddleware, allow_origins=INST.origins, allow_methods=["GET", "POST"],
+    app.add_middleware(CORSMiddleware, allow_origins=INST.origins, allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
                        allow_headers=["content-type", "authorization"], allow_credentials=True)
 REKENSLOT = asyncio.Semaphore(max(1, INST.gelijktijdig))   # maximaal aantal gelijktijdige berekeningen
+
 
 
 # ── JSON zoals JavaScript het schrijft ──────────────────────────────────────────
@@ -192,17 +293,17 @@ def voer_job_uit(job: dict | None) -> Any:
     return meet_raster_puur(res) if job.get("meet") else res
 
 
-async def lees_body(request: Request) -> dict:
+async def lees_body(request: Request, maximum: Optional[int] = None) -> dict:
     """De JSON-body als dict; een kapotte body geeft een ``ValueError`` met een duidelijke tekst.
 
-    De grootte wordt hier nogmaals begrensd (de middleware kijkt alleen naar Content-Length).
+    De grootte wordt hier nogmaals begrensd (de middleware kijkt alleen naar Content-Length):
+    op ``maximum`` bytes als dat gegeven is (account-routes), en nooit boven ``POLIRASTER_MAX_BODY``.
     """
+    grens = min(INST.max_body, maximum) if maximum else INST.max_body
     try:
         ruw = await request.body()
-        if len(ruw) > INST.max_body:
-            raise ValueError(f"De aanvraag is te groot (max {INST.max_body // 1024} kB).")
-        import json
-
+        if len(ruw) > grens:
+            raise ValueError(f"De aanvraag is te groot (max {grens // 1024} kB).")
         try:
             body = json.loads(ruw)
         except Exception as e:  # noqa: BLE001 — JSONDecodeError e.d.
@@ -219,13 +320,14 @@ async def lees_body(request: Request) -> dict:
 # ── Eindpunten ──────────────────────────────────────────────────────────────────
 @app.get("/api/health")
 def health() -> Response:
-    """Leeft de server, en welke engines zijn er?"""
+    """Leeft de server, welke engines zijn er, en staan de accounts aan? (vrij toegankelijk, voor monitoring)"""
     functie_ok = True
     try:
         import_module("poliraster.functiekamers.engine")
     except Exception:  # noqa: BLE001
         functie_ok = False
-    return antwoord({"ok": True, "versie": poliraster.__version__, "engines": {"poli": poli_beschikbaar(), "functie": functie_ok}})
+    return antwoord({"ok": True, "versie": poliraster.__version__, "engines": {"poli": poli_beschikbaar(), "functie": functie_ok},
+                     "accounts": INST.accounts_aan})
 
 
 @app.post("/api/raster")
@@ -293,6 +395,226 @@ async def api_batch(request: Request) -> Response:
         return antwoord(fout_antwoord(e))
 
 
+
+
+# ── Accounts, stand en beheer (ACCOUNTS.md §5) ──────────────────────────────────
+MAX_KLEINE_BODY = 64 * 1024          # login, wachtwoord, beheer: kleine JSON-bodies
+MAX_STAND_BODY = MAX_STAND_BYTES + 64 * 1024   # de stand (1 MB) plus wat ruimte voor module/modus
+
+
+def ok(**velden: Any) -> JSONResponse:
+    """``{ok:true, …}`` met HTTP 200."""
+    return JSONResponse({"ok": True, **velden})
+
+
+def fout_json(status: int, tekst: str, koppen: Optional[dict[str, str]] = None, **extra: Any) -> JSONResponse:
+    """``{ok:false, fout}`` met de gegeven HTTP-status."""
+    return JSONResponse({"ok": False, "fout": tekst, **extra}, status_code=status, headers=koppen or None)
+
+
+def bron_van(request: Request) -> Bron:
+    """IP-adres (van de middleware, achter een proxy het echte adres) en browser voor het logboek."""
+    return Bron(ip=getattr(request.state, "adres", "") or (request.client.host if request.client else ""),
+                user_agent=request.headers.get("user-agent", ""))
+
+
+def sessie_van(request: Request) -> Optional[Sessie]:
+    """De sessie die de middleware heeft gecontroleerd (``None`` als er geen is)."""
+    return getattr(request.state, "sessie", None)
+
+
+def cookie_kop(request: Request, token: str, max_age: int) -> str:
+    """``Set-Cookie``-waarde voor de sessie; Secure als de browser HTTPS ziet."""
+    return sessie_cookie(token, max_age, bool(getattr(request.state, "https", False)))
+
+
+async def account_actie(request: Request, werk: Callable[..., Any], rol: Optional[str] = "sessie",
+                        body: Optional[int] = None) -> Response:
+    """Gemeenschappelijke afhandeling van een account-route.
+
+    ``rol``: ``None`` (geen sessie nodig), ``"sessie"`` (ingelogd) of ``"beheer"`` (403 voor gewone
+    gebruikers). ``body``: lees een JSON-body van hooguit zoveel bytes. ``werk(accounts, standen,
+    sessie, body, bron)`` draait in een werkthread en geeft een dict (→ ``{ok:true, …}``) of een
+    ``Response``. ``Fout`` → ``{ok:false, fout}`` met de status; ``OpslagFout`` → 503.
+    """
+    try:
+        sessie = sessie_van(request)
+        if rol and sessie is None:
+            return fout_json(401, "Niet ingelogd.")
+        if rol == "beheer" and not sessie.is_beheer:
+            return fout_json(403, "Alleen voor beheerders.")
+        b = await lees_body(request, body) if body else None
+        acc, st = await asyncio.to_thread(DIENSTEN.krijg)
+        uit = await asyncio.to_thread(werk, acc, st, sessie, b, bron_van(request))
+        return uit if isinstance(uit, Response) else ok(**(uit or {}))
+    except Fout as e:
+        return fout_json(e.status, e.tekst, e.koppen, **e.extra)
+    except OpslagFout as e:
+        log.error("databasefout bij %s %s: %s", request.method, request.url.path, e)
+        return fout_json(503, f"Database niet beschikbaar: {e}")
+    except ValueError as e:   # kapotte of te grote body (lees_body)
+        return fout_json(413 if "te groot" in str(e) else 400, str(e))
+
+
+def _id(waarde: Any, naam: str = "id") -> int:
+    """Geheel getal uit een pad- of queryparameter, anders ``Fout(400)``."""
+    try:
+        return int(waarde)
+    except (TypeError, ValueError):
+        raise Fout(400, f"{naam} moet een geheel getal zijn.") from None
+
+
+# Inloggen ─────────────────────────────────────────────────────────────────────
+@app.post("/api/auth/login")
+async def api_login(request: Request) -> Response:
+    """``{gebruikersnaam, wachtwoord}`` → ``{ok, gebruiker}`` + cookie · 401 · 429 (met ``Retry-After``)."""
+    def werk(acc: Accounts, _st, _s, b, bron):
+        gebruiker, token, _sessie = acc.login(b.get("gebruikersnaam"), b.get("wachtwoord"), bron)
+        r = ok(gebruiker=gebruiker)
+        r.headers["set-cookie"] = cookie_kop(request, token, acc.sessie_sec)
+        return r
+    return await account_actie(request, werk, rol=None, body=MAX_KLEINE_BODY)
+
+
+@app.post("/api/auth/logout")
+async def api_logout(request: Request) -> Response:
+    """Sessie intrekken en de cookie wissen."""
+    def werk(acc: Accounts, _st, sessie, _b, bron):
+        acc.logout(sessie, bron)
+        r = ok()
+        r.headers["set-cookie"] = cookie_kop(request, "", 0)
+        return r
+    return await account_actie(request, werk)
+
+
+@app.get("/api/auth/ik")
+async def api_ik(request: Request) -> Response:
+    """``{ok, gebruiker}`` voor de ingelogde gebruiker · 401 (de middleware) · 503 zonder accounts."""
+    return await account_actie(request, lambda _a, _st, sessie, _b, _bron: {"gebruiker": sessie.gebruiker})
+
+
+@app.post("/api/auth/wachtwoord")
+async def api_wachtwoord(request: Request) -> Response:
+    """``{oud, nieuw}`` → ``{ok}``; overige sessies van deze gebruiker worden ingetrokken."""
+    def werk(acc: Accounts, _st, sessie, b, bron):
+        acc.wijzig_wachtwoord(sessie, b.get("oud"), b.get("nieuw"), bron)
+        return {"gebruiker": sessie.gebruiker}
+    return await account_actie(request, werk, body=MAX_KLEINE_BODY)
+
+
+# Stand ────────────────────────────────────────────────────────────────────────
+@app.get("/api/stand")
+async def api_stand(request: Request) -> Response:
+    """``{ok, stand: {id, tijd, module, modus, data} | null}`` — de nieuwste van deze gebruiker."""
+    return await account_actie(request, lambda _a, st, sessie, _b, _bron: {"stand": st.nieuwste(sessie.uid)})
+
+
+@app.put("/api/stand")
+async def api_stand_opslaan(request: Request) -> Response:
+    """``{data, module, modus, nieuwe_versie?}`` → ``{ok, id, tijd, nieuw}``; max 1 MB.
+
+    Binnen 10 minuten na de nieuwste versie wordt die bijgewerkt; ``nieuwe_versie: true`` maakt
+    altijd een nieuwe (zie stand.py). Er worden 30 versies bewaard.
+    """
+    def werk(_a, st: Standen, sessie, b, _bron):
+        if "data" not in b:
+            raise Fout(400, "De body mist 'data'.")
+        return st.opslaan(sessie.uid, b.get("data"), b.get("module"), b.get("modus"),
+                          nieuwe_versie=b.get("nieuwe_versie") is True)
+    return await account_actie(request, werk, body=MAX_STAND_BODY)
+
+
+@app.get("/api/stand/versies")
+async def api_stand_versies(request: Request) -> Response:
+    """``{ok, versies:[{id, tijd, module, modus, grootte}]}``, nieuwste eerst."""
+    return await account_actie(request, lambda _a, st, sessie, _b, _bron: {"versies": st.versies(sessie.uid)})
+
+
+@app.get("/api/stand/{stand_id}")
+async def api_stand_een(request: Request, stand_id: str) -> Response:
+    """``{ok, stand}`` — één eigen versie (oudere versie terughalen → ``stand_hersteld`` in het logboek)."""
+    return await account_actie(request, lambda _a, st, sessie, _b, bron: {"stand": st.een(sessie, _id(stand_id), bron)})
+
+
+# Beheer ───────────────────────────────────────────────────────────────────────
+@app.get("/api/beheer/overzicht")
+async def api_beheer_overzicht(request: Request) -> Response:
+    """``{ok, gebruikers, actief, logins_vandaag, mislukt_vandaag, opgeslagen_vandaag, sessies_actief}``."""
+    return await account_actie(request, lambda acc, *_: acc.overzicht(), rol="beheer")
+
+
+@app.get("/api/beheer/gebruikers")
+async def api_beheer_gebruikers(request: Request) -> Response:
+    """``{ok, gebruikers:[…]}`` met de afgeleide kolommen (laatste login, aantal logins, …)."""
+    return await account_actie(request, lambda acc, *_: {"gebruikers": acc.gebruikers_lijst()}, rol="beheer")
+
+
+@app.post("/api/beheer/gebruikers")
+async def api_beheer_gebruiker_nieuw(request: Request) -> Response:
+    """``{gebruikersnaam, naam, rol, wachtwoord, moet_wachtwoord_wijzigen?}`` → ``{ok, gebruiker}`` · 409 bestaat al."""
+    def werk(acc: Accounts, _st, sessie, b, bron):
+        g = acc.maak_gebruiker(b.get("gebruikersnaam"), b.get("naam"), b.get("rol", "gebruiker"), b.get("wachtwoord"), bron,
+                               door=sessie.gebruiker["gebruikersnaam"], moet_wijzigen=bool(b.get("moet_wachtwoord_wijzigen", False)))
+        return {"gebruiker": g}
+    return await account_actie(request, werk, rol="beheer", body=MAX_KLEINE_BODY)
+
+
+@app.patch("/api/beheer/gebruikers/{gebruiker_id}")
+async def api_beheer_gebruiker_wijzig(request: Request, gebruiker_id: str) -> Response:
+    """``{naam?, rol?, actief?, wachtwoord?, moet_wachtwoord_wijzigen?}`` → ``{ok, gebruiker}`` · 404 · 409 laatste beheerder."""
+    def werk(acc: Accounts, _st, sessie, b, bron):
+        return {"gebruiker": acc.wijzig_gebruiker(_id(gebruiker_id), b, sessie, bron)}
+    return await account_actie(request, werk, rol="beheer", body=MAX_KLEINE_BODY)
+
+
+@app.get("/api/beheer/logboek")
+async def api_beheer_logboek(request: Request) -> Response:
+    """``?soort=&gebruiker_id=&limit=200&voor=<id>`` → ``{ok, regels, meer}`` (nieuwste eerst)."""
+    q = request.query_params
+
+    def werk(acc: Accounts, *_):
+        regels, meer = acc.lees_logboek(soort=q.get("soort") or None,
+                                        gebruiker_id=_id(q["gebruiker_id"], "gebruiker_id") if q.get("gebruiker_id") else None,
+                                        limit=_id(q.get("limit") or 200, "limit"),
+                                        voor=_id(q["voor"], "voor") if q.get("voor") else None)
+        return {"regels": regels, "meer": meer}
+    return await account_actie(request, werk, rol="beheer")
+
+
+@app.get("/api/beheer/sessies")
+async def api_beheer_sessies(request: Request) -> Response:
+    """``{ok, sessies:[{id(afgekort), gebruiker_id, gebruikersnaam, aangemaakt, laatst_gezien, verloopt, ip, user_agent, huidig}]}``."""
+    def werk(acc: Accounts, _st, sessie, *_):
+        lijst = acc.sessies_lijst()
+        for s in lijst:
+            s["huidig"] = sessie.sid.startswith(s["id"])
+        return {"sessies": lijst}
+    return await account_actie(request, werk, rol="beheer")
+
+
+@app.delete("/api/beheer/sessies/{kort_id}")
+async def api_beheer_sessie_weg(request: Request, kort_id: str) -> Response:
+    """Sessie intrekken op het afgekorte id uit de lijst → ``{ok}`` · 404."""
+    def werk(acc: Accounts, _st, sessie, _b, bron):
+        acc.trek_sessie_in(kort_id, sessie, bron)
+        return {}
+    return await account_actie(request, werk, rol="beheer")
+
+
+@app.get("/api/beheer/stand/{gebruiker_id}")
+async def api_beheer_stand(request: Request, gebruiker_id: str) -> Response:
+    """``{ok, stand}`` — de nieuwste stand van die gebruiker (meekijken; komt als ``stand_bekeken`` in het logboek)."""
+    return await account_actie(request, lambda _a, st, sessie, _b, bron: {"stand": st.beheer_inzage(_id(gebruiker_id), sessie, bron)},
+                               rol="beheer")
+
+
+@app.api_route("/api/{rest:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+async def api_onbekend(rest: str) -> Response:
+    """Onbekend API-pad: JSON-404 in plaats van FastAPI's standaardtekst."""
+    return fout_json(404, f"Onbekend API-pad: /api/{rest}")
+
+
+# ── Frontend en statische bestanden ────────────────────────────────────────────
 UITLEG = """<!doctype html><meta charset="utf-8"><title>PoliRaster Studio — Python-backend</title>
 <body style="font-family:system-ui,sans-serif;max-width:640px;margin:48px auto;line-height:1.5;color:#222">
 <h1>PoliRaster Studio — Python-backend</h1>
@@ -302,6 +624,46 @@ UITLEG = """<!doctype html><meta charset="utf-8"><title>PoliRaster Studio — Py
 (de losse variant <code>dist/polimodel-api.html</code> uit <code>node build.js</code> werkt ook).</p>
 <p>API: <a href="/api/health">/api/health</a>, <code>POST /api/raster</code>, <code>POST /api/functiekamers</code>, <code>POST /api/batch</code>.</p>
 </body>"""
+
+# Alleen deze extensies worden ooit als bestand geserveerd, met een vast inhoudstype.
+STATISCHE_TYPES = {
+    ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8", ".json": "application/json", ".map": "application/json",
+    ".webmanifest": "application/manifest+json", ".txt": "text/plain; charset=utf-8", ".wasm": "application/wasm",
+    ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
+    ".webp": "image/webp", ".ico": "image/x-icon", ".woff": "font/woff", ".woff2": "font/woff2", ".ttf": "font/ttf",
+}
+
+
+def statisch_pad(basis: Path, relatief: str) -> Optional[Path]:
+    """Het bestand ``relatief`` binnen ``basis``, of ``None`` als het niet mag of niet bestaat.
+
+    Weigert: lege delen, ``.``/``..``, verborgen bestanden (``.env``), backslashes en NUL-tekens,
+    alles wat na het volgen van symlinks buiten ``basis`` uitkomt, mappen, en extensies die niet
+    in ``STATISCHE_TYPES`` staan.
+    """
+    if not relatief or "\x00" in relatief or "\\" in relatief or len(relatief) > 300:
+        return None
+    if any(deel in ("", ".", "..") or deel.startswith(".") for deel in relatief.split("/")):
+        return None
+    try:
+        thuis = basis.resolve(strict=True)
+        pad = (thuis / relatief).resolve(strict=True)
+    except (OSError, RuntimeError):
+        return None
+    if not pad.is_relative_to(thuis) or not pad.is_file() or pad.suffix.lower() not in STATISCHE_TYPES:
+        return None
+    return pad
+
+
+def stuur_bestand(pad: Path) -> Response:
+    """``FileResponse`` met het vaste inhoudstype bij de extensie."""
+    return FileResponse(str(pad), media_type=STATISCHE_TYPES[pad.suffix.lower()])
+
+
+def niet_gevonden() -> Response:
+    """Korte 404 voor een onbekend bestand."""
+    return Response("Niet gevonden.", status_code=404, media_type="text/plain; charset=utf-8")
 
 
 @app.get("/")
@@ -314,28 +676,57 @@ def frontend() -> Response:
     return HTMLResponse(UITLEG)
 
 
-# De Vite-build verwijst vanuit index.html naar ./assets/… (scripts, de engine-worker).
-# Alleen aankoppelen als de build er is; de /api-routes hierboven gaan altijd voor.
-if (VITE_DIST / "assets").is_dir():
-    app.mount("/assets", StaticFiles(directory=str(VITE_DIST / "assets")), name="assets")
+@app.get("/assets/{relatief:path}")
+def assets(relatief: str) -> Response:
+    """Bestanden uit ``frontend/dist/assets`` (scripts, stijlen, de engine-worker van de Vite-build)."""
+    pad = statisch_pad(VITE_DIST / "assets", relatief)
+    return stuur_bestand(pad) if pad else niet_gevonden()
 
-# De beveiligingslaag om de hele app heen (login, limieten, CSRF, koppen). ``inline_script``
+
+@app.get("/{naam}")
+def los_bestand(naam: str) -> Response:
+    """Losse bestanden in de hoofdmap van ``frontend/dist``: ``login.html``, ``login.js``, ``login.css``, ``favicon.ico``, …"""
+    pad = statisch_pad(VITE_DIST, naam)
+    if pad:
+        return stuur_bestand(pad)
+    if naam == "favicon.ico":
+        return Response(status_code=204)   # geen icoon: geen ruis in de console
+    return niet_gevonden()
+
+
+# De beveiligingslaag om de hele app heen (toegang, limieten, CSRF, koppen). ``inline_script``
 # vertelt de CSP of de geserveerde frontend een inline script heeft (losse HTML) of niet (Vite).
-app.add_middleware(Beveiliging, inst=INST, inline_script=lambda: not VITE_INDEX.exists())
+app.add_middleware(Beveiliging, inst=INST, inline_script=lambda: not VITE_INDEX.exists(),
+                   controleer_sessie=DIENSTEN.controleer_sessie)
+
+if not INST.accounts_aan:
+    log.info("accounts UIT (geen POLIRASTER_GEHEIM): open ontwikkelstand zonder login")
+
+
+def is_lokaal_adres(host: str) -> bool:
+    """Luistert de server alleen op deze machine? (127.x, ::1, localhost)"""
+    h = host.strip().strip("[]").lower()
+    return h == "localhost" or h == "::1" or h.startswith("127.")
 
 
 def main(argv: list[str] | None = None) -> None:
-    """``python server.py [--host 127.0.0.1] [--port 8000]``: start uvicorn zelf."""
+    """``python server.py [--host 127.0.0.1] [--port 8000]``: start uvicorn zelf (met luide waarschuwing in de open stand)."""
     import uvicorn
 
     ap = argparse.ArgumentParser(description="PoliRaster Studio — Python-backend")
     ap.add_argument("--host", default=os.environ.get("POLIRASTER_HOST", "127.0.0.1"))
     ap.add_argument("--port", type=int, default=int(os.environ.get("POLIRASTER_PORT", "8000")))
     a = ap.parse_args(argv)
-    log.info("PoliRaster-server op http://%s:%d/  (poli-engine: %s, login: %s)", a.host, a.port,
-             "ja" if poli_beschikbaar() else "nog niet", "aan" if INST.login_aan else "UIT — alleen voor intranet")
-    if a.host not in ("127.0.0.1", "localhost") and not INST.login_aan:
-        log.warning("De server luistert op %s zonder wachtwoord. Zet POLIRASTER_WACHTWOORD voordat je dit op internet zet.", a.host)
+    log.info("PoliRaster-server op http://%s:%d/  (poli-engine: %s, accounts: %s)", a.host, a.port,
+             "ja" if poli_beschikbaar() else "nog niet", "aan" if INST.accounts_aan else "UIT — open ontwikkelstand")
+    if not is_lokaal_adres(a.host) and not INST.accounts_aan:
+        streep = "!" * 78
+        for regel in (streep,
+                      f"!!  LET OP: de server luistert op {a.host} ZONDER ACCOUNTS: iedereen die dit adres",
+                      "!!  kan bereiken, kan de tool en de API gebruiken. Zet POLIRASTER_GEHEIM (48+ tekens)",
+                      "!!  en POLIRASTER_BEHEER_GEBRUIKER/_WACHTWOORD, of luister alleen op 127.0.0.1.",
+                      streep):
+            log.warning(regel)
     uvicorn.run(app, host=a.host, port=a.port, log_level=os.environ.get("POLIRASTER_LOG", "info").lower(),
                 proxy_headers=INST.achter_proxy, forwarded_allow_ips="*" if INST.achter_proxy else None)
 

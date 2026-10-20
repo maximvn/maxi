@@ -32,8 +32,12 @@ const bouw = env => {
   return r.status === 0 && existsSync(resolve(HIER, 'dist', 'index.html'))
 }
 const processen = []
-const start = (cmd, args, cwd) => { const p = spawn(cmd, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] }); p.log = []; p.stdout.on('data', d => p.log.push(String(d))); p.stderr.on('data', d => p.log.push(String(d))); processen.push(p); return p }
-const stopAlles = () => { for (const p of processen) { try { p.kill('SIGTERM') } catch (e) {} } }
+// Eigen procesgroep (detached), zodat stoppen ook het kindproces raakt: `npx vite preview` start
+// een aparte node-vite; alleen npx stoppen liet die op de poort achter, en de volgende run
+// sprak dan met de oude server (die de opnieuw gebouwde dist/ half serveerde).
+const start = (cmd, args, cwd) => { const p = spawn(cmd, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' }); p.log = []; p.stdout.on('data', d => p.log.push(String(d))); p.stderr.on('data', d => p.log.push(String(d))); processen.push(p); return p }
+const stop = p => { try { if (process.platform !== 'win32') process.kill(-p.pid, 'SIGTERM'); else p.kill('SIGTERM') } catch (e) { try { p.kill('SIGTERM') } catch (e2) {} } }
+const stopAlles = () => { for (const p of processen) stop(p) }
 process.on('exit', stopAlles)
 
 const b = await chromium.launch({ executablePath: CHROMIUM })
@@ -78,7 +82,7 @@ try {
     check('raster is gelijk aan de synchrone berekening', (await sig(page, '__raster')) === (await sig(page, '__rekenSync')))
     await page.close()
   }
-  preview.kill('SIGTERM')
+  stop(preview)
 
   // ── 2. API-build → backend/server.py → http ───────────────────────────────────
   console.log('— build 2: rekenen op de Python-backend (http) —')
@@ -102,7 +106,7 @@ try {
     check('er staat een raster (door de server berekend)', !!r && r.dagen > 0, JSON.stringify(r))
     await page.close()
   }
-  server.kill('SIGTERM')
+  stop(server)
 } catch (e) {
   fails++; console.error('  ✗ onverwachte fout:', e && e.message || e)
 } finally {

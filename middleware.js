@@ -1,26 +1,36 @@
 /**
- * ═══ VERCEL EDGE MIDDLEWARE — login met gebruikersnaam en wachtwoord ═══════════
+ * ═══ VERCEL EDGE MIDDLEWARE — alleen binnen met een geldige sessiecookie ═════════
  *
  * Wat doet dit onderdeel
- *   Op Vercel draait dit vóór elk verzoek (de tool én de API). Zonder geldige
- *   gebruikersnaam/wachtwoord krijgt de bezoeker de inlogprompt van de browser
- *   (HTTP Basic Authentication) en niets anders. Na één keer inloggen onthoudt de
- *   browser het voor de rest van de sessie en stuurt hij het automatisch mee,
- *   ook naar /api/*.
+ *   Op Vercel draait dit vóór elk verzoek (de tool én de API). Het controleert de
+ *   sessiecookie `poliraster_sessie` die de API zet na het inloggen (backend/ACCOUNTS.md
+ *   §3): de HMAC-SHA256-handtekening met POLIRASTER_GEHEIM en de vervaltijd `exp`.
+ *   - Vrije paden (§4) gaan altijd door: /login.html, /login.js, /login.css, /favicon.ico,
+ *     /api/health en POST /api/auth/login.
+ *   - Geldig token → door naar de tool of de API.
+ *   - Geen of ongeldig token: een pagina → 302 naar /login.html?naar=<pad>;
+ *     /api/* → 401 {"ok":false,"fout":"Niet ingelogd."}.
+ *   De middleware kijkt niet in de database: of de sessie is ingetrokken of de gebruiker
+ *   geblokkeerd, controleert de Python-API bij elk verzoek (die geeft dan 401, en de tool
+ *   stuurt door naar het loginscherm).
  *
  * Instellen (Vercel → Project → Settings → Environment Variables)
- *   BASIC_AUTH_USER   gebruikersnaam
- *   BASIC_AUTH_PASS   wachtwoord
- *   Ontbreken ze, dan laat de middleware NIEMAND binnen (fail-closed) en toont hij
- *   een melding wat er ontbreekt. De waarden staan bewust niet in de code: die staat
- *   op GitHub.
+ *   POLIRASTER_GEHEIM   dezelfde sleutel als de Python-API gebruikt (48+ tekens).
+ *   Ontbreekt hij, dan laat de middleware NIEMAND binnen (fail-closed, 503 met uitleg).
+ *   De sleutel staat bewust niet in de code: die staat op GitHub.
+ *
+ * Hoe het werkt
+ *   1. token = b64url(payload_json) + "." + b64url(HMAC_SHA256(geheim, b64url(payload_json)))
+ *   2. De handtekening wordt gecontroleerd met crypto.subtle.verify (constante tijd).
+ *   3. payload.exp (seconden sinds 1970, UTC) moet in de toekomst liggen.
+ *   4. Getest in Node met frontend/test_middleware.mjs (zelfde regels als de backend).
  *
  * Waar kan het misgaan en hoe zie je dat
- *   - Steeds opnieuw de inlogprompt: verkeerde waarden, of de browser heeft een oud
- *     wachtwoord onthouden (nieuw privévenster helpt).
- *   - Melding "Login niet ingesteld": omgevingsvariabelen ontbreken in Vercel, of
- *     ze zijn na het toevoegen niet opnieuw gedeployd (Deployments → Redeploy).
- *   - De API antwoordt 401 vanuit een script: stuur `Authorization: Basic base64(user:pass)`.
+ *   - Na het inloggen direct weer het loginscherm → POLIRASTER_GEHEIM verschilt tussen
+ *     deze middleware en de API (beide lezen dezelfde Vercel-variabele; na een wijziging
+ *     opnieuw deployen), of de cookie is verlopen.
+ *   - Melding "Login niet ingesteld" (503) → POLIRASTER_GEHEIM ontbreekt in Vercel, of er
+ *     is na het toevoegen niet opnieuw gedeployd (Deployments → Redeploy).
  */
 
 export const config = {
@@ -28,53 +38,135 @@ export const config = {
   matcher: ['/((?!favicon.ico).*)'],
 }
 
-/** Vergelijkt twee teksten in constante tijd (geen informatie lekt via de duur). */
-function gelijk(a, b) {
-  const x = new TextEncoder().encode(a)
-  const y = new TextEncoder().encode(b)
-  let verschil = x.length ^ y.length
-  for (let i = 0; i < Math.max(x.length, y.length); i++) {
-    verschil |= (x[i] ?? 0) ^ (y[i] ?? 0)
-  }
-  return verschil === 0
+const COOKIE = 'poliraster_sessie'
+// Paden die zonder sessie bereikbaar zijn (backend/ACCOUNTS.md §4), voor elke methode.
+const VRIJ = new Set(['/login.html', '/login.js', '/login.css', '/favicon.ico', '/api/health'])
+
+/**
+ * Mag dit verzoek zonder sessie door?
+ * @param {string} pad — URL-pad, bv. '/api/auth/login'
+ * @param {string} methode — HTTP-methode
+ * @returns {boolean}
+ */
+export function isVrij(pad, methode) {
+  if (VRIJ.has(pad)) return true
+  return pad === '/api/auth/login' && methode === 'POST'
 }
 
-/** Leest "Basic xxx" en geeft {gebruiker, wachtwoord} terug, of null als de kop ontbreekt of kapot is. */
-function leesBasic(kop) {
-  if (!kop || !kop.startsWith('Basic ')) return null
+/**
+ * base64url (zonder '=') naar bytes; null als de tekst geen geldige base64url is.
+ * @param {string} tekst
+ * @returns {Uint8Array|null}
+ */
+function b64urlNaarBytes(tekst) {
+  if (typeof tekst !== 'string' || !/^[A-Za-z0-9_-]*$/.test(tekst)) return null
+  if (tekst.length % 4 === 1) return null
+  const b64 = tekst.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((tekst.length + 3) % 4)
   try {
-    const tekst = atob(kop.slice(6).trim())
-    const i = tekst.indexOf(':')
-    if (i < 0) return null
-    return { gebruiker: tekst.slice(0, i), wachtwoord: tekst.slice(i + 1) }
+    const bin = atob(b64)
+    const uit = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) uit[i] = bin.charCodeAt(i)
+    return uit
   } catch {
     return null
   }
 }
 
-function vraagLogin() {
-  return new Response('Inloggen vereist.', {
-    status: 401,
-    headers: {
-      'WWW-Authenticate': 'Basic realm="PoliRaster Studio", charset="UTF-8"',
-      'Cache-Control': 'no-store',
-      'Content-Type': 'text/plain; charset=utf-8',
-    },
+/**
+ * Leest één cookie uit de Cookie-kop.
+ * @param {string|null} kop — de Cookie-kop
+ * @param {string} naam
+ * @returns {string|null}
+ */
+export function leesCookie(kop, naam) {
+  if (!kop) return null
+  for (const deel of kop.split(';')) {
+    const i = deel.indexOf('=')
+    if (i < 0) continue
+    if (deel.slice(0, i).trim() === naam) return deel.slice(i + 1).trim()
+  }
+  return null
+}
+
+/**
+ * Controleert een sessietoken: handtekening (HMAC-SHA256 met het geheim) en exp.
+ * @param {string|null} token — de waarde van de cookie
+ * @param {string} geheim — POLIRASTER_GEHEIM
+ * @param {number} [nu] — huidige tijd in seconden (voor tests)
+ * @returns {Promise<object|null>} de payload als het token geldig is, anders null
+ */
+export async function controleerToken(token, geheim, nu = Date.now() / 1000) {
+  if (!token || !geheim) return null
+  const delen = token.split('.')
+  if (delen.length !== 2) return null
+  const [payloadB64, handtekeningB64] = delen
+  const handtekening = b64urlNaarBytes(handtekeningB64)
+  const payloadBytes = b64urlNaarBytes(payloadB64)
+  if (!handtekening || !payloadBytes || handtekening.length !== 32) return null
+  const enc = new TextEncoder()
+  const sleutel = await crypto.subtle.importKey(
+    'raw',
+    enc.encode(geheim),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['verify']
+  )
+  // De handtekening is over de base64url-tekst van de payload, niet over de JSON zelf.
+  const klopt = await crypto.subtle.verify('HMAC', sleutel, handtekening, enc.encode(payloadB64))
+  if (!klopt) return null
+  let payload
+  try {
+    payload = JSON.parse(new TextDecoder().decode(payloadBytes))
+  } catch {
+    return null
+  }
+  if (!payload || typeof payload !== 'object') return null
+  if (typeof payload.exp !== 'number' || !(payload.exp > nu)) return null
+  return payload
+}
+
+/** Antwoord zonder caching, met de juiste Content-Type. */
+function antwoord(inhoud, status, type, extra = {}) {
+  return new Response(inhoud, {
+    status,
+    headers: { 'Content-Type': type, 'Cache-Control': 'no-store', ...extra },
   })
 }
 
-export default function middleware(request) {
-  const gebruiker = process.env.BASIC_AUTH_USER
-  const wachtwoord = process.env.BASIC_AUTH_PASS
-  if (!gebruiker || !wachtwoord) {
-    return new Response(
-      'Login niet ingesteld: zet BASIC_AUTH_USER en BASIC_AUTH_PASS bij de omgevingsvariabelen van het Vercel-project en deploy opnieuw.',
-      { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' } }
+/**
+ * De middleware: vrije paden door, anders een geldige sessiecookie vereist.
+ * @param {Request} request
+ * @returns {Promise<Response|undefined>} undefined = doorlaten
+ */
+export default async function middleware(request) {
+  const url = new URL(request.url)
+  const pad = url.pathname
+  const isApi = pad === '/api' || pad.startsWith('/api/')
+  const geheim = process.env.POLIRASTER_GEHEIM
+
+  if (!geheim) {
+    const uitleg =
+      'Login niet ingesteld: zet POLIRASTER_GEHEIM (48+ willekeurige tekens) bij de omgevingsvariabelen van het Vercel-project en deploy opnieuw. Zie deploy/VERCEL.md.'
+    if (isApi) {
+      return antwoord(JSON.stringify({ ok: false, fout: uitleg }), 503, 'application/json; charset=utf-8')
+    }
+    return antwoord(uitleg, 503, 'text/plain; charset=utf-8')
+  }
+
+  if (isVrij(pad, request.method)) return undefined
+
+  const token = leesCookie(request.headers.get('cookie'), COOKIE)
+  const payload = await controleerToken(token, geheim)
+  if (payload) return undefined // doorlaten naar de tool of de API
+
+  if (isApi) {
+    return antwoord(
+      JSON.stringify({ ok: false, fout: 'Niet ingelogd.' }),
+      401,
+      'application/json; charset=utf-8'
     )
   }
-  const invoer = leesBasic(request.headers.get('authorization'))
-  if (invoer && gelijk(invoer.gebruiker, gebruiker) && gelijk(invoer.wachtwoord, wachtwoord)) {
-    return // doorlaten naar de tool of de API
-  }
-  return vraagLogin()
+  const naar = pad + url.search
+  const login = new URL('/login.html?naar=' + encodeURIComponent(naar), url)
+  return antwoord(null, 302, 'text/plain; charset=utf-8', { Location: login.toString() })
 }

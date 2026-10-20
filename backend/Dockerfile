@@ -16,8 +16,10 @@ COPY frontend/dist/ frontend/dist/
 # Geen tests en referentiebundels in het image
 RUN rm -rf backend/tests backend/__pycache__
 
+RUN mkdir -p /data && chown poliraster:poliraster /data
 USER poliraster
 WORKDIR /app/backend
 EXPOSE 8000
-ENV POLIRASTER_HOST=0.0.0.0 POLIRASTER_PORT=8000
+ENV POLIRASTER_HOST=0.0.0.0 POLIRASTER_PORT=8000 POLIRASTER_DB_PAD=/data/poliraster.db
+VOLUME ["/data"]
 CMD ["python", "server.py"]

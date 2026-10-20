@@ -13,14 +13,16 @@
  *
  * Invoer
  *   deps: {computeRaster, liveBezig, liveFout, rekenLive, active, bouwJob, nav, setRules,
- *   setCfg, m2, setModus, modus, fk, setFk, raster, assistentCtx, rules}.
+ *   setCfg, m2, setModus, modus, fk, setFk, raster, assistentCtx, rules, accountModus,
+ *   gebruiker, opslag, standFase}.
  * Uitvoer
  *   geen (alleen window.__cr, __engine, __rekenLive, __rekenSync, __active, __nav,
  *   __setRules, __setCfg, __fk, __fkPresets, __setModus, __modus, __fkState, __setFk,
- *   __raster, __vraag, __kennis, __parse, __boom, __m2, __rules, __dag, __laagste).
+ *   __raster, __vraag, __kennis, __parse, __boom, __m2, __rules, __dag, __laagste,
+ *   __account, __opslag).
  *
  * Hoe het werkt
- *   1. Drie effecten, gegroepeerd naar afhankelijkheden, zodat de haken altijd de actuele
+ *   1. Vijf effecten, gegroepeerd naar afhankelijkheden, zodat de haken altijd de actuele
  *      stand teruggeven.
  *   2. __cr is de zuivere poli-engine (test_invariants.mjs, 952 controles).
  *   3. __laagste zoekt het laagst bezette open dagdeel — dezelfde meting als de
@@ -56,6 +58,10 @@ export function useTestHaken(deps) {
     raster,
     assistentCtx,
     rules,
+    accountModus,
+    gebruiker,
+    opslag,
+    standFase,
   } = deps
   // Test-API voor de invariant-suite (test_invariants.mjs): stelt de pure engine
   // bloot zodat elke regel-combinatie headless gevalideerd kan worden.
@@ -112,4 +118,11 @@ export function useTestHaken(deps) {
       return laag
     }
   }, [m2, rules, raster])
+  // Accounts en opgeslagen stand (frontend/test_accounts_e2e.mjs): in welke modus draait
+  // de tool, wie is ingelogd, en wat zegt het opslaglabel.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.__account = () => ({ modus: accountModus, gebruiker, standFase })
+    window.__opslag = () => opslag
+  }, [accountModus, gebruiker, opslag, standFase])
 }

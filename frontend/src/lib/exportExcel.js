@@ -24,7 +24,8 @@
  *      (merges).
  *   4. De werklijst is gesorteerd op dag → tijd → kamer; flexblokken horen daar niet in.
  *   5. _rasterdata bevat {version, exportDate, cfg, newRows, ctrlRows, m2, rules, modus,
- *      fk} — het raster zelf niet (te groot; wordt bij import opnieuw berekend).
+ *      fk} (bouwSessieState, lib/sessie.js) — het raster zelf niet (te groot; wordt bij
+ *      import opnieuw berekend).
  *
  * Waar kan het misgaan en hoe zie je dat
  *   - Import zegt "geen hersteldata" → het blad _rasterdata ontbreekt; de export is niet
@@ -35,6 +36,7 @@
 import * as XLSX from 'xlsx'
 import { PLAN_INFO } from './planregels.js'
 import { DAYS } from './tijd.js'
+import { bouwSessieState } from './sessie.js'
 
 // Dagdeelnamen in de export, per slot-prefix (o/m/a) en per letter (O/M/A).
 const DD_NAAM_VAN_PREFIX = { o: 'Ochtend', m: 'Middag', a: 'Avond' }
@@ -434,17 +436,8 @@ export function bouwExportWerkmap({
     ]
     XLSX.utils.book_append_sheet(wb, wsF, 'Functiekamer-advies')
   }
-  const state = {
-    version: '4.1',
-    exportDate: new Date().toISOString(),
-    cfg,
-    newRows,
-    ctrlRows,
-    m2,
-    rules,
-    modus,
-    fk: { kamers: fk.kamers, codes: fk.codes, regels: fk.regels, preset: fk.preset },
-  }
+  // Dezelfde vorm als de opgeslagen stand (lib/sessie.js); pasSessieToe zet hem terug.
+  const state = bouwSessieState({ cfg, newRows, ctrlRows, m2, rules, modus, fk })
   const wsS = XLSX.utils.aoa_to_sheet([[JSON.stringify(state)]])
   XLSX.utils.book_append_sheet(wb, wsS, '_rasterdata')
   return wb

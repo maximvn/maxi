@@ -1,3 +1,4 @@
 # Vercel leest dit bestand voor de Python-functie in api/ (zie api/index.py).
+# Accounts/Turso: database via urllib uit de standaardbibliotheek (backend/opslag.py), geen extra pakket.
 fastapi>=0.115
 pydantic>=2

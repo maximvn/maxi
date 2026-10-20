@@ -2,12 +2,15 @@
  * ═══ APP — de schil van PoliRaster Studio ═══════════════════════════════════
  *
  * Wat doet dit onderdeel
- *   Houdt alle toestand van de tool (de useState's), stelt de hooks samen (live
- *   raster, geheugen, optimiser, bijsturen, assistent, slepen, import/export,
- *   functiekamers, testhaken), zet alles in de AppContext en bepaalt welke module
- *   zichtbaar is: links het instellingenpaneel met de actieve stap, rechts het
- *   canvas met het raster (of het welkomstscherm), daaroverheen de assistent en
- *   de resetdialoog. Gedrag zit in hooks/ en lib/, opmaak in modules/, layout/,
+ *   Houdt alle toestand van de tool (de useState's), stelt de hooks samen (account,
+ *   live raster, geheugen, optimiser, bijsturen, assistent, slepen, import/export,
+ *   functiekamers, opgeslagen stand, testhaken), zet alles in de AppContext en bepaalt
+ *   welke module zichtbaar is: links het instellingenpaneel met de actieve stap, rechts
+ *   het canvas met het raster (of het welkomstscherm), daaroverheen de assistent en
+ *   de resetdialoog. Het startscherm (modules/Start.jsx, active === START) en — voor een
+ *   beheerder in de accountmodus — het beheerscherm (modules/beheer/Beheer.jsx) vervangen
+ *   paneel en canvas. De tool opent op Tijden (lokale modus) of op Start (accountmodus,
+ *   gezet door useStand na het ophalen van de stand). Gedrag zit in hooks/ en lib/, opmaak in modules/, layout/,
  *   dialogen/ en assistent/.
  *
  * Plaats in de tool
@@ -15,23 +18,27 @@
  *   component en BOUWVLAGGEN voor de losse HTML-bestanden (build.js).
  *
  * Schrijft naar de context  alles — zie het value-object onderaan (één regel per naam)
- * Roept aan                useRasterBewerking, useLiveRaster, useGeheugen, useOptimiser,
- *                          useBijsturen, useAssistent, useFunctiekamers, useImportExport,
- *                          useTestHaken
+ * Roept aan                useAccount, useRasterBewerking, useLiveRaster, useGeheugen,
+ *                          useOptimiser, useBijsturen, useAssistent, useFunctiekamers,
+ *                          useImportExport, useStand, useTestHaken
  *
  * Waar kan het misgaan en hoe zie je dat
  *   - Een module ziet een naam niet (undefined uit useApp) → de naam ontbreekt in het
  *     value-object hieronder; voeg hem toe.
  *   - De hooks staan in een vaste volgorde omdat ze van elkaar afhangen (nav heeft
  *     doGenerate nodig, useAssistent heeft zoekVoorstel en nav nodig, useImportExport
- *     heeft m2c en de functiekamer-hulpen nodig). Verander die volgorde niet.
+ *     heeft m2c en de functiekamer-hulpen nodig, useStand heeft pasSessieToe uit
+ *     useImportExport nodig). Verander die volgorde niet.
+ *   - In de lokale modus (geen server met accounts) zijn account en stand leeg en ziet de
+ *     tool er precies zo uit als zonder accounts; zie hooks/useAccount.js.
  *   - Reset en import zetten dezelfde standaardwaarden als de start: STANDAARD_* en de
  *     standaard*()-fabrieken hieronder zijn de enige plek waar die staan.
  */
-import React, { useState, useMemo, useEffect } from 'react'
+import React, { useState, useMemo, useEffect, useRef } from 'react'
 import { fkStandaardRegels } from './engine/functiekamers.js'
 import { DEF_DD_DAGEN } from './lib/tijd.js'
 import { mkRow, SPEC_PRESETS } from './lib/presets.js'
+import { START } from './lib/planregels.js'
 import { viewerDownloadsKlaar } from './lib/excel.js'
 import { bouwPalet } from './lib/palet.js'
 import { spreekuurCijfers } from './lib/spreekuurcijfers.js'
@@ -46,12 +53,18 @@ import { useAssistent } from './hooks/useAssistent.js'
 import { useFunctiekamers } from './hooks/useFunctiekamers.js'
 import { useImportExport } from './hooks/useImportExport.js'
 import { useTestHaken } from './hooks/useTestHaken.js'
+import { useAccount } from './hooks/useAccount.js'
+import { useStand } from './hooks/useStand.js'
 import { GlobaleStijl } from './layout/GlobaleStijl.jsx'
 import { Rail } from './layout/Rail.jsx'
 import { InstellingenPaneel } from './layout/InstellingenPaneel.jsx'
 import { Kopbalk } from './layout/Kopbalk.jsx'
 import { Toast } from './layout/Toast.jsx'
 import { Welkom } from './layout/Welkom.jsx'
+import { StandLaden } from './layout/StandLaden.jsx'
+import { WachtwoordWijzigen } from './layout/WachtwoordWijzigen.jsx'
+import { Beheer } from './modules/beheer/Beheer.jsx'
+import { Start } from './modules/Start.jsx'
 import { Tijden } from './modules/Tijden.jsx'
 import { Gegevens } from './modules/Gegevens.jsx'
 import { GegevensFunctiekamers } from './modules/GegevensFunctiekamers.jsx'
@@ -131,6 +144,11 @@ const standaardFk = () => ({
  * @returns {JSX.Element}
  */
 export default function RasterTool() {
+  // ── account (accountmodus of lokale modus, zie hooks/useAccount.js) ─────────
+  const account = useAccount()
+  const [toonBeheer, setToonBeheer] = useState(false) // beheerscherm i.p.v. de tool
+  const [toonWachtwoord, setToonWachtwoord] = useState(false) // vrijwillig wachtwoord wijzigen
+
   // ── navigatie ──────────────────────────────────────────────────────────────
   const [active, setActive] = useState(0)
   const [visited, setVisited] = useState(new Set([0]))
@@ -227,12 +245,22 @@ export default function RasterTool() {
     setActive,
     setVisited,
   })
+  // useStand komt verderop (heeft pasSessieToe nodig); nav leest hem via deze ref.
+  const standRef = useRef(null)
   const nav = idx => {
+    setToonBeheer(false) // een stap kiezen sluit het beheerscherm
+    // Accountmodus, nog op Start met een opgehaalde stand: een stap kiezen = verder waar je
+    // was, maar dan naar die stap (anders zou je in een lege tool verder werken).
+    const st = standRef.current
+    if (idx !== START && st && st.standFase === 'kiezen') {
+      st.verderWaarJeWas(idx)
+      return
+    }
     // Het raster is altijd al (of wordt al) doorgerekend door de live-sync; alleen
     // als er nog niets is, zetten we de berekening hier expliciet in gang.
     if (idx === 3 && !raster) live.doGenerate()
     setActive(idx)
-    setVisited(p => new Set([...p, idx]))
+    if (idx !== START) setVisited(p => new Set([...p, idx]))
   }
   const geheugen = useGeheugen()
   const optimiser = useOptimiser({
@@ -292,6 +320,9 @@ export default function RasterTool() {
     setRules,
     setFk,
     setModus,
+    setCapacity,
+    setPoli,
+    setRoomNames,
     setRaster,
     setImportBadge,
     setM1Mode,
@@ -315,7 +346,49 @@ export default function RasterTool() {
     fkReg: functiekamers.fkReg,
     fkZet: functiekamers.fkZet,
   })
+  // Verder waar je was: alleen in de accountmodus (en niet zolang het verplichte
+  // wachtwoordscherm openstaat). In de lokale modus doet deze hook niets.
+  const stand = useStand({
+    actief: account.inAccount && !account.moetWachtwoord,
+    naarLogin: account.naarLogin,
+    pasSessieToe: importExport.pasSessieToe,
+    cfg,
+    newRows,
+    ctrlRows,
+    m2,
+    rules,
+    modus,
+    fk,
+    capacity,
+    poli,
+    roomNames,
+    active,
+    m1Mode,
+    m1Section,
+    selDay,
+    viewMode,
+    setActive,
+    setVisited,
+    setM1Mode,
+    setM1Section,
+    setSelDay,
+    setViewMode,
+  })
+  standRef.current = stand
+  // Uitloggen: eerst een openstaande wijziging opslaan, dan pas de sessie beëindigen.
+  const uitloggenMetOpslaan = async () => {
+    try {
+      await stand.slaNuOp()
+    } catch (e) {
+      // opslaan mislukt — uitloggen gaat voor
+    }
+    await account.uitloggen()
+  }
   useTestHaken({
+    accountModus: account.accountModus,
+    gebruiker: account.gebruiker,
+    opslag: stand.opslag,
+    standFase: stand.standFase,
     computeRaster: live.computeRaster,
     liveBezig: live.liveBezig,
     liveFout: live.liveFout,
@@ -457,6 +530,14 @@ export default function RasterTool() {
     setShowFullReset,
     expName,
     setExpName,
+    // account en opgeslagen stand (alleen in de accountmodus gevuld)
+    ...account,
+    toonBeheer,
+    setToonBeheer,
+    toonWachtwoord,
+    setToonWachtwoord,
+    uitloggenMetOpslaan,
+    ...stand,
     // hooks
     ...rasterBewerking,
     ...live,
@@ -474,6 +555,8 @@ export default function RasterTool() {
   else if (active === 1) module = modus === 'functie' ? <GegevensFunctiekamers /> : <Gegevens />
   else if (active === 2) module = modus === 'functie' ? <RegelsFunctiekamers /> : <Regels />
 
+  // Wat staat er rechts van de rail: beheer, het startscherm, of paneel + canvas.
+  const beheerOpen = toonBeheer && account.isBeheer
   return (
     <AppProvider value={value}>
       <div
@@ -487,15 +570,23 @@ export default function RasterTool() {
       >
         <GlobaleStijl />
         <Rail />
-        <InstellingenPaneel>{module}</InstellingenPaneel>
-        {/* ══ LIVE RASTER CANVAS ══ */}
-        <section style={{ flex: 1, minWidth: 0, overflowY: 'auto', position: 'relative' }}>
-          <Kopbalk />
-          <Toast />
-          <div style={{ padding: '18px 22px 50px' }}>{raster ? <Raster /> : <Welkom />}</div>
-        </section>
+        {beheerOpen && <Beheer />}
+        {!beheerOpen && active === START && <Start />}
+        {!beheerOpen && active !== START && (
+          <>
+            <InstellingenPaneel>{module}</InstellingenPaneel>
+            {/* ══ LIVE RASTER CANVAS ══ */}
+            <section style={{ flex: 1, minWidth: 0, overflowY: 'auto', position: 'relative' }}>
+              <Kopbalk />
+              <Toast />
+              <div style={{ padding: '18px 22px 50px' }}>{raster ? <Raster /> : <Welkom />}</div>
+            </section>
+          </>
+        )}
         <AssistentModal />
         {showFullReset && <ResetDialoog />}
+        {account.inAccount && <StandLaden />}
+        {account.inAccount && <WachtwoordWijzigen />}
       </div>
     </AppProvider>
   )

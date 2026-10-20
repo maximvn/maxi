@@ -37,8 +37,79 @@ Daarna:
 - `POST /api/functiekamers` met `{kamers,codes,m2,regels,trace?}` → raster-JSON (functiekamers)
 - `POST /api/batch` met `{jobs:[{type:'poli'|'functie', args:[...], meet?}]}` → `{uit:[{ok,res|err}]}`
 
-Fouten komen altijd als HTTP 200 met `{ok:false, fout, type, spoor}` terug, zodat de
-frontend ze in de live-banner toont. CORS staat open.
+Fouten bij het rekenen komen als HTTP 200 met `{ok:false, fout, type, spoor}` terug, zodat de
+frontend ze in de live-banner toont. CORS staat dicht, behalve voor `POLIRASTER_ORIGINS`.
+
+Daarnaast, met accounts aan (zie hieronder en `ACCOUNTS.md` §5): `/api/auth/*` (inloggen,
+uitloggen, wie ben ik, wachtwoord wijzigen), `/api/stand*` (opgeslagen stand, eerdere versies) en
+`/api/beheer/*` (gebruikers, logboek, sessies, meekijken). Zonder `POLIRASTER_GEHEIM` draait de
+server in de **open ontwikkelstand**: geen login, en die routes geven 503 "Accounts niet ingesteld".
+
+## Accounts, opgeslagen stand en beheerlogboek
+
+Persoonlijke accounts (rol `gebruiker` of `beheer`), automatisch opgeslagen werkstand per
+gebruiker (laatste 30 versies) en een logboek voor de beheerder. Het contract met de frontend
+staat in `ACCOUNTS.md`; de code in `accounts.py`, `stand.py`, `opslag.py` en `beveiliging.py`.
+
+### Lokaal aanzetten (eigen server, SQLite)
+
+```bash
+cd backend
+export POLIRASTER_GEHEIM=$(python3 -c "import secrets; print(secrets.token_urlsafe(48))")
+export POLIRASTER_BEHEER_GEBRUIKER=beheer
+export POLIRASTER_BEHEER_WACHTWOORD='een-lange-wachtzin'     # minimaal 10 tekens
+python server.py                                              # → http://127.0.0.1:8000/  (login op /login.html)
+```
+
+De database is een SQLite-bestand: `backend/data/poliraster.db` (de map wordt aangemaakt, met
+een `.gitignore` erin), of het pad in `POLIRASTER_DB_PAD`. Bewaar `POLIRASTER_GEHEIM` vast
+(bv. in `deploy/.env`): een nieuw geheim maakt alle sessies ongeldig.
+
+### De eerste beheerder
+
+Is er nog geen actieve beheerder, dan maakt de server er één aan uit
+`POLIRASTER_BEHEER_GEBRUIKER` + `POLIRASTER_BEHEER_WACHTWOORD` (bij het starten, of op Vercel bij
+het eerste verzoek). Een bestaand account met die naam wordt nooit overschreven. Daarna:
+inloggen, het wachtwoord wijzigen (knop in de rail), en via **Beheer → Gebruikers** de
+collega's aanmaken. Ben je de laatste beheerder kwijt (iedereen geblokkeerd kan niet: de
+laatste actieve beheerder is beschermd), zet dan een nieuwe naam in
+`POLIRASTER_BEHEER_GEBRUIKER` — dat werkt alleen zolang er geen actieve beheerder is.
+
+### Turso koppelen (Vercel)
+
+Vercel heeft geen blijvende schijf; daar gaat de database naar Turso (gehoste SQLite), via de
+HTTP-API — geen extra Python-pakket nodig.
+
+1. Vercel → Project → **Storage** → Turso koppelen (Marketplace). Vercel zet dan
+   `TURSO_DATABASE_URL` (`libsql://…`) en `TURSO_AUTH_TOKEN`. Zonder koppeling kan het ook met
+   de hand: `turso db create poliraster`, `turso db show poliraster --url`,
+   `turso db tokens create poliraster`, en die waarden als `POLIRASTER_DB_URL` en
+   `POLIRASTER_DB_TOKEN` in Vercel zetten.
+2. Zet in Vercel ook `POLIRASTER_GEHEIM` (dezelfde waarde gebruikt de middleware) en
+   `POLIRASTER_BEHEER_GEBRUIKER` + `POLIRASTER_BEHEER_WACHTWOORD`.
+3. Opnieuw deployen. De tabellen worden bij het eerste verzoek aangemaakt. Controle:
+   `https://<project>.vercel.app/api/health` → `"accounts":true`; inloggen op `/login.html`.
+
+Zonder Turso-URL weigert de API op Vercel met 503 "Geen database ingesteld: koppel Turso …"
+(in plaats van stil een tijdelijk bestand te gebruiken). Zonder `POLIRASTER_GEHEIM` laat de API op
+Vercel niemand binnen (`POLIRASTER_ACCOUNTS_VERPLICHT=1` in `api/index.py`).
+
+### Instellingen
+
+| Variabele | Standaard | Betekenis |
+|---|---|---|
+| `POLIRASTER_GEHEIM` | — | sleutel voor de sessiecookie (48+ tekens); gezet = accounts aan |
+| `POLIRASTER_BEHEER_GEBRUIKER`, `POLIRASTER_BEHEER_WACHTWOORD` | — | eerste beheerder |
+| `POLIRASTER_SESSIE_UREN` | 12 | geldigheid van een sessie |
+| `POLIRASTER_DB_PAD` | `backend/data/poliraster.db` | SQLite-bestand (eigen server) |
+| `POLIRASTER_DB_URL`, `POLIRASTER_DB_TOKEN` | — | Turso (of `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`) |
+| `POLIRASTER_ACCOUNTS_VERPLICHT` | 0 (Vercel: 1) | zonder geheim niemand binnenlaten |
+| `POLIRASTER_TOKEN` | — | Bearer-token voor scripts, alleen de reken-API |
+| `POLIRASTER_ORIGINS`, `POLIRASTER_ACHTER_PROXY`, `POLIRASTER_HTTPS` | — | herkomsten, proxy, HTTPS (zie `BEVEILIGING.md`) |
+| `POLIRASTER_MAX_BODY`, `_MAX_JOBS`, `_GELIJKTIJDIG`, `_TIMEOUT`, `_LIMIET`, `_CSP` | 2 MB, 100, 2, 120 s, 120/min, — | limieten en CSP |
+| `POLIRASTER_LOG` | INFO | `DEBUG` voor het stappenlogboek en elke SQL-opdracht |
+
+`POLIRASTER_WACHTWOORD` (de oude login met één gedeeld wachtwoord) wordt niet meer gebruikt.
 
 ## De frontend draaien: drie manieren
 
@@ -69,6 +140,10 @@ python -m tests.pariteit.vergelijk --filter "functie|"      # pariteit functieka
 node tests/test_frontend_http.mjs                           # start de server, opent de tool in Chromium, controleert modus http
 cd .. && node test_live.mjs                                 # de bestaande worker-modus blijft werken
 ```
+
+De accounttests (`test_opslag.py`, `test_accounts.py`, `test_stand.py`, `test_beheer_api.py`,
+`test_beveiliging.py`) draaien zonder netwerk: Turso wordt nagebootst door een kleine
+HTTP-server in `tests/conftest.py`. De browsertest met login: `node tests/test_beveiligd_e2e.mjs`.
 
 `tests/test_server.py` slaat de poli-endpoint-test over (`pytest.skip`) zolang
 `poliraster.poli.engine` niet importeerbaar is; `test_frontend_http.mjs` meldt in dat
@@ -112,12 +187,14 @@ De valkuilen (afronden, sleutelvolgorde, sorteren als tekst, `||`) staan in
 
 ## Op internet zetten (beveiligd)
 
-Zie `BEVEILIGING.md`. Kort: login met wachtwoord en sessiecookie (`POLIRASTER_WACHTWOORD`,
-`POLIRASTER_GEHEIM`), limieten tegen overbelasting, CSRF-controle en beveiligingskoppen zitten
-in `beveiliging.py`; HTTPS komt van Caddy (`deploy/docker-compose.yml`, `deploy/Caddyfile`).
+Zie `BEVEILIGING.md`. Kort: persoonlijke accounts met sessiecookie (`POLIRASTER_GEHEIM`,
+`POLIRASTER_BEHEER_*`, zie hierboven), limieten tegen overbelasting, CSRF-controle en
+beveiligingskoppen zitten in `beveiliging.py` en `accounts.py`; HTTPS komt van Caddy
+(`deploy/docker-compose.yml`, `deploy/Caddyfile`). Zet de SQLite-database (`POLIRASTER_DB_PAD`)
+op een Docker-volume en maak er back-ups van.
 
 ```
-cp deploy/.env.example deploy/.env            # domein, wachtwoord, geheim invullen
+cp deploy/.env.example deploy/.env            # domein, geheim, eerste beheerder invullen
 cd frontend && npm run build -- --mode api    # frontend die via de server rekent
 docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
 ```

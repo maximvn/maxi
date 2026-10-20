@@ -1,4 +1,5 @@
 # PoliRaster Studio — Python-backend (zie README.md)
+# SQLite (sqlite3) en Turso (HTTP via urllib) komen uit de standaardbibliotheek: geen databasepakket nodig.
 fastapi>=0.115
 uvicorn>=0.30
 pydantic>=2

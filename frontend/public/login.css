@@ -1,0 +1,93 @@
+/*
+ * ═══ LOGIN.CSS — opmaak van de inlogpagina ══════════════════════════════════
+ * Wat doet dit onderdeel
+ *   De huisstijl van de tool voor login.html: dezelfde kleuren als
+ *   frontend/src/ui/kleuren.js (C.primary, C.text, C.muted, C.border, C.danger)
+ *   en de verloop-kleuren van de rail. Eén kolom, werkt op een telefoon.
+ * Waar kan het misgaan en hoe zie je dat
+ *   - Pagina zonder opmaak → /login.css wordt niet geserveerd (vrij pad in
+ *     middleware.js en in de backend; kijk in de netwerk-tab).
+ */
+:root {
+  --primary: #1c6ea4;
+  --primary-donker: #0c4f79;
+  --tekst: #1b2733;
+  --gedempt: #6a7a88;
+  --rand: #e4e9ef;
+  --fout: #c8503e;
+  --fout-bg: #fcece9;
+  --fout-rand: #ebb4aa;
+  --achtergrond: #eef1f5;
+  --wit: #ffffff;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; color-scheme: light; }
+body {
+  min-height: 100vh;
+  background: linear-gradient(180deg, #0e3450 0%, #124d74 45%, var(--achtergrond) 45%);
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color: var(--tekst);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 48px 16px;
+}
+.kader { width: 100%; max-width: 400px; }
+.merk { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; color: #eaf6fb; }
+.logo {
+  width: 44px; height: 44px; border-radius: 13px;
+  background: linear-gradient(140deg, #39c6ac, #1c8fbf);
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 6px 16px rgba(11, 60, 90, 0.5);
+}
+.merknaam { font-size: 18px; font-weight: 800; letter-spacing: -0.01em; }
+.merknaam em { font-family: 'Newsreader', Georgia, serif; font-weight: 600; color: #7fd4c0; }
+.kaart {
+  background: var(--wit);
+  border: 1px solid var(--rand);
+  border-radius: 14px;
+  box-shadow: 0 16px 48px rgba(27, 39, 51, 0.16);
+  padding: 26px 24px 24px;
+}
+h1 { font-size: 20px; margin: 0 0 6px; letter-spacing: -0.01em; }
+.uitleg { font-size: 13px; color: var(--gedempt); line-height: 1.55; margin: 0 0 14px; }
+label { display: block; font-size: 13px; font-weight: 600; margin: 14px 0 5px; }
+input {
+  width: 100%;
+  font: inherit;
+  font-size: 16px; /* 16px: geen automatisch inzoomen op iOS */
+  padding: 11px 12px;
+  border: 1px solid #c9d3dd;
+  border-radius: 9px;
+  background: var(--wit);
+  color: var(--tekst);
+}
+input:focus { outline: 3px solid rgba(28, 110, 164, 0.25); border-color: var(--primary); }
+button {
+  width: 100%;
+  margin-top: 20px;
+  padding: 12px 16px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--primary);
+  border: 1px solid var(--primary);
+  border-radius: 10px;
+  cursor: pointer;
+}
+button:hover { background: var(--primary-donker); border-color: var(--primary-donker); }
+button:focus-visible { outline: 3px solid rgba(57, 198, 172, 0.6); outline-offset: 2px; }
+button[disabled] { opacity: 0.6; cursor: wait; }
+.melding {
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: #8a2e20;
+  background: var(--fout-bg);
+  border: 1px solid var(--fout-rand);
+  border-radius: 9px;
+}
+.melding.blokkade { color: #7a5000; background: #fef6e0; border-color: #f0c840; }
+.voet { font-size: 12px; color: var(--gedempt); text-align: center; margin-top: 16px; line-height: 1.5; }
