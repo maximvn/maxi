@@ -460,7 +460,9 @@ class Accounts:
         env = os.environ if omgeving is None else omgeving
         if self._aantal_actieve_beheerders(self.db) > 0:
             return None
-        naam, ww = (env.get("POLIRASTER_BEHEER_GEBRUIKER") or "").strip(), env.get("POLIRASTER_BEHEER_WACHTWOORD") or ""
+        # Gebruikersnaam standaard "SZ" (de beheerder van deze installatie); alleen het wachtwoord is verplicht.
+        naam = (env.get("POLIRASTER_BEHEER_GEBRUIKER") or "SZ").strip()
+        ww = env.get("POLIRASTER_BEHEER_WACHTWOORD") or ""
         if not naam or not ww:
             log.warning("Er is geen actieve beheerder en POLIRASTER_BEHEER_GEBRUIKER/POLIRASTER_BEHEER_WACHTWOORD ontbreken: "
                         "eerste beheerder niet aangemaakt. Niemand kan gebruikers beheren.")

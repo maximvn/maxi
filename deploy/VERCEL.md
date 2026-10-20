@@ -1,4 +1,56 @@
-# PoliRaster Studio op Vercel — met persoonlijke accounts, opgeslagen stand en eigen domein
+# PoliRaster Studio op Vercel
+
+## Snelstart (voor wie nog nooit met Vercel werkte) — 4 stappen, ±10 minuten
+
+Je hoeft niets te programmeren of te installeren. Alles gaat via de website van Vercel.
+
+**Stap 1 — de juiste versie kiezen**
+1. Ga naar <https://vercel.com> en log in.
+2. Klik op je project (bijvoorbeeld **rastertool**).
+3. Klik bovenin op **Settings**.
+4. Klik links op **Git** (in nieuwere versies: **Environments** → **Production**).
+5. Zoek het veld **Production Branch** (of *Branch Tracking*), vul in:
+   `claude/raster-tool-expansion-gx8e0w` en klik **Save**.
+
+**Stap 2 — de database koppelen (daar wordt ieders werk bewaard)**
+1. Klik bovenin op **Storage**.
+2. Klik **Create Database** (of *Connect Database*), kies **Turso** en klik **Continue**.
+3. Accepteer de voorwaarden, kies het gratis plan, geef de database een naam (bv. `rastertool`)
+   en klik **Create**.
+4. Vercel vraagt aan welk project je hem koppelt: kies je project en vink **Production** en
+   **Preview** aan. Klik **Connect**.
+   Vercel vult daarmee zelf de geheime sleutels in; daar hoef je niets aan te doen.
+
+**Stap 3 — het wachtwoord van de beheerder invullen**
+1. Klik bovenin op **Settings** → links **Environment Variables**.
+2. Vul in bij *Key*: `POLIRASTER_BEHEER_WACHTWOORD` en bij *Value*: het startwachtwoord van
+   SZ (bijvoorbeeld `SZ2026!`). Vink **Production** en **Preview** aan en klik **Save**.
+3. Staan er nog `BASIC_AUTH_USER` en `BASIC_AUTH_PASS`? Die mag je verwijderen (drie puntjes →
+   *Remove*); ze worden niet meer gebruikt.
+
+**Stap 4 — opnieuw publiceren**
+1. Klik bovenin op **Deployments**.
+2. Bij de bovenste regel: klik op de drie puntjes **⋯** → **Redeploy** → **Redeploy**.
+3. Wacht tot er **Ready** staat (1 à 2 minuten).
+
+**Klaar. Zo test je het**
+1. Open `https://rastertool.vercel.app` in een privévenster (Ctrl+Shift+N).
+2. Je ziet de inlogpagina van de tool. Log in met gebruikersnaam **SZ** en je startwachtwoord.
+3. De tool vraagt je meteen een eigen, langer wachtwoord te kiezen (minimaal 10 tekens). Onthoud
+   dat goed: vanaf nu log je daarmee in.
+4. Je komt op het startscherm **Start**. Via **Beheer** (links) maak je accounts voor collega's.
+
+**Wat zie je als iets nog niet klopt**
+
+| Wat je ziet | Wat je doet |
+|---|---|
+| Het grijze inlogvenster van de browser, of de tool zonder inlogpagina | De oude versie staat er nog: controleer stap 1 en doe stap 4 opnieuw. |
+| "Login nog niet ingesteld" | De database is niet gekoppeld: doe stap 2 en daarna stap 4. |
+| "Gebruikersnaam of wachtwoord onjuist" bij SZ | Controleer stap 3 (precies hetzelfde wachtwoord, zonder spaties) en doe stap 4. |
+| Iets anders | Deployments → klik op de bovenste regel → **Logs**; kopieer de rode regels en stuur ze door. |
+
+---
+
 
 Vercel bouwt de frontend uit GitHub, zet er automatisch HTTPS op en draait de Python-API als
 serverless-functie. Iedereen logt in met een **eigen account**; de tool slaat de stand van elke
@@ -51,8 +103,8 @@ Project → **Settings → Environment Variables** → voor *Production* én *Pr
 
 | Naam | Waarde |
 |---|---|
-| `POLIRASTER_GEHEIM` | een lange willekeurige sleutel (48+ tekens) voor de sessiecookie. Maak er één met `python3 -c "import secrets; print(secrets.token_urlsafe(48))"` of `openssl rand -base64 48`. Middleware én API lezen dezelfde variabele. |
-| `POLIRASTER_BEHEER_GEBRUIKER` | `SZ` — de eerste beheerder |
+| `POLIRASTER_GEHEIM` (optioneel) | niet nodig zodra Turso gekoppeld is: de sleutel wordt dan automatisch afgeleid van `TURSO_AUTH_TOKEN`. Vul hem alleen in als je een eigen sleutel wilt. Oude tekst: | een lange willekeurige sleutel (48+ tekens) voor de sessiecookie. Maak er één met `python3 -c "import secrets; print(secrets.token_urlsafe(48))"` of `openssl rand -base64 48`. Middleware én API lezen dezelfde variabele. |
+| `POLIRASTER_BEHEER_GEBRUIKER` (optioneel) | standaard `SZ`; alleen invullen als de eerste beheerder anders moet heten |
 | `POLIRASTER_BEHEER_WACHTWOORD` | het wachtwoord van SZ — **vul je alleen hier in Vercel in, nooit in de code** (de repo staat op GitHub). Dit is het **startwachtwoord**: het eerder gekozen `SZ2026!` werkt. Is het korter dan 10 tekens (minimaal 6), dan vraagt de tool bij de eerste login van SZ om een nieuw wachtwoord van minimaal 10 tekens; daarna geldt dat nieuwe wachtwoord en doet deze variabele niets meer (hij wordt alleen gebruikt zolang er nog geen beheerder bestaat). |
 | `POLIRASTER_SESSIE_UREN` | optioneel: hoe lang een login geldig blijft (standaard `12`) |
 

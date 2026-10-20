@@ -187,17 +187,35 @@ delete process.env.POLIRASTER_GEHEIM
 {
   const a = await middleware(verzoek('/', { cookie: metCookie(t.geldig) }))
   const tekst = a ? await a.text() : ''
-  check('/ → 503 met uitleg', a && a.status === 503 && /POLIRASTER_GEHEIM/.test(tekst), String(a && a.status))
+  check('/ → 503 met uitleg', a && a.status === 503 && /Turso/.test(tekst), String(a && a.status))
   const b = await middleware(verzoek('/login.html'))
   check('/login.html → ook 503', b && b.status === 503)
   const c = await middleware(verzoek('/api/health'))
   const body = c ? await c.json() : null
-  check('/api/health → 503 JSON met uitleg', c && c.status === 503 && body && body.ok === false && /POLIRASTER_GEHEIM/.test(body.fout))
+  check('/api/health → 503 JSON met uitleg', c && c.status === 503 && body && body.ok === false && /Turso/.test(body.fout))
 }
 process.env.POLIRASTER_GEHEIM = ''
 {
   const a = await middleware(verzoek('/'))
   check('lege POLIRASTER_GEHEIM telt als ontbrekend → 503', a && a.status === 503)
+}
+
+// ── Afgeleide sleutel: middleware en Python moeten exact hetzelfde uitkomen ──────────
+{
+  console.log('— afgeleide sleutel —')
+  const { bepaalGeheim } = await import('../middleware.js')
+  const { execFileSync } = await import('child_process')
+  const token = 'eyJ-voorbeeld-turso-token-123'
+  const js = await bepaalGeheim({ TURSO_AUTH_TOKEN: token })
+  const py = execFileSync('python3', ['-c',
+    'import sys; sys.path.insert(0,"backend"); from beveiliging import bepaal_geheim; print(bepaal_geheim({"TURSO_AUTH_TOKEN": sys.argv[1]}))', token],
+    { cwd: new URL('..', import.meta.url).pathname }).toString().trim()
+  const ok1 = js === py && js.startsWith('afgeleid-') && js.length === 'afgeleid-'.length + 64
+  check('afgeleide sleutel uit TURSO_AUTH_TOKEN gelijk in JavaScript en Python', ok1, js.slice(0, 20) + '…')
+  const ok2 = (await bepaalGeheim({ POLIRASTER_GEHEIM: ' eigen ', TURSO_AUTH_TOKEN: token })) === 'eigen'
+  check('POLIRASTER_GEHEIM gaat voor', ok2)
+  const ok3 = (await bepaalGeheim({})) === ''
+  check('zonder geheim en zonder token: leeg (iedereen buiten)', ok3)
 }
 
 console.log(`\n${n - fouten}/${n} checks geslaagd${fouten ? ' — FOUTEN: ' + fouten : ''}`)

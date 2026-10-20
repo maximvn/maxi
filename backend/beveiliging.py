@@ -82,6 +82,7 @@ Waar kan het misgaan en hoe zie je dat
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import hmac
 import json
 import logging
@@ -110,6 +111,29 @@ def _env_int(naam: str, standaard: int) -> int:
         return standaard
 
 
+def bepaal_geheim(env: Optional[dict] = None) -> str:
+    """De sleutel voor de sessiecookie: ``POLIRASTER_GEHEIM``, of anders automatisch afgeleid van de databasesleutel.
+
+    Waarom: op Vercel zet de Turso-koppeling zelf een geheime ``TURSO_AUTH_TOKEN``. Daaruit leiden we
+    een sessiesleutel af, zodat de beheerder niet ook nog zelf een lange sleutel hoeft te maken en
+    in te vullen. Exact dezelfde afleiding staat in ``middleware.js`` (``bepaalGeheim``):
+
+        "afgeleid-" + hex(SHA-256("poliraster-sessie|" + token))
+
+    Een expliciete ``POLIRASTER_GEHEIM`` gaat altijd voor. Wordt het Turso-token vernieuwd, dan
+    moet iedereen opnieuw inloggen (de oude cookies passen niet meer); verder verandert er niets.
+    Op een eigen server met een SQLite-bestand is er geen token: zet daar ``POLIRASTER_GEHEIM``.
+    """
+    bron = os.environ if env is None else env
+    expliciet = (bron.get("POLIRASTER_GEHEIM") or "").strip()
+    if expliciet:
+        return expliciet
+    db_token = (bron.get("POLIRASTER_DB_TOKEN") or bron.get("TURSO_AUTH_TOKEN") or "").strip()
+    if db_token:
+        return "afgeleid-" + hashlib.sha256(("poliraster-sessie|" + db_token).encode("utf-8")).hexdigest()
+    return ""
+
+
 def _env_ja(naam: str) -> bool:
     return os.environ.get(naam, "").strip().lower() in ("1", "true", "ja", "yes")
 
@@ -118,7 +142,7 @@ def _env_ja(naam: str) -> bool:
 class Instellingen:
     """Alle beveiligingsinstellingen, gelezen uit de omgeving (zie module-docstring)."""
 
-    geheim: str = field(default_factory=lambda: os.environ.get("POLIRASTER_GEHEIM", ""))
+    geheim: str = field(default_factory=lambda: bepaal_geheim())
     accounts_verplicht: bool = field(default_factory=lambda: _env_ja("POLIRASTER_ACCOUNTS_VERPLICHT"))
     token: str = field(default_factory=lambda: os.environ.get("POLIRASTER_TOKEN", ""))
     origins: list[str] = field(default_factory=lambda: [o.strip().rstrip("/") for o in os.environ.get("POLIRASTER_ORIGINS", "").split(",") if o.strip()])

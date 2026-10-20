@@ -14,10 +14,12 @@
  *   geblokkeerd, controleert de Python-API bij elk verzoek (die geeft dan 401, en de tool
  *   stuurt door naar het loginscherm).
  *
- * Instellen (Vercel → Project → Settings → Environment Variables)
- *   POLIRASTER_GEHEIM   dezelfde sleutel als de Python-API gebruikt (48+ tekens).
- *   Ontbreekt hij, dan laat de middleware NIEMAND binnen (fail-closed, 503 met uitleg).
- *   De sleutel staat bewust niet in de code: die staat op GitHub.
+ * Instellen
+ *   Niets extra's: koppel Turso in Vercel (Storage → Turso); de sleutel wordt dan automatisch
+ *   afgeleid van TURSO_AUTH_TOKEN, op precies dezelfde manier als de Python-API doet
+ *   (backend/beveiliging.py, bepaal_geheim). Wie liever een eigen sleutel zet, vult
+ *   POLIRASTER_GEHEIM in; die gaat altijd voor. Is er geen van beide, dan laat de middleware
+ *   NIEMAND binnen (fail-closed, 503 met uitleg). Sleutels staan nooit in de code.
  *
  * Hoe het werkt
  *   1. token = b64url(payload_json) + "." + b64url(HMAC_SHA256(geheim, b64url(payload_json)))
@@ -29,7 +31,8 @@
  *   - Na het inloggen direct weer het loginscherm → POLIRASTER_GEHEIM verschilt tussen
  *     deze middleware en de API (beide lezen dezelfde Vercel-variabele; na een wijziging
  *     opnieuw deployen), of de cookie is verlopen.
- *   - Melding "Login niet ingesteld" (503) → POLIRASTER_GEHEIM ontbreekt in Vercel, of er
+ *   - Melding "Login nog niet ingesteld" (503) → Turso is niet gekoppeld (en POLIRASTER_GEHEIM
+ *     ontbreekt), of er
  *     is na het toevoegen niet opnieuw gedeployd (Deployments → Redeploy).
  */
 
@@ -125,6 +128,22 @@ export async function controleerToken(token, geheim, nu = Date.now() / 1000) {
   return payload
 }
 
+/**
+ * De sessiesleutel: POLIRASTER_GEHEIM, of afgeleid van de databasesleutel (zelfde regel als
+ * bepaal_geheim in backend/beveiliging.py): "afgeleid-" + hex(SHA-256("poliraster-sessie|" + token)).
+ * @param {Record<string,string|undefined>} env — process.env
+ * @returns {Promise<string>} de sleutel, of '' als er niets is ingesteld
+ */
+export async function bepaalGeheim(env) {
+  const expliciet = (env.POLIRASTER_GEHEIM || '').trim()
+  if (expliciet) return expliciet
+  const dbToken = (env.POLIRASTER_DB_TOKEN || env.TURSO_AUTH_TOKEN || '').trim()
+  if (!dbToken) return ''
+  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('poliraster-sessie|' + dbToken))
+  const hex = Array.from(new Uint8Array(hash), b => b.toString(16).padStart(2, '0')).join('')
+  return 'afgeleid-' + hex
+}
+
 /** Antwoord zonder caching, met de juiste Content-Type. */
 function antwoord(inhoud, status, type, extra = {}) {
   return new Response(inhoud, {
@@ -142,11 +161,11 @@ export default async function middleware(request) {
   const url = new URL(request.url)
   const pad = url.pathname
   const isApi = pad === '/api' || pad.startsWith('/api/')
-  const geheim = process.env.POLIRASTER_GEHEIM
+  const geheim = await bepaalGeheim(process.env)
 
   if (!geheim) {
     const uitleg =
-      'Login niet ingesteld: zet POLIRASTER_GEHEIM (48+ willekeurige tekens) bij de omgevingsvariabelen van het Vercel-project en deploy opnieuw. Zie deploy/VERCEL.md.'
+      'Login nog niet ingesteld: koppel in Vercel een Turso-database (Storage → Turso) en klik daarna op Redeploy. Zie deploy/VERCEL.md.'
     if (isApi) {
       return antwoord(JSON.stringify({ ok: false, fout: uitleg }), 503, 'application/json; charset=utf-8')
     }
