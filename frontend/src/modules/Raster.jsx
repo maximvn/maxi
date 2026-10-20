@@ -51,7 +51,7 @@ import { RasterWeek } from './raster/RasterWeek.jsx'
 import { RegelsLive } from './raster/RegelsLive.jsx'
 import { Restlijst } from './raster/Restlijst.jsx'
 import { SleepGhost } from './raster/SleepGhost.jsx'
-import { Btn } from '../ui/basis.jsx'
+import { Btn, zweef } from '../ui/basis.jsx'
 import { C } from '../ui/kleuren.js'
 
 /**
@@ -83,6 +83,11 @@ export function Raster() {
     liveFout,
     doGenerate,
   } = useApp()
+  // Functiekamers zonder kamers: terug naar het startscherm van Gegevens.
+  const naarStartscherm = () => {
+    nav(1)
+    setFk(p => ({ ...p, mode: null }))
+  }
   if (modus === 'functie' && !fkActieveKamers.length) {
     return (
       <div
@@ -113,14 +118,7 @@ export function Raster() {
           met een vooringevulde basis voor je vakgroep. Het rasteradvies verschijnt hier zodra er
           kamers en onderzoeken zijn.
         </div>
-        <Btn
-          onClick={() => {
-            nav(1)
-            setFk(p => ({ ...p, mode: null }))
-          }}
-        >
-          Naar het startscherm →
-        </Btn>
+        <Btn onClick={naarStartscherm}>Naar het startscherm →</Btn>
       </div>
     )
   }
@@ -227,14 +225,10 @@ export function Raster() {
               letterSpacing: '0.04em',
               transition: 'all 0.15s',
             }}
-            onMouseEnter={e => {
-              e.currentTarget.style.background = C.white
-              e.currentTarget.style.color = C.primary
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.background = toonGeav ? C.white : 'transparent'
-              e.currentTarget.style.color = C.muted
-            }}
+            {...zweef(
+              { background: C.white, color: C.primary },
+              { background: toonGeav ? C.white : 'transparent', color: C.muted }
+            )}
           >
             <span
               style={{

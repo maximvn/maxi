@@ -32,10 +32,22 @@ import { C } from '../../ui/kleuren.js'
 // Opmaak van de live-status: mislukt, bezig of bijgewerkt.
 const liveStatus = (liveFout, liveBezig) => {
   if (liveFout)
-    return { bg: '#FBE9E6', rand: '#E0A090', kleur: '#9A2A1A', bol: '#D04030', tekst: 'mislukt — opnieuw proberen' }
+    return {
+      bg: '#FBE9E6',
+      rand: '#E0A090',
+      kleur: '#9A2A1A',
+      bol: '#D04030',
+      tekst: 'mislukt — opnieuw proberen',
+    }
   if (liveBezig)
     return { bg: '#FEF6E0', rand: '#F0C840', kleur: '#7A5000', bol: '#E0A020', tekst: 'bijwerken…' }
-  return { bg: '#EAF4E0', rand: '#98CC70', kleur: '#2A5018', bol: '#3AAE4E', tekst: 'live — bijgewerkt' }
+  return {
+    bg: '#EAF4E0',
+    rand: '#98CC70',
+    kleur: '#2A5018',
+    bol: '#3AAE4E',
+    tekst: 'live — bijgewerkt',
+  }
 }
 
 export function RasterKop() {

@@ -21,6 +21,7 @@ import React from 'react'
 import { KENNIS, kennisPerCategorie, zoekKennis } from './assistent.js'
 import { useApp } from '../context/AppContext.jsx'
 import { C } from '../ui/kleuren.js'
+import { zweef } from '../ui/basis.jsx'
 
 /**
  * Onderwerpenlijst van de kennisbank.
@@ -127,14 +128,10 @@ export function KennisIndex() {
                     color: C.text,
                     textAlign: 'left',
                   }}
-                  onMouseEnter={e => {
-                    e.currentTarget.style.borderColor = C.primary
-                    e.currentTarget.style.background = C.blueAccent
-                  }}
-                  onMouseLeave={e => {
-                    e.currentTarget.style.borderColor = C.border
-                    e.currentTarget.style.background = C.white
-                  }}
+                  {...zweef(
+                    { borderColor: C.primary, background: C.blueAccent },
+                    { borderColor: C.border, background: C.white }
+                  )}
                 >
                   {k.titel}
                 </button>
@@ -223,14 +220,10 @@ export function Wedervraag() {
               background: C.white,
               transition: 'all 0.12s',
             }}
-            onMouseEnter={e => {
-              e.currentTarget.style.borderColor = C.primary
-              e.currentTarget.style.background = C.blueAccent
-            }}
-            onMouseLeave={e => {
-              e.currentTarget.style.borderColor = C.border
-              e.currentTarget.style.background = C.white
-            }}
+            {...zweef(
+              { borderColor: C.primary, background: C.blueAccent },
+              { borderColor: C.border, background: C.white }
+            )}
           >
             <div style={{ fontSize: 12.5, fontWeight: 700, color: C.text }}>{o.l}</div>
             {o.s && <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{o.s}</div>}

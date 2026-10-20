@@ -29,6 +29,10 @@ import { C } from '../../ui/kleuren.js'
  */
 export function FkKamerLijst() {
   const { fkKamers, fkZet, fkZetKamer, fkKleur, fkSamenvatting } = useApp()
+  const verwijderKamer = (k, i) => {
+    if (window.confirm(`Kamer ${k.naam || i + 1} verwijderen?`))
+      fkZet(p => ({ kamers: p.kamers.filter((_, j) => j !== i) }))
+  }
   return (
     <Card style={{ marginBottom: 14, padding: 18 }}>
       <div
@@ -113,10 +117,7 @@ export function FkKamerLijst() {
                   in gebruik
                 </label>
                 <button
-                  onClick={() => {
-                    if (window.confirm(`Kamer ${k.naam || i + 1} verwijderen?`))
-                      fkZet(p => ({ kamers: p.kamers.filter((_, j) => j !== i) }))
-                  }}
+                  onClick={() => verwijderKamer(k, i)}
                   title="Kamer verwijderen"
                   style={{
                     width: 26,

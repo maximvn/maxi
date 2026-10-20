@@ -39,6 +39,22 @@ export function ExportDialoog() {
     dlMelding,
     setDlMelding,
   } = useApp()
+  const sluit = () => {
+    setShowExport(false)
+    setExportLink(null)
+  }
+  const sluitNaDownload = () => {
+    sluit()
+    setDlMelding(null)
+  }
+  // Gedeelde pagina: eerst een echte .xlsx proberen; de uitkomst komt in dlMelding.
+  const bewaarXlsxViaViewer = async () => {
+    setDlMelding({ bezig: true, msg: 'Bezig met opslaan…' })
+    setDlMelding(await viewerOpslaanXlsx(exportLink.basis, exportLink.wb))
+  }
+  const bewaarCsvViaViewer = async () => {
+    setDlMelding(await viewerOpslaan(exportLink.basis, wbNaarEenCsv(exportLink.wb)))
+  }
   return (
     <div
       style={{
@@ -96,14 +112,7 @@ export function ExportDialoog() {
               </span>
             </div>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <Btn
-                variant="secondary"
-                onClick={() => {
-                  setShowExport(false)
-                  setExportLink(null)
-                }}
-                disabled={exporting}
-              >
+              <Btn variant="secondary" onClick={sluit} disabled={exporting}>
                 Annuleren
               </Btn>
               <Btn
@@ -137,10 +146,7 @@ export function ExportDialoog() {
               // hetzelfde in ÉÉN bestand — niet als stapel losse downloads.
               <>
                 <button
-                  onClick={async () => {
-                    setDlMelding({ bezig: true, msg: 'Bezig met opslaan…' })
-                    setDlMelding(await viewerOpslaanXlsx(exportLink.basis, exportLink.wb))
-                  }}
+                  onClick={bewaarXlsxViaViewer}
                   style={{
                     display: 'block',
                     width: '100%',
@@ -198,11 +204,7 @@ export function ExportDialoog() {
                       CSV hieronder.
                     </div>
                     <button
-                      onClick={async () => {
-                        setDlMelding(
-                          await viewerOpslaan(exportLink.basis, wbNaarEenCsv(exportLink.wb))
-                        )
-                      }}
+                      onClick={bewaarCsvViaViewer}
                       style={{
                         display: 'block',
                         width: '100%',
@@ -243,14 +245,7 @@ export function ExportDialoog() {
               </a>
             )}
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <Btn
-                variant="secondary"
-                onClick={() => {
-                  setShowExport(false)
-                  setExportLink(null)
-                  setDlMelding(null)
-                }}
-              >
+              <Btn variant="secondary" onClick={sluitNaDownload}>
                 Sluiten
               </Btn>
             </div>

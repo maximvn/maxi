@@ -112,8 +112,7 @@ export function DigitaalSpreekuren() {
               {plan.gepland
                 .slice(0, 4)
                 .map(
-                  g =>
-                    `${DAY_ABBR[g.di]} ${DD_KORT[g.dd]} — ${g.items.length} consulten, ${g.pct}%`
+                  g => `${DAY_ABBR[g.di]} ${DD_KORT[g.dd]} — ${g.items.length} consulten, ${g.pct}%`
                 )
                 .join(' · ')}
               {plan.gepland.length > 4 ? ` … en nog ${plan.gepland.length - 4}` : ''}).
@@ -236,15 +235,9 @@ export function DigitaalSpreekuren() {
             lineHeight: 1.5,
           }}
         >
-          Op{' '}
-          {plan.nietGelukt
-            .map(
-              s =>
-                `${DAY_ABBR[s.di]} ${DD_LANG[s.dd]}`
-            )
-            .join(' en ')}{' '}
-          passen niet genoeg digitale consulten om het dagdeel tot de benutting te vullen. Daar komt
-          geen digitaal spreekuur; die consulten zijn over de gewone spreekuren verdeeld.
+          Op {plan.nietGelukt.map(s => `${DAY_ABBR[s.di]} ${DD_LANG[s.dd]}`).join(' en ')} passen
+          niet genoeg digitale consulten om het dagdeel tot de benutting te vullen. Daar komt geen
+          digitaal spreekuur; die consulten zijn over de gewone spreekuren verdeeld.
         </div>
       )}
     </div>

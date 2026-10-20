@@ -66,8 +66,16 @@ const Feat = ({ children, c }) => (
  * @returns {JSX.Element|null}
  */
 // Zweefeffect van de startkaarten: rand in de kaartkleur, schaduw en een lichte lift.
-const KAART_ZWEEF_BLAUW = { borderColor: C.primary, boxShadow: '0 14px 34px rgba(28,110,164,0.14)', transform: 'translateY(-2px)' }
-const KAART_ZWEEF_GROEN = { borderColor: C.green, boxShadow: '0 14px 34px rgba(46,139,87,0.14)', transform: 'translateY(-2px)' }
+const KAART_ZWEEF_BLAUW = {
+  borderColor: C.primary,
+  boxShadow: '0 14px 34px rgba(28,110,164,0.14)',
+  transform: 'translateY(-2px)',
+}
+const KAART_ZWEEF_GROEN = {
+  borderColor: C.green,
+  boxShadow: '0 14px 34px rgba(46,139,87,0.14)',
+  transform: 'translateY(-2px)',
+}
 const KAART_RUST = { borderColor: C.border, boxShadow: 'none', transform: 'none' }
 
 export function GegevensStart() {

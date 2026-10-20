@@ -21,6 +21,7 @@ import React from 'react'
 import { useApp } from '../context/AppContext.jsx'
 import { VrijPaneel } from '../ui/VrijPaneel.jsx'
 import { C } from '../ui/kleuren.js'
+import { zweef } from '../ui/basis.jsx'
 
 /** Antwoordknop. */
 const OptieKaart = ({ o, s, i, kies }) => (
@@ -42,16 +43,10 @@ const OptieKaart = ({ o, s, i, kies }) => (
       gap: 2,
       minHeight: 52,
     }}
-    onMouseEnter={e => {
-      e.currentTarget.style.borderColor = C.primary
-      e.currentTarget.style.background = C.blueAccent
-      e.currentTarget.style.transform = 'translateY(-1px)'
-    }}
-    onMouseLeave={e => {
-      e.currentTarget.style.borderColor = C.border
-      e.currentTarget.style.background = C.white
-      e.currentTarget.style.transform = 'none'
-    }}
+    {...zweef(
+      { borderColor: C.primary, background: C.blueAccent, transform: 'translateY(-1px)' },
+      { borderColor: C.border, background: C.white, transform: 'none' }
+    )}
   >
     <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: '-0.01em' }}>{o.l}</span>
     {o.s && (
@@ -72,6 +67,17 @@ const OptieKaart = ({ o, s, i, kies }) => (
  */
 export function IntakeVraag({ huidig, her, kies, vrijKlaar, bekendeSpecs, neemOver }) {
   const { wiz, setWiz, mem } = useApp()
+  // "Weer zo doen": het onthouden antwoord opnieuw toepassen — het vrije antwoord
+  // letterlijk, of de knop met hetzelfde label (anders alleen het label vastleggen).
+  const weerZoDoen = () => {
+    const h = her[huidig.k]
+    if (h.vrij && huidig.vrij) {
+      vrijKlaar(huidig, h.vrij)
+      return
+    }
+    const o = (huidig.o || []).find(x => x.l === h.label)
+    kies(huidig, o || { l: h.label, fn: null })
+  }
   if (!huidig) return null
   return (
     <>
@@ -137,14 +143,7 @@ export function IntakeVraag({ huidig, her, kies, vrijKlaar, bekendeSpecs, neemOv
             </span>
           )}
           <button
-            onClick={() => {
-              const h = her[huidig.k]
-              if (h.vrij && huidig.vrij) vrijKlaar(huidig, h.vrij)
-              else {
-                const o = (huidig.o || []).find(x => x.l === h.label)
-                kies(huidig, o || { l: h.label, fn: null })
-              }
-            }}
+            onClick={weerZoDoen}
             style={{
               marginLeft: 'auto',
               padding: '5px 12px',

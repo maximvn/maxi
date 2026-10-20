@@ -92,7 +92,9 @@ export function Cel({ di, room, dd, doel, drempel }) {
   if (leeg) cursor = kaartDrag ? 'copy' : 'pointer'
   let rand = kl ? kl.brd : C.border
   if (hover && doelvak) rand = C.primary
-  let achtergrond = kl ? kl.bg : `repeating-linear-gradient(45deg,${C.surface2},${C.surface2} 4px,${C.white} 4px,${C.white} 8px)`
+  let achtergrond = kl
+    ? kl.bg
+    : `repeating-linear-gradient(45deg,${C.surface2},${C.surface2} 4px,${C.white} 4px,${C.white} 8px)`
   if (leeg && hover && doelvak) achtergrond = '#E8F2F9'
   let tekst = leeg ? '—' : `${c.pct}%`
   if (hover && doelvak) tekst = leeg ? 'hierheen' : 'ruilen'
@@ -156,9 +158,7 @@ export function Cel({ di, room, dd, doel, drempel }) {
         <span style={{ opacity: 0.75, fontSize: 8.5, letterSpacing: '0.04em' }}>
           {DD_INFO[dd].kort}
         </span>
-        <span style={{ marginLeft: 'auto', fontVariantNumeric: 'tabular-nums' }}>
-          {tekst}
-        </span>
+        <span style={{ marginLeft: 'auto', fontVariantNumeric: 'tabular-nums' }}>{tekst}</span>
       </span>
     </button>
   )

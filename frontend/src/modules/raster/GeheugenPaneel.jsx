@@ -29,6 +29,13 @@ import { C } from '../../ui/kleuren.js'
  */
 export function GeheugenPaneel() {
   const { poli, raster, mem, vergeetScenario, bewaarIJkpunt, wisGeheugen } = useApp()
+  // Wissen vraagt bevestiging: het geldt voor álle poli's en kan niet ongedaan worden gemaakt.
+  const wisAlles = () => {
+    const zeker = window.confirm(
+      "Alles wat de tool van jou heeft geleerd wissen?\n\nToegepaste en afgewezen scenario's, intake-antwoorden en ijkpunten — voor álle poli's. Dit kan niet ongedaan worden gemaakt."
+    )
+    if (zeker) wisGeheugen()
+  }
   const spec = specKey(poli.specialisme)
   const eigenScen = mem.scenarios.filter(s => s.spec === spec)
   const andereScen = mem.scenarios.filter(s => s.spec !== spec)
@@ -285,14 +292,7 @@ export function GeheugenPaneel() {
         )}
         {!leeg && (
           <button
-            onClick={() => {
-              if (
-                window.confirm(
-                  "Alles wat de tool van jou heeft geleerd wissen?\n\nToegepaste en afgewezen scenario's, intake-antwoorden en ijkpunten — voor álle poli's. Dit kan niet ongedaan worden gemaakt."
-                )
-              )
-                wisGeheugen()
-            }}
+            onClick={wisAlles}
             style={{
               marginTop: 10,
               padding: '6px 12px',

@@ -122,6 +122,11 @@ const lijnKleur = (hour, half) => {
 
 export function RasterWeek({ geom }) {
   const { m2, selDay, setSelDay, raster, setViewMode } = useApp()
+  // Klik op een dagkop opent die dag in het dagraster.
+  const openDag = di => {
+    setSelDay(di)
+    setViewMode('dag')
+  }
   const { PXMIN, LEAD, regions, gridH, gridLines } = geom
   const numRooms = raster.numRooms || 1
   const HEAD = 44

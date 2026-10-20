@@ -124,6 +124,26 @@ export function Rail() {
     nav,
     setBijstuur,
   } = useApp()
+  // Assistent: in de functiekamer-modus meteen bijsturen; anders kiezen (met raster) of de intake.
+  const openAssistent = () => {
+    if (modus === 'functie') {
+      setBijstuur(null)
+      setWiz({ modus: 'bijsturen' })
+      return
+    }
+    setWiz(raster ? { modus: 'kies' } : { modus: 'intake', stap: 0, ant: {} })
+  }
+  // Zweefeffect op een stap, alleen als die niet al actief is.
+  const stapZweefAan = (e, on) => {
+    if (on) return
+    e.currentTarget.style.background = 'rgba(255,255,255,0.07)'
+    e.currentTarget.style.color = 'rgba(255,255,255,0.9)'
+  }
+  const stapZweefUit = (e, on) => {
+    if (on) return
+    e.currentTarget.style.background = 'transparent'
+    e.currentTarget.style.color = 'rgba(255,255,255,0.6)'
+  }
   return (
     <nav
       style={{
@@ -232,14 +252,7 @@ export function Rail() {
       {/* Begeleide intake — stelt vragen en zet de hele planning klaar (niet in de simpele variant) */}
       {!SIMPEL && (
         <button
-          onClick={() => {
-            if (modus === 'functie') {
-              setBijstuur(null)
-              setWiz({ modus: 'bijsturen' })
-              return
-            }
-            setWiz(raster ? { modus: 'kies' } : { modus: 'intake', stap: 0, ant: {} })
-          }}
+          onClick={openAssistent}
           title="Assistent — de hele opzet doorlopen, of dit raster bijsturen met een opdracht in gewone taal"
           style={{
             display: 'flex',
@@ -301,18 +314,8 @@ export function Rail() {
                 color: on ? '#fff' : 'rgba(255,255,255,0.6)',
                 transition: 'all 0.14s',
               }}
-              onMouseEnter={e => {
-                if (!on) {
-                  e.currentTarget.style.background = 'rgba(255,255,255,0.07)'
-                  e.currentTarget.style.color = 'rgba(255,255,255,0.9)'
-                }
-              }}
-              onMouseLeave={e => {
-                if (!on) {
-                  e.currentTarget.style.background = 'transparent'
-                  e.currentTarget.style.color = 'rgba(255,255,255,0.6)'
-                }
-              }}
+              onMouseEnter={e => stapZweefAan(e, on)}
+              onMouseLeave={e => stapZweefUit(e, on)}
             >
               {on && (
                 <span

@@ -38,7 +38,8 @@ import { C } from '../../ui/kleuren.js'
 const gewoonteZin = (gewoonte, beste) => {
   if (gewoonte.verschil == null)
     return 'Er is nu geen betere combinatie doorgerekend om mee te vergelijken.'
-  if (gewoonte.verschil <= 1e-9) return '✓ Die gewoonte is voor deze vraag nog steeds de beste keuze.'
+  if (gewoonte.verschil <= 1e-9)
+    return '✓ Die gewoonte is voor deze vraag nog steeds de beste keuze.'
   const minderRest = gewoonte.m.ntp - beste.m.ntp
   const minderKd = gewoonte.m.kamerDagen - beste.m.kamerDagen
   const delen = []

@@ -483,7 +483,10 @@ export function CodeTabel({ rows, set, label, n, total, cat }) {
             transition: 'all 0.15s',
           }}
           {...zweef(
-            { background: cat === 'nieuw' ? C.blueAccent : '#E7F3EC', transform: 'translateY(-1px)' },
+            {
+              background: cat === 'nieuw' ? C.blueAccent : '#E7F3EC',
+              transform: 'translateY(-1px)',
+            },
             { background: C.white, transform: 'none' }
           )}
         >

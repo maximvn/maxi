@@ -26,6 +26,7 @@ import {
 } from '../../engine/functiekamers.js'
 import { MiniHero } from '../../ui/MiniHero.jsx'
 import { C } from '../../ui/kleuren.js'
+import { zweef } from '../../ui/basis.jsx'
 
 /**
  * Startscherm van de functiekamers.
@@ -34,6 +35,11 @@ import { C } from '../../ui/kleuren.js'
 export function FkStartscherm() {
   const { fk, setFk, fkImporteer, fkVoorbeeldExcel, fkLaadPreset } = useApp()
   const fkFileRef = useRef(null)
+  // De sjabloonknop ligt op de Excel-kaart: niet óók de bestandskiezer openen.
+  const downloadSjabloon = e => {
+    e.stopPropagation()
+    fkVoorbeeldExcel()
+  }
   return (
     <div style={{ animation: 'fadeIn 0.18s ease' }}>
       <MiniHero
@@ -65,16 +71,14 @@ export function FkStartscherm() {
             position: 'relative',
             overflow: 'hidden',
           }}
-          onMouseEnter={e => {
-            e.currentTarget.style.borderColor = C.green
-            e.currentTarget.style.boxShadow = '0 14px 34px rgba(46,139,87,0.14)'
-            e.currentTarget.style.transform = 'translateY(-2px)'
-          }}
-          onMouseLeave={e => {
-            e.currentTarget.style.borderColor = C.border
-            e.currentTarget.style.boxShadow = 'none'
-            e.currentTarget.style.transform = 'none'
-          }}
+          {...zweef(
+            {
+              borderColor: C.green,
+              boxShadow: '0 14px 34px rgba(46,139,87,0.14)',
+              transform: 'translateY(-2px)',
+            },
+            { borderColor: C.border, boxShadow: 'none', transform: 'none' }
+          )}
         >
           <div
             style={{
@@ -148,10 +152,7 @@ export function FkStartscherm() {
               Bestand kiezen →
             </span>
             <button
-              onClick={e => {
-                e.stopPropagation()
-                fkVoorbeeldExcel()
-              }}
+              onClick={downloadSjabloon}
               title="Excel-sjabloon met de kolommen die de tool verwacht"
               style={{
                 display: 'block',
@@ -255,14 +256,10 @@ export function FkStartscherm() {
                     textAlign: 'left',
                     transition: 'all 0.12s',
                   }}
-                  onMouseEnter={e => {
-                    e.currentTarget.style.borderColor = C.primary
-                    e.currentTarget.style.background = C.blueAccent
-                  }}
-                  onMouseLeave={e => {
-                    e.currentTarget.style.borderColor = C.border
-                    e.currentTarget.style.background = C.white
-                  }}
+                  {...zweef(
+                    { borderColor: C.primary, background: C.blueAccent },
+                    { borderColor: C.border, background: C.white }
+                  )}
                 >
                   <span style={{ fontSize: 12.5, fontWeight: 700, color: C.text, flex: 1 }}>
                     {n}

@@ -168,9 +168,7 @@ export function RegelsSamenspel() {
               marginBottom: 6,
             }}
           >
-            <span style={{ color: col, fontWeight: 800, fontSize: 12, flexShrink: 0 }}>
-              {ico}
-            </span>
+            <span style={{ color: col, fontWeight: 800, fontSize: 12, flexShrink: 0 }}>{ico}</span>
             <span style={{ fontSize: 11.5, color: C.text, lineHeight: 1.5 }}>{x.m}</span>
           </div>
         )

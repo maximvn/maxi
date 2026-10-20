@@ -47,6 +47,28 @@ export function GegevensAantallen() {
     dlMelding,
     setDlMelding,
   } = useApp()
+  // In de gedeelde pagina kan geen .xlsx worden weggeschreven: dezelfde kolommen als CSV.
+  const bewaarVoorbeeldViaViewer = async () => {
+    setDlMelding(null)
+    const r = await viewerOpslaan(
+      'spreekuurgegevens-voorbeeld',
+      wbNaarCsv(tplLink.wb, 'Spreekuurgegevens')
+    )
+    setDlMelding(r)
+    if (r.ok) setTimeout(() => setTplLink(null), 1500)
+  }
+  // Naar stap 2: breng de codelijsten op het gekozen aantal (aanvullen met starters of inkorten).
+  const resizeRows = (existing, n, cat) => {
+    const next = [...existing]
+    while (next.length < n) next.push(starterRow(cat, next.length, n))
+    next.length = n
+    return next
+  }
+  const naarCodes = () => {
+    setNewRows(r => resizeRows(r, cfg.newCodes, 'nieuw'))
+    setCtrlRows(r => resizeRows(r, cfg.ctrlCodes, 'controle'))
+    setM1Section(2)
+  }
   const nP = cfg.newPat || 0,
     cP = cfg.ctrlPat || 0,
     tot = nP + cP
@@ -481,15 +503,7 @@ export function GegevensAantallen() {
           </button>
         ) : kanViewerOpslaan() ? (
           <button
-            onClick={async () => {
-              setDlMelding(null)
-              const r = await viewerOpslaan(
-                'spreekuurgegevens-voorbeeld',
-                wbNaarCsv(tplLink.wb, 'Spreekuurgegevens')
-              )
-              setDlMelding(r)
-              if (r.ok) setTimeout(() => setTplLink(null), 1500)
-            }}
+            onClick={bewaarVoorbeeldViaViewer}
             title="In een gedeelde pagina kan geen .xlsx worden weggeschreven — je krijgt dezelfde kolommen als CSV"
             style={{
               display: 'inline-flex',
@@ -546,20 +560,7 @@ export function GegevensAantallen() {
         )}
       </div>
 
-      <Btn
-        onClick={() => {
-          const resizeRows = (existing, n, cat) => {
-            const next = [...existing]
-            while (next.length < n) next.push(starterRow(cat, next.length, n))
-            next.length = n
-            return next
-          }
-          setNewRows(r => resizeRows(r, cfg.newCodes, 'nieuw'))
-          setCtrlRows(r => resizeRows(r, cfg.ctrlCodes, 'controle'))
-          setM1Section(2)
-        }}
-        style={{ marginTop: 4 }}
-      >
+      <Btn onClick={naarCodes} style={{ marginTop: 4 }}>
         Volgende: afspraakcodes →
       </Btn>
     </div>

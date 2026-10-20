@@ -208,7 +208,8 @@ export function ToevoegMenu({ room }) {
  */
 // Kleur van het vullingslabel: leeg (grijs), op doel (groen) of eronder (flex-oranje).
 const vullingStijl = (used, haalt) => {
-  if (used === 0) return { color: C.muted, background: 'transparent', border: '1px solid transparent' }
+  if (used === 0)
+    return { color: C.muted, background: 'transparent', border: '1px solid transparent' }
   if (haalt) return { color: '#2E6B3A', background: '#EDF7F0', border: '1px solid #C9E6D5' }
   return { color: FLEX_COLOR.fg, background: FLEX_COLOR.bg, border: `1px solid ${FLEX_COLOR.brd}` }
 }
@@ -290,9 +291,14 @@ export function RoomColumn({ room, geom }) {
               borderRadius: 5,
               cursor: 'text',
             }}
-            onFocus={e => Object.assign(e.target.style, { background: '#fff', borderColor: C.border })}
+            onFocus={e =>
+              Object.assign(e.target.style, { background: '#fff', borderColor: C.border })
+            }
             onBlur={e =>
-              Object.assign(e.target.style, { background: 'transparent', borderColor: 'transparent' })
+              Object.assign(e.target.style, {
+                background: 'transparent',
+                borderColor: 'transparent',
+              })
             }
           />
           {/* Vulling per dagdeel, met de benutting uit module Tijden als doel.

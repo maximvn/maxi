@@ -40,6 +40,29 @@ export function Kopbalk() {
     kiesSpecialisme,
     heeftCodes,
   } = useApp()
+  // Specialisme kiezen laadt voorbeeldcodes — vraag alleen om bevestiging als er al eigen codes staan.
+  const wisselSpecialisme = v => {
+    if (!v) {
+      setPoli(p => ({ ...p, specialisme: '' }))
+      return
+    }
+    if (!heeftCodes()) {
+      kiesSpecialisme(v, true)
+      return
+    }
+    const vervang = window.confirm(
+      `Voorbeeldcodes voor ${v} laden?\n\nDit vervangt de huidige afspraakcodes en aantallen. Klik Annuleren om alleen de naam te wijzigen.`
+    )
+    kiesSpecialisme(v, vervang)
+  }
+  const herlaadVoorbeeldcodes = () => {
+    const akkoord =
+      !heeftCodes() ||
+      window.confirm(
+        `Voorbeeldcodes voor ${poli.specialisme} opnieuw laden?\n\nDit vervangt de huidige afspraakcodes.`
+      )
+    if (akkoord) kiesSpecialisme(poli.specialisme, true)
+  }
   const clockStr = now.toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })
   return (
     <div
@@ -153,35 +176,15 @@ export function Kopbalk() {
           fontFamily: 'inherit',
           transition: 'all 0.12s',
         }}
-        onFocus={e => {
-          e.target.style.background = C.white
-          e.target.style.borderColor = C.border
-        }}
-        onBlur={e => {
-          e.target.style.background = 'transparent'
-          e.target.style.borderColor = 'transparent'
-        }}
+        onFocus={e => Object.assign(e.target.style, { background: C.white, borderColor: C.border })}
+        onBlur={e =>
+          Object.assign(e.target.style, { background: 'transparent', borderColor: 'transparent' })
+        }
       />
       {modus === 'poli' && (
         <select
           value={poli.specialisme}
-          onChange={e => {
-            const v = e.target.value
-            if (!v) {
-              setPoli(p => ({ ...p, specialisme: '' }))
-              return
-            }
-            // Voorbeeldcodes laden — vraag alleen om bevestiging als er al eigen codes staan
-            if (heeftCodes()) {
-              if (
-                window.confirm(
-                  `Voorbeeldcodes voor ${v} laden?\n\nDit vervangt de huidige afspraakcodes en aantallen. Klik Annuleren om alleen de naam te wijzigen.`
-                )
-              )
-                kiesSpecialisme(v, true)
-              else kiesSpecialisme(v, false)
-            } else kiesSpecialisme(v, true)
-          }}
+          onChange={e => wisselSpecialisme(e.target.value)}
           title="Kies een specialisme — laadt passende voorbeeldcodes"
           style={{
             fontSize: 11.5,
@@ -205,15 +208,7 @@ export function Kopbalk() {
       )}
       {modus === 'poli' && poli.specialisme && SPEC_PRESETS[poli.specialisme] && (
         <button
-          onClick={() => {
-            if (
-              !heeftCodes() ||
-              window.confirm(
-                `Voorbeeldcodes voor ${poli.specialisme} opnieuw laden?\n\nDit vervangt de huidige afspraakcodes.`
-              )
-            )
-              kiesSpecialisme(poli.specialisme, true)
-          }}
+          onClick={herlaadVoorbeeldcodes}
           title="Laad opnieuw de voorbeeldcodes voor dit specialisme"
           style={{
             fontSize: 11,

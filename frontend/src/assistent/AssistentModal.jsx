@@ -146,6 +146,20 @@ export function BijsturenSchil() {
   const b = bijstuur
   const start = t => verwerkVraag(t)
   const keuze = b && b.kandidaten ? b.kandidaten[b.keuze || 0] : null
+  const sluit = () => {
+    setWiz(null)
+    setBijstuur(null)
+  }
+  // Terug naar een leeg bijstuur-scherm voor de volgende opdracht.
+  const opnieuw = () => {
+    setBijstuur(null)
+    setWiz({ modus: 'bijsturen' })
+  }
+  // Pas het gekozen voorstel toe; het scherm toont daarna "Toegepast".
+  const pasToe = () => {
+    pasVoorstelToe(keuze)
+    setBijstuur(x => ({ ...x, toegepast: true }))
+  }
   return (
     <div
       data-assistent
@@ -311,10 +325,7 @@ export function BijsturenSchil() {
               </button>
             )}
             <button
-              onClick={() => {
-                setWiz(null)
-                setBijstuur(null)
-              }}
+              onClick={sluit}
               title="Sluiten"
               style={{
                 width: 28,
@@ -347,10 +358,7 @@ export function BijsturenSchil() {
             {b && b.kandidaten && b.kandidaten.length > 0 && !b.toegepast && (
               <>
                 <button
-                  onClick={() => {
-                    setBijstuur(null)
-                    setWiz({ modus: 'bijsturen' })
-                  }}
+                  onClick={opnieuw}
                   style={{
                     padding: '9px 14px',
                     borderRadius: 10,
@@ -365,10 +373,7 @@ export function BijsturenSchil() {
                   Toch niet
                 </button>
                 <button
-                  onClick={() => {
-                    pasVoorstelToe(keuze)
-                    setBijstuur(x => ({ ...x, toegepast: true }))
-                  }}
+                  onClick={pasToe}
                   style={{
                     marginLeft: 'auto',
                     padding: '11px 20px',
@@ -388,10 +393,7 @@ export function BijsturenSchil() {
             {b && b.toegepast && (
               <>
                 <button
-                  onClick={() => {
-                    setBijstuur(null)
-                    setWiz({ modus: 'bijsturen' })
-                  }}
+                  onClick={opnieuw}
                   style={{
                     padding: '9px 14px',
                     borderRadius: 10,
@@ -406,10 +408,7 @@ export function BijsturenSchil() {
                   Nog iets bijsturen
                 </button>
                 <button
-                  onClick={() => {
-                    setWiz(null)
-                    setBijstuur(null)
-                  }}
+                  onClick={sluit}
                   style={{
                     marginLeft: 'auto',
                     padding: '11px 20px',

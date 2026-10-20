@@ -65,6 +65,15 @@ export function ScenarioTabel({ rijen, besteBadge, afgewezenLijst }) {
     optim,
     setToonAfgewezen,
   } = useApp()
+  // Toepassen zet de instelling én onthoudt de keuze; "Terug" haalt een afgewezen rij weer naar voren.
+  const pasToe = x => {
+    setRules(p => ({ ...p, ...x.k }))
+    onthoudScenario(x.k, 'toegepast', x.m, optim.doel, poli.specialisme)
+  }
+  const neemWeerMee = x => {
+    vergeetScenario(scenSleutel(x.k), poli.specialisme)
+    setToonAfgewezen(true)
+  }
   const h = optim.huidig
   return (
     <div style={{ overflowX: 'auto' }}>

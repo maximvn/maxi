@@ -21,6 +21,7 @@ import { useApp } from '../context/AppContext.jsx'
 import { VRAAGBOOM } from '../lib/opdracht.js'
 import { DAGS_NL } from '../lib/tijd.js'
 import { C } from '../ui/kleuren.js'
+import { zweef } from '../ui/basis.jsx'
 
 /**
  * Gespreksboom.
@@ -29,6 +30,18 @@ import { C } from '../ui/kleuren.js'
 export function Gesprek() {
   const { bijstuur, setBijstuur, zoekVoorstel } = useApp()
   const b = bijstuur
+  // Een keuze leidt naar een volgende knoop (volg) of naar een uitvoerbare opdracht,
+  // waarbij de al herkende dag en kamer worden meegenomen.
+  const kiesOptie = o => {
+    if (o.volg) {
+      setBijstuur({ op: { ...b.op, type: 'onderwerp', knoop: o.volg } })
+      return
+    }
+    const opdr = { ...o.opdr }
+    if (opdr.dag == null && b.op.dag != null) opdr.dag = b.op.dag
+    if (opdr.kamer == null && b.op.kamer != null) opdr.kamer = b.op.kamer
+    zoekVoorstel(opdr)
+  }
   if (!(b && !b.bezig && (b.op.type === 'onbekend' || b.op.type === 'onderwerp'))) return null
   const knoop = VRAAGBOOM[b.op.knoop] || VRAAGBOOM.start
   const isStart = (b.op.knoop || 'start') === 'start'
@@ -90,15 +103,7 @@ export function Gesprek() {
           {knoop.o.map((o, i) => (
             <button
               key={i}
-              onClick={() => {
-                if (o.volg) setBijstuur({ op: { ...b.op, type: 'onderwerp', knoop: o.volg } })
-                else {
-                  const opdr = { ...o.opdr }
-                  if (opdr.dag == null && b.op.dag != null) opdr.dag = b.op.dag
-                  if (opdr.kamer == null && b.op.kamer != null) opdr.kamer = b.op.kamer
-                  zoekVoorstel(opdr)
-                }
-              }}
+              onClick={() => kiesOptie(o)}
               style={{
                 textAlign: 'left',
                 padding: '11px 13px',
@@ -108,16 +113,10 @@ export function Gesprek() {
                 background: C.white,
                 transition: 'all 0.12s',
               }}
-              onMouseEnter={e => {
-                e.currentTarget.style.borderColor = C.primary
-                e.currentTarget.style.background = C.blueAccent
-                e.currentTarget.style.transform = 'translateY(-1px)'
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.borderColor = C.border
-                e.currentTarget.style.background = C.white
-                e.currentTarget.style.transform = 'none'
-              }}
+              {...zweef(
+                { borderColor: C.primary, background: C.blueAccent, transform: 'translateY(-1px)' },
+                { borderColor: C.border, background: C.white, transform: 'none' }
+              )}
             >
               <div style={{ fontSize: 12.5, fontWeight: 700, color: C.text }}>
                 {o.l}

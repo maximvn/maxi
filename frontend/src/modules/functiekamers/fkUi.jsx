@@ -17,6 +17,12 @@
 import React from 'react'
 import { C } from '../../ui/kleuren.js'
 
+// Kleur van het stapbolletje: klaar (groen), actief (blauw) of nog te doen (grijs).
+const bolKleur = (klaar, actief) => {
+  if (klaar) return '#39C6AC'
+  if (actief) return C.primary
+  return C.surface2
+}
 /** Stapknop in de kop van het invulscherm. */
 export const Stap = ({ n, l, actief, klaar, onClick }) => (
   <button
@@ -45,7 +51,7 @@ export const Stap = ({ n, l, actief, klaar, onClick }) => (
         justifyContent: 'center',
         fontSize: 10,
         fontWeight: 800,
-        background: klaar ? '#39C6AC' : actief ? C.primary : C.surface2,
+        background: bolKleur(klaar, actief),
         color: klaar || actief ? '#fff' : C.muted,
       }}
     >
