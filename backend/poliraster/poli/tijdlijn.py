@@ -161,13 +161,17 @@ def layout_slot(ctx: PlanContext, appts_in: list[dict] | None, sess_start: float
         #    direct na de laatste afspraak. Staat "digitaal clusteren" aan, dan mag er GEEN flex
         #    tussen de digitale consulten komen — anders wordt het cluster opengebroken.
         cluster_aan = rules.get("digitalMode") == "cluster" and in_bereik(rules.get("digitalWaar"), dd)
+        # Alleen bij een gemengd spreekuur (fysiek + digitaal) heeft "het cluster heel houden"
+        # zin. Is het hele spreekuur digitaal, dan zou het verbod alle gaten wegnemen en kwam
+        # alle flex als één blok aan het eind; dan spreiden we gewoon zoals gevraagd.
+        gemengd = any(not a["digitaal"] for a in phys_appts)
 
         def verzamel_gaten(na_min: float) -> list[int]:
             sim = sess_start
             g: list[int] = []
             for i, a in enumerate(phys_appts):
                 sim += a["duur"]
-                binnen_cluster = cluster_aan and a["digitaal"] and i + 1 < len(phys_appts) and phys_appts[i + 1]["digitaal"]
+                binnen_cluster = cluster_aan and gemengd and a["digitaal"] and i + 1 < len(phys_appts) and phys_appts[i + 1]["digitaal"]
                 if sim - sess_start >= na_min and i < len(phys_appts) - 1 and not binnen_cluster:
                     g.append(i)
             return g

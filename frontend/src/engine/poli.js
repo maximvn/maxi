@@ -859,10 +859,49 @@ export function computeRasterInner(cfg, newRows, ctrlRows, m2, rules, capacity) 
         .sort((a, b) => b.duur - a.duur)
       const mee = []
       let min = 0
-      for (const a of kand) {
-        if (min + a.duur <= band.boven) {
+      // AFWISSELEN OOK IN EEN DIGITAAL SPREEKUUR. Langste-eerst vullen zette vroeger alle
+      // lange consulten (vaak de telefonische NIEUWE patiënten) samen in het eerste digitale
+      // spreekuur en alle korte (telefonische controles) in het volgende: twee spreekuren met
+      // elk maar één soort, terwijl "nieuw en controle afwisselen" aan stond. Staat afwisselen
+      // aan in dit dagdeel, dan kiezen we daarom om en om uit nieuw en controle, in de
+      // verhouding van de nog vrije digitale consulten van de hele week (binnen elke soort
+      // nog steeds langste eerst). Staat afwisselen uit, dan blijft het langste-eerst vullen.
+      const mixDig =
+        !!rules.mixNC &&
+        ((rules.mixWaar || 'both') === 'both' ||
+          (rules.mixWaar === 'och' && dd === 'O') ||
+          (rules.mixWaar === 'mid' && dd === 'M'))
+      if (!mixDig) {
+        for (const a of kand) {
+          if (min + a.duur <= band.boven) {
+            mee.push(a)
+            min += a.duur
+          }
+        }
+      } else {
+        const rijN = kand.filter(a => a.category === 'nieuw')
+        const rijC = kand.filter(a => a.category !== 'nieuw')
+        const vrijAlle = digPool.filter(a => vrij.has(a.id))
+        const doel = vrijAlle.length
+          ? vrijAlle.filter(a => a.category === 'nieuw').length / vrijAlle.length
+          : 0
+        let nN = 0
+        // Eerste consult uit een rij dat nog in de band past (en haal het uit de rij).
+        const pak = rij => {
+          const i = rij.findIndex(a => min + a.duur <= band.boven)
+          return i < 0 ? null : rij.splice(i, 1)[0]
+        }
+        for (;;) {
+          const tot = mee.length + 1
+          const afwijkingN = Math.abs((nN + 1) / tot - doel)
+          const afwijkingC = Math.abs(nN / tot - doel)
+          const eerst = afwijkingN <= afwijkingC ? rijN : rijC
+          const dan = eerst === rijN ? rijC : rijN
+          const a = pak(eerst) || pak(dan)
+          if (!a) break
           mee.push(a)
           min += a.duur
+          if (a.category === 'nieuw') nN++
         }
       }
       if (min < band.onder) return null
@@ -3701,6 +3740,12 @@ export function computeRasterInner(cfg, newRows, ctrlRows, m2, rules, capacity) 
       // we beschermen élke aaneengesloten digitale reeks, waar hij ook zit: een gat
       // ná een digitale afspraak vervalt als de vólgende ook digitaal is.
       const clusterAan = rules.digitalMode === 'cluster' && inBer(rules.digitalWaar)
+      // Alleen in een GEMENGD spreekuur (fysiek + digitaal) is het digitale deel een cluster
+      // dat niet door flex onderbroken mag worden. Een eigen digitaal spreekuur bestaat
+      // helemaal uit digitale consulten: daar zou "niet onderbreken" betekenen dat er nergens
+      // flex mag en alles als één restruimte-blok aan het einde belandt. Daar spreiden we
+      // de flex dus gewoon, net als in een fysiek spreekuur.
+      const gemengd = physAppts.some(a => !a.digitaal)
       /**
        * Indices van afspraken waarná een flexblok mag: pas na naMin minuten, nooit na de laatste,
        * en nooit binnen een digitaal cluster.
@@ -3713,7 +3758,11 @@ export function computeRasterInner(cfg, newRows, ctrlRows, m2, rules, capacity) 
         physAppts.forEach((a, i) => {
           sim += a.duur
           const binnenCluster =
-            clusterAan && a.digitaal && physAppts[i + 1] && physAppts[i + 1].digitaal
+            clusterAan &&
+            gemengd &&
+            a.digitaal &&
+            physAppts[i + 1] &&
+            physAppts[i + 1].digitaal
           if (sim - sessStart >= naMin && i < physAppts.length - 1 && !binnenCluster) g.push(i)
         })
         return g

@@ -40,6 +40,8 @@ Hoe het werkt
    het tweede dagdeel van dezelfde dagen (``autoVolg``: per dagdeel alle dagen).
 2. ``vul_spreekuur``: kandidaten (vrij, dag en dagdeel toegestaan) van lang naar kort,
    greedy tot de bovenkant van de digitale band; onder de ondergrens → geen spreekuur.
+   Met "nieuw en controle afwisselen" aan wordt per plek de soort gekozen die de verhouding
+   nieuw/controle van de vrije digitale consulten volgt (zodat het spreekuur gemengd is).
 3. Eerst tellen hoeveel er in theorie kunnen (``mogelijk``), dan de werkelijke planning:
    de keuzes van de gebruiker, of anders de automatische volgorde.
 4. Vastpinnen: ``grouped`` wordt opnieuw opgebouwd uit ``all_inst`` in dezelfde volgorde,
@@ -86,10 +88,44 @@ def plan_digitaal(ctx: PlanContext) -> None:
                        lambda a, b: b["duur"] - a["duur"])
         mee: list[dict] = []
         mn = 0
-        for a in kand:
-            if mn + a["duur"] <= band["boven"]:
+        # Staat "nieuw en controle afwisselen" aan voor dit dagdeel, dan kiezen we per plek de
+        # soort die de verhouding in dit spreekuur het dichtst bij de verhouding van alle nog
+        # vrije digitale consulten van de week houdt (binnen elke soort nog langste eerst).
+        # Zonder die stap kwam het spreekuur vol met één soort en kon de tijdlijn later niet
+        # meer afwisselen. Staat afwisselen uit, dan blijft het langste-eerst vullen.
+        w = of(ctx.rules.get("mixWaar"), "both") or "both"
+        mix_dig = bool(ctx.rules.get("mixNC")) and (w == "both" or (w == "och" and dd == "O") or (w == "mid" and dd == "M"))
+        if not mix_dig:
+            for a in kand:
+                if mn + a["duur"] <= band["boven"]:
+                    mee.append(a)
+                    mn += a["duur"]
+        else:
+            rij_n = [a for a in kand if a["category"] == "nieuw"]
+            rij_c = [a for a in kand if a["category"] != "nieuw"]
+            vrij_alle = [a for a in dig_pool if a["id"] in vrij]
+            doel = (sum(1 for a in vrij_alle if a["category"] == "nieuw") / len(vrij_alle)) if vrij_alle else 0
+            n_n = 0
+
+            def pak(rij: list[dict]) -> dict | None:
+                # Eerste consult uit een rij dat nog in de band past (en haal het uit de rij).
+                for i, a in enumerate(rij):
+                    if mn + a["duur"] <= band["boven"]:
+                        return rij.pop(i)
+                return None
+
+            while True:
+                tot = len(mee) + 1
+                afwijking_n = abs((n_n + 1) / tot - doel)
+                afwijking_c = abs(n_n / tot - doel)
+                eerst, dan = (rij_n, rij_c) if afwijking_n <= afwijking_c else (rij_c, rij_n)
+                a = pak(eerst) or pak(dan)
+                if a is None:
+                    break
                 mee.append(a)
                 mn += a["duur"]
+                if a["category"] == "nieuw":
+                    n_n += 1
         if mn < band["onder"]:
             return None
         return {"di": di, "dd": dd, "items": mee, "min": mn,
