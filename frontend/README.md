@@ -31,7 +31,7 @@ frontend/
       AppContext.jsx         AppProvider en useApp(): de gedeelde toestand en handelingen (één object uit App.jsx)
     hooks/                   gedrag zonder opmaak, één hook per verantwoordelijkheid
       useLiveRaster.js       bouwJob, rekenLive (gedebounced, generatieteller), doGenerate, liveBezig/liveFout, herbouwNu + toast, engineStatus
-      useOptimiser.js        "Kan dit beter?": 70 scenario's als batch, rangschikking per doel, kosten per voorkeursregel, geheugen-koppeling
+      useOptimiser.js        "Kan dit beter?": 35 scenario's als batch, rangschikking per doel, kosten per voorkeursregel, geheugen-koppeling
       useBijsturen.js        bijstuur-state; kandidaten doorrekenen (batch), sorteren, pasVoorstelToe
       useAssistent.js        gesprek, assistentCtx, verwerkVraag (vraaganalyse → opdracht/antwoord/wedervraag), toonKennis, doeActie
       useRasterBewerking.js  slepen, verplaatsen, verlengen, verwijderen, addToRoom, dagdeel verplaatsen/ruilen in de bezettingskaart
@@ -64,7 +64,6 @@ frontend/
       RegelsVoorbeeld.jsx    live voorbeeld-spreekuur
       RegelsVolgorde.jsx     spoed eerst, starten met, afwisselen (met bereik)
       RegelsDigitaal.jsx     digitale consulten, eigen digitale spreekuren (dag × dagdeel), eindvenster
-      RegelsKamers.jsx       kamerverdeling, rest-dag, minimumbezetting
       RegelsFlex.jsx         flex-tijd verdeling
       RegelsSamenspel.jsx    samenspel van de regels per as
       RegelsFunctiekamers.jsx  stap 3 (functiekamer-modus): vulwijze, bijzondere regels, planregels

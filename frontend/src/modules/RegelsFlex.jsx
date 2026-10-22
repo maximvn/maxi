@@ -6,7 +6,7 @@
  *   blokgrootte en de eerste minuten zonder flex), met het bereik per dagdeel.
  *
  * Plaats in de tool
- *   Vijfde kaart in Regels.jsx.
+ *   Vierde kaart in Regels.jsx.
  *
  * Leest uit de context     rules
  * Schrijft naar de context setRules

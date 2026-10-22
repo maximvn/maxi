@@ -30,7 +30,7 @@
  *   - Keuzes worden na herladen vergeten → localStorage is geblokkeerd (privémodus,
  *     afgeschermde iframe); het geheugen werkt dan alleen binnen de sessie.
  *   - Een afgewezen scenario verschijnt toch → de sleutel (scenSleutel) verschilt; die
- *     bestaat uit restDag|minBezetting|kamerVerdeling.
+ *     bestaat uit restDag|minBezetting.
  */
 import React, { useState, useCallback } from 'react'
 import { LEEG_MEM, memLees, memSchrijf, scenSleutel, specKey } from '../lib/geheugen.js'

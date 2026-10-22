@@ -22,7 +22,7 @@ const R = await page.evaluate(()=>{
     avondEnd:'20:00',verAvond:0,verOch:50,benutting:85,days:{ma:20,di:20,wo:20,do:20,vr:20},
     ddDagen:{O:{MA:1,DI:1,WO:1,DO:1,VR:1},M:{MA:1,DI:1,WO:1,DO:1,VR:1},A:{}}}
   const BASIS={spoedFirst:false,startNieuw:false,startControle:true,mixNC:true,digitalMode:'cluster',
-    flexMode:'end',kamerVerdeling:'gelijk',restDag:'uit',restOpruimen:true,minBezetting:75,spoedDagdeel:'both',
+    flexMode:'end',restDag:'uit',restOpruimen:true,minBezetting:75,spoedDagdeel:'both',
     digitalSlots:[],startNieuwWaar:'both',startControleWaar:'both',mixWaar:'both',digitalWaar:'both',
     flexWaar:'both',flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30}
   // per (dag,dagdeel,kamer): telt de cel, hoeveel digitaal, en de bezetting
@@ -63,8 +63,8 @@ const R = await page.evaluate(()=>{
   const onmogelijk=window.__cr(cfg,nr,veelDig,M2b,{...BASIS,digitalSlots:[{di:1,dd:'O'}]},{mode:'auto',kamers:3})
   uit.onmogelijk={plan:onmogelijk.digPlan}
   // bundelen mag de week niet scheeftrekken
-  const bundel=window.__cr(cfg,nr,veelDig,M2,{...BASIS,kamerVerdeling:'dagdeel',restDag:'auto'},{mode:'auto',kamers:3})
-  const zonder=window.__cr(cfg,nr,veelDig,M2,{...BASIS,kamerVerdeling:'dagdeel',restDag:'uit'},{mode:'auto',kamers:3})
+  const bundel=window.__cr(cfg,nr,veelDig,M2,{...BASIS,restDag:'auto'},{mode:'auto',kamers:3})
+  const zonder=window.__cr(cfg,nr,veelDig,M2,{...BASIS,restDag:'uit'},{mode:'auto',kamers:3})
   uit.bundel={kamers:kamersPerDag(bundel), ntp:bundel.ntp.length, zonderNtp:zonder.ntp.length}
   return uit
 })

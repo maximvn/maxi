@@ -9,8 +9,9 @@ regels. Maar sommige regels zijn een VOORKEUR die nooit een patiënt mag kosten:
   maar één categorie), dan iets minder strikt (``__mixKracht`` 0.4), en pas als
   laatste helemaal niet (0). Zo krijg je altijd de best haalbare afwisseling
   waarbij iedereen nog ingepland raakt — geen alles-of-niets.
-- Een eigen digitaal spreekuur honoreren, maar nooit patiënten laten liggen: de
-  verspreide variant wint ALLEEN als die strikt méér afspraken inplant.
+- Een eigen digitaal spreekuur is een vaste keuze: eerst soepeler mengen mét behoud
+  van de spreekuren; laat verspreiden minder liggen, dan blijft het cluster staan en
+  zegt een melding hoeveel verspreiden zou schelen (geen alles-of-niets meer).
 - Bundelen mag het nooit slechter maken: blijft er ná bundelen meer op de restlijst
   dan zonder, dan wint de week zonder bundelen.
 
@@ -39,8 +40,9 @@ Hoe het werkt
 1. ``blokken(r)``: hoeveel spreekuren bestaan uit maar één categorie.
 2. Afwisselen: ``beterDanR`` = minder op de restlijst, bij gelijk minder blokken;
    bij 'cluster' mag soepeler mengen het digitale spreekuur nooit opofferen.
-3. Cluster/end met een gepland digitaal spreekuur: eerst soepeler mengen MET behoud van
-   het spreekuur (0.5, 0); dan verspreiden als dat strikt minder laat liggen.
+3. Cluster met een gepland digitaal spreekuur en iets op de restlijst: eerst soepeler
+   mengen MET behoud van het spreekuur (0.5, 0); verspreiden wordt alleen doorgerekend
+   voor de melding ("verspreiden zou X schelen"), het cluster blijft staan.
 4. Bundelen: alleen als er is gebundeld én iets op de restlijst staat, de week zonder
    bundelen doorrekenen.
 
@@ -153,27 +155,40 @@ def pas_cascade_toe(engine: Callable[..., dict], res: dict, cfg: dict, new_rows:
             return _met_melding(beste, {"level": "info", "rule": "Nieuw en controle afwisselen",
                                         "msg": f"Strikt afwisselen zou hier {n0} afspra{'ak' if n0 == 1 else 'ken'} op de restlijst laten staan (tegen {n1} nu). De sturing op afwisselen is daarom {'iets soepeler' if beste_kracht > 0 else 'losgelaten'}, zodat er zo min mogelijk mensen ongepland blijven.",
                                         "fix": "Wil je tóch strikt afwisselen, dan lukt dat met een kamer erbij, ruimere spreekuurtijden of consultduren die beter op elkaar passen."})
-    # ── EEN EIGEN DIGITAAL SPREEKUUR HONOREREN, MAAR NOOIT PATIËNTEN LATEN LIGGEN ──
-    maakt_dig = rules.get("digitalMode") in ("cluster", "end")
-    if maakt_dig and not rules.get("__zonderCluster") and _dig_n(res) > 0:
-        # Kost het strikte afwisselen dit digitale spreekuur? Probeer dan éérst soepeler te
-        # mengen MET behoud van het spreekuur, voordat we de clusterkeuze opgeven.
+    # ── EEN EIGEN DIGITAAL SPREEKUUR IS EEN VASTE KEUZE ──
+    # Vroeger won verspreiden zodra dat één afspraak minder liet liggen: alles-of-niets,
+    # waardoor het aantal digitale spreekuren bij een kleine wijziging van 8 naar 0 sprong.
+    # Nu blijft de keuze staan (eerst soepeler mengen mét behoud) en zegt een melding
+    # hoeveel verspreiden zou schelen.
+    if (rules.get("digitalMode") == "cluster" and not rules.get("__zonderCluster")
+            and _dig_n(res) > 0 and res["ntp"]):
         houd = res
-        if rules.get("mixNC") and rules.get("__mixKracht") is None and res["ntp"]:
+        if rules.get("mixNC") and rules.get("__mixKracht") is None:
             for kracht in (0.5, 0):
                 alt = reken({"__mixKracht": kracht})
                 if alt and _dig_n(alt) > 0 and len(alt["ntp"]) < len(houd["ntp"]):
                     houd = alt
                 if not houd["ntp"]:
                     break
-        # Verspreiden wint alleen als het STRIKT minder laat liggen.
+        # Ter vergelijking (alleen voor de melding): wat zou verspreiden opleveren?
         spread = reken({"digitalMode": "spread", "__zonderCluster": True}) if houd["ntp"] else None
+        extra: list[dict] = []
+        if houd is not res:
+            n0, n1 = len(res["ntp"]), len(houd["ntp"])
+            extra.append({"level": "info", "rule": "Nieuw en controle afwisselen",
+                          "msg": f"Strikt afwisselen zou hier {n0} afspra{'ak' if n0 == 1 else 'ken'} op de restlijst laten staan (tegen {n1} nu). De sturing op afwisselen is daarom soepeler gemaakt; de digitale spreekuren blijven staan.",
+                          "fix": "Wil je tóch strikt afwisselen, dan lukt dat met een kamer erbij, ruimere spreekuurtijden of consultduren die beter op elkaar passen."})
         if spread and len(spread["ntp"]) < len(houd["ntp"]):
-            n0, n1 = len(houd["ntp"]), len(spread["ntp"])
-            log.debug("varianten: verspreiden wint van clusteren: ntp %d → %d", n0, n1)
-            return _met_melding(spread, {"level": "info", "rule": "Digitale consulten",
-                                         "msg": f"Een eigen digitaal spreekuur zou hier {n0} afspra{'ak' if n0 == 1 else 'ken'} op de restlijst laten staan (tegen {n1} bij verspreiden). De telefonische consulten zijn daarom over de gewone spreekuren verspreid, zodat er niemand ongepland blijft.",
-                                         "fix": "Wil je tóch een apart telefonisch spreekuur, dan lukt dat met meer kamers, een andere dagverdeling, of een hogere/lagere benutting."})
+            n, n0, n1 = _dig_n(houd), len(houd["ntp"]), len(spread["ntp"])
+            log.debug("varianten: clusteren blijft staan; verspreiden zou ntp %d → %d geven", n0, n1)
+            extra.append({"level": "warn", "rule": "Digitale consulten",
+                          "msg": f"Met {n} eigen digitale spreekuren blijven er {n0} afspra{'ak' if n0 == 1 else 'ken'} op de restlijst. Verdeel je de digitale consulten over de dag, dan zijn dat er {n1}. De digitale spreekuren blijven staan omdat je daarvoor gekozen hebt.",
+                          "fix": "Liever iedereen ingepland? Kies bij Digitale consulten \"Verdelen over dag\", of kies zelf minder dagdelen voor het digitale spreekuur."})
+        if extra:
+            uit = houd
+            for m in extra:
+                uit = _met_melding(uit, m)
+            return uit
     # ── BUNDELEN MAG HET NOOIT SLECHTER MAKEN ──
     if rest_dag_gebundeld > 0 and not rules.get("__zonderBundel") and res["ntp"]:
         zonder = reken({"restDag": "uit", "__zonderBundel": True})

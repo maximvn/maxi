@@ -2,12 +2,12 @@
  * ═══ REGELS — SAMENSPEL ═════════════════════════════════════════════════════
  *
  * Wat doet dit onderdeel
- *   Toont per as (structuur, prioriteit, kop & mix, plaatsing) wat de huidige combinatie
+ *   Toont per as (prioriteit, kop & mix, plaatsing) wat de huidige combinatie
  *   van regels oplevert, en meldt waar twee regels elkaar versterken of om dezelfde ruimte
  *   vechten.
  *
  * Plaats in de tool
- *   Zesde kaart in Regels.jsx.
+ *   Vijfde kaart in Regels.jsx.
  *
  * Leest uit de context     rules
  *
@@ -46,11 +46,6 @@ export function RegelsSamenspel() {
           ? 'controle'
           : 'geen voorkeur'
   const ASSEN = [
-    {
-      as: 'Structuur',
-      uitleg: 'wie in welke kamer en welk dagdeel',
-      waarde: rules.kamerVerdeling === 'dagdeel' ? 'Dagdeel voor dagdeel vol' : 'Gelijk verdelen',
-    },
     {
       as: 'Prioriteit',
       uitleg: 'wat vooraan komt',
@@ -92,11 +87,6 @@ export function RegelsSamenspel() {
     sig.push({
       t: 'info',
       m: 'Digitaal in het eindvenster + flex verspreid: de flexblokjes gaan tussen de fysieke afspraken, het digitale venster wordt daarna aan het einde gelegd. Dit gaat samen.',
-    })
-  if (rules.kamerVerdeling === 'gelijk' && rules.flexMode === 'end')
-    sig.push({
-      t: 'info',
-      m: 'Gelijk verdelen zorgt bewust voor gelijkmatige kamers, maar levert per kamer méér flex aan het einde op dan "dagdeel voor dagdeel vol".',
     })
   if (!sig.length)
     sig.push({

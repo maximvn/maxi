@@ -3,7 +3,7 @@
 // niet, dan hoort dat dagdeel juist dicht te blijven — een half gevuld spreekuur
 // openen is geen optie.
 // Gebouwd op de geëxporteerde praktijkcase: 100 nieuw / 200 controle, 4 kamers,
-// dagdeel voor dagdeel vol, digitaal clusteren, flex verspreid.
+// digitaal clusteren, flex verspreid.
 import { chromium } from 'playwright'
 import { pathToFileURL } from 'url'
 const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' })
@@ -27,7 +27,7 @@ const R = await page.evaluate(()=>{
     avondEnd:'20:00',verAvond:0,verOch:50,benutting:85,days:{ma:20,di:20,wo:20,do:20,vr:20},
     ddDagen:{O:{MA:1,DI:1,WO:1,DO:1,VR:1},M:{MA:1,DI:1,WO:1,DO:1,VR:1},A:{}}}
   const EXPORT={spoedFirst:false,startNieuw:false,startControle:false,mixNC:true,digitalMode:'cluster',
-    flexMode:'spread',kamerVerdeling:'dagdeel',restDag:'uit',restOpruimen:true,minBezetting:75,
+    flexMode:'spread',restDag:'uit',restOpruimen:true,minBezetting:75,
     spoedDagdeel:'both',digitalSlots:[],startNieuwWaar:'both',startControleWaar:'both',mixWaar:'both',
     digitalWaar:'both',flexWaar:'both',flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30}
   // Een dagdeel in een bestaande kamer dat leeg is terwijl er restlijst is = fout.
@@ -60,7 +60,6 @@ const R = await page.evaluate(()=>{
   const uit={}
   uit.export4=meet(window.__cr(cfg,nr,cr,M2,EXPORT,{mode:'vast',kamers:4}))
   uit.auto  =meet(window.__cr(cfg,nr,cr,M2,EXPORT,{mode:'auto',kamers:3}))
-  uit.gelijk=meet(window.__cr(cfg,nr,cr,M2,{...EXPORT,kamerVerdeling:'gelijk'},{mode:'vast',kamers:4}))
   uit.bundel=meet(window.__cr(cfg,nr,cr,M2,{...EXPORT,restDag:'auto'},{mode:'vast',kamers:4}))
   // krappe capaciteit: dan MAG er wel iets op de restlijst — maar geen leeg dagdeel
   uit.krap  =meet(window.__cr(cfg,nr,cr,M2,EXPORT,{mode:'vast',kamers:2}))
@@ -68,7 +67,7 @@ const R = await page.evaluate(()=>{
 })
 
 const varianten=[['export (4 vaste kamers)','export4'],['automatische capaciteit','auto'],
-  ['gelijk verdelen','gelijk'],['met restvraag bundelen','bundel'],['krap: 2 kamers','krap']]
+  ['met restvraag bundelen','bundel'],['krap: 2 kamers','krap']]
 varianten.forEach(([naam,k])=>{
   const m=R[k]
   ok(`${naam}: geen leeg dagdeel terwijl er restlijst is`, m.leeg.length===0,

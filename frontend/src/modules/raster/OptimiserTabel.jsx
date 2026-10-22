@@ -2,8 +2,8 @@
  * ═══ OPTIMISERTABEL — de scenariotabel ══════════════════════════════════════
  *
  * Wat doet dit onderdeel
- *   De tabel met scenario's van de optimiser: per rij de instelling (rest-dag, drempel,
- *   kamerverdeling) met badges (BESTE, NU ACTIEF, eerder gekozen/afgewezen), de cijfers met
+ *   De tabel met scenario's van de optimiser: per rij de instelling (rest-dag en drempel)
+ *   met badges (BESTE, NU ACTIEF, eerder gekozen/afgewezen), de cijfers met
  *   het verschil t.o.v. nu, en de knoppen Toepassen en "Niet voor ons" (of "Terug" in de
  *   lijst met afgewezen combinaties).
  *
@@ -19,8 +19,8 @@ __SCHRIJFT__
  * Roept aan                setRules, onthoudScenario, vergeetScenario (geheugen)
  *
  * Waar kan het misgaan en hoe zie je dat
- *   - "NU ACTIEF" staat op de verkeerde rij → isHuidig vergelijkt restDag, minBezetting en
- *     kamerVerdeling met rules.
+ *   - "NU ACTIEF" staat op de verkeerde rij → isHuidig vergelijkt restDag en minBezetting met
+ *     rules.
  */
 import React from 'react'
 import { useApp } from '../../context/AppContext.jsx'
@@ -30,9 +30,7 @@ import { C } from '../../ui/kleuren.js'
 
 // Is dit scenario gelijk aan de instellingen die nu actief zijn?
 const isHuidig = (x, rules) =>
-  x.k.restDag === (rules.restDag || 'uit') &&
-  x.k.minBezetting === (rules.minBezetting ?? 75) &&
-  x.k.kamerVerdeling === rules.kamerVerdeling
+  x.k.restDag === (rules.restDag || 'uit') && x.k.minBezetting === (rules.minBezetting ?? 75)
 /** Verschil t.o.v. de huidige stand, groen als het de goede kant op gaat. */
 const Delta = ({ v, goed }) =>
   v === 0 ? (
@@ -171,10 +169,6 @@ export function ScenarioTabel({ rijen, besteBadge, afgewezenLijst }) {
                       {RESTDAG_LABEL[x.k.restDag]}
                     </span>
                     <span style={{ color: C.muted }}>· drempel {x.k.minBezetting}%</span>
-                    <span style={{ color: C.muted }}>
-                      ·{' '}
-                      {x.k.kamerVerdeling === 'gelijk' ? 'gelijk verdelen' : 'dagdeel voor dagdeel'}
-                    </span>
                   </div>
                 </td>
                 <td

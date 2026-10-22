@@ -159,14 +159,6 @@ export const parseOpdracht = tekst => {
     return { type: 'volgorde', mix: false, ...g, tekst }
   if (/door elkaar|om en om|om-en-om|afwisselen|gemengd plannen/.test(t))
     return { type: 'volgorde', mix: true, ...g, tekst }
-  if (
-    /kamers? .{0,15}gelijk belasten|gelijk verdelen over de kamers|alle kamers gelijk|kamers gelijk/.test(
-      t
-    )
-  )
-    return { type: 'kamerverdeling', v: 'gelijk', ...g, tekst }
-  if (/kamer voor kamer|een voor een vol|één voor één|dagdeel voor dagdeel|kamer na kamer/.test(t))
-    return { type: 'kamerverdeling', v: 'dagdeel', ...g, tekst }
   if (/gelijk over (alle|de) (werk)?dagen|gelijk over de week|elke dag even/.test(t))
     return { type: 'verdeling', vorm: 'gelijk', ...g, tekst }
   if (
@@ -264,11 +256,6 @@ export const VRAAGBOOM = {
         volg: 'verdeling-dagdeel',
       },
       { l: 'Nieuw tegenover controle', s: 'door elkaar of in blokken', volg: 'verdeling-nc' },
-      {
-        l: 'Over de kamers',
-        s: 'gelijk belasten of één voor één volmaken',
-        volg: 'verdeling-kamers',
-      },
     ],
   },
   'verdeling-dagen': {
@@ -329,21 +316,6 @@ export const VRAAGBOOM = {
         l: 'Openen met een controle',
         s: 'snel op gang komen',
         opdr: { type: 'opening', wat: 'controle' },
-      },
-    ],
-  },
-  'verdeling-kamers': {
-    v: 'Hoe moeten de kamers gevuld worden?',
-    o: [
-      {
-        l: 'Kamer voor kamer volmaken',
-        s: 'zo min mogelijk kamer-dagen',
-        opdr: { type: 'kamerverdeling', v: 'dagdeel' },
-      },
-      {
-        l: 'Alle kamers gelijk belasten',
-        s: 'rustiger, gelijkmatiger spreekuren',
-        opdr: { type: 'kamerverdeling', v: 'gelijk' },
       },
     ],
   },
@@ -531,8 +503,6 @@ export const opdrachtOmschrijving = op => {
         : 'Nieuw en controle in blokken plannen.'
     case 'opening':
       return `Het spreekuur opent met een ${op.wat === 'nieuw' ? 'nieuwe patiënt' : 'controle'}.`
-    case 'kamerverdeling':
-      return op.v === 'gelijk' ? 'Alle kamers gelijk belasten.' : 'Kamers één voor één volmaken.'
     case 'tijden':
       return {
         'och-eerder': 'Het ochtendspreekuur een half uur eerder laten beginnen.',

@@ -11,9 +11,10 @@ vallen, kiezen die slots (kamer × dagdeel), en vullen ze gericht op dat doel.
 Een dagdeel dat niet nodig is blijft leeg en wordt flexruimte — liever één
 ochtend op 85% dan twee dagdelen op 45%.
 
-``rules.kamerVerdeling`` bepaalt hoe binnen een dag wordt verdeeld:
-'dagdeel' — kamer voor kamer AFRONDEN (kamer 1 ochtend, kamer 1 middag, kamer 2 …),
-'gelijk' — de vraag gelijkmatig over alle benodigde kamers en dagdelen.
+Binnen een dag wordt kamer voor kamer AFGEROND (kamer 1 ochtend, kamer 1 middag,
+kamer 2 …). De vroegere modus 'gelijk' (eerst alle ochtenden, dan alle middagen) gaf
+vrijwel dezelfde spreekuren maar middagen met één categorie bij "afwisselen" en is
+verwijderd; ``rules.kamerVerdeling`` wordt niet meer gelezen.
 
 Plaats in de keten
 ------------------
@@ -73,7 +74,6 @@ def vul_dag(ctx: PlanContext, di: int, pool_in: list[dict], n_wens: int | None =
     # Dagdeelvolgorde: het zwaarst gewogen dagdeel (ochtend/middag-%) eerst vol.
     dd_volg = sorteer(open_dd, lambda a, b: (of(ctx.dd_weight.get(b), 0) - of(ctx.dd_weight.get(a), 0))
                       or (DD.index(a) - DD.index(b)))
-    gelijk = rules.get("kamerVerdeling") == "gelijk"
     over: list[dict] = []
     # Hoeveel kamers zijn er deze dag nodig? In automatische modus leiden we dat af uit de
     # vraag, zodat er niet eindeloos kamers in één dagdeel opengaan. We geven speling bovenop
@@ -85,10 +85,9 @@ def vul_dag(ctx: PlanContext, di: int, pool_in: list[dict], n_wens: int | None =
     kap = max(1, js_ceil(dag_min / max(1, cap_per_kamer)) + 2) if ctx.max_parallel == INF else int(ctx.max_parallel)
 
     # ── SLOTVOLGORDE ──
-    # 'dagdeel' — kamer voor kamer AFRONDEN: eerst de ochtend van kamer 1, dan de middag van
-    #   kamer 1, dan de ochtend van kamer 2, enz. Zo wordt een kamer volledig gevuld voordat de
-    #   volgende opengaat en concentreert de restvraag zich in de laatste kamer.
-    # 'gelijk' — gelijkmatig over alle benodigde kamers en dagdelen.
+    # Kamer voor kamer AFRONDEN: eerst de ochtend van kamer 1, dan de middag van kamer 1,
+    # dan de ochtend van kamer 2, enz. Zo wordt een kamer volledig gevuld voordat de
+    # volgende opengaat en concentreert de restvraag zich in de laatste kamer.
     # Benuttingsband: vullen mag tot benutting +2,5 procentpunt (bovengrens). De ondergrens
     # (−2,5 pp) geldt alléén voor het laatste, deels gevulde spreekuur: haalt dat de ondergrens
     # niet, dan is het geen volwaardig spreekuur en gaan die afspraken naar "nog te plannen".
@@ -110,16 +109,11 @@ def vul_dag(ctx: PlanContext, di: int, pool_in: list[dict], n_wens: int | None =
     phys_vast = [a for a in phys_all if len(a["ddOpties"]) == 1]
     phys_rest = sorteer_pool([a for a in phys_all if len(a["ddOpties"]) > 1]) or []
 
-    # probeer(act) vult de meegegeven set actieve slots met de dagpool.
-    #  • 'gelijk'  → gebalanceerd: telkens het minst gevulde passende slot (spreiden).
-    #  • 'dagdeel' → sequentieel FIRST-FIT op slotvolgorde: kamer 1 ochtend eerst tot de
-    #                bovenband, dan kamer 1 middag, dan kamer 2 ochtend, enz.
-    if gelijk:
-        def ord_sort(x: Slot, y: Slot) -> float:
-            return (x.used - y.used) or (x.r - y.r) or (DD.index(x.dd) - DD.index(y.dd))
-    else:
-        def ord_sort(x: Slot, y: Slot) -> float:
-            return x.ord - y.ord
+    # probeer(act) vult de meegegeven set actieve slots met de dagpool, sequentieel
+    # FIRST-FIT op slotvolgorde: kamer 1 ochtend eerst tot de bovenband, dan kamer 1
+    # middag, dan kamer 2 ochtend, enz.
+    def ord_sort(x: Slot, y: Slot) -> float:
+        return x.ord - y.ord
 
     def probeer(act: list[Slot]) -> dict:
         for s in slots:
@@ -216,29 +210,21 @@ def vul_dag(ctx: PlanContext, di: int, pool_in: list[dict], n_wens: int | None =
                 per_dd[kand[0]] += 1
                 rest_n -= 1
             gek: list[Slot] = []
-            if gelijk:
-                # gelijk verdelen: per dagdeel de eerste perDd[dd] kamers
+            # Room-major: loop kamer voor kamer (oplopend) en neem per kamer de gevraagde
+            # dagdelen, zodat ochtend en middag in DEZELFDE kamers vallen.
+            need = dict(per_dd)
+            by_room: dict[int, list[Slot]] = {}
+            for s in act_fys:
+                by_room.setdefault(s.r, []).append(s)
+            for r in sorted(by_room):
                 for dd in dd_volg:
-                    gek.extend(beschikbaar(dd)[:per_dd[dd]])
-            else:
-                # 'dagdeel': room-major. Loop kamer voor kamer (oplopend) en neem per kamer de
-                # gevraagde dagdelen, zodat ochtend en middag in DEZELFDE kamers vallen.
-                need = dict(per_dd)
-                by_room: dict[int, list[Slot]] = {}
-                for s in act_fys:
-                    by_room.setdefault(s.r, []).append(s)
-                for r in sorted(by_room):
-                    for dd in dd_volg:
-                        if need[dd] <= 0:
-                            continue
-                        s = next((x for x in by_room[r] if x.dd == dd), None)
-                        if s is not None:
-                            gek.append(s)
-                            need[dd] -= 1
-            if gelijk:
-                sorteer_in_place(gek, lambda x, y: (DD.index(x.dd) - DD.index(y.dd)) or (x.r - y.r))
-            else:
-                sorteer_in_place(gek, lambda x, y: x.ord - y.ord)
+                    if need[dd] <= 0:
+                        continue
+                    s = next((x for x in by_room[r] if x.dd == dd), None)
+                    if s is not None:
+                        gek.append(s)
+                        need[dd] -= 1
+            sorteer_in_place(gek, lambda x, y: x.ord - y.ord)
             gekozen = gek
             return per_dd
 

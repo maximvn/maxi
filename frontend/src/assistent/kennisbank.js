@@ -261,24 +261,6 @@ export const KENNIS = [
     ['halvedagen', 'kamerdagen']
   ),
   K(
-    'kamerverdeling',
-    'instelling',
-    'Verdeling over kamers: dagdeel voor dagdeel of gelijk',
-    [
-      [
-        /kamerverdeling|kamer voor kamer|dagdeel voor dagdeel|gelijk verdelen|gelijk belasten|volmaken/,
-        3,
-      ],
-    ],
-    ['wat is dagdeel voor dagdeel vol', 'wat is gelijk verdelen over kamers'],
-    '"Dagdeel voor dagdeel vol" vult kamer 1 ochtend tot de band, dan kamer 1 middag, dan kamer 2, enzovoort: zo min mogelijk kamer-dagen, de restvraag in de laatste kamer. "Gelijk verdelen" spreidt de vraag over het minimale aantal hele kamers, zodat elke kamer op ongeveer dezelfde benutting uitkomt. Beide werken alleen met de opgegeven vraag; er wordt nooit iets toegevoegd.',
-    [
-      { l: 'Kamer voor kamer', opdr: 'kamers één voor één volmaken' },
-      { l: 'Gelijk belasten', opdr: 'alle kamers gelijk belasten' },
-    ],
-    ['kamerdagen']
-  ),
-  K(
     'spoed',
     'instelling',
     'Spoed eerst',
@@ -602,7 +584,7 @@ export const KENNIS = [
     '"Kan dit beter?" — de scenario-optimiser',
     [[/kan dit beter|optimis|scenario|beste instelling|varianten/, 3]],
     ['wat doet kan dit beter', 'wat is de optimiser'],
-    'De knop "Kan dit beter?" draait jouw gegevens door alle zinvolle combinaties van de efficiëntieknoppen (rest-dag × minimumbezetting × kamerverdeling), rangschikt ze en toont één advies in gewone taal met één knop "Doe maar". Je voorkeursregels blijven staan zoals je ze koos. Onder "Meer details" staan alle varianten en wat elke voorkeursregel kost.',
+    'De knop "Kan dit beter?" draait jouw gegevens door alle zinvolle combinaties van de efficiëntieknoppen (rest-dag × minimumbezetting), rangschikt ze en toont één advies in gewone taal met één knop "Doe maar". Je voorkeursregels blijven staan zoals je ze koos. Onder "Meer details" staan alle varianten en wat elke voorkeursregel kost.',
     [{ l: 'Naar het raster', nav: NAV.raster }],
     ['hoe-geheugen']
   ),

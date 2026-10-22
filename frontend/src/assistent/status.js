@@ -428,7 +428,7 @@ export const STATUS = [
     c => {
       const r = c.rules || {},
         m = c.m2 || {}
-      return `Benutting ${m.benutting}% · drempel ${r.restOpruimen ? r.minBezetting + '%' : 'uit'} · kamers ${c.capacity ? (c.capacity.mode === 'vast' ? 'vast ' + c.capacity.kamers : 'automatisch') : '—'} · kamerverdeling ${r.kamerVerdeling === 'gelijk' ? 'gelijk' : 'dagdeel voor dagdeel'} · rest-dag ${r.restDag} · spoed eerst ${r.spoedFirst ? 'aan' : 'uit'} · afwisselen ${r.mixNC ? 'aan' : 'uit'} · starten met ${r.startNieuw ? 'nieuw' : r.startControle ? 'controle' : '—'} · digitaal ${{ spread: 'verdelen', cluster: 'eigen spreekuur', end: 'aan het einde' }[r.digitalMode]} · flex ${r.flexMode === 'spread' ? 'verspreid' : 'blok aan het einde'} · ochtend ${m.ochStart}–${m.ochEnd}, middag ${m.midStart}–${m.midEnd}${m.avondOn ? `, avond ${m.avondStart}–${m.avondEnd}` : ''}.`
+      return `Benutting ${m.benutting}% · drempel ${r.restOpruimen ? r.minBezetting + '%' : 'uit'} · kamers ${c.capacity ? (c.capacity.mode === 'vast' ? 'vast ' + c.capacity.kamers : 'automatisch') : '—'} · rest-dag ${r.restDag} · spoed eerst ${r.spoedFirst ? 'aan' : 'uit'} · afwisselen ${r.mixNC ? 'aan' : 'uit'} · starten met ${r.startNieuw ? 'nieuw' : r.startControle ? 'controle' : '—'} · digitaal ${{ spread: 'verdelen', cluster: 'eigen spreekuur', end: 'aan het einde' }[r.digitalMode]} · flex ${r.flexMode === 'spread' ? 'verspreid' : 'blok aan het einde'} · ochtend ${m.ochStart}–${m.ochEnd}, middag ${m.midStart}–${m.midEnd}${m.avondOn ? `, avond ${m.avondStart}–${m.avondEnd}` : ''}.`
     },
     () => [{ l: 'Regels', nav: NAV.regels }]
   ),

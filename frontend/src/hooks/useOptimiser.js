@@ -3,7 +3,7 @@
  *
  * Wat doet dit onderdeel
  *   Rekent de huidige gegevens door alle zinvolle combinaties van de efficiëntieknoppen
- *   (rest-dag × minimumbezetting × kamerverdeling), rangschikt de uitkomsten naar een
+ *   (rest-dag × minimumbezetting), rangschikt de uitkomsten naar een
  *   gekozen doel en rekent per actieve voorkeursregel uit wat die kost. De voorkeursregels
  *   zelf (spoed, starten met, afwisselen, digitaal, flex) blijven staan zoals gekozen.
  *
@@ -17,7 +17,7 @@
  *   {optim, setOptim, startOptimiser, toonAfgewezen, setToonAfgewezen}.
  *
  * Hoe het werkt
- *   1. startOptimiser(doel) bouwt 70 kandidaten plus één job per actieve voorkeursregel
+ *   1. startOptimiser(doel) bouwt 35 kandidaten plus één job per actieve voorkeursregel
  *      (regel uit) en stuurt alles als één batch naar een eigen worker (ENGINE.berekenBatch) —
  *      het live-raster blijft reageren.
  *   2. scoreDoel bepaalt wat "beter" is: plannen (restlijst), kamers (kamer-dagen) of
@@ -41,7 +41,7 @@ export function useOptimiser(deps) {
   const { cfg, newRows, ctrlRows, m2, rules, capacity, mem, poli } = deps
   // ══ SCENARIO-OPTIMISER ══════════════════════════════════════════════════════
   // Draait JOUW gegevens door alle zinvolle combinaties van de EFFICIËNTIE-knoppen
-  // (rest-dag × minimumbezetting × kamerverdeling) en rangschikt de uitkomsten. De
+  // (rest-dag × minimumbezetting) en rangschikt de uitkomsten. De
   // VOORKEURSREGELS (spoed eerst, starten met, afwisselen, digitaal, flex) blijven
   // staan zoals jij ze hebt gekozen — dat zijn inhoudelijke keuzes, geen rekenknoppen.
   // Wél rekenen we per voorkeursregel uit wat hij kost, zodat je die afweging ziet.
@@ -62,13 +62,8 @@ export function useOptimiser(deps) {
     doel => {
       const dagen = ['uit', 'auto', 'ma', 'di', 'wo', 'do', 'vr']
       const minBez = [60, 70, 75, 80, 85]
-      const kvs = ['dagdeel', 'gelijk']
       const kand = []
-      dagen.forEach(rd =>
-        minBez.forEach(mb =>
-          kvs.forEach(kv => kand.push({ restDag: rd, minBezetting: mb, kamerVerdeling: kv }))
-        )
-      )
+      dagen.forEach(rd => minBez.forEach(mb => kand.push({ restDag: rd, minBezetting: mb })))
       // Wat kost elke ACTIEVE voorkeursregel? (zelfde efficiëntie-instellingen, regel uit)
       const voorkeur = [
         ['spoedFirst', 'Spoed afspraken eerst'],

@@ -106,7 +106,6 @@ const standaardRules = () => ({
   digitalMode: 'spread',
   flexMode: 'end',
   digitalSlots: [], // waar de eigen digitale spreekuren vallen: [{di,dd}] · leeg = automatisch
-  kamerVerdeling: 'dagdeel', // 'dagdeel' = kamer voor kamer afronden (och→mid→volgende kamer) | 'gelijk'
   restDag: 'uit', // 'uit' | 'auto' | 'ma'..'vr' — restvraag samenvoegen op één dag
   restOpruimen: true, // spreekuren onder de minimumbezetting sluiten i.p.v. half-leeg laten draaien
   minBezetting: 75, // een spreekuur gaat alléén open bij minimaal dit bezettingspercentage

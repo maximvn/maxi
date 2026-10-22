@@ -3,7 +3,7 @@
  *
  * Wat doet dit onderdeel
  *   De gebruiker zet hier de planregels aan of uit (spoed eerst, starten met, afwisselen,
- *   digitaal, kamerverdeling, rest-dag, minimumbezetting, flex). Elke wijziging gaat via
+ *   digitaal, flex). Elke wijziging gaat via
  *   setRules naar de context; useLiveRaster rekent dan automatisch opnieuw. Onderaan een
  *   samenvatting van de actieve instellingen.
  *
@@ -12,7 +12,7 @@
  *   en modus === "poli"; in de functiekamer-modus staat hier RegelsFunctiekamers.jsx.
  *
  * Leest uit de context     rules
- * Roept aan                MiniHero, RegelsVoorbeeld, RegelsVolgorde, RegelsDigitaal, RegelsKamers, RegelsFlex, RegelsSamenspel
+ * Roept aan                MiniHero, RegelsVoorbeeld, RegelsVolgorde, RegelsDigitaal, RegelsFlex, RegelsSamenspel
  *
  * Waar kan het misgaan en hoe zie je dat
  *   - Een schakelaar doet niets in het raster → kijk of de sleutel in PLAN_INFO
@@ -23,7 +23,6 @@ import { useApp } from '../context/AppContext.jsx'
 import { PLAN_INFO, TOGGLE_KEYS } from '../lib/planregels.js'
 import { RegelsDigitaal } from './RegelsDigitaal.jsx'
 import { RegelsFlex } from './RegelsFlex.jsx'
-import { RegelsKamers } from './RegelsKamers.jsx'
 import { RegelsSamenspel } from './RegelsSamenspel.jsx'
 import { RegelsVolgorde } from './RegelsVolgorde.jsx'
 import { RegelsVoorbeeld } from './RegelsVoorbeeld.jsx'
@@ -49,7 +48,6 @@ export function Regels() {
       <RegelsVoorbeeld />
       <RegelsVolgorde />
       <RegelsDigitaal />
-      <RegelsKamers />
       <RegelsFlex />
       <RegelsSamenspel />
       {/* Active summary */}

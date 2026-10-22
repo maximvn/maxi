@@ -154,10 +154,7 @@ export function GeheugenPaneel() {
                       <div
                         style={{ fontSize: 11.5, color: C.text, fontWeight: 600, lineHeight: 1.4 }}
                       >
-                        {RESTDAG_LABEL[s.k.restDag]} · drempel {s.k.minBezetting}% ·{' '}
-                        {s.k.kamerVerdeling === 'gelijk'
-                          ? 'gelijk verdelen'
-                          : 'dagdeel voor dagdeel'}
+                        {RESTDAG_LABEL[s.k.restDag]} · drempel {s.k.minBezetting}%
                       </div>
                       <div style={{ fontSize: 10.5, color: C.muted }}>
                         {datumKort(s.ts)}

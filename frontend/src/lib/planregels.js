@@ -76,16 +76,6 @@ export const PLAN_INFO = {
     ],
     desc: 'Waar komen de telefonische en videoconsulten te staan? "Verdelen over dag" = over alle spreekuren gespreid en daarbinnen tussen de fysieke afspraken ingespreid. "Eigen digitaal spreekuur" = een HEEL dagdeel wordt uitsluitend met digitale consulten gevuld, tot de doelbenutting (±2,5 procentpunt, bij voorkeur aan de bovenkant). Lukt dat niet — er zijn te weinig consulten om een dagdeel tot die band te vullen — dan komt er GEEN digitaal spreekuur en worden de consulten gewoon over de andere spreekuren verdeeld; zo ontstaat er nooit een half leeg telefonisch spreekuur. Onder de keuze zie je hoeveel digitale spreekuren er bij jouw aantallen te vullen zijn, en kies je zelf op welke dag én in welk dagdeel ze vallen (laat je dat leeg, dan spreidt de tool ze over de week). "Aan het einde plannen" = per spreekuur één blok in het laatste tijdvenster (venster instelbaar in minuten). BEREIK: je kiest expliciet in welk dagdeel de plaatsing van de losse consulten geldt. Kan een regel ergens niet worden toegepast, dan verschijnt er een melding bij het raster met de reden.',
   },
-  // ── Kamerverdeling ─────────────────────────────────────────────────────────
-  kamerVerdeling: {
-    label: 'Verdeling over kamers en dagdelen',
-    type: 'radio',
-    opts: [
-      { v: 'dagdeel', l: 'Dagdeel voor dagdeel vol' },
-      { v: 'gelijk', l: 'Gelijk verdelen' },
-    ],
-    desc: '"Dagdeel voor dagdeel vol" vult SEQUENTIEEL: eerst kamer 1 ochtend tot de ingestelde benutting (±2,5 procentpunt), dan kamer 1 middag, dan kamer 2 ochtend, dan kamer 2 middag, enz. Elk dagdeel wordt afgemaakt voordat het volgende opengaat, zodat de restvraag zich in het laatste (mogelijk halve) dagdeel concentreert. Blijft de laatste kamer een halve dag (alleen ochtend óf alleen middag), dan verschijnt het advies om die halve dagdelen te bundelen tot volle dagen (regel "Restvraag bundelen tot volle kamers"). "Gelijk verdelen" spreidt de vraag juist gebalanceerd over het minimale aantal volledige kamers (ochtend + middag samen), zodat elke kamer op ~dezelfde benutting uitkomt. Beide werken uitsluitend op de opgegeven pool afspraken — er worden nooit afspraken toegevoegd.',
-  },
   // ── Flex-tijd beheer ───────────────────────────────────────────────────────
   flexMode: {
     label: 'Flex-tijd verdeling',
@@ -106,7 +96,7 @@ export const TOGGLE_KEYS = ['spoedFirst', 'startNieuw', 'startControle', 'mixNC'
 /**
  * Planregels met een keuze uit opties.
  */
-export const RADIO_KEYS = ['kamerVerdeling', 'digitalMode', 'flexMode']
+export const RADIO_KEYS = ['digitalMode', 'flexMode']
 
 // Leesbare naam van de rest-dag-instelling (scenario-optimiser en geheugen).
 export const RESTDAG_LABEL = {

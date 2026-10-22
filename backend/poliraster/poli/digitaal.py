@@ -179,11 +179,13 @@ def laatste_redmiddel(ctx: PlanContext) -> None:
     week. Omdat JIJ dit digitale spreekuur expliciet hebt gekozen, weegt "iedereen ingepland"
     hier zwaarder dan "elke kamer op de band". We openen daarom alsnog een kamer in een vrij
     dagdeel en vullen die tot de bovenband — ook als die kamer daarmee ónder de band blijft.
-    Deze stap draait ALLEEN bij 'cluster' en alleen als er anders werk zou blijven liggen.
+    Deze stap draait ALLEEN bij 'cluster' mét minstens één gepland digitaal spreekuur, en
+    alleen als er anders werk zou blijven liggen. Zonder digitaal spreekuur is er niets uit de
+    gewone spreekuren getrokken; dan hoort de week gelijk te zijn aan "verdelen over de dag".
     Een laatste-redmiddel-spreekuur moet nog wel een zinnig spreekuur zijn: minstens de helft
     van een dagdeel gevuld (``telVloer``).
     """
-    if not (ctx.rules.get("digitalMode") == "cluster" and ctx.overflow_inst):
+    if not (ctx.rules.get("digitalMode") == "cluster" and ctx.dig_plan["gepland"] and ctx.overflow_inst):
         return
     built, overflow = ctx.built, ctx.overflow_inst
     g = 0

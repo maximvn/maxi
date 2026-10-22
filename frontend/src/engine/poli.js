@@ -975,9 +975,10 @@ export function computeRasterInner(cfg, newRows, ctrlRows, m2, rules, capacity) 
    *   samenstellers kiesVoor / repareer / componeer). Elk geopend spreekuur komt
    *   binnen de band of gaat niet open; wat niet past gaat naar "nog te plannen". Een
    *   dagdeel dat niet nodig is blijft leeg en wordt flexruimte — liever één ochtend
-   *   op 85% dan twee dagdelen op 45%. rules.kamerVerdeling: 'dagdeel' vult kamer voor
-   *   kamer af (kamer 1 ochtend, kamer 1 middag, kamer 2 …), 'gelijk' verdeelt
-   *   gelijkmatig over alle benodigde kamers en dagdelen.
+   *   op 85% dan twee dagdelen op 45%. De slots worden kamer voor kamer afgerond
+   *   (kamer 1 ochtend, kamer 1 middag, kamer 2 …). Er was ook een modus 'gelijk'
+   *   (eerst alle ochtenden, dan alle middagen); die gaf vrijwel dezelfde spreekuren
+   *   maar middagen met maar één categorie bij "afwisselen", en is daarom verwijderd.
    *   Python: dagvulling.vul_dag (met samenstellen.py voor kiesVoor/repareer/componeer).
    *
    * Plaats in de keten
@@ -1011,10 +1012,8 @@ export function computeRasterInner(cfg, newRows, ctrlRows, m2, rules, capacity) 
   // tót de ingestelde benutting voordat het volgende slot opengaat. Een dagdeel
   // dat niet nodig is blijft leeg en wordt flexruimte — liever één ochtend op
   // 85% dan twee dagdelen op 45%.
-  //
-  // rules.kamerVerdeling bepaalt hoe binnen een dag wordt verdeeld:
-  //   'vullen'  — kamer/dagdeel achtereenvolgens vol tot de benutting (efficiënt)
-  //   'gelijk'  — de vraag gelijkmatig over alle benodigde kamers en dagdelen
+  // Binnen een dag: kamer voor kamer afronden (kamer 1 ochtend, kamer 1 middag,
+  // kamer 2 ochtend, …), elk spreekuur tot de benutting.
   /**
    * Vult één dag: opent het benodigde aantal spreekuren en verdeelt de dagpool erover op de
    * benuttingsband. Zie het kopblok VULDAG.
@@ -1034,8 +1033,6 @@ export function computeRasterInner(cfg, newRows, ctrlRows, m2, rules, capacity) 
     const ddVolg = [...openDd].sort(
       (a, b) => (ddWeight[b] || 0) - (ddWeight[a] || 0) || DD.indexOf(a) - DD.indexOf(b)
     )
-    const modus = rules.kamerVerdeling === 'gelijk' ? 'gelijk' : 'dagdeel'
-    const gelijk = modus === 'gelijk'
     const over = []
     // Hoeveel kamers zijn er deze dag nodig? In automatische modus leiden we dat
     // af uit de vraag, zodat er niet eindeloos kamers in één dagdeel opengaan.
@@ -1057,7 +1054,6 @@ export function computeRasterInner(cfg, newRows, ctrlRows, m2, rules, capacity) 
     //   kamer volledig gevuld voordat de volgende opengaat en concentreert de
     //   restvraag zich in de laatste kamer (die daarna via "restvraag samenvoegen"
     //   naar één dag kan).
-    // 'gelijk' — gelijkmatig over alle benodigde kamers en dagdelen.
     // Benuttingsband: vullen mag tot benutting +2,5 procentpunt (bovengrens).
     // De ondergrens (−2,5 pp) geldt alléén voor het laatste, deels gevulde
     // spreekuur: haalt dat de ondergrens niet, dan is het geen volwaardig
@@ -1133,15 +1129,11 @@ export function computeRasterInner(cfg, newRows, ctrlRows, m2, rules, capacity) 
       s.ord = i
     })
 
-    // probeer(act) vult de meegegeven set actieve slots met de dagpool.
-    //  • 'gelijk'  → gebalanceerd: telkens het minst gevulde passende slot (spreiden),
-    //                spoed round-robin zodat elk spreekuur met spoed kan openen.
-    //  • 'dagdeel' → sequentieel FIRST-FIT op slotvolgorde: kamer 1 ochtend eerst tot
-    //                de bovenband, dan kamer 1 middag, dan kamer 2 ochtend, enz. De
-    //                restvraag concentreert zich zo in het laatste (mogelijk halve) slot.
-    const ordSort = gelijk
-      ? (x, y) => x.used - y.used || x.r - y.r || DD.indexOf(x.dd) - DD.indexOf(y.dd)
-      : (x, y) => x.ord - y.ord
+    // probeer(act) vult de meegegeven set actieve slots met de dagpool, sequentieel
+    // FIRST-FIT op slotvolgorde: kamer 1 ochtend eerst tot de bovenband, dan kamer 1
+    // middag, dan kamer 2 ochtend, enz. De restvraag concentreert zich zo in het
+    // laatste (mogelijk halve) slot.
+    const ordSort = (x, y) => x.ord - y.ord
     /**
      * Vult de meegegeven actieve slots met de dagpool: eigen digitale spreekuren apart,
      * dan het aantal benodigde spreekuren bepalen (nDoel, met n−1 en n+1 als alternatief),
@@ -1243,8 +1235,7 @@ export function computeRasterInner(cfg, newRows, ctrlRows, m2, rules, capacity) 
       /**
        * Kiest wélke n slots opengaan: eerst genoeg per dagdeel voor dagdeel-gebonden vraag, dan
        * zó verdeeld dat het totaal (digitaal + fysiek) per dagdeel zo gelijk mogelijk is (hele
-       * kamers). In 'dagdeel'-modus kamer voor kamer, in 'gelijk'-modus per dagdeel de eerste
-       * kamers. Vult de buitenvariabele `gekozen`.
+       * kamers), kamer voor kamer. Vult de buitenvariabele `gekozen`.
        * @param {number} n aantal spreekuren
        * @returns {Object<string, number>} aantal gekozen slots per dagdeel
        */
@@ -1276,40 +1267,27 @@ export function computeRasterInner(cfg, newRows, ctrlRows, m2, rules, capacity) 
           restN--
         }
         gekozen = []
-        if (gelijk) {
-          // gelijk verdelen: per dagdeel de eerste perDd[dd] kamers
-          ddVolg.forEach(dd => {
-            beschikbaar(dd)
-              .slice(0, perDd[dd])
-              .forEach(s => gekozen.push(s))
-          })
-        } else {
-          // 'dagdeel': room-major. Loop kamer voor kamer (oplopend) en neem per kamer
-          // de gevraagde dagdelen, zodat ochtend en middag in DEZELFDE kamers vallen.
-          const need = { ...perDd }
-          const byRoom = {}
-          actFys.forEach(s => {
-            ;(byRoom[s.r] = byRoom[s.r] || []).push(s)
-          })
-          Object.keys(byRoom)
-            .map(Number)
-            .sort((a, b) => a - b)
-            .forEach(r => {
-              ddVolg.forEach(dd => {
-                if (need[dd] <= 0) return
-                const s = byRoom[r].find(x => x.dd === dd)
-                if (s) {
-                  gekozen.push(s)
-                  need[dd]--
-                }
-              })
+        // Room-major: loop kamer voor kamer (oplopend) en neem per kamer de gevraagde
+        // dagdelen, zodat ochtend en middag in DEZELFDE kamers vallen.
+        const need = { ...perDd }
+        const byRoom = {}
+        actFys.forEach(s => {
+          ;(byRoom[s.r] = byRoom[s.r] || []).push(s)
+        })
+        Object.keys(byRoom)
+          .map(Number)
+          .sort((a, b) => a - b)
+          .forEach(r => {
+            ddVolg.forEach(dd => {
+              if (need[dd] <= 0) return
+              const s = byRoom[r].find(x => x.dd === dd)
+              if (s) {
+                gekozen.push(s)
+                need[dd]--
+              }
             })
-        }
-        gekozen.sort(
-          gelijk
-            ? (x, y) => DD.indexOf(x.dd) - DD.indexOf(y.dd) || x.r - y.r
-            : (x, y) => x.ord - y.ord
-        )
+          })
+        gekozen.sort((x, y) => x.ord - y.ord)
         return perDd
       }
 
@@ -3285,13 +3263,16 @@ export function computeRasterInner(cfg, newRows, ctrlRows, m2, rules, capacity) 
   // ingepland" hier zwaarder dan "elke kamer op de band". We openen daarom alsnog
   // een kamer in een vrij dagdeel en vullen die tot de bovenband — ook als die
   // kamer daarmee ónder de band blijft. Er verschijnt een melding die dit uitlegt.
-  // Deze stap draait ALLEEN bij 'cluster' en alleen als er anders werk zou blijven
-  // liggen; in alle andere gevallen blijft de minimumbezetting hard.
+  // Deze stap draait ALLEEN bij 'cluster' mét minstens één gepland digitaal
+  // spreekuur, en alleen als er anders werk zou blijven liggen; in alle andere
+  // gevallen blijft de minimumbezetting hard. (Zonder digitaal spreekuur is er niets
+  // uit de gewone spreekuren getrokken; dan hoort de week precies gelijk te zijn aan
+  // "verdelen over de dag".)
   // Een laatste-redmiddel-spreekuur mag ónder de band vallen, maar het moet nog wel
   // een zinnig spreekuur zijn: minstens de helft van een dagdeel gevuld. Blijft er
-  // maar een handvol minuten over dat niet eens een half spreekuur vult, dan is een
-  // eigen digitaal spreekuur hier gewoon geen goede keuze — die enkele afspraken
-  // gaan dan beter verspreid (de verspreide variant hieronder plant ze alsnog in).
+  // maar een handvol minuten over dat niet eens een half spreekuur vult, dan blijven
+  // die enkele afspraken op de restlijst (de melding "Digitale consulten" zegt dan
+  // hoeveel verspreiden zou schelen).
   /**
    * Ondergrens voor een laatste-redmiddel-spreekuur: minstens de helft van het dagdeel.
    * @param {string} dd dagdeel
@@ -3299,7 +3280,7 @@ export function computeRasterInner(cfg, newRows, ctrlRows, m2, rules, capacity) 
    */
   const telVloer = dd => Math.round(durFor2(dd) * 0.5)
   let telRedmiddel = 0
-  if (rules.digitalMode === 'cluster' && overflowInst.length) {
+  if (rules.digitalMode === 'cluster' && digPlan.gepland.length > 0 && overflowInst.length) {
     let g = 0
     while (overflowInst.length && g++ < 40) {
       let beste = null
@@ -4123,24 +4104,9 @@ export function computeRasterInner(cfg, newRows, ctrlRows, m2, rules, capacity) 
       })
     }
   }
-  // 3) Benutting onder het doel — de weekvraag deelt niet rond op VOLLEDIGE kamers
-  // (alleen relevant bij 'gelijk verdelen', dat hele kamers ochtend+middag opent).
-  if (
-    rules.kamerVerdeling === 'gelijk' &&
-    !res.ntp.length &&
-    kpi.week.benutting > 0 &&
-    kpi.week.benutting < m2.benutting - 4
-  ) {
-    notices.push({
-      level: 'info',
-      rule: 'Benutting',
-      msg: `De weekvraag deelt niet rond op volledige kamers (ochtend + middag) bij ${m2.benutting}% benutting. Om halve dagen te voorkomen zijn alle geopende kamers als volledige dag ingepland op ~${kpi.week.benutting}%.`,
-      fix: `Wil je richting ${m2.benutting}%? Zet "Vast aantal kamers" op één minder — wat dan niet past komt op "nog te plannen". Meer kamers verlaagt de benutting juist verder.`,
-    })
-  }
   // 3c) Halve dagen — kamers die maar één dagdeel (alleen ochtend óf alleen middag)
-  // draaien terwijl beide dagdelen open zijn. Bij 'dagdeel voor dagdeel vol' vult de
-  // laatste kamer zich vaak maar half; het advies is die halve dagdelen te bundelen
+  // draaien terwijl beide dagdelen open zijn. Omdat kamer voor kamer wordt gevuld, vult
+  // de laatste kamer zich vaak maar half; het advies is die halve dagdelen te bundelen
   // tot volle dagen (ochtend én middag in dezelfde kamer) i.p.v. losse halve dagen.
   if (!res.ntp.length) {
     let halveDagen = 0
@@ -4727,9 +4693,11 @@ export function computeRasterInner(cfg, newRows, ctrlRows, m2, rules, capacity) 
    *   1. Afwisselen trapsgewijs: eerst vol (__mixKracht 1); kost dat patiënten of
    *      blokken met één categorie, dan 0.4 en pas als laatste 0. Belangen: (1)
    *      iedereen ingepland, (2) zo min mogelijk pure spreekuren.
-   *   2. Een eigen digitaal spreekuur honoreren, maar nooit patiënten laten liggen:
-   *      eerst soepeler mengen mét behoud van het spreekuur; verspreiden wint alleen
-   *      als het STRIKT minder laat liggen (__zonderCluster).
+   *   2. Een eigen digitaal spreekuur is een vaste keuze: eerst soepeler mengen mét
+   *      behoud van de spreekuren; laat verspreiden minder liggen, dan blijft het
+   *      cluster staan en zegt een melding hoeveel verspreiden zou schelen
+   *      (de vergelijking rekent met __zonderCluster). Zo springt het aantal digitale
+   *      spreekuren niet meer van 8 naar 0 bij een kleine wijziging.
    *   3. Bundelen mag het nooit slechter maken: blijft er ná bundelen meer op de
    *      restlijst dan zonder, dan wint de week zonder bundelen (__zonderBundel).
    *   Een gekozen variant krijgt een KOPIE met een extra melding; het gememoriseerde
@@ -4837,28 +4805,28 @@ export function computeRasterInner(cfg, newRows, ctrlRows, m2, rules, capacity) 
       return beste
     }
   }
-  // ── EEN EIGEN DIGITAAL SPREEKUUR HONOREREN, MAAR NOOIT PATIËNTEN LATEN LIGGEN ─
-  // Kies je "Eigen digitaal spreekuur", dan is dat een bewuste organisatiekeuze:
-  // de telefonische consulten hok je liever bij elkaar in een telefonisch spreekuur
-  // dan verspreid tussen de fysieke patiënten. Die keuze respecteren we — óók als
-  // een dag daardoor iets voller wordt dan bij verspreiden. Het enige dat zwaarder
-  // weegt is dat er niemand ongepland blijft. Daarom rekenen we óók de verspreide
-  // variant door en stappen we ALLEEN over op verspreiden als die STRIKT méér
-  // afspraken ingepland krijgt. Kan clusteren iedereen kwijt (desnoods via het
-  // laatste-redmiddel-spreekuur hierboven), dan blijft het digitale spreekuur staan.
-  const maaktDigSpreekuur = rules.digitalMode === 'cluster' || rules.digitalMode === 'end'
+  // ── EEN EIGEN DIGITAAL SPREEKUUR IS EEN VASTE KEUZE ──────────────────────
+  // Kies je "Eigen digitaal spreekuur", dan is dat een bewuste organisatiekeuze en
+  // die blijft staan. Vroeger stapte de engine over op verspreiden zodra dat ook
+  // maar één afspraak minder liet liggen. Dat was alles-of-niets: bij een kleine
+  // wijziging in de aantallen sprong het aantal digitale spreekuren van 8 naar 0 en
+  // terug, zonder dat je iets aan de digitale instelling had veranderd. Nu:
+  //   1. kost strikt afwisselen patiënten, dan eerst soepeler mengen MÉT behoud van
+  //      de digitale spreekuren (de beste variant wordt gehouden);
+  //   2. blijven er daarna nog afspraken liggen die bij verspreiden wél passen, dan
+  //      blijven de digitale spreekuren staan en zegt een melding hoeveel afspraken
+  //      verspreiden zou schelen — de keuze ligt dan bij jou.
+  const maaktDigSpreekuur = rules.digitalMode === 'cluster'
   if (
     maaktDigSpreekuur &&
     !rules.__zonderCluster &&
     res.digPlan &&
     res.digPlan.gepland &&
-    res.digPlan.gepland.length > 0
+    res.digPlan.gepland.length > 0 &&
+    res.ntp.length > 0
   ) {
-    // Kost het strikte afwisselen dit digitale spreekuur? Probeer dan éérst soepeler
-    // te mengen MET behoud van het spreekuur, voordat we de clusterkeuze opgeven.
-    // Anders verloor je het telefonische spreekuur aan een regel die daar niet over gaat.
     let houd = res
-    if (rules.mixNC && rules.__mixKracht == null && res.ntp.length)
+    if (rules.mixNC && rules.__mixKracht == null)
       for (const kracht of [0.5, 0]) {
         const alt = computeRasterEngine(
           cfg,
@@ -4877,34 +4845,35 @@ export function computeRasterInner(cfg, newRows, ctrlRows, m2, rules, capacity) 
           houd = alt
         if (!houd.ntp.length) break
       }
-    // Verspreiden wint alleen als het STRIKT minder laat liggen — staat er bij
-    // clusteren al niets op de restlijst, dan valt er niets te winnen en slaan we
-    // die volledige doorrekening over.
-    const spread =
-      houd.ntp.length > 0
-        ? computeRasterEngine(
-            cfg,
-            newRows,
-            ctrlRows,
-            m2,
-            { ...rules, digitalMode: 'spread', __zonderCluster: true },
-            capacity
-          )
-        : null
+    // Ter vergelijking (alleen voor de melding): wat zou verspreiden opleveren?
+    const spread = houd.ntp.length
+      ? computeRasterEngine(
+          cfg,
+          newRows,
+          ctrlRows,
+          m2,
+          { ...rules, digitalMode: 'spread', __zonderCluster: true },
+          capacity
+        )
+      : null
+    const extra = []
+    if (houd !== res)
+      extra.push({
+        level: 'info',
+        rule: 'Nieuw en controle afwisselen',
+        msg: `Strikt afwisselen zou hier ${res.ntp.length} afspra${res.ntp.length === 1 ? 'ak' : 'ken'} op de restlijst laten staan (tegen ${houd.ntp.length} nu). De sturing op afwisselen is daarom soepeler gemaakt; de digitale spreekuren blijven staan.`,
+        fix: 'Wil je tóch strikt afwisselen, dan lukt dat met een kamer erbij, ruimere spreekuurtijden of consultduren die beter op elkaar passen.',
+      })
     if (spread && spread.ntp.length < houd.ntp.length) {
-      return {
-        ...spread,
-        notices: [
-          ...(spread.notices || []),
-          {
-            level: 'info',
-            rule: 'Digitale consulten',
-            msg: `Een eigen digitaal spreekuur zou hier ${houd.ntp.length} afspra${houd.ntp.length === 1 ? 'ak' : 'ken'} op de restlijst laten staan (tegen ${spread.ntp.length} bij verspreiden). De telefonische consulten zijn daarom over de gewone spreekuren verspreid, zodat er niemand ongepland blijft.`,
-            fix: 'Wil je tóch een apart telefonisch spreekuur, dan lukt dat met meer kamers, een andere dagverdeling, of een hogere/lagere benutting.',
-          },
-        ],
-      }
+      const n = houd.digPlan.gepland.length
+      extra.push({
+        level: 'warn',
+        rule: 'Digitale consulten',
+        msg: `Met ${n} eigen digitale spreekuren blijven er ${houd.ntp.length} afspra${houd.ntp.length === 1 ? 'ak' : 'ken'} op de restlijst. Verdeel je de digitale consulten over de dag, dan zijn dat er ${spread.ntp.length}. De digitale spreekuren blijven staan omdat je daarvoor gekozen hebt.`,
+        fix: 'Liever iedereen ingepland? Kies bij Digitale consulten "Verdelen over dag", of kies zelf minder dagdelen voor het digitale spreekuur.',
+      })
     }
+    if (extra.length) return { ...houd, notices: [...(houd.notices || []), ...extra] }
   }
   // ── AFWISSELEN MAG NOOIT EEN PATIËNT KOSTEN ───────────────────────────────
   // "Nieuw en controle afwisselen" stuurt sinds kort ook de SELECTIE: elk spreekuur

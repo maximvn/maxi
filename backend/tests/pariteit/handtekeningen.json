@@ -1342,50 +1342,38 @@
   "d": {
    "0": {
     "m0": "TC@780,TC@790,CO@800,NP@815,CO@835,NP@850,CO@870,NP@885,CO@905,NPX@920,CO@945,NP@960",
-    "m1": "",
-    "o0": "CO@510,NPX@525,CO@550,NP@565,CO@585,NPX@600,CO@625,CO@640,NPX@655,CO@680,CO@695",
-    "o1": "TC@510,CO@520,NPX@535,CO@560,NPX@575,CO@600"
+    "o0": "CO@510,NPX@525,CO@550,NP@565,CO@585,NPX@600,CO@625,CO@640,NPX@655,CO@680,CO@695"
    },
    "1": {
     "m0": "",
-    "m1": "",
-    "o0": "TC@510,TC@520,TC@530,CO@540,NP@555,CO@575,NP@590,CO@610,NP@625,CO@645,CO@660,NP@675,CO@695",
-    "o1": ""
+    "o0": "TC@510,TC@520,TC@530,CO@540,NP@555,CO@575,NP@590,CO@610,NP@625,CO@645,CO@660,NP@675,CO@695"
    },
    "2": {
     "m0": "",
-    "m1": "",
-    "o0": "TC@510,TC@520,CO@530,NP@545,CO@565,NP@580,CO@600,NP@615,CO@635,NPX@650,CO@675,NP@690",
-    "o1": ""
+    "o0": "TC@510,TC@520,CO@530,NP@545,CO@565,NP@580,CO@600,NP@615,CO@635,NPX@650,CO@675,NP@690"
    },
    "3": {
     "m0": "",
-    "m1": "",
-    "o0": "TC@510,TC@520,CO@530,NP@545,CO@565,NP@580,CO@600,NP@615,CO@635,NPX@650,CO@675,NP@690",
-    "o1": ""
+    "o0": "TC@510,TC@520,CO@530,NP@545,CO@565,NP@580,CO@600,NP@615,CO@635,NPX@650,CO@675,NP@690"
    },
    "4": {
     "m0": "",
-    "m1": "",
-    "o0": "TC@510,TC@520,CO@530,NP@545,CO@565,NP@580,CO@600,NP@615,CO@635,NPX@650,CO@675,NP@690",
-    "o1": ""
+    "o0": "TC@510,TC@520,CO@530,NP@545,CO@565,NP@580,CO@600,NP@615,CO@635,NPX@650,CO@675,NP@690"
    }
   },
-  "ntp": "",
-  "rooms": 2,
+  "ntp": "CO,CO,CO,NPX,NPX,TC",
+  "rooms": 1,
   "kpi": {
-   "appts": 78,
-   "planned": 1305,
-   "capacity": 1470,
-   "flex": 165,
-   "benutting": 89,
-   "spreiding": 53,
-   "wissels": 62
+   "appts": 72,
+   "planned": 1200,
+   "capacity": 1260,
+   "flex": 60,
+   "benutting": 95,
+   "spreiding": 67,
+   "wissels": 57
   },
   "notices": [
-   "Efficiënter plannen — aanbeveling:info",
-   "Eigen digitaal spreekuur:info",
-   "Halve dagen — advies:info"
+   "Nog te plannen:warn"
   ],
   "dig": []
  },
@@ -1466,7 +1454,7 @@
     "m2": "",
     "m3": "",
     "o0": "CO@510,NPX@525,CO@550,NP@565,CO@585,NPX@600,CO@625,CO@640,NPX@655,CO@680,CO@695",
-    "o1": "TC@510,CO@520,NPX@535,CO@560,NPX@575,CO@600",
+    "o1": "",
     "o2": "",
     "o3": ""
    },
@@ -1511,22 +1499,19 @@
     "o3": ""
    }
   },
-  "ntp": "",
+  "ntp": "CO,CO,CO,NPX,NPX,TC",
   "rooms": 4,
   "kpi": {
-   "appts": 78,
-   "planned": 1305,
-   "capacity": 1470,
-   "flex": 165,
-   "benutting": 89,
-   "spreiding": 53,
-   "wissels": 62
+   "appts": 72,
+   "planned": 1200,
+   "capacity": 1260,
+   "flex": 60,
+   "benutting": 95,
+   "spreiding": 67,
+   "wissels": 57
   },
   "notices": [
-   "Aantal kamers:info",
-   "Efficiënter plannen — aanbeveling:info",
-   "Eigen digitaal spreekuur:info",
-   "Halve dagen — advies:info"
+   "Nog te plannen:warn"
   ],
   "dig": []
  },
@@ -3773,50 +3758,38 @@
   "d": {
    "0": {
     "m0": "TC@780,TC@790,CO@800,NP@815,CO@835,NP@850,CO@870,NP@885,CO@905,NPX@920,CO@945,NP@960",
-    "m1": "",
-    "o0": "CO@510,NPX@525,CO@550,NP@565,CO@585,NPX@600,CO@625,CO@640,NPX@655,CO@680,CO@695",
-    "o1": "TC@510,CO@520,NPX@535,CO@560,NPX@575,CO@600"
+    "o0": "CO@510,NPX@525,CO@550,NP@565,CO@585,NPX@600,CO@625,CO@640,NPX@655,CO@680,CO@695"
    },
    "1": {
     "m0": "",
-    "m1": "",
-    "o0": "TC@510,TC@520,TC@530,CO@540,NP@555,CO@575,NP@590,CO@610,NP@625,CO@645,CO@660,NP@675,CO@695",
-    "o1": ""
+    "o0": "TC@510,TC@520,TC@530,CO@540,NP@555,CO@575,NP@590,CO@610,NP@625,CO@645,CO@660,NP@675,CO@695"
    },
    "2": {
     "m0": "",
-    "m1": "",
-    "o0": "TC@510,TC@520,CO@530,NP@545,CO@565,NP@580,CO@600,NP@615,CO@635,NPX@650,CO@675,NP@690",
-    "o1": ""
+    "o0": "TC@510,TC@520,CO@530,NP@545,CO@565,NP@580,CO@600,NP@615,CO@635,NPX@650,CO@675,NP@690"
    },
    "3": {
     "m0": "",
-    "m1": "",
-    "o0": "TC@510,TC@520,CO@530,NP@545,CO@565,NP@580,CO@600,NP@615,CO@635,NPX@650,CO@675,NP@690",
-    "o1": ""
+    "o0": "TC@510,TC@520,CO@530,NP@545,CO@565,NP@580,CO@600,NP@615,CO@635,NPX@650,CO@675,NP@690"
    },
    "4": {
     "m0": "",
-    "m1": "",
-    "o0": "TC@510,TC@520,CO@530,NP@545,CO@565,NP@580,CO@600,NP@615,CO@635,NPX@650,CO@675,NP@690",
-    "o1": ""
+    "o0": "TC@510,TC@520,CO@530,NP@545,CO@565,NP@580,CO@600,NP@615,CO@635,NPX@650,CO@675,NP@690"
    }
   },
-  "ntp": "",
-  "rooms": 2,
+  "ntp": "CO,CO,CO,NPX,NPX,TC",
+  "rooms": 1,
   "kpi": {
-   "appts": 78,
-   "planned": 1305,
-   "capacity": 1470,
-   "flex": 165,
-   "benutting": 89,
-   "spreiding": 53,
-   "wissels": 62
+   "appts": 72,
+   "planned": 1200,
+   "capacity": 1260,
+   "flex": 60,
+   "benutting": 95,
+   "spreiding": 67,
+   "wissels": 57
   },
   "notices": [
-   "Efficiënter plannen — aanbeveling:info",
-   "Eigen digitaal spreekuur:info",
-   "Halve dagen — advies:info"
+   "Nog te plannen:warn"
   ],
   "dig": []
  },
@@ -3897,7 +3870,7 @@
     "m2": "",
     "m3": "",
     "o0": "CO@510,NPX@525,CO@550,NP@565,CO@585,NPX@600,CO@625,CO@640,NPX@655,CO@680,CO@695",
-    "o1": "TC@510,CO@520,NPX@535,CO@560,NPX@575,CO@600",
+    "o1": "",
     "o2": "",
     "o3": ""
    },
@@ -3942,22 +3915,19 @@
     "o3": ""
    }
   },
-  "ntp": "",
+  "ntp": "CO,CO,CO,NPX,NPX,TC",
   "rooms": 4,
   "kpi": {
-   "appts": 78,
-   "planned": 1305,
-   "capacity": 1470,
-   "flex": 165,
-   "benutting": 89,
-   "spreiding": 53,
-   "wissels": 62
+   "appts": 72,
+   "planned": 1200,
+   "capacity": 1260,
+   "flex": 60,
+   "benutting": 95,
+   "spreiding": 67,
+   "wissels": 57
   },
   "notices": [
-   "Aantal kamers:info",
-   "Efficiënter plannen — aanbeveling:info",
-   "Eigen digitaal spreekuur:info",
-   "Halve dagen — advies:info"
+   "Nog te plannen:warn"
   ],
   "dig": []
  },
@@ -4015,48 +3985,38 @@
   "d": {
    "0": {
     "m0": "TC@780,TC@790,CO@800,NP@815,CO@835,NP@850,CO@870,NP@885,CO@905,NPX@920,CO@945,NP@960",
-    "m1": "",
-    "o0": "CO@510,NPX@525,CO@550,NP@565,CO@585,NPX@600,CO@625,CO@640,NPX@655,CO@680,CO@695",
-    "o1": "TC@510,CO@520,NPX@535,CO@560,NPX@575,CO@600"
+    "o0": "CO@510,NPX@525,CO@550,NP@565,CO@585,NPX@600,CO@625,CO@640,NPX@655,CO@680,CO@695"
    },
    "1": {
     "m0": "",
-    "m1": "",
-    "o0": "TC@510,TC@520,TC@530,CO@540,NP@555,CO@575,NP@590,CO@610,NP@625,CO@645,CO@660,NP@675,CO@695",
-    "o1": ""
+    "o0": "TC@510,TC@520,TC@530,CO@540,NP@555,CO@575,NP@590,CO@610,NP@625,CO@645,CO@660,NP@675,CO@695"
    },
    "2": {
     "m0": "",
-    "m1": "",
-    "o0": "TC@510,TC@520,CO@530,NP@545,CO@565,NP@580,CO@600,NP@615,CO@635,NPX@650,CO@675,NP@690",
-    "o1": ""
+    "o0": "TC@510,TC@520,CO@530,NP@545,CO@565,NP@580,CO@600,NP@615,CO@635,NPX@650,CO@675,NP@690"
    },
    "3": {
     "m0": "",
-    "m1": "",
-    "o0": "TC@510,TC@520,CO@530,NP@545,CO@565,NP@580,CO@600,NP@615,CO@635,NPX@650,CO@675,NP@690",
-    "o1": ""
+    "o0": "TC@510,TC@520,CO@530,NP@545,CO@565,NP@580,CO@600,NP@615,CO@635,NPX@650,CO@675,NP@690"
    },
    "4": {
     "m0": "",
-    "m1": "",
-    "o0": "TC@510,TC@520,CO@530,NP@545,CO@565,NP@580,CO@600,NP@615,CO@635,NPX@650,CO@675,NP@690",
-    "o1": ""
+    "o0": "TC@510,TC@520,CO@530,NP@545,CO@565,NP@580,CO@600,NP@615,CO@635,NPX@650,CO@675,NP@690"
    }
   },
-  "ntp": "",
-  "rooms": 2,
+  "ntp": "CO,CO,CO,NPX,NPX,TC",
+  "rooms": 1,
   "kpi": {
-   "appts": 78,
-   "planned": 1305,
-   "capacity": 1470,
-   "flex": 165,
-   "benutting": 89,
-   "spreiding": 53,
-   "wissels": 62
+   "appts": 72,
+   "planned": 1200,
+   "capacity": 1260,
+   "flex": 60,
+   "benutting": 95,
+   "spreiding": 67,
+   "wissels": 57
   },
   "notices": [
-   "Eigen digitaal spreekuur:info",
+   "Nog te plannen:warn",
    "Restvraag gebundeld:ok"
   ],
   "dig": []
@@ -4139,7 +4099,7 @@
     "m2": "",
     "m3": "",
     "o0": "CO@510,NPX@525,CO@550,NP@565,CO@585,NPX@600,CO@625,CO@640,NPX@655,CO@680,CO@695",
-    "o1": "TC@510,CO@520,NPX@535,CO@560,NPX@575,CO@600",
+    "o1": "",
     "o2": "",
     "o3": ""
    },
@@ -4184,20 +4144,19 @@
     "o3": ""
    }
   },
-  "ntp": "",
+  "ntp": "CO,CO,CO,NPX,NPX,TC",
   "rooms": 4,
   "kpi": {
-   "appts": 78,
-   "planned": 1305,
-   "capacity": 1470,
-   "flex": 165,
-   "benutting": 89,
-   "spreiding": 53,
-   "wissels": 62
+   "appts": 72,
+   "planned": 1200,
+   "capacity": 1260,
+   "flex": 60,
+   "benutting": 95,
+   "spreiding": 67,
+   "wissels": 57
   },
   "notices": [
-   "Aantal kamers:info",
-   "Eigen digitaal spreekuur:info",
+   "Nog te plannen:warn",
    "Restvraag gebundeld:ok"
   ],
   "dig": []
@@ -4245,51 +4204,38 @@
   "d": {
    "0": {
     "m0": "NPX@780,TC@805,TC@815,CO@825,NP@840,CO@860,NP@875,CO@895,NP@910,CO@930,NP@945,CO@965",
-    "m1": "",
-    "o0": "NPX@510,NPX@535,NPX@560,CO@585,CO@600,CO@615,NP@630,CO@650,CO@665,CO@680,CO@695",
-    "o1": "NPX@510,NPX@535,TC@560,CO@570,CO@585,CO@600"
+    "o0": "NPX@510,NPX@535,NPX@560,CO@585,CO@600,CO@615,NP@630,CO@650,CO@665,CO@680,CO@695"
    },
    "1": {
     "m0": "",
-    "m1": "",
-    "o0": "TC@510,TC@520,TC@530,CO@540,NP@555,CO@575,NP@590,CO@610,NP@625,CO@645,CO@660,NP@675,CO@695",
-    "o1": ""
+    "o0": "TC@510,TC@520,TC@530,CO@540,NP@555,CO@575,NP@590,CO@610,NP@625,CO@645,CO@660,NP@675,CO@695"
    },
    "2": {
     "m0": "",
-    "m1": "",
-    "o0": "NPX@510,TC@535,TC@545,CO@555,NP@570,CO@590,NP@605,CO@625,NP@640,CO@660,NP@675,CO@695",
-    "o1": ""
+    "o0": "NPX@510,TC@535,TC@545,CO@555,NP@570,CO@590,NP@605,CO@625,NP@640,CO@660,NP@675,CO@695"
    },
    "3": {
     "m0": "",
-    "m1": "",
-    "o0": "NPX@510,TC@535,TC@545,CO@555,NP@570,CO@590,NP@605,CO@625,NP@640,CO@660,NP@675,CO@695",
-    "o1": ""
+    "o0": "NPX@510,TC@535,TC@545,CO@555,NP@570,CO@590,NP@605,CO@625,NP@640,CO@660,NP@675,CO@695"
    },
    "4": {
     "m0": "",
-    "m1": "",
-    "o0": "NPX@510,TC@535,TC@545,CO@555,NP@570,CO@590,NP@605,CO@625,NP@640,CO@660,NP@675,CO@695",
-    "o1": ""
+    "o0": "NPX@510,TC@535,TC@545,CO@555,NP@570,CO@590,NP@605,CO@625,NP@640,CO@660,NP@675,CO@695"
    }
   },
-  "ntp": "",
-  "rooms": 2,
+  "ntp": "CO,CO,CO,NPX,NPX,TC",
+  "rooms": 1,
   "kpi": {
-   "appts": 78,
-   "planned": 1305,
-   "capacity": 1470,
-   "flex": 165,
-   "benutting": 89,
-   "spreiding": 53,
-   "wissels": 54
+   "appts": 72,
+   "planned": 1200,
+   "capacity": 1260,
+   "flex": 60,
+   "benutting": 95,
+   "spreiding": 67,
+   "wissels": 52
   },
   "notices": [
-   "Benutting:info",
-   "Efficiënter plannen — aanbeveling:info",
-   "Eigen digitaal spreekuur:info",
-   "Halve dagen — advies:info"
+   "Nog te plannen:warn"
   ],
   "dig": []
  },
@@ -4370,7 +4316,7 @@
     "m2": "",
     "m3": "",
     "o0": "NPX@510,NPX@535,NPX@560,CO@585,CO@600,CO@615,NP@630,CO@650,CO@665,CO@680,CO@695",
-    "o1": "NPX@510,NPX@535,TC@560,CO@570,CO@585,CO@600",
+    "o1": "",
     "o2": "",
     "o3": ""
    },
@@ -4415,23 +4361,19 @@
     "o3": ""
    }
   },
-  "ntp": "",
+  "ntp": "CO,CO,CO,NPX,NPX,TC",
   "rooms": 4,
   "kpi": {
-   "appts": 78,
-   "planned": 1305,
-   "capacity": 1470,
-   "flex": 165,
-   "benutting": 89,
-   "spreiding": 53,
-   "wissels": 54
+   "appts": 72,
+   "planned": 1200,
+   "capacity": 1260,
+   "flex": 60,
+   "benutting": 95,
+   "spreiding": 67,
+   "wissels": 52
   },
   "notices": [
-   "Aantal kamers:info",
-   "Benutting:info",
-   "Efficiënter plannen — aanbeveling:info",
-   "Eigen digitaal spreekuur:info",
-   "Halve dagen — advies:info"
+   "Nog te plannen:warn"
   ],
   "dig": []
  },
@@ -4490,49 +4432,38 @@
   "d": {
    "0": {
     "m0": "NPX@780,NP@805,TC@825,TC@835,CO@845,CO@860,NP@875,CO@895,NP@920,CO@940,NP@955,CO@975",
-    "m1": "",
-    "o0": "NPX@510,NPX@535,NPX@560,NP@585,CO@605,CO@620,CO@635,CO@660,CO@675,CO@690,CO@705",
-    "o1": "NPX@510,NPX@535,CO@560,TC@585,CO@605,CO@630"
+    "o0": "NPX@510,NPX@535,NPX@560,NP@585,CO@605,CO@620,CO@635,CO@660,CO@675,CO@690,CO@705"
    },
    "1": {
     "m0": "",
-    "m1": "",
-    "o0": "NP@510,TC@530,TC@540,TC@550,CO@560,CO@575,NP@590,CO@610,NP@625,CO@655,CO@670,NP@685,CO@705",
-    "o1": ""
+    "o0": "NP@510,TC@530,TC@540,TC@550,CO@560,CO@575,NP@590,CO@610,NP@625,CO@655,CO@670,NP@685,CO@705"
    },
    "2": {
     "m0": "",
-    "m1": "",
-    "o0": "NPX@510,NP@535,TC@555,TC@565,CO@575,CO@590,NP@605,CO@625,NP@650,CO@670,NP@685,CO@705",
-    "o1": ""
+    "o0": "NPX@510,NP@535,TC@555,TC@565,CO@575,CO@590,NP@605,CO@625,NP@650,CO@670,NP@685,CO@705"
    },
    "3": {
     "m0": "",
-    "m1": "",
-    "o0": "NPX@510,NP@535,TC@555,TC@565,CO@575,CO@590,NP@605,CO@625,NP@650,CO@670,NP@685,CO@705",
-    "o1": ""
+    "o0": "NPX@510,NP@535,TC@555,TC@565,CO@575,CO@590,NP@605,CO@625,NP@650,CO@670,NP@685,CO@705"
    },
    "4": {
     "m0": "",
-    "m1": "",
-    "o0": "NPX@510,NP@535,TC@555,TC@565,CO@575,CO@590,NP@605,CO@625,NP@650,CO@670,NP@685,CO@705",
-    "o1": ""
+    "o0": "NPX@510,NP@535,TC@555,TC@565,CO@575,CO@590,NP@605,CO@625,NP@650,CO@670,NP@685,CO@705"
    }
   },
-  "ntp": "",
-  "rooms": 2,
+  "ntp": "CO,CO,CO,NPX,NPX,TC",
+  "rooms": 1,
   "kpi": {
-   "appts": 78,
-   "planned": 1305,
-   "capacity": 1470,
-   "flex": 165,
-   "benutting": 89,
-   "spreiding": 53,
-   "wissels": 49
+   "appts": 72,
+   "planned": 1200,
+   "capacity": 1260,
+   "flex": 60,
+   "benutting": 95,
+   "spreiding": 67,
+   "wissels": 46
   },
   "notices": [
-   "Eigen digitaal spreekuur:info",
-   "Onderbezet spreekuur:warn",
+   "Nog te plannen:warn",
    "Restvraag gebundeld:ok",
    "Spoed eerst × Starten met nieuw:info"
   ],
@@ -4617,7 +4548,7 @@
     "m2": "",
     "m3": "",
     "o0": "NPX@510,NPX@535,NPX@560,NP@585,CO@605,CO@620,CO@635,CO@660,CO@675,CO@690,CO@705",
-    "o1": "NPX@510,NPX@535,CO@560,TC@585,CO@605,CO@630",
+    "o1": "",
     "o2": "",
     "o3": ""
    },
@@ -4662,21 +4593,19 @@
     "o3": ""
    }
   },
-  "ntp": "",
+  "ntp": "CO,CO,CO,NPX,NPX,TC",
   "rooms": 4,
   "kpi": {
-   "appts": 78,
-   "planned": 1305,
-   "capacity": 1470,
-   "flex": 165,
-   "benutting": 89,
-   "spreiding": 53,
-   "wissels": 49
+   "appts": 72,
+   "planned": 1200,
+   "capacity": 1260,
+   "flex": 60,
+   "benutting": 95,
+   "spreiding": 67,
+   "wissels": 46
   },
   "notices": [
-   "Aantal kamers:info",
-   "Eigen digitaal spreekuur:info",
-   "Onderbezet spreekuur:warn",
+   "Nog te plannen:warn",
    "Restvraag gebundeld:ok",
    "Spoed eerst × Starten met nieuw:info"
   ],
@@ -7103,52 +7032,52 @@
  "poli|100-200|standaard|gelijk|auto3|b85": {
   "d": {
    "0": {
-    "m0": "CO@780,NP@795,CO@815,NP@830,CO@850,TC@865,NP@875,CO@895,CO@910,NP@925,CO@945",
-    "m1": "CO@780,NPX@795,CO@820,NP@835,TC@855,CO@865,NPX@880,CO@905,NP@920,CO@940",
-    "m2": "TC@780,NP@790,TC@810,CO@820,TC@835,TC@845,NP@855,TC@875,TC@885,NP@895,TC@915,NP@925,TC@945",
-    "m3": "",
-    "o0": "CO@510,NPX@525,CO@550,CO@565,NP@580,CO@600,CO@615,NPX@630,CO@655,CO@670",
-    "o1": "CO@510,CO@525,NP@540,CO@560,CO@575,CO@590,NP@605,CO@625,CO@640,CO@655,CO@670",
-    "o2": "CO@510,NPX@525,CO@550,CO@565,NP@580,CO@600,CO@615,NPX@630,CO@655,CO@670",
-    "o3": "CO@510,CO@525,NP@540,CO@560,CO@575,NPX@590,CO@615,CO@630,CO@645,CO@660,CO@675"
-   },
-   "1": {
-    "m0": "CO@780,NP@795,CO@815,NP@830,CO@850,TC@865,NP@875,CO@895,CO@910,NP@925,CO@945",
-    "m1": "CO@780,NPX@795,CO@820,NP@835,TC@855,CO@865,NPX@880,CO@905,NP@920,CO@940",
+    "m0": "CO@780,NP@795,CO@815,NPX@830,CO@855,NP@870,CO@890,NP@905,CO@925,CO@940",
+    "m1": "CO@780,NP@795,CO@815,NP@830,CO@850,TC@865,NP@875,CO@895,CO@910,NP@925,CO@945",
     "m2": "TC@780,NP@790,TC@810,CO@820,TC@835,TC@845,NP@855,TC@875,TC@885,NP@895,TC@915,NP@925,TC@945",
     "m3": "",
     "o0": "CO@510,NPX@525,CO@550,CO@565,NP@580,CO@600,CO@615,NPX@630,CO@655,CO@670",
     "o1": "CO@510,NPX@525,CO@550,CO@565,NP@580,CO@600,CO@615,NPX@630,CO@655,CO@670",
-    "o2": "CO@510,NPX@525,CO@550,CO@565,NP@580,CO@600,CO@615,NPX@630,CO@655,CO@670",
+    "o2": "CO@510,CO@525,NPX@540,CO@565,CO@580,TC@595,NP@605,CO@625,CO@640,CO@655,CO@670",
+    "o3": "CO@510,CO@525,NPX@540,CO@565,CO@580,NP@595,CO@615,CO@630,CO@645,CO@660,CO@675"
+   },
+   "1": {
+    "m0": "CO@780,NPX@795,CO@820,CO@835,NP@850,CO@870,CO@885,NPX@900,CO@925,CO@940",
+    "m1": "CO@780,NP@795,CO@815,NP@830,CO@850,TC@865,NP@875,CO@895,CO@910,NP@925,CO@945",
+    "m2": "TC@780,NP@790,TC@810,CO@820,TC@835,TC@845,NP@855,TC@875,TC@885,NP@895,TC@915,NP@925,TC@945",
+    "m3": "",
+    "o0": "CO@510,NPX@525,CO@550,CO@565,NP@580,CO@600,CO@615,NPX@630,CO@655,CO@670",
+    "o1": "CO@510,NPX@525,CO@550,CO@565,NP@580,CO@600,CO@615,NPX@630,CO@655,CO@670",
+    "o2": "CO@510,NPX@525,CO@550,NP@565,TC@585,CO@595,NPX@610,CO@635,NP@650,CO@670",
     "o3": ""
    },
    "2": {
-    "m0": "CO@780,NP@795,TC@815,CO@825,NP@840,CO@860,NP@875,CO@895,TC@910,NP@920,CO@940",
+    "m0": "CO@780,NPX@795,CO@820,CO@835,NP@850,CO@870,CO@885,NPX@900,CO@925,CO@940",
     "m1": "CO@780,NP@795,TC@815,CO@825,NP@840,CO@860,NP@875,CO@895,TC@910,NP@920,CO@940",
     "m2": "NP@780,TC@800,CO@810,TC@825,NP@835,TC@855,CO@865,NP@880,TC@900,CO@910,TC@925,NP@935",
     "m3": "",
     "o0": "CO@510,NPX@525,CO@550,CO@565,NP@580,CO@600,CO@615,NPX@630,CO@655,CO@670",
-    "o1": "CO@510,NPX@525,CO@550,CO@565,NP@580,CO@600,CO@615,NPX@630,CO@655,CO@670",
-    "o2": "CO@510,NPX@525,CO@550,NPX@565,TC@590,CO@600,CO@615,NPX@630,CO@655,CO@670",
+    "o1": "CO@510,NPX@525,CO@550,NPX@565,TC@590,CO@600,CO@615,NPX@630,CO@655,CO@670",
+    "o2": "CO@510,NP@525,TC@545,CO@555,NP@570,CO@590,NP@605,CO@625,TC@640,NP@650,CO@670",
     "o3": ""
    },
    "3": {
-    "m0": "CO@780,TC@795,NP@805,CO@825,TC@840,NP@850,CO@870,TC@885,NP@895,CO@915,TC@930,NP@940",
+    "m0": "CO@780,NP@795,TC@815,CO@825,NP@840,CO@860,NPX@875,CO@900,TC@915,NP@925,CO@945",
     "m1": "CO@780,TC@795,NP@805,CO@825,TC@840,NP@850,CO@870,TC@885,NP@895,CO@915,TC@930,NP@940",
     "m2": "",
     "m3": "",
     "o0": "CO@510,NPX@525,CO@550,CO@565,NPX@580,CO@605,CO@620,NPX@635,CO@660,CO@675",
-    "o1": "CO@510,NP@525,TC@545,CO@555,NP@570,CO@590,NPX@605,CO@630,TC@645,NP@655,CO@675",
+    "o1": "CO@510,TC@525,NP@535,CO@555,TC@570,NP@580,CO@600,TC@615,NP@625,CO@645,TC@660,NP@670",
     "o2": "",
     "o3": ""
    },
    "4": {
-    "m0": "CO@780,TC@795,NP@805,CO@825,TC@840,NP@850,CO@870,TC@885,NP@895,CO@915,TC@930,NP@940",
+    "m0": "CO@780,NP@795,TC@815,CO@825,NP@840,CO@860,NPX@875,CO@900,TC@915,NP@925,CO@945",
     "m1": "CO@780,TC@795,NP@805,CO@825,TC@840,NP@850,CO@870,TC@885,NP@895,CO@915,TC@930,NP@940",
     "m2": "",
     "m3": "",
     "o0": "CO@510,NPX@525,CO@550,CO@565,NPX@580,CO@605,CO@620,NPX@635,CO@660,CO@675",
-    "o1": "CO@510,NP@525,TC@545,CO@555,NP@570,CO@590,NPX@605,CO@630,TC@645,NP@655,CO@675",
+    "o1": "CO@510,TC@525,NP@535,CO@555,TC@570,NP@580,CO@600,TC@615,NP@625,CO@645,TC@660,NP@670",
     "o2": "",
     "o3": ""
    }
@@ -7172,44 +7101,44 @@
  "poli|100-200|standaard|gelijk|auto3|b95": {
   "d": {
    "0": {
-    "m0": "CO@780,NP@795,CO@815,NPX@830,CO@855,CO@870,NP@885,CO@905,NPX@920,CO@945,CO@960",
-    "m1": "TC@780,NPX@790,TC@815,CO@825,TC@840,NPX@850,TC@875,CO@885,TC@900,NPX@910,TC@935,NPX@945,TC@970",
+    "m0": "CO@780,NP@795,CO@815,NP@830,CO@850,TC@865,CO@875,NP@890,CO@910,NP@925,CO@945,CO@960",
+    "m1": "CO@780,NP@795,CO@815,NPX@830,CO@855,CO@870,NP@885,CO@905,NPX@920,CO@945,CO@960",
     "m2": "",
     "o0": "CO@510,NP@525,CO@545,NP@560,CO@580,TC@595,CO@605,NP@620,CO@640,NP@655,CO@675,CO@690",
     "o1": "CO@510,NP@525,CO@545,NP@560,CO@580,TC@595,CO@605,NP@620,CO@640,NP@655,CO@675,CO@690",
-    "o2": "CO@510,NP@525,CO@545,NP@560,CO@580,TC@595,CO@605,NP@620,CO@640,NP@655,CO@675,CO@690"
+    "o2": "TC@510,NPX@520,TC@545,CO@555,TC@570,NPX@580,TC@605,CO@615,TC@630,NPX@640,TC@665,NPX@675,TC@700"
    },
    "1": {
-    "m0": "CO@780,NP@795,CO@815,NPX@830,CO@855,CO@870,NP@885,CO@905,NPX@920,CO@945,CO@960",
-    "m1": "TC@780,NPX@790,TC@815,CO@825,TC@840,NPX@850,TC@875,CO@885,TC@900,NPX@910,TC@935,NPX@945,TC@970",
+    "m0": "CO@780,NP@795,CO@815,NP@830,CO@850,TC@865,CO@875,NP@890,CO@910,NP@925,CO@945,CO@960",
+    "m1": "CO@780,NP@795,CO@815,NPX@830,CO@855,CO@870,NP@885,CO@905,NPX@920,CO@945,CO@960",
     "m2": "",
     "o0": "CO@510,NP@525,CO@545,NP@560,CO@580,TC@595,CO@605,NP@620,CO@640,NP@655,CO@675,CO@690",
     "o1": "CO@510,NP@525,CO@545,NP@560,CO@580,TC@595,CO@605,NP@620,CO@640,NP@655,CO@675,CO@690",
-    "o2": "CO@510,NP@525,CO@545,NP@560,CO@580,TC@595,CO@605,NP@620,CO@640,NP@655,CO@675,CO@690"
+    "o2": "TC@510,NPX@520,TC@545,CO@555,TC@570,NPX@580,TC@605,CO@615,TC@630,NPX@640,TC@665,NPX@675,TC@700"
    },
    "2": {
-    "m0": "CO@780,NP@795,CO@815,NPX@830,CO@855,CO@870,NP@885,CO@905,NPX@920,CO@945,CO@960",
-    "m1": "TC@780,NPX@790,TC@815,CO@825,TC@840,NPX@850,TC@875,CO@885,TC@900,NPX@910,TC@935,NPX@945,TC@970",
+    "m0": "CO@780,NP@795,CO@815,NP@830,CO@850,TC@865,CO@875,NP@890,CO@910,NP@925,CO@945,CO@960",
+    "m1": "CO@780,NP@795,CO@815,NPX@830,CO@855,CO@870,NP@885,CO@905,NPX@920,CO@945,CO@960",
     "m2": "",
     "o0": "CO@510,NP@525,CO@545,NP@560,CO@580,TC@595,CO@605,NP@620,CO@640,NP@655,CO@675,CO@690",
     "o1": "CO@510,NP@525,CO@545,NP@560,CO@580,TC@595,CO@605,NP@620,CO@640,NP@655,CO@675,CO@690",
-    "o2": "CO@510,NP@525,CO@545,NP@560,CO@580,TC@595,CO@605,NP@620,CO@640,NP@655,CO@675,CO@690"
+    "o2": "TC@510,NPX@520,TC@545,CO@555,TC@570,NPX@580,TC@605,CO@615,TC@630,NPX@640,TC@665,NPX@675,TC@700"
    },
    "3": {
-    "m0": "CO@780,NP@795,CO@815,NPX@830,CO@855,CO@870,NP@885,CO@905,NPX@920,CO@945,CO@960",
-    "m1": "TC@780,NPX@790,TC@815,CO@825,TC@840,NPX@850,TC@875,CO@885,TC@900,NPX@910,TC@935,NPX@945,TC@970",
+    "m0": "CO@780,NP@795,CO@815,NP@830,CO@850,TC@865,CO@875,NP@890,CO@910,NP@925,CO@945,CO@960",
+    "m1": "CO@780,NP@795,CO@815,NPX@830,CO@855,CO@870,NP@885,CO@905,NPX@920,CO@945,CO@960",
     "m2": "",
     "o0": "CO@510,NP@525,CO@545,NP@560,CO@580,TC@595,CO@605,NP@620,CO@640,NP@655,CO@675,CO@690",
     "o1": "CO@510,NP@525,CO@545,NP@560,CO@580,TC@595,CO@605,NP@620,CO@640,NP@655,CO@675,CO@690",
-    "o2": "CO@510,NP@525,CO@545,NP@560,CO@580,TC@595,CO@605,NP@620,CO@640,NP@655,CO@675,CO@690"
+    "o2": "TC@510,NPX@520,TC@545,CO@555,TC@570,NPX@580,TC@605,CO@615,TC@630,NPX@640,TC@665,NPX@675,TC@700"
    },
    "4": {
-    "m0": "CO@780,NP@795,CO@815,NPX@830,CO@855,CO@870,NP@885,CO@905,NPX@920,CO@945,CO@960",
-    "m1": "TC@780,NPX@790,TC@815,CO@825,TC@840,NPX@850,TC@875,CO@885,TC@900,NPX@910,TC@935,NPX@945,TC@970",
+    "m0": "CO@780,NP@795,CO@815,NP@830,CO@850,TC@865,CO@875,NP@890,CO@910,NP@925,CO@945,CO@960",
+    "m1": "CO@780,NP@795,CO@815,NPX@830,CO@855,CO@870,NP@885,CO@905,NPX@920,CO@945,CO@960",
     "m2": "",
     "o0": "CO@510,NP@525,CO@545,NP@560,CO@580,TC@595,CO@605,NP@620,CO@640,NP@655,CO@675,CO@690",
     "o1": "CO@510,NP@525,CO@545,NP@560,CO@580,TC@595,CO@605,NP@620,CO@640,NP@655,CO@675,CO@690",
-    "o2": "CO@510,NP@525,CO@545,NP@560,CO@580,TC@595,CO@605,NP@620,CO@640,NP@655,CO@675,CO@690"
+    "o2": "TC@510,NPX@520,TC@545,CO@555,TC@570,NPX@580,TC@605,CO@615,TC@630,NPX@640,TC@665,NPX@675,TC@700"
    }
   },
   "ntp": "",
@@ -7231,52 +7160,52 @@
  "poli|100-200|standaard|gelijk|vast4|b85": {
   "d": {
    "0": {
-    "m0": "CO@780,NP@795,CO@815,NP@830,CO@850,TC@865,NP@875,CO@895,CO@910,NP@925,CO@945",
-    "m1": "CO@780,NPX@795,CO@820,NP@835,TC@855,CO@865,NPX@880,CO@905,NP@920,CO@940",
-    "m2": "TC@780,NP@790,TC@810,CO@820,TC@835,TC@845,NP@855,TC@875,TC@885,NP@895,TC@915,NP@925,TC@945",
-    "m3": "",
-    "o0": "CO@510,NPX@525,CO@550,CO@565,NP@580,CO@600,CO@615,NPX@630,CO@655,CO@670",
-    "o1": "CO@510,CO@525,NP@540,CO@560,CO@575,CO@590,NP@605,CO@625,CO@640,CO@655,CO@670",
-    "o2": "CO@510,NPX@525,CO@550,CO@565,NP@580,CO@600,CO@615,NPX@630,CO@655,CO@670",
-    "o3": "CO@510,CO@525,NP@540,CO@560,CO@575,NPX@590,CO@615,CO@630,CO@645,CO@660,CO@675"
-   },
-   "1": {
-    "m0": "CO@780,NP@795,CO@815,NP@830,CO@850,TC@865,NP@875,CO@895,CO@910,NP@925,CO@945",
-    "m1": "CO@780,NPX@795,CO@820,NP@835,TC@855,CO@865,NPX@880,CO@905,NP@920,CO@940",
+    "m0": "CO@780,NP@795,CO@815,NPX@830,CO@855,NP@870,CO@890,NP@905,CO@925,CO@940",
+    "m1": "CO@780,NP@795,CO@815,NP@830,CO@850,TC@865,NP@875,CO@895,CO@910,NP@925,CO@945",
     "m2": "TC@780,NP@790,TC@810,CO@820,TC@835,TC@845,NP@855,TC@875,TC@885,NP@895,TC@915,NP@925,TC@945",
     "m3": "",
     "o0": "CO@510,NPX@525,CO@550,CO@565,NP@580,CO@600,CO@615,NPX@630,CO@655,CO@670",
     "o1": "CO@510,NPX@525,CO@550,CO@565,NP@580,CO@600,CO@615,NPX@630,CO@655,CO@670",
-    "o2": "CO@510,NPX@525,CO@550,CO@565,NP@580,CO@600,CO@615,NPX@630,CO@655,CO@670",
+    "o2": "CO@510,CO@525,NPX@540,CO@565,CO@580,TC@595,NP@605,CO@625,CO@640,CO@655,CO@670",
+    "o3": "CO@510,CO@525,NPX@540,CO@565,CO@580,NP@595,CO@615,CO@630,CO@645,CO@660,CO@675"
+   },
+   "1": {
+    "m0": "CO@780,NPX@795,CO@820,CO@835,NP@850,CO@870,CO@885,NPX@900,CO@925,CO@940",
+    "m1": "CO@780,NP@795,CO@815,NP@830,CO@850,TC@865,NP@875,CO@895,CO@910,NP@925,CO@945",
+    "m2": "TC@780,NP@790,TC@810,CO@820,TC@835,TC@845,NP@855,TC@875,TC@885,NP@895,TC@915,NP@925,TC@945",
+    "m3": "",
+    "o0": "CO@510,NPX@525,CO@550,CO@565,NP@580,CO@600,CO@615,NPX@630,CO@655,CO@670",
+    "o1": "CO@510,NPX@525,CO@550,CO@565,NP@580,CO@600,CO@615,NPX@630,CO@655,CO@670",
+    "o2": "CO@510,NPX@525,CO@550,NP@565,TC@585,CO@595,NPX@610,CO@635,NP@650,CO@670",
     "o3": ""
    },
    "2": {
-    "m0": "CO@780,NP@795,TC@815,CO@825,NP@840,CO@860,NP@875,CO@895,TC@910,NP@920,CO@940",
+    "m0": "CO@780,NPX@795,CO@820,CO@835,NP@850,CO@870,CO@885,NPX@900,CO@925,CO@940",
     "m1": "CO@780,NP@795,TC@815,CO@825,NP@840,CO@860,NP@875,CO@895,TC@910,NP@920,CO@940",
     "m2": "NP@780,TC@800,CO@810,TC@825,NP@835,TC@855,CO@865,NP@880,TC@900,CO@910,TC@925,NP@935",
     "m3": "",
     "o0": "CO@510,NPX@525,CO@550,CO@565,NP@580,CO@600,CO@615,NPX@630,CO@655,CO@670",
-    "o1": "CO@510,NPX@525,CO@550,CO@565,NP@580,CO@600,CO@615,NPX@630,CO@655,CO@670",
-    "o2": "CO@510,NPX@525,CO@550,NPX@565,TC@590,CO@600,CO@615,NPX@630,CO@655,CO@670",
+    "o1": "CO@510,NPX@525,CO@550,NPX@565,TC@590,CO@600,CO@615,NPX@630,CO@655,CO@670",
+    "o2": "CO@510,NP@525,TC@545,CO@555,NP@570,CO@590,NP@605,CO@625,TC@640,NP@650,CO@670",
     "o3": ""
    },
    "3": {
-    "m0": "CO@780,TC@795,NP@805,CO@825,TC@840,NP@850,CO@870,TC@885,NP@895,CO@915,TC@930,NP@940",
+    "m0": "CO@780,NP@795,TC@815,CO@825,NP@840,CO@860,NPX@875,CO@900,TC@915,NP@925,CO@945",
     "m1": "CO@780,TC@795,NP@805,CO@825,TC@840,NP@850,CO@870,TC@885,NP@895,CO@915,TC@930,NP@940",
     "m2": "",
     "m3": "",
     "o0": "CO@510,NPX@525,CO@550,CO@565,NPX@580,CO@605,CO@620,NPX@635,CO@660,CO@675",
-    "o1": "CO@510,NP@525,TC@545,CO@555,NP@570,CO@590,NPX@605,CO@630,TC@645,NP@655,CO@675",
+    "o1": "CO@510,TC@525,NP@535,CO@555,TC@570,NP@580,CO@600,TC@615,NP@625,CO@645,TC@660,NP@670",
     "o2": "",
     "o3": ""
    },
    "4": {
-    "m0": "CO@780,TC@795,NP@805,CO@825,TC@840,NP@850,CO@870,TC@885,NP@895,CO@915,TC@930,NP@940",
+    "m0": "CO@780,NP@795,TC@815,CO@825,NP@840,CO@860,NPX@875,CO@900,TC@915,NP@925,CO@945",
     "m1": "CO@780,TC@795,NP@805,CO@825,TC@840,NP@850,CO@870,TC@885,NP@895,CO@915,TC@930,NP@940",
     "m2": "",
     "m3": "",
     "o0": "CO@510,NPX@525,CO@550,CO@565,NPX@580,CO@605,CO@620,NPX@635,CO@660,CO@675",
-    "o1": "CO@510,NP@525,TC@545,CO@555,NP@570,CO@590,NPX@605,CO@630,TC@645,NP@655,CO@675",
+    "o1": "CO@510,TC@525,NP@535,CO@555,TC@570,NP@580,CO@600,TC@615,NP@625,CO@645,TC@660,NP@670",
     "o2": "",
     "o3": ""
    }
@@ -7300,53 +7229,53 @@
  "poli|100-200|standaard|gelijk|vast4|b95": {
   "d": {
    "0": {
-    "m0": "CO@780,NP@795,CO@815,NPX@830,CO@855,CO@870,NP@885,CO@905,NPX@920,CO@945,CO@960",
-    "m1": "TC@780,NPX@790,TC@815,CO@825,TC@840,NPX@850,TC@875,CO@885,TC@900,NPX@910,TC@935,NPX@945,TC@970",
+    "m0": "CO@780,NP@795,CO@815,NP@830,CO@850,TC@865,CO@875,NP@890,CO@910,NP@925,CO@945,CO@960",
+    "m1": "CO@780,NP@795,CO@815,NPX@830,CO@855,CO@870,NP@885,CO@905,NPX@920,CO@945,CO@960",
     "m2": "",
     "m3": "",
     "o0": "CO@510,NP@525,CO@545,NP@560,CO@580,TC@595,CO@605,NP@620,CO@640,NP@655,CO@675,CO@690",
     "o1": "CO@510,NP@525,CO@545,NP@560,CO@580,TC@595,CO@605,NP@620,CO@640,NP@655,CO@675,CO@690",
-    "o2": "CO@510,NP@525,CO@545,NP@560,CO@580,TC@595,CO@605,NP@620,CO@640,NP@655,CO@675,CO@690",
+    "o2": "TC@510,NPX@520,TC@545,CO@555,TC@570,NPX@580,TC@605,CO@615,TC@630,NPX@640,TC@665,NPX@675,TC@700",
     "o3": ""
    },
    "1": {
-    "m0": "CO@780,NP@795,CO@815,NPX@830,CO@855,CO@870,NP@885,CO@905,NPX@920,CO@945,CO@960",
-    "m1": "TC@780,NPX@790,TC@815,CO@825,TC@840,NPX@850,TC@875,CO@885,TC@900,NPX@910,TC@935,NPX@945,TC@970",
+    "m0": "CO@780,NP@795,CO@815,NP@830,CO@850,TC@865,CO@875,NP@890,CO@910,NP@925,CO@945,CO@960",
+    "m1": "CO@780,NP@795,CO@815,NPX@830,CO@855,CO@870,NP@885,CO@905,NPX@920,CO@945,CO@960",
     "m2": "",
     "m3": "",
     "o0": "CO@510,NP@525,CO@545,NP@560,CO@580,TC@595,CO@605,NP@620,CO@640,NP@655,CO@675,CO@690",
     "o1": "CO@510,NP@525,CO@545,NP@560,CO@580,TC@595,CO@605,NP@620,CO@640,NP@655,CO@675,CO@690",
-    "o2": "CO@510,NP@525,CO@545,NP@560,CO@580,TC@595,CO@605,NP@620,CO@640,NP@655,CO@675,CO@690",
+    "o2": "TC@510,NPX@520,TC@545,CO@555,TC@570,NPX@580,TC@605,CO@615,TC@630,NPX@640,TC@665,NPX@675,TC@700",
     "o3": ""
    },
    "2": {
-    "m0": "CO@780,NP@795,CO@815,NPX@830,CO@855,CO@870,NP@885,CO@905,NPX@920,CO@945,CO@960",
-    "m1": "TC@780,NPX@790,TC@815,CO@825,TC@840,NPX@850,TC@875,CO@885,TC@900,NPX@910,TC@935,NPX@945,TC@970",
+    "m0": "CO@780,NP@795,CO@815,NP@830,CO@850,TC@865,CO@875,NP@890,CO@910,NP@925,CO@945,CO@960",
+    "m1": "CO@780,NP@795,CO@815,NPX@830,CO@855,CO@870,NP@885,CO@905,NPX@920,CO@945,CO@960",
     "m2": "",
     "m3": "",
     "o0": "CO@510,NP@525,CO@545,NP@560,CO@580,TC@595,CO@605,NP@620,CO@640,NP@655,CO@675,CO@690",
     "o1": "CO@510,NP@525,CO@545,NP@560,CO@580,TC@595,CO@605,NP@620,CO@640,NP@655,CO@675,CO@690",
-    "o2": "CO@510,NP@525,CO@545,NP@560,CO@580,TC@595,CO@605,NP@620,CO@640,NP@655,CO@675,CO@690",
+    "o2": "TC@510,NPX@520,TC@545,CO@555,TC@570,NPX@580,TC@605,CO@615,TC@630,NPX@640,TC@665,NPX@675,TC@700",
     "o3": ""
    },
    "3": {
-    "m0": "CO@780,NP@795,CO@815,NPX@830,CO@855,CO@870,NP@885,CO@905,NPX@920,CO@945,CO@960",
-    "m1": "TC@780,NPX@790,TC@815,CO@825,TC@840,NPX@850,TC@875,CO@885,TC@900,NPX@910,TC@935,NPX@945,TC@970",
+    "m0": "CO@780,NP@795,CO@815,NP@830,CO@850,TC@865,CO@875,NP@890,CO@910,NP@925,CO@945,CO@960",
+    "m1": "CO@780,NP@795,CO@815,NPX@830,CO@855,CO@870,NP@885,CO@905,NPX@920,CO@945,CO@960",
     "m2": "",
     "m3": "",
     "o0": "CO@510,NP@525,CO@545,NP@560,CO@580,TC@595,CO@605,NP@620,CO@640,NP@655,CO@675,CO@690",
     "o1": "CO@510,NP@525,CO@545,NP@560,CO@580,TC@595,CO@605,NP@620,CO@640,NP@655,CO@675,CO@690",
-    "o2": "CO@510,NP@525,CO@545,NP@560,CO@580,TC@595,CO@605,NP@620,CO@640,NP@655,CO@675,CO@690",
+    "o2": "TC@510,NPX@520,TC@545,CO@555,TC@570,NPX@580,TC@605,CO@615,TC@630,NPX@640,TC@665,NPX@675,TC@700",
     "o3": ""
    },
    "4": {
-    "m0": "CO@780,NP@795,CO@815,NPX@830,CO@855,CO@870,NP@885,CO@905,NPX@920,CO@945,CO@960",
-    "m1": "TC@780,NPX@790,TC@815,CO@825,TC@840,NPX@850,TC@875,CO@885,TC@900,NPX@910,TC@935,NPX@945,TC@970",
+    "m0": "CO@780,NP@795,CO@815,NP@830,CO@850,TC@865,CO@875,NP@890,CO@910,NP@925,CO@945,CO@960",
+    "m1": "CO@780,NP@795,CO@815,NPX@830,CO@855,CO@870,NP@885,CO@905,NPX@920,CO@945,CO@960",
     "m2": "",
     "m3": "",
     "o0": "CO@510,NP@525,CO@545,NP@560,CO@580,TC@595,CO@605,NP@620,CO@640,NP@655,CO@675,CO@690",
     "o1": "CO@510,NP@525,CO@545,NP@560,CO@580,TC@595,CO@605,NP@620,CO@640,NP@655,CO@675,CO@690",
-    "o2": "CO@510,NP@525,CO@545,NP@560,CO@580,TC@595,CO@605,NP@620,CO@640,NP@655,CO@675,CO@690",
+    "o2": "TC@510,NPX@520,TC@545,CO@555,TC@570,NPX@580,TC@605,CO@615,TC@630,NPX@640,TC@665,NPX@675,TC@700",
     "o3": ""
    }
   },
@@ -9548,63 +9477,66 @@
  "poli|100-200|standaard|cluster+bundel|auto3|b85": {
   "d": {
    "0": {
-    "m0": "CO@780,CO@795,CO@810,CO@825,CO@840,TC@855,CO@865,CO@880,CO@895,CO@910,CO@925,CO@940",
-    "m1": "TC@780,CO@790,TC@805,CO@815,TC@830,CO@840,TC@855,CO@865,TC@880,CO@890,TC@905,CO@915,TC@930,CO@940",
-    "m2": "",
-    "o0": "CO@510,NP@525,CO@545,NP@560,CO@580,NP@595,CO@615,NP@630,CO@650,NP@665",
-    "o1": "CO@510,NP@525,CO@545,CO@560,NP@575,TC@595,CO@605,NP@620,CO@640,CO@655,CO@670",
-    "o2": ""
+    "m0": "CO@780,NP@795,CO@815,NPX@830,CO@855,NP@870,CO@890,NPX@905,CO@930,CO@945",
+    "m1": "CO@780,NP@795,CO@815,NPX@830,CO@855,NP@870,CO@890,NPX@905,CO@930,CO@945",
+    "m2": "CO@780,NP@795,CO@815,CO@830,NP@845,CO@865,CO@880,CO@895,NP@910,CO@930,CO@945",
+    "o0": "TC@510,TC@520,TC@530,TC@540,TC@550,TC@560,TC@570,TC@580,TC@590,TC@600,TC@610,TC@620,TC@630,TC@640,TC@650,TC@660,TC@670,TC@680",
+    "o1": "TC@510,CO@520,NP@535,CO@555,NP@570,CO@590,NP@605,CO@625,CO@640,NP@655,CO@675",
+    "o2": "CO@510,NPX@525,CO@550,NP@565,CO@585,NPX@600,CO@625,NP@640,CO@660,CO@675"
    },
    "1": {
-    "m0": "CO@780,CO@795,CO@810,NPX@825,CO@850,CO@865,CO@880,CO@895,CO@910,CO@925,CO@940",
-    "m1": "CO@780,NP@795,CO@815,CO@830,NP@845,TC@865,CO@875,NP@890,CO@910,CO@925,CO@940",
-    "m2": "TC@780,NP@790,TC@810,CO@820,TC@835,NP@845,TC@865,CO@875,TC@890,NP@900,TC@920,CO@930,TC@945",
-    "o0": "NPX@510,CO@535,TC@550,NPX@560,NPX@585,CO@610,TC@625,NPX@635,NPX@660",
-    "o1": "NP@510,CO@530,NPX@545,NP@570,CO@590,NP@605,NPX@625,NP@650,CO@670",
+    "m0": "CO@780,NP@795,CO@815,NPX@830,CO@855,NP@870,CO@890,NPX@905,CO@930,CO@945",
+    "m1": "CO@780,NP@795,CO@815,NPX@830,CO@855,NP@870,CO@890,NPX@905,CO@930,CO@945",
+    "m2": "NP@780,CO@800,NP@815,CO@835,NP@850,CO@870,NP@885,CO@905,NP@920,CO@940",
+    "o0": "TC@510,TC@520,TC@530,TC@540,TC@550,TC@560,TC@570,TC@580,TC@590,TC@600,TC@610,TC@620,TC@630,TC@640,TC@650,TC@660,TC@670,TC@680",
+    "o1": "CO@510,NP@525,CO@545,NPX@560,CO@585,NP@600,CO@620,NPX@635,CO@660,CO@675",
     "o2": "CO@510,NP@525,CO@545,NPX@560,CO@585,NP@600,CO@620,NP@635,CO@655,CO@670"
    },
    "2": {
-    "m0": "CO@780,CO@795,CO@810,NPX@825,CO@850,CO@865,CO@880,CO@895,CO@910,CO@925,CO@940",
-    "m1": "CO@780,CO@795,TC@810,CO@820,NP@835,CO@855,CO@870,CO@885,TC@900,CO@910,CO@925,CO@940",
-    "m2": "TC@780,CO@790,TC@805,CO@815,TC@830,NP@840,TC@860,TC@870,CO@880,TC@895,CO@905,TC@920,CO@930,TC@945",
-    "o0": "NPX@510,NPX@535,CO@560,TC@575,NPX@585,NPX@610,NPX@635,NPX@660",
-    "o1": "NP@510,NPX@530,CO@555,NP@570,NP@590,CO@610,NP@625,NP@645,NP@665",
-    "o2": "NP@510,NPX@530,CO@555,NP@570,NP@590,CO@610,NP@625,NP@645,NP@665"
+    "m0": "CO@780,NP@795,CO@815,NPX@830,CO@855,NP@870,CO@890,NPX@905,CO@930,CO@945",
+    "m1": "CO@780,NP@795,CO@815,CO@830,NP@845,CO@865,CO@880,CO@895,NP@910,CO@930,CO@945",
+    "m2": "",
+    "o0": "CO@510,NP@525,CO@545,NPX@560,CO@585,NP@600,CO@620,NPX@635,CO@660,CO@675",
+    "o1": "CO@510,NPX@525,CO@550,NP@565,CO@585,NPX@600,CO@625,NP@640,CO@660,CO@675",
+    "o2": "CO@510,NP@525,CO@545,NP@560,CO@580,NP@595,CO@615,NP@630,CO@650,NP@665"
    },
    "3": {
-    "m0": "CO@780,NPX@795,CO@820,CO@835,NP@850,CO@870,NPX@885,CO@910,CO@925,CO@940",
-    "m1": "CO@780,CO@795,NPX@810,CO@835,CO@850,TC@865,NP@875,CO@895,CO@910,CO@925,CO@940",
-    "m2": "TC@780,NP@790,TC@810,CO@820,TC@835,NP@845,TC@865,CO@875,TC@890,NP@900,TC@920,CO@930,TC@945",
-    "o0": "NPX@510,CO@535,NP@550,CO@570,NPX@585,CO@610,NP@625,NPX@645,CO@670",
-    "o1": "NP@510,CO@530,NP@545,CO@565,TC@580,NP@590,NP@610,CO@630,NP@645,NP@665",
-    "o2": "NP@510,CO@530,NP@545,CO@565,NP@580,CO@600,NP@615,CO@635,NP@650,CO@670"
+    "m0": "TC@780,CO@790,NP@805,CO@825,NP@840,CO@860,NP@875,CO@895,CO@910,NP@925,CO@945",
+    "m1": "CO@780,NPX@795,CO@820,CO@835,NPX@850,CO@875,CO@890,NPX@905,CO@930,CO@945",
+    "m2": "",
+    "o0": "TC@510,CO@520,NP@535,CO@555,NP@570,CO@590,NP@605,CO@625,CO@640,NP@655,CO@675",
+    "o1": "TC@510,CO@520,NP@535,CO@555,NP@570,CO@590,NP@605,CO@625,CO@640,NP@655,CO@675",
+    "o2": "TC@510,CO@520,NPX@535,CO@560,NPX@575,CO@600,NP@615,CO@635,NPX@650,CO@675"
    },
    "4": {
-    "m0": "CO@780,NPX@795,CO@820,NP@835,TC@855,CO@865,NPX@880,CO@905,NP@920,CO@940",
-    "m1": "CO@780,NP@795,TC@815,CO@825,NP@840,CO@860,NP@875,CO@895,TC@910,NP@920,CO@940",
-    "m2": "TC@780,NP@790,TC@810,NPX@820,TC@845,TC@855,NP@865,TC@885,NP@895,TC@915,NP@925,TC@945",
-    "o0": "CO@510,NPX@525,CO@550,CO@565,NP@580,CO@600,CO@615,NPX@630,CO@655,CO@670",
-    "o1": "CO@510,NP@525,CO@545,NPX@560,CO@585,NP@600,CO@620,NP@635,CO@655,CO@670",
-    "o2": "CO@510,NP@525,CO@545,CO@560,NP@575,TC@595,CO@605,NP@620,CO@640,CO@655,CO@670"
+    "m0": "CO@780,NPX@795,CO@820,NP@835,CO@855,NPX@870,CO@895,NP@910,CO@930,CO@945",
+    "m1": "TC@780,TC@790,TC@800,TC@810,CO@820,NP@835,CO@855,NP@870,CO@890,NP@905,CO@925,NP@940",
+    "m2": "",
+    "o0": "CO@510,NPX@525,CO@550,CO@565,NPX@580,CO@605,CO@620,NPX@635,CO@660,CO@675",
+    "o1": "TC@510,TC@520,TC@530,TC@540,CO@550,NP@565,CO@585,NP@600,CO@620,NP@635,CO@655,NP@670",
+    "o2": "TC@510,CO@520,NP@535,CO@555,NP@570,CO@590,NP@605,CO@625,CO@640,NP@655,CO@675"
    }
   },
-  "ntp": "",
+  "ntp": "CO,NP,NP",
   "rooms": 3,
   "kpi": {
-   "appts": 300,
-   "planned": 4900,
-   "capacity": 5880,
-   "flex": 980,
-   "benutting": 83,
-   "spreiding": 86,
-   "wissels": 204
+   "appts": 297,
+   "planned": 4845,
+   "capacity": 5670,
+   "flex": 825,
+   "benutting": 85,
+   "spreiding": 91,
+   "wissels": 200
   },
   "notices": [
-   "Digitale consulten:info",
-   "Nieuw en controle afwisselen:info",
+   "Digitale consulten:warn",
+   "Nog te plannen:warn",
    "Restvraag gebundeld:ok"
   ],
-  "dig": []
+  "dig": [
+   "0O",
+   "1O"
+  ]
  },
  "poli|100-200|standaard|cluster+bundel|auto3|b95": {
   "d": {
@@ -9682,74 +9614,76 @@
  "poli|100-200|standaard|cluster+bundel|vast4|b85": {
   "d": {
    "0": {
-    "m0": "CO@780,CO@795,CO@810,CO@825,CO@840,TC@855,CO@865,CO@880,CO@895,CO@910,CO@925,CO@940",
-    "m1": "TC@780,CO@790,TC@805,CO@815,TC@830,CO@840,TC@855,CO@865,TC@880,CO@890,TC@905,CO@915,TC@930,CO@940",
-    "m2": "",
+    "m0": "CO@780,NP@795,CO@815,NPX@830,CO@855,NP@870,CO@890,NPX@905,CO@930,CO@945",
+    "m1": "CO@780,NP@795,CO@815,NPX@830,CO@855,NP@870,CO@890,NPX@905,CO@930,CO@945",
+    "m2": "CO@780,NP@795,CO@815,CO@830,NP@845,CO@865,CO@880,CO@895,NP@910,CO@930,CO@945",
     "m3": "",
-    "o0": "CO@510,NP@525,CO@545,NP@560,CO@580,NP@595,CO@615,NP@630,CO@650,NP@665",
-    "o1": "CO@510,NP@525,CO@545,CO@560,NP@575,TC@595,CO@605,NP@620,CO@640,CO@655,CO@670",
-    "o2": "",
+    "o0": "TC@510,TC@520,TC@530,TC@540,TC@550,TC@560,TC@570,TC@580,TC@590,TC@600,TC@610,TC@620,TC@630,TC@640,TC@650,TC@660,TC@670,TC@680",
+    "o1": "TC@510,CO@520,NP@535,CO@555,NP@570,CO@590,NP@605,CO@625,CO@640,NP@655,CO@675",
+    "o2": "CO@510,NPX@525,CO@550,NP@565,CO@585,NPX@600,CO@625,NP@640,CO@660,CO@675",
     "o3": ""
    },
    "1": {
-    "m0": "CO@780,CO@795,CO@810,NPX@825,CO@850,CO@865,CO@880,CO@895,CO@910,CO@925,CO@940",
-    "m1": "CO@780,NP@795,CO@815,CO@830,NP@845,TC@865,CO@875,NP@890,CO@910,CO@925,CO@940",
-    "m2": "TC@780,NP@790,TC@810,CO@820,TC@835,NP@845,TC@865,CO@875,TC@890,NP@900,TC@920,CO@930,TC@945",
+    "m0": "CO@780,NP@795,CO@815,NPX@830,CO@855,NP@870,CO@890,NPX@905,CO@930,CO@945",
+    "m1": "CO@780,NP@795,CO@815,NPX@830,CO@855,NP@870,CO@890,NPX@905,CO@930,CO@945",
+    "m2": "NP@780,CO@800,NP@815,CO@835,NP@850,CO@870,NP@885,CO@905,NP@920,CO@940",
     "m3": "",
-    "o0": "NPX@510,CO@535,TC@550,NPX@560,NPX@585,CO@610,TC@625,NPX@635,NPX@660",
-    "o1": "NP@510,CO@530,NPX@545,NP@570,CO@590,NP@605,NPX@625,NP@650,CO@670",
+    "o0": "TC@510,TC@520,TC@530,TC@540,TC@550,TC@560,TC@570,TC@580,TC@590,TC@600,TC@610,TC@620,TC@630,TC@640,TC@650,TC@660,TC@670,TC@680",
+    "o1": "CO@510,NP@525,CO@545,NPX@560,CO@585,NP@600,CO@620,NPX@635,CO@660,CO@675",
     "o2": "CO@510,NP@525,CO@545,NPX@560,CO@585,NP@600,CO@620,NP@635,CO@655,CO@670",
     "o3": ""
    },
    "2": {
-    "m0": "CO@780,CO@795,CO@810,NPX@825,CO@850,CO@865,CO@880,CO@895,CO@910,CO@925,CO@940",
-    "m1": "CO@780,CO@795,TC@810,CO@820,NP@835,CO@855,CO@870,CO@885,TC@900,CO@910,CO@925,CO@940",
-    "m2": "TC@780,CO@790,TC@805,CO@815,TC@830,NP@840,TC@860,TC@870,CO@880,TC@895,CO@905,TC@920,CO@930,TC@945",
+    "m0": "CO@780,NP@795,CO@815,NPX@830,CO@855,NP@870,CO@890,NPX@905,CO@930,CO@945",
+    "m1": "CO@780,NP@795,CO@815,CO@830,NP@845,CO@865,CO@880,CO@895,NP@910,CO@930,CO@945",
+    "m2": "",
     "m3": "",
-    "o0": "NPX@510,NPX@535,CO@560,TC@575,NPX@585,NPX@610,NPX@635,NPX@660",
-    "o1": "NP@510,NPX@530,CO@555,NP@570,NP@590,CO@610,NP@625,NP@645,NP@665",
-    "o2": "NP@510,NPX@530,CO@555,NP@570,NP@590,CO@610,NP@625,NP@645,NP@665",
+    "o0": "CO@510,NP@525,CO@545,NPX@560,CO@585,NP@600,CO@620,NPX@635,CO@660,CO@675",
+    "o1": "CO@510,NPX@525,CO@550,NP@565,CO@585,NPX@600,CO@625,NP@640,CO@660,CO@675",
+    "o2": "CO@510,NP@525,CO@545,NP@560,CO@580,NP@595,CO@615,NP@630,CO@650,NP@665",
     "o3": ""
    },
    "3": {
-    "m0": "CO@780,NPX@795,CO@820,CO@835,NP@850,CO@870,NPX@885,CO@910,CO@925,CO@940",
-    "m1": "CO@780,CO@795,NPX@810,CO@835,CO@850,TC@865,NP@875,CO@895,CO@910,CO@925,CO@940",
-    "m2": "TC@780,NP@790,TC@810,CO@820,TC@835,NP@845,TC@865,CO@875,TC@890,NP@900,TC@920,CO@930,TC@945",
+    "m0": "TC@780,CO@790,NP@805,CO@825,NP@840,CO@860,NP@875,CO@895,CO@910,NP@925,CO@945",
+    "m1": "CO@780,NPX@795,CO@820,CO@835,NPX@850,CO@875,CO@890,NPX@905,CO@930,CO@945",
+    "m2": "",
     "m3": "",
-    "o0": "NPX@510,CO@535,NP@550,CO@570,NPX@585,CO@610,NP@625,NPX@645,CO@670",
-    "o1": "NP@510,CO@530,NP@545,CO@565,TC@580,NP@590,NP@610,CO@630,NP@645,NP@665",
-    "o2": "NP@510,CO@530,NP@545,CO@565,NP@580,CO@600,NP@615,CO@635,NP@650,CO@670",
+    "o0": "TC@510,CO@520,NP@535,CO@555,NP@570,CO@590,NP@605,CO@625,CO@640,NP@655,CO@675",
+    "o1": "TC@510,CO@520,NP@535,CO@555,NP@570,CO@590,NP@605,CO@625,CO@640,NP@655,CO@675",
+    "o2": "TC@510,CO@520,NPX@535,CO@560,NPX@575,CO@600,NP@615,CO@635,NPX@650,CO@675",
     "o3": ""
    },
    "4": {
-    "m0": "CO@780,NPX@795,CO@820,NP@835,TC@855,CO@865,NPX@880,CO@905,NP@920,CO@940",
-    "m1": "CO@780,NP@795,TC@815,CO@825,NP@840,CO@860,NP@875,CO@895,TC@910,NP@920,CO@940",
-    "m2": "TC@780,NP@790,TC@810,NPX@820,TC@845,TC@855,NP@865,TC@885,NP@895,TC@915,NP@925,TC@945",
+    "m0": "CO@780,NPX@795,CO@820,NP@835,CO@855,NPX@870,CO@895,NP@910,CO@930,CO@945",
+    "m1": "TC@780,TC@790,TC@800,TC@810,CO@820,NP@835,CO@855,NP@870,CO@890,NP@905,CO@925,NP@940",
+    "m2": "",
     "m3": "",
-    "o0": "CO@510,NPX@525,CO@550,CO@565,NP@580,CO@600,CO@615,NPX@630,CO@655,CO@670",
-    "o1": "CO@510,NP@525,CO@545,NPX@560,CO@585,NP@600,CO@620,NP@635,CO@655,CO@670",
-    "o2": "CO@510,NP@525,CO@545,CO@560,NP@575,TC@595,CO@605,NP@620,CO@640,CO@655,CO@670",
+    "o0": "CO@510,NPX@525,CO@550,CO@565,NPX@580,CO@605,CO@620,NPX@635,CO@660,CO@675",
+    "o1": "TC@510,TC@520,TC@530,TC@540,CO@550,NP@565,CO@585,NP@600,CO@620,NP@635,CO@655,NP@670",
+    "o2": "TC@510,CO@520,NP@535,CO@555,NP@570,CO@590,NP@605,CO@625,CO@640,NP@655,CO@675",
     "o3": ""
    }
   },
-  "ntp": "",
+  "ntp": "CO,NP,NP",
   "rooms": 4,
   "kpi": {
-   "appts": 300,
-   "planned": 4900,
-   "capacity": 5880,
-   "flex": 980,
-   "benutting": 83,
-   "spreiding": 86,
-   "wissels": 204
+   "appts": 297,
+   "planned": 4845,
+   "capacity": 5670,
+   "flex": 825,
+   "benutting": 85,
+   "spreiding": 91,
+   "wissels": 200
   },
   "notices": [
-   "Aantal kamers:info",
-   "Digitale consulten:info",
-   "Nieuw en controle afwisselen:info",
+   "Digitale consulten:warn",
+   "Nog te plannen:warn",
    "Restvraag gebundeld:ok"
   ],
-  "dig": []
+  "dig": [
+   "0O",
+   "1O"
+  ]
  },
  "poli|100-200|standaard|cluster+bundel|vast4|b95": {
   "d": {
@@ -9828,57 +9762,47 @@
   "d": {
    "0": {
     "m0": "NPX@780,NPX@805,CO@830,NP@845,CO@865,CO@880,CO@895,NP@910,CO@930,CO@945",
-    "m1": "NP@780,CO@800,NP@815,CO@835,NP@850,CO@870,NP@885,CO@905,NP@920,NP@940",
+    "m1": "NPX@780,NPX@805,CO@830,NP@845,CO@865,CO@880,CO@895,NP@910,CO@930,CO@945",
     "m2": "CO@780,NP@795,CO@815,CO@830,NP@845,CO@865,CO@880,CO@895,NP@910,CO@930,CO@945",
-    "m3": "",
     "o0": "TC@510,TC@520,TC@530,TC@540,TC@550,TC@560,TC@570,TC@580,TC@590,TC@600,TC@610,TC@620,TC@630,TC@640,TC@650,TC@660,TC@670,TC@680",
     "o1": "NPX@510,NPX@535,CO@560,NP@575,CO@595,CO@610,CO@625,NP@640,CO@660,CO@675",
-    "o2": "NPX@510,NPX@535,CO@560,NP@575,CO@595,CO@610,CO@625,NP@640,CO@660,CO@675",
-    "o3": ""
+    "o2": "NP@510,CO@530,NP@545,CO@565,NP@580,CO@600,NP@615,CO@635,NP@650,NP@670"
    },
    "1": {
-    "m0": "NPX@780,CO@805,NP@820,CO@840,NP@855,CO@875,CO@890,NP@905,CO@925,CO@940",
-    "m1": "NP@780,CO@800,NP@815,CO@835,NP@850,CO@870,NP@885,CO@905,NP@920,CO@940",
-    "m2": "",
-    "m3": "",
+    "m0": "NPX@780,NPX@805,CO@830,NP@845,CO@865,CO@880,CO@895,NP@910,CO@930,CO@945",
+    "m1": "NPX@780,NPX@805,CO@830,NP@845,CO@865,CO@880,CO@895,NP@910,CO@930,CO@945",
+    "m2": "NP@780,CO@800,NP@815,CO@835,NP@850,CO@870,NP@885,CO@905,NP@920,CO@940",
     "o0": "TC@510,TC@520,TC@530,TC@540,TC@550,TC@560,TC@570,TC@580,TC@590,TC@600,TC@610,TC@620,TC@630,TC@640,TC@650,TC@660,TC@670,TC@680",
     "o1": "NPX@510,NPX@535,CO@560,NP@575,CO@595,CO@610,CO@625,NP@640,CO@660,CO@675",
-    "o2": "NPX@510,NPX@535,CO@560,NP@575,CO@595,CO@610,CO@625,NP@640,CO@660,CO@675",
-    "o3": "NPX@510,NPX@535,CO@560,NP@575,CO@595,CO@610,CO@625,NP@640,CO@660,CO@675"
+    "o2": "NPX@510,CO@535,NP@550,CO@570,NP@585,CO@605,CO@620,NP@635,CO@655,CO@670"
    },
    "2": {
-    "m0": "CO@780,NP@795,CO@815,CO@830,NP@845,CO@865,CO@880,CO@895,NP@910,CO@930,CO@945",
-    "m1": "CO@780,NP@795,CO@815,NP@830,CO@850,NP@865,CO@885,NP@900,CO@920,NP@935",
+    "m0": "NPX@780,NPX@805,CO@830,NP@845,CO@865,CO@880,CO@895,NP@910,CO@930,CO@945",
+    "m1": "CO@780,NP@795,CO@815,CO@830,NP@845,CO@865,CO@880,CO@895,NP@910,CO@930,CO@945",
     "m2": "",
-    "m3": "",
     "o0": "NPX@510,NPX@535,CO@560,NP@575,CO@595,CO@610,CO@625,NP@640,CO@660,CO@675",
     "o1": "NPX@510,NPX@535,CO@560,NP@575,CO@595,CO@610,CO@625,NP@640,CO@660,CO@675",
-    "o2": "NPX@510,NPX@535,CO@560,NP@575,CO@595,CO@610,CO@625,NP@640,CO@660,CO@675",
-    "o3": ""
+    "o2": "CO@510,NP@525,CO@545,NP@560,CO@580,NP@595,CO@615,NP@630,CO@650,NP@665"
    },
    "3": {
-    "m0": "NPX@780,NPX@805,NPX@830,CO@855,CO@870,CO@885,CO@900,CO@915,CO@930,CO@945",
-    "m1": "NPX@780,NPX@805,NPX@830,TC@855,CO@865,CO@880,NP@895,CO@915,CO@930,CO@945",
+    "m0": "TC@780,CO@790,NP@805,CO@825,NP@840,CO@860,NP@875,CO@895,CO@910,NP@925,CO@945",
+    "m1": "NPX@780,NPX@805,NPX@830,CO@855,CO@870,CO@885,CO@900,CO@915,CO@930,CO@945",
     "m2": "",
-    "m3": "",
     "o0": "TC@510,CO@520,NP@535,CO@555,NP@570,CO@590,NP@605,CO@625,CO@640,NP@655,CO@675",
     "o1": "TC@510,CO@520,NP@535,CO@555,NP@570,CO@590,NP@605,CO@625,CO@640,NP@655,CO@675",
-    "o2": "TC@510,CO@520,NP@535,CO@555,NP@570,CO@590,NP@605,CO@625,CO@640,NP@655,CO@675",
-    "o3": ""
+    "o2": "NPX@510,NPX@535,NPX@560,TC@585,CO@595,CO@610,NP@625,CO@645,CO@660,CO@675"
    },
    "4": {
-    "m0": "TC@780,TC@790,TC@800,TC@810,CO@820,NP@835,CO@855,NP@870,CO@890,NP@905,CO@925,NP@940",
-    "m1": "TC@780,CO@790,NP@805,CO@825,NP@840,CO@860,NP@875,CO@895,CO@910,NP@925,CO@945",
+    "m0": "NPX@780,NPX@805,CO@830,NP@845,CO@865,CO@880,CO@895,NP@910,CO@930,CO@945",
+    "m1": "TC@780,TC@790,TC@800,TC@810,CO@820,NP@835,CO@855,NP@870,CO@890,NP@905,CO@925,NP@940",
     "m2": "",
-    "m3": "",
     "o0": "NPX@510,NPX@535,NPX@560,CO@585,CO@600,CO@615,CO@630,CO@645,CO@660,CO@675",
-    "o1": "NPX@510,NPX@535,CO@560,NP@575,CO@595,CO@610,CO@625,NP@640,CO@660,CO@675",
-    "o2": "TC@510,TC@520,TC@530,TC@540,CO@550,NP@565,CO@585,NP@600,CO@620,NP@635,CO@655,NP@670",
-    "o3": ""
+    "o1": "TC@510,TC@520,TC@530,TC@540,CO@550,NP@565,CO@585,NP@600,CO@620,NP@635,CO@655,NP@670",
+    "o2": "TC@510,CO@520,NP@535,CO@555,NP@570,CO@590,NP@605,CO@625,CO@640,NP@655,CO@675"
    }
   },
   "ntp": "CO,CO,CO,TC",
-  "rooms": 4,
+  "rooms": 3,
   "kpi": {
    "appts": 296,
    "planned": 4845,
@@ -9919,33 +9843,33 @@
     "o3": ""
    },
    "2": {
-    "m0": "NPX@780,NPX@805,CO@830,NP@845,CO@865,CO@880,CO@895,NP@910,CO@930,CO@945,CO@960",
-    "m1": "CO@780,NP@795,CO@815,NP@830,CO@850,CO@865,NP@880,CO@900,CO@915,NP@930,CO@950,CO@965",
+    "m0": "CO@780,NP@795,CO@815,NP@830,CO@850,CO@865,NP@880,CO@900,CO@915,NP@930,CO@950,CO@965",
+    "m1": "NPX@780,NPX@805,CO@830,NP@845,CO@865,CO@880,CO@895,NP@910,CO@930,CO@945,CO@960",
     "m2": "",
     "m3": "",
     "o0": "NPX@510,NPX@535,CO@560,NP@575,CO@595,CO@610,CO@625,NP@640,CO@660,CO@675,CO@690",
-    "o1": "CO@510,NP@525,CO@545,NP@560,CO@580,CO@595,NP@610,CO@630,CO@645,NP@660,CO@680,CO@695",
-    "o2": "NPX@510,NPX@535,CO@560,NP@575,CO@595,CO@610,CO@625,NP@640,CO@660,CO@675,CO@690",
+    "o1": "NPX@510,NPX@535,CO@560,NP@575,CO@595,CO@610,CO@625,NP@640,CO@660,CO@675,CO@690",
+    "o2": "CO@510,NP@525,CO@545,NP@560,CO@580,CO@595,NP@610,CO@630,CO@645,NP@660,CO@680,CO@695",
     "o3": ""
    },
    "3": {
-    "m0": "NPX@780,NPX@805,CO@830,NP@845,CO@865,CO@880,CO@895,NP@910,CO@930,CO@945,CO@960",
-    "m1": "CO@780,NP@795,CO@815,NP@830,CO@850,CO@865,NP@880,CO@900,CO@915,NP@930,CO@950,CO@965",
+    "m0": "CO@780,NP@795,CO@815,NP@830,CO@850,CO@865,NP@880,CO@900,CO@915,NP@930,CO@950,CO@965",
+    "m1": "NPX@780,NPX@805,CO@830,NP@845,CO@865,CO@880,CO@895,NP@910,CO@930,CO@945,CO@960",
     "m2": "",
     "m3": "",
     "o0": "NPX@510,NPX@535,CO@560,NP@575,CO@595,CO@610,CO@625,NP@640,CO@660,CO@675,CO@690",
-    "o1": "CO@510,NP@525,CO@545,NP@560,CO@580,CO@595,NP@610,CO@630,CO@645,NP@660,CO@680,CO@695",
-    "o2": "NPX@510,NPX@535,CO@560,NP@575,CO@595,CO@610,CO@625,NP@640,CO@660,CO@675,CO@690",
+    "o1": "NPX@510,NPX@535,CO@560,NP@575,CO@595,CO@610,CO@625,NP@640,CO@660,CO@675,CO@690",
+    "o2": "CO@510,NP@525,CO@545,NP@560,CO@580,CO@595,NP@610,CO@630,CO@645,NP@660,CO@680,CO@695",
     "o3": ""
    },
    "4": {
-    "m0": "NPX@780,NPX@805,CO@830,NP@845,CO@865,CO@880,CO@895,NP@910,CO@930,CO@945,CO@960",
-    "m1": "NPX@780,NPX@805,NPX@830,NPX@855,TC@880,TC@890,TC@900,TC@910,TC@920,TC@930,TC@940,CO@950,CO@965",
+    "m0": "TC@780,CO@790,NP@805,CO@825,NP@840,CO@860,CO@875,NP@890,CO@910,NP@925,CO@945,CO@960",
+    "m1": "NPX@780,NPX@805,CO@830,NP@845,CO@865,CO@880,CO@895,NP@910,CO@930,CO@945,CO@960",
     "m2": "",
     "m3": "",
     "o0": "TC@510,CO@520,NP@535,CO@555,NP@570,CO@590,CO@605,NP@620,CO@640,NP@655,CO@675,CO@690",
     "o1": "TC@510,CO@520,NP@535,CO@555,NP@570,CO@590,CO@605,NP@620,CO@640,NP@655,CO@675,CO@690",
-    "o2": "TC@510,CO@520,NP@535,CO@555,NP@570,CO@590,CO@605,NP@620,CO@640,NP@655,CO@675,CO@690",
+    "o2": "NPX@510,NPX@535,NPX@560,NPX@585,TC@610,TC@620,TC@630,TC@640,TC@650,TC@660,TC@670,CO@680,CO@695",
     "o3": ""
    }
   },
@@ -9973,52 +9897,52 @@
   "d": {
    "0": {
     "m0": "NPX@780,NPX@805,CO@830,NP@845,CO@865,CO@880,CO@895,NP@910,CO@930,CO@945",
-    "m1": "NP@780,CO@800,NP@815,CO@835,NP@850,CO@870,NP@885,CO@905,NP@920,NP@940",
+    "m1": "NPX@780,NPX@805,CO@830,NP@845,CO@865,CO@880,CO@895,NP@910,CO@930,CO@945",
     "m2": "CO@780,NP@795,CO@815,CO@830,NP@845,CO@865,CO@880,CO@895,NP@910,CO@930,CO@945",
     "m3": "",
     "o0": "TC@510,TC@520,TC@530,TC@540,TC@550,TC@560,TC@570,TC@580,TC@590,TC@600,TC@610,TC@620,TC@630,TC@640,TC@650,TC@660,TC@670,TC@680",
     "o1": "NPX@510,NPX@535,CO@560,NP@575,CO@595,CO@610,CO@625,NP@640,CO@660,CO@675",
-    "o2": "NPX@510,NPX@535,CO@560,NP@575,CO@595,CO@610,CO@625,NP@640,CO@660,CO@675",
+    "o2": "NP@510,CO@530,NP@545,CO@565,NP@580,CO@600,NP@615,CO@635,NP@650,NP@670",
     "o3": ""
    },
    "1": {
-    "m0": "NPX@780,CO@805,NP@820,CO@840,NP@855,CO@875,CO@890,NP@905,CO@925,CO@940",
-    "m1": "NP@780,CO@800,NP@815,CO@835,NP@850,CO@870,NP@885,CO@905,NP@920,CO@940",
-    "m2": "",
+    "m0": "NPX@780,NPX@805,CO@830,NP@845,CO@865,CO@880,CO@895,NP@910,CO@930,CO@945",
+    "m1": "NPX@780,NPX@805,CO@830,NP@845,CO@865,CO@880,CO@895,NP@910,CO@930,CO@945",
+    "m2": "NP@780,CO@800,NP@815,CO@835,NP@850,CO@870,NP@885,CO@905,NP@920,CO@940",
     "m3": "",
     "o0": "TC@510,TC@520,TC@530,TC@540,TC@550,TC@560,TC@570,TC@580,TC@590,TC@600,TC@610,TC@620,TC@630,TC@640,TC@650,TC@660,TC@670,TC@680",
     "o1": "NPX@510,NPX@535,CO@560,NP@575,CO@595,CO@610,CO@625,NP@640,CO@660,CO@675",
-    "o2": "NPX@510,NPX@535,CO@560,NP@575,CO@595,CO@610,CO@625,NP@640,CO@660,CO@675",
-    "o3": "NPX@510,NPX@535,CO@560,NP@575,CO@595,CO@610,CO@625,NP@640,CO@660,CO@675"
+    "o2": "NPX@510,CO@535,NP@550,CO@570,NP@585,CO@605,CO@620,NP@635,CO@655,CO@670",
+    "o3": ""
    },
    "2": {
-    "m0": "CO@780,NP@795,CO@815,CO@830,NP@845,CO@865,CO@880,CO@895,NP@910,CO@930,CO@945",
-    "m1": "CO@780,NP@795,CO@815,NP@830,CO@850,NP@865,CO@885,NP@900,CO@920,NP@935",
+    "m0": "NPX@780,NPX@805,CO@830,NP@845,CO@865,CO@880,CO@895,NP@910,CO@930,CO@945",
+    "m1": "CO@780,NP@795,CO@815,CO@830,NP@845,CO@865,CO@880,CO@895,NP@910,CO@930,CO@945",
     "m2": "",
     "m3": "",
     "o0": "NPX@510,NPX@535,CO@560,NP@575,CO@595,CO@610,CO@625,NP@640,CO@660,CO@675",
     "o1": "NPX@510,NPX@535,CO@560,NP@575,CO@595,CO@610,CO@625,NP@640,CO@660,CO@675",
-    "o2": "NPX@510,NPX@535,CO@560,NP@575,CO@595,CO@610,CO@625,NP@640,CO@660,CO@675",
+    "o2": "CO@510,NP@525,CO@545,NP@560,CO@580,NP@595,CO@615,NP@630,CO@650,NP@665",
     "o3": ""
    },
    "3": {
-    "m0": "NPX@780,NPX@805,NPX@830,CO@855,CO@870,CO@885,CO@900,CO@915,CO@930,CO@945",
-    "m1": "NPX@780,NPX@805,NPX@830,TC@855,CO@865,CO@880,NP@895,CO@915,CO@930,CO@945",
+    "m0": "TC@780,CO@790,NP@805,CO@825,NP@840,CO@860,NP@875,CO@895,CO@910,NP@925,CO@945",
+    "m1": "NPX@780,NPX@805,NPX@830,CO@855,CO@870,CO@885,CO@900,CO@915,CO@930,CO@945",
     "m2": "",
     "m3": "",
     "o0": "TC@510,CO@520,NP@535,CO@555,NP@570,CO@590,NP@605,CO@625,CO@640,NP@655,CO@675",
     "o1": "TC@510,CO@520,NP@535,CO@555,NP@570,CO@590,NP@605,CO@625,CO@640,NP@655,CO@675",
-    "o2": "TC@510,CO@520,NP@535,CO@555,NP@570,CO@590,NP@605,CO@625,CO@640,NP@655,CO@675",
+    "o2": "NPX@510,NPX@535,NPX@560,TC@585,CO@595,CO@610,NP@625,CO@645,CO@660,CO@675",
     "o3": ""
    },
    "4": {
-    "m0": "TC@780,TC@790,TC@800,TC@810,CO@820,NP@835,CO@855,NP@870,CO@890,NP@905,CO@925,NP@940",
-    "m1": "TC@780,CO@790,NP@805,CO@825,NP@840,CO@860,NP@875,CO@895,CO@910,NP@925,CO@945",
+    "m0": "NPX@780,NPX@805,CO@830,NP@845,CO@865,CO@880,CO@895,NP@910,CO@930,CO@945",
+    "m1": "TC@780,TC@790,TC@800,TC@810,CO@820,NP@835,CO@855,NP@870,CO@890,NP@905,CO@925,NP@940",
     "m2": "",
     "m3": "",
     "o0": "NPX@510,NPX@535,NPX@560,CO@585,CO@600,CO@615,CO@630,CO@645,CO@660,CO@675",
-    "o1": "NPX@510,NPX@535,CO@560,NP@575,CO@595,CO@610,CO@625,NP@640,CO@660,CO@675",
-    "o2": "TC@510,TC@520,TC@530,TC@540,CO@550,NP@565,CO@585,NP@600,CO@620,NP@635,CO@655,NP@670",
+    "o1": "TC@510,TC@520,TC@530,TC@540,CO@550,NP@565,CO@585,NP@600,CO@620,NP@635,CO@655,NP@670",
+    "o2": "TC@510,CO@520,NP@535,CO@555,NP@570,CO@590,NP@605,CO@625,CO@640,NP@655,CO@675",
     "o3": ""
    }
   },
@@ -10064,33 +9988,33 @@
     "o3": ""
    },
    "2": {
-    "m0": "NPX@780,NPX@805,CO@830,NP@845,CO@865,CO@880,CO@895,NP@910,CO@930,CO@945,CO@960",
-    "m1": "CO@780,NP@795,CO@815,NP@830,CO@850,CO@865,NP@880,CO@900,CO@915,NP@930,CO@950,CO@965",
+    "m0": "CO@780,NP@795,CO@815,NP@830,CO@850,CO@865,NP@880,CO@900,CO@915,NP@930,CO@950,CO@965",
+    "m1": "NPX@780,NPX@805,CO@830,NP@845,CO@865,CO@880,CO@895,NP@910,CO@930,CO@945,CO@960",
     "m2": "",
     "m3": "",
     "o0": "NPX@510,NPX@535,CO@560,NP@575,CO@595,CO@610,CO@625,NP@640,CO@660,CO@675,CO@690",
-    "o1": "CO@510,NP@525,CO@545,NP@560,CO@580,CO@595,NP@610,CO@630,CO@645,NP@660,CO@680,CO@695",
-    "o2": "NPX@510,NPX@535,CO@560,NP@575,CO@595,CO@610,CO@625,NP@640,CO@660,CO@675,CO@690",
+    "o1": "NPX@510,NPX@535,CO@560,NP@575,CO@595,CO@610,CO@625,NP@640,CO@660,CO@675,CO@690",
+    "o2": "CO@510,NP@525,CO@545,NP@560,CO@580,CO@595,NP@610,CO@630,CO@645,NP@660,CO@680,CO@695",
     "o3": ""
    },
    "3": {
-    "m0": "NPX@780,NPX@805,CO@830,NP@845,CO@865,CO@880,CO@895,NP@910,CO@930,CO@945,CO@960",
-    "m1": "CO@780,NP@795,CO@815,NP@830,CO@850,CO@865,NP@880,CO@900,CO@915,NP@930,CO@950,CO@965",
+    "m0": "CO@780,NP@795,CO@815,NP@830,CO@850,CO@865,NP@880,CO@900,CO@915,NP@930,CO@950,CO@965",
+    "m1": "NPX@780,NPX@805,CO@830,NP@845,CO@865,CO@880,CO@895,NP@910,CO@930,CO@945,CO@960",
     "m2": "",
     "m3": "",
     "o0": "NPX@510,NPX@535,CO@560,NP@575,CO@595,CO@610,CO@625,NP@640,CO@660,CO@675,CO@690",
-    "o1": "CO@510,NP@525,CO@545,NP@560,CO@580,CO@595,NP@610,CO@630,CO@645,NP@660,CO@680,CO@695",
-    "o2": "NPX@510,NPX@535,CO@560,NP@575,CO@595,CO@610,CO@625,NP@640,CO@660,CO@675,CO@690",
+    "o1": "NPX@510,NPX@535,CO@560,NP@575,CO@595,CO@610,CO@625,NP@640,CO@660,CO@675,CO@690",
+    "o2": "CO@510,NP@525,CO@545,NP@560,CO@580,CO@595,NP@610,CO@630,CO@645,NP@660,CO@680,CO@695",
     "o3": ""
    },
    "4": {
-    "m0": "NPX@780,NPX@805,CO@830,NP@845,CO@865,CO@880,CO@895,NP@910,CO@930,CO@945,CO@960",
-    "m1": "NPX@780,NPX@805,NPX@830,NPX@855,TC@880,TC@890,TC@900,TC@910,TC@920,TC@930,TC@940,CO@950,CO@965",
+    "m0": "TC@780,CO@790,NP@805,CO@825,NP@840,CO@860,CO@875,NP@890,CO@910,NP@925,CO@945,CO@960",
+    "m1": "NPX@780,NPX@805,CO@830,NP@845,CO@865,CO@880,CO@895,NP@910,CO@930,CO@945,CO@960",
     "m2": "",
     "m3": "",
     "o0": "TC@510,CO@520,NP@535,CO@555,NP@570,CO@590,CO@605,NP@620,CO@640,NP@655,CO@675,CO@690",
     "o1": "TC@510,CO@520,NP@535,CO@555,NP@570,CO@590,CO@605,NP@620,CO@640,NP@655,CO@675,CO@690",
-    "o2": "TC@510,CO@520,NP@535,CO@555,NP@570,CO@590,CO@605,NP@620,CO@640,NP@655,CO@675,CO@690",
+    "o2": "NPX@510,NPX@535,NPX@560,NPX@585,TC@610,TC@620,TC@630,TC@640,TC@650,TC@660,TC@670,CO@680,CO@695",
     "o3": ""
    }
   },
@@ -10117,65 +10041,68 @@
  "poli|100-200|standaard|alles|auto3|b85": {
   "d": {
    "0": {
-    "m0": "CO@780,CO@795,CO@810,CO@825,CO@840,CO@865,TC@880,CO@890,CO@915,CO@930,CO@960,CO@975",
-    "m1": "CO@780,TC@795,CO@805,TC@820,CO@830,TC@845,CO@865,TC@880,CO@890,TC@915,CO@925,TC@940,CO@965,TC@980",
-    "m2": "",
-    "o0": "NP@510,CO@530,NP@545,CO@565,NP@580,CO@610,NP@625,CO@655,NP@670,CO@705",
-    "o1": "NP@510,CO@530,CO@545,CO@560,NP@575,TC@605,CO@615,NP@640,CO@660,CO@690,CO@705",
-    "o2": ""
+    "m0": "NPX@780,NPX@805,NP@830,CO@850,CO@875,CO@890,CO@915,NP@930,CO@960,CO@975",
+    "m1": "NPX@780,NPX@805,NP@830,CO@850,CO@875,CO@890,CO@915,NP@930,CO@960,CO@975",
+    "m2": "NP@780,CO@800,CO@815,CO@830,NP@845,CO@875,CO@890,CO@915,NP@930,CO@960,CO@975",
+    "o0": "TC@510,TC@520,TC@530,TC@540,TC@550,TC@560,TC@570,TC@580,TC@600,TC@610,TC@620,TC@630,TC@650,TC@660,TC@670,TC@680,TC@700,TC@710",
+    "o1": "NP@510,TC@530,CO@540,CO@555,NP@570,CO@600,NP@615,CO@645,CO@660,NP@685,CO@705",
+    "o2": "NPX@510,NPX@535,NP@560,CO@580,CO@605,CO@620,CO@645,NP@660,CO@690,CO@705"
    },
    "1": {
-    "m0": "NPX@780,CO@805,CO@820,CO@835,CO@850,CO@875,CO@890,CO@915,CO@930,CO@960,CO@975",
-    "m1": "NP@780,CO@800,CO@815,CO@830,NP@845,TC@875,CO@885,NP@910,CO@930,CO@960,CO@975",
-    "m2": "NP@780,TC@800,CO@810,TC@825,NP@835,TC@855,TC@875,CO@885,TC@900,NP@920,TC@940,CO@965,TC@980",
-    "o0": "NPX@510,NPX@535,NPX@560,NPX@585,NPX@620,CO@645,TC@670,CO@680,TC@710",
-    "o1": "NPX@510,NPX@535,NP@560,CO@580,NP@605,CO@625,NP@650,CO@670,NP@700",
+    "m0": "NPX@780,NPX@805,NP@830,CO@850,CO@875,CO@890,CO@915,NP@930,CO@960,CO@975",
+    "m1": "NPX@780,NPX@805,NP@830,CO@850,CO@875,CO@890,CO@915,NP@930,CO@960,CO@975",
+    "m2": "NP@780,CO@800,NP@815,CO@835,NP@850,CO@880,NP@895,CO@925,NP@940,CO@975",
+    "o0": "TC@510,TC@520,TC@530,TC@540,TC@550,TC@560,TC@570,TC@580,TC@600,TC@610,TC@620,TC@630,TC@650,TC@660,TC@670,TC@680,TC@700,TC@710",
+    "o1": "NPX@510,NPX@535,NP@560,CO@580,CO@605,CO@620,CO@645,NP@660,CO@690,CO@705",
     "o2": "NPX@510,NP@535,CO@555,CO@570,NP@595,CO@615,CO@640,NP@655,CO@690,CO@705"
    },
    "2": {
-    "m0": "NPX@780,CO@805,CO@820,CO@835,CO@850,CO@875,CO@890,CO@915,CO@930,CO@960,CO@975",
-    "m1": "NP@780,CO@800,CO@815,TC@830,CO@840,CO@865,CO@880,CO@895,CO@920,TC@935,CO@960,CO@975",
-    "m2": "NP@780,TC@800,CO@810,TC@825,CO@835,TC@850,TC@870,CO@880,TC@895,TC@915,CO@925,TC@940,CO@965,TC@980",
-    "o0": "NPX@510,NPX@535,NPX@560,NPX@595,NPX@620,NPX@655,CO@680,TC@710",
-    "o1": "NPX@510,NP@535,CO@555,NP@570,NP@600,NP@620,CO@650,NP@665,NP@700",
-    "o2": "NPX@510,NP@535,CO@555,NP@570,NP@600,NP@620,CO@650,NP@665,NP@700"
-   },
-   "3": {
-    "m0": "NPX@780,NPX@805,NP@830,CO@850,CO@875,CO@890,CO@915,CO@930,CO@960,CO@975",
-    "m1": "NPX@780,NP@805,CO@825,CO@840,CO@865,CO@880,TC@895,CO@915,CO@930,CO@960,CO@975",
-    "m2": "NP@780,TC@800,CO@810,TC@825,NP@835,TC@855,TC@875,CO@885,TC@900,NP@920,TC@940,CO@965,TC@980",
-    "o0": "NPX@510,NPX@535,NPX@560,NP@585,CO@615,CO@630,NP@655,CO@675,CO@705",
-    "o1": "NP@510,CO@530,NP@545,CO@565,NP@580,TC@610,NP@620,CO@650,NP@665,NP@700",
+    "m0": "NPX@780,NPX@805,NP@830,CO@850,CO@875,CO@890,CO@915,NP@930,CO@960,CO@975",
+    "m1": "NP@780,CO@800,CO@815,CO@830,NP@845,CO@875,CO@890,CO@915,NP@930,CO@960,CO@975",
+    "m2": "",
+    "o0": "NPX@510,NPX@535,NP@560,CO@580,CO@605,CO@620,CO@645,NP@660,CO@690,CO@705",
+    "o1": "NPX@510,NPX@535,NP@560,CO@580,CO@605,CO@620,CO@645,NP@660,CO@690,CO@705",
     "o2": "NP@510,CO@530,NP@545,CO@565,NP@580,CO@610,NP@625,CO@655,NP@670,CO@705"
    },
+   "3": {
+    "m0": "NP@780,TC@800,CO@810,CO@825,NP@840,CO@870,NP@885,CO@915,CO@930,NP@955,CO@975",
+    "m1": "NPX@780,NPX@805,NPX@830,CO@855,CO@880,CO@895,CO@920,CO@935,CO@960,CO@975",
+    "m2": "",
+    "o0": "NP@510,TC@530,CO@540,CO@555,NP@570,CO@600,NP@615,CO@645,CO@660,NP@685,CO@705",
+    "o1": "NP@510,TC@530,CO@540,CO@555,NP@570,CO@600,NP@615,CO@645,CO@660,NP@685,CO@705",
+    "o2": "NPX@510,NPX@535,NPX@560,NP@585,TC@615,CO@625,CO@650,CO@665,CO@690,CO@705"
+   },
    "4": {
-    "m0": "NPX@780,NPX@805,NP@830,CO@850,CO@875,CO@890,TC@915,NP@925,CO@960,CO@975",
-    "m1": "NP@780,CO@800,NP@815,TC@835,CO@845,NP@870,CO@890,NP@915,TC@935,CO@960,CO@975",
-    "m2": "NPX@780,NP@805,TC@825,NP@835,TC@855,TC@875,TC@885,NP@895,TC@925,TC@935,NP@960,TC@980",
-    "o0": "NPX@510,NPX@535,NP@560,CO@580,CO@605,CO@620,CO@645,CO@660,CO@690,CO@705",
-    "o1": "NPX@510,NP@535,CO@555,CO@570,CO@595,NP@610,CO@640,NP@655,CO@690,CO@705",
-    "o2": "NP@510,CO@530,CO@545,CO@560,NP@575,TC@605,CO@615,NP@640,CO@660,CO@690,CO@705"
+    "m0": "NPX@780,NPX@805,NP@830,CO@850,CO@875,CO@890,CO@915,NP@930,CO@960,CO@975",
+    "m1": "NP@780,TC@800,TC@810,TC@820,TC@830,CO@840,NP@865,CO@885,NP@910,CO@930,NP@955,CO@975",
+    "m2": "",
+    "o0": "NPX@510,NPX@535,NPX@560,CO@585,CO@610,CO@625,CO@650,CO@665,CO@690,CO@705",
+    "o1": "NP@510,TC@530,TC@540,TC@550,TC@560,CO@570,NP@595,CO@615,NP@640,CO@660,NP@685,CO@705",
+    "o2": "NP@510,TC@530,CO@540,CO@555,NP@570,CO@600,NP@615,CO@645,CO@660,NP@685,CO@705"
    }
   },
-  "ntp": "",
+  "ntp": "CO,NP,NP",
   "rooms": 3,
   "kpi": {
-   "appts": 300,
-   "planned": 4900,
-   "capacity": 5880,
-   "flex": 980,
-   "benutting": 83,
-   "spreiding": 86,
-   "wissels": 168
+   "appts": 297,
+   "planned": 4845,
+   "capacity": 5670,
+   "flex": 825,
+   "benutting": 85,
+   "spreiding": 91,
+   "wissels": 135
   },
   "notices": [
-   "Digitale consulten:info",
-   "Nieuw en controle afwisselen:info",
+   "Digitale consulten:warn",
+   "Nog te plannen:warn",
    "Restruimte verwerkt:ok",
    "Restvraag gebundeld:ok",
    "Spoed eerst × Starten met nieuw:info"
   ],
-  "dig": []
+  "dig": [
+   "0O",
+   "1O"
+  ]
  },
  "poli|100-200|standaard|alles|auto3|b95": {
   "d": {
@@ -10256,76 +10183,78 @@
  "poli|100-200|standaard|alles|vast4|b85": {
   "d": {
    "0": {
-    "m0": "CO@780,CO@795,CO@810,CO@825,CO@840,CO@865,TC@880,CO@890,CO@915,CO@930,CO@960,CO@975",
-    "m1": "CO@780,TC@795,CO@805,TC@820,CO@830,TC@845,CO@865,TC@880,CO@890,TC@915,CO@925,TC@940,CO@965,TC@980",
-    "m2": "",
+    "m0": "NPX@780,NPX@805,NP@830,CO@850,CO@875,CO@890,CO@915,NP@930,CO@960,CO@975",
+    "m1": "NPX@780,NPX@805,NP@830,CO@850,CO@875,CO@890,CO@915,NP@930,CO@960,CO@975",
+    "m2": "NP@780,CO@800,CO@815,CO@830,NP@845,CO@875,CO@890,CO@915,NP@930,CO@960,CO@975",
     "m3": "",
-    "o0": "NP@510,CO@530,NP@545,CO@565,NP@580,CO@610,NP@625,CO@655,NP@670,CO@705",
-    "o1": "NP@510,CO@530,CO@545,CO@560,NP@575,TC@605,CO@615,NP@640,CO@660,CO@690,CO@705",
-    "o2": "",
+    "o0": "TC@510,TC@520,TC@530,TC@540,TC@550,TC@560,TC@570,TC@580,TC@600,TC@610,TC@620,TC@630,TC@650,TC@660,TC@670,TC@680,TC@700,TC@710",
+    "o1": "NP@510,TC@530,CO@540,CO@555,NP@570,CO@600,NP@615,CO@645,CO@660,NP@685,CO@705",
+    "o2": "NPX@510,NPX@535,NP@560,CO@580,CO@605,CO@620,CO@645,NP@660,CO@690,CO@705",
     "o3": ""
    },
    "1": {
-    "m0": "NPX@780,CO@805,CO@820,CO@835,CO@850,CO@875,CO@890,CO@915,CO@930,CO@960,CO@975",
-    "m1": "NP@780,CO@800,CO@815,CO@830,NP@845,TC@875,CO@885,NP@910,CO@930,CO@960,CO@975",
-    "m2": "NP@780,TC@800,CO@810,TC@825,NP@835,TC@855,TC@875,CO@885,TC@900,NP@920,TC@940,CO@965,TC@980",
+    "m0": "NPX@780,NPX@805,NP@830,CO@850,CO@875,CO@890,CO@915,NP@930,CO@960,CO@975",
+    "m1": "NPX@780,NPX@805,NP@830,CO@850,CO@875,CO@890,CO@915,NP@930,CO@960,CO@975",
+    "m2": "NP@780,CO@800,NP@815,CO@835,NP@850,CO@880,NP@895,CO@925,NP@940,CO@975",
     "m3": "",
-    "o0": "NPX@510,NPX@535,NPX@560,NPX@585,NPX@620,CO@645,TC@670,CO@680,TC@710",
-    "o1": "NPX@510,NPX@535,NP@560,CO@580,NP@605,CO@625,NP@650,CO@670,NP@700",
+    "o0": "TC@510,TC@520,TC@530,TC@540,TC@550,TC@560,TC@570,TC@580,TC@600,TC@610,TC@620,TC@630,TC@650,TC@660,TC@670,TC@680,TC@700,TC@710",
+    "o1": "NPX@510,NPX@535,NP@560,CO@580,CO@605,CO@620,CO@645,NP@660,CO@690,CO@705",
     "o2": "NPX@510,NP@535,CO@555,CO@570,NP@595,CO@615,CO@640,NP@655,CO@690,CO@705",
     "o3": ""
    },
    "2": {
-    "m0": "NPX@780,CO@805,CO@820,CO@835,CO@850,CO@875,CO@890,CO@915,CO@930,CO@960,CO@975",
-    "m1": "NP@780,CO@800,CO@815,TC@830,CO@840,CO@865,CO@880,CO@895,CO@920,TC@935,CO@960,CO@975",
-    "m2": "NP@780,TC@800,CO@810,TC@825,CO@835,TC@850,TC@870,CO@880,TC@895,TC@915,CO@925,TC@940,CO@965,TC@980",
+    "m0": "NPX@780,NPX@805,NP@830,CO@850,CO@875,CO@890,CO@915,NP@930,CO@960,CO@975",
+    "m1": "NP@780,CO@800,CO@815,CO@830,NP@845,CO@875,CO@890,CO@915,NP@930,CO@960,CO@975",
+    "m2": "",
     "m3": "",
-    "o0": "NPX@510,NPX@535,NPX@560,NPX@595,NPX@620,NPX@655,CO@680,TC@710",
-    "o1": "NPX@510,NP@535,CO@555,NP@570,NP@600,NP@620,CO@650,NP@665,NP@700",
-    "o2": "NPX@510,NP@535,CO@555,NP@570,NP@600,NP@620,CO@650,NP@665,NP@700",
-    "o3": ""
-   },
-   "3": {
-    "m0": "NPX@780,NPX@805,NP@830,CO@850,CO@875,CO@890,CO@915,CO@930,CO@960,CO@975",
-    "m1": "NPX@780,NP@805,CO@825,CO@840,CO@865,CO@880,TC@895,CO@915,CO@930,CO@960,CO@975",
-    "m2": "NP@780,TC@800,CO@810,TC@825,NP@835,TC@855,TC@875,CO@885,TC@900,NP@920,TC@940,CO@965,TC@980",
-    "m3": "",
-    "o0": "NPX@510,NPX@535,NPX@560,NP@585,CO@615,CO@630,NP@655,CO@675,CO@705",
-    "o1": "NP@510,CO@530,NP@545,CO@565,NP@580,TC@610,NP@620,CO@650,NP@665,NP@700",
+    "o0": "NPX@510,NPX@535,NP@560,CO@580,CO@605,CO@620,CO@645,NP@660,CO@690,CO@705",
+    "o1": "NPX@510,NPX@535,NP@560,CO@580,CO@605,CO@620,CO@645,NP@660,CO@690,CO@705",
     "o2": "NP@510,CO@530,NP@545,CO@565,NP@580,CO@610,NP@625,CO@655,NP@670,CO@705",
     "o3": ""
    },
-   "4": {
-    "m0": "NPX@780,NPX@805,NP@830,CO@850,CO@875,CO@890,TC@915,NP@925,CO@960,CO@975",
-    "m1": "NP@780,CO@800,NP@815,TC@835,CO@845,NP@870,CO@890,NP@915,TC@935,CO@960,CO@975",
-    "m2": "NPX@780,NP@805,TC@825,NP@835,TC@855,TC@875,TC@885,NP@895,TC@925,TC@935,NP@960,TC@980",
+   "3": {
+    "m0": "NP@780,TC@800,CO@810,CO@825,NP@840,CO@870,NP@885,CO@915,CO@930,NP@955,CO@975",
+    "m1": "NPX@780,NPX@805,NPX@830,CO@855,CO@880,CO@895,CO@920,CO@935,CO@960,CO@975",
+    "m2": "",
     "m3": "",
-    "o0": "NPX@510,NPX@535,NP@560,CO@580,CO@605,CO@620,CO@645,CO@660,CO@690,CO@705",
-    "o1": "NPX@510,NP@535,CO@555,CO@570,CO@595,NP@610,CO@640,NP@655,CO@690,CO@705",
-    "o2": "NP@510,CO@530,CO@545,CO@560,NP@575,TC@605,CO@615,NP@640,CO@660,CO@690,CO@705",
+    "o0": "NP@510,TC@530,CO@540,CO@555,NP@570,CO@600,NP@615,CO@645,CO@660,NP@685,CO@705",
+    "o1": "NP@510,TC@530,CO@540,CO@555,NP@570,CO@600,NP@615,CO@645,CO@660,NP@685,CO@705",
+    "o2": "NPX@510,NPX@535,NPX@560,NP@585,TC@615,CO@625,CO@650,CO@665,CO@690,CO@705",
+    "o3": ""
+   },
+   "4": {
+    "m0": "NPX@780,NPX@805,NP@830,CO@850,CO@875,CO@890,CO@915,NP@930,CO@960,CO@975",
+    "m1": "NP@780,TC@800,TC@810,TC@820,TC@830,CO@840,NP@865,CO@885,NP@910,CO@930,NP@955,CO@975",
+    "m2": "",
+    "m3": "",
+    "o0": "NPX@510,NPX@535,NPX@560,CO@585,CO@610,CO@625,CO@650,CO@665,CO@690,CO@705",
+    "o1": "NP@510,TC@530,TC@540,TC@550,TC@560,CO@570,NP@595,CO@615,NP@640,CO@660,NP@685,CO@705",
+    "o2": "NP@510,TC@530,CO@540,CO@555,NP@570,CO@600,NP@615,CO@645,CO@660,NP@685,CO@705",
     "o3": ""
    }
   },
-  "ntp": "",
+  "ntp": "CO,NP,NP",
   "rooms": 4,
   "kpi": {
-   "appts": 300,
-   "planned": 4900,
-   "capacity": 5880,
-   "flex": 980,
-   "benutting": 83,
-   "spreiding": 86,
-   "wissels": 168
+   "appts": 297,
+   "planned": 4845,
+   "capacity": 5670,
+   "flex": 825,
+   "benutting": 85,
+   "spreiding": 91,
+   "wissels": 135
   },
   "notices": [
-   "Aantal kamers:info",
-   "Digitale consulten:info",
-   "Nieuw en controle afwisselen:info",
+   "Digitale consulten:warn",
+   "Nog te plannen:warn",
    "Restruimte verwerkt:ok",
    "Restvraag gebundeld:ok",
    "Spoed eerst × Starten met nieuw:info"
   ],
-  "dig": []
+  "dig": [
+   "0O",
+   "1O"
+  ]
  },
  "poli|100-200|standaard|alles|vast4|b95": {
   "d": {
@@ -11884,29 +11813,29 @@
  "poli|100-235|beperkt|cluster+bundel|auto3|b85": {
   "d": {
    "0": {
-    "m0": "CO@780,NP@795,CO@825,NP@840,CO@870,CO@885,NP@900,CO@930,CO@945",
-    "m1": "CO@780,NP@795,CO@825,NP@840,CO@870,CO@885,NP@900,CO@930,CO@945",
-    "m2": "NP@780,CO@810,NP@825,CO@855,NP@870,CO@900,NP@915,CO@945",
-    "m3": "CO@780,NP@795,CO@825,NP@840,CO@870,CO@885,NP@900,CO@930,CO@945",
-    "m4": "CO@780,NP@795,CO@825,NP@840,CO@870,CO@885,NP@900,CO@930,CO@945",
-    "m5": "",
-    "o0": "CO@510,NP@525,CO@555,NP@570,CO@600,CO@615,NP@630,CO@660,CO@675",
-    "o1": "CO@510,NP@525,CO@555,NP@570,CO@600,CO@615,NP@630,CO@660,CO@675",
-    "o2": "OCH@510,NP@530,CO@560,OCH@575,NP@595,OCH@625,NP@645,CO@675",
-    "o3": "CO@510,NP@525,CO@555,NP@570,CO@600,CO@615,NP@630,CO@660,CO@675",
-    "o4": "CO@510,NP@525,CO@555,NP@570,CO@600,CO@615,NP@630,CO@660,CO@675",
-    "o5": "CO@510,NP@525,CO@555,NP@570,OCH@600,CO@620,NP@635"
-   },
-   "1": {
-    "m0": "NP@780,CO@810,NP@825,NP@855,CO@885,NP@900,NP@930",
+    "m0": "CO@780,NP@795,CO@825,NP@840,CO@870,NP@885,CO@915,NP@930",
     "m1": "CO@780,NP@795,CO@825,NP@840,CO@870,NP@885,CO@915,NP@930",
-    "m2": "NP@780,CO@810,NP@825,NP@855,CO@885,NP@900,NP@930",
-    "m3": "NP@780,CO@810,NP@825,CO@855,NP@870,CO@900,NP@915,CO@945",
+    "m2": "CO@780,NP@795,CO@825,NP@840,CO@870,NP@885,CO@915,NP@930",
+    "m3": "CO@780,NP@795,CO@825,NP@840,CO@870,NP@885,CO@915,NP@930",
     "m4": "",
     "m5": "",
-    "o0": "NP@510,CO@540,NP@555,NP@585,CO@615,NP@630,NP@660",
-    "o1": "NP@510,CO@540,NP@555,NP@585,CO@615,NP@630,NP@660",
-    "o2": "NP@510,CO@540,NP@555,NP@585,CO@615,NP@630,NP@660",
+    "o0": "NP@510,OCH@540,NP@560,CO@590,NP@605,OCH@635,NP@655",
+    "o1": "CO@510,NP@525,CO@555,NP@570,CO@600,NP@615,CO@645,NP@660",
+    "o2": "CO@510,NP@525,CO@555,NP@570,CO@600,NP@615,CO@645,NP@660",
+    "o3": "NP@510,CO@540,NP@555,NP@585,CO@615,NP@630,NP@660",
+    "o4": "NP@510,CO@540,NP@555,CO@585,NP@600,CO@630,NP@645,CO@675",
+    "o5": ""
+   },
+   "1": {
+    "m0": "CO@780,NP@795,CO@825,NP@840,CO@870,NP@885,CO@915,NP@930",
+    "m1": "CO@780,NP@795,CO@825,NP@840,CO@870,NP@885,CO@915,NP@930",
+    "m2": "CO@780,NP@795,CO@825,NP@840,CO@870,NP@885,CO@915,NP@930",
+    "m3": "NP@780,CO@810,NP@825,NP@855,CO@885,NP@900,NP@930",
+    "m4": "",
+    "m5": "",
+    "o0": "CO@510,NP@525,CO@555,NP@570,CO@600,NP@615,CO@645,NP@660",
+    "o1": "CO@510,NP@525,CO@555,NP@570,CO@600,NP@615,CO@645,NP@660",
+    "o2": "CO@510,NP@525,CO@555,NP@570,CO@600,NP@615,CO@645,NP@660",
     "o3": "",
     "o4": "",
     "o5": ""
@@ -11923,18 +11852,18 @@
     "o2": "OCH@510,OCH@530,OCH@550,OCH@570,OCH@590,OCH@610,OCH@630,OCH@650,OCH@670",
     "o3": "OCH@510,OCH@530,OCH@550,OCH@570,OCH@590,OCH@610,OCH@630,OCH@650,OCH@670",
     "o4": "OCH@510,OCH@530,OCH@550,OCH@570,OCH@590,OCH@610,OCH@630,OCH@650,OCH@670",
-    "o5": ""
+    "o5": "OCH@510,CO@530,OCH@545,CO@565,OCH@580,CO@600,OCH@615,CO@635,OCH@650,CO@670"
    },
    "3": {
-    "m0": "NP@780,CO@810,NP@825,NP@855,CO@885,NP@900,NP@930",
+    "m0": "CO@780,NP@795,CO@825,NP@840,CO@870,NP@885,CO@915,NP@930",
     "m1": "CO@780,NP@795,CO@825,NP@840,CO@870,NP@885,CO@915,NP@930",
-    "m2": "NP@780,CO@810,NP@825,NP@855,CO@885,NP@900,NP@930",
-    "m3": "NP@780,CO@810,NP@825,CO@855,NP@870,CO@900,NP@915,CO@945",
+    "m2": "CO@780,NP@795,CO@825,NP@840,CO@870,NP@885,CO@915,NP@930",
+    "m3": "NP@780,CO@810,NP@825,NP@855,CO@885,NP@900,NP@930",
     "m4": "",
     "m5": "",
-    "o0": "NP@510,CO@540,NP@555,NP@585,CO@615,NP@630,NP@660",
-    "o1": "NP@510,CO@540,NP@555,NP@585,CO@615,NP@630,NP@660",
-    "o2": "NP@510,CO@540,NP@555,NP@585,CO@615,NP@630,NP@660",
+    "o0": "CO@510,NP@525,CO@555,NP@570,CO@600,NP@615,CO@645,NP@660",
+    "o1": "CO@510,NP@525,CO@555,NP@570,CO@600,NP@615,CO@645,NP@660",
+    "o2": "CO@510,NP@525,CO@555,NP@570,CO@600,NP@615,CO@645,NP@660",
     "o3": "",
     "o4": "",
     "o5": ""
@@ -11950,24 +11879,23 @@
     "o1": "OCH@510,OCH@530,OCH@550,OCH@570,OCH@590,OCH@610,OCH@630,OCH@650,OCH@670",
     "o2": "OCH@510,OCH@530,OCH@550,OCH@570,OCH@590,OCH@610,OCH@630,OCH@650,OCH@670",
     "o3": "OCH@510,OCH@530,OCH@550,OCH@570,OCH@590,OCH@610,OCH@630,OCH@650,OCH@670",
-    "o4": "OCH@510,OCH@530,OCH@550,OCH@570,OCH@590,OCH@610,OCH@630,OCH@650,OCH@670",
+    "o4": "OCH@510,CO@530,OCH@545,CO@565,OCH@580,CO@600,OCH@615,CO@635,OCH@650,OCH@670",
     "o5": ""
    }
   },
-  "ntp": "",
+  "ntp": "CO,NP,NP,NP,NP,NP",
   "rooms": 6,
   "kpi": {
-   "appts": 335,
-   "planned": 6995,
-   "capacity": 8190,
-   "flex": 1195,
-   "benutting": 85,
-   "spreiding": 80,
-   "wissels": 136
+   "appts": 329,
+   "planned": 6830,
+   "capacity": 7980,
+   "flex": 1150,
+   "benutting": 86,
+   "spreiding": 90,
+   "wissels": 168
   },
   "notices": [
-   "Eigen digitaal spreekuur:info",
-   "Nieuw en controle afwisselen:info",
+   "Nog te plannen:warn",
    "Restvraag gebundeld:ok"
   ],
   "dig": []
@@ -12096,29 +12024,29 @@
  "poli|100-235|beperkt|alles|auto3|b85": {
   "d": {
    "0": {
-    "m0": "NP@780,CO@810,CO@825,NP@840,CO@880,CO@895,NP@920,CO@950,CO@975",
-    "m1": "NP@780,CO@810,CO@825,NP@840,CO@880,CO@895,NP@920,CO@950,CO@975",
-    "m2": "NP@780,CO@810,NP@825,CO@865,NP@880,CO@920,NP@935,CO@975",
-    "m3": "NP@780,CO@810,CO@825,NP@840,CO@880,CO@895,NP@920,CO@950,CO@975",
-    "m4": "NP@780,CO@810,CO@825,NP@840,CO@880,CO@895,NP@920,CO@950,CO@975",
-    "m5": "",
-    "o0": "NP@510,CO@540,CO@555,NP@570,CO@610,CO@625,NP@650,CO@680,CO@705",
-    "o1": "NP@510,CO@540,CO@555,NP@570,CO@610,CO@625,NP@650,CO@680,CO@705",
-    "o2": "NP@510,OCH@540,CO@560,OCH@585,NP@605,OCH@645,NP@665,CO@705",
-    "o3": "NP@510,CO@540,CO@555,NP@570,CO@610,CO@625,NP@650,CO@680,CO@705",
-    "o4": "NP@510,CO@540,CO@555,NP@570,CO@610,CO@625,NP@650,CO@680,CO@705",
-    "o5": "NP@510,CO@540,OCH@555,NP@585,CO@625,NP@650,CO@690"
-   },
-   "1": {
-    "m0": "NP@780,CO@810,NP@825,NP@865,CO@895,NP@920,NP@960",
+    "m0": "NP@780,CO@810,NP@825,CO@865,NP@880,CO@920,NP@935,CO@975",
     "m1": "NP@780,CO@810,NP@825,CO@865,NP@880,CO@920,NP@935,CO@975",
-    "m2": "NP@780,CO@810,NP@825,NP@865,CO@895,NP@920,NP@960",
+    "m2": "NP@780,CO@810,NP@825,CO@865,NP@880,CO@920,NP@935,CO@975",
     "m3": "NP@780,CO@810,NP@825,CO@865,NP@880,CO@920,NP@935,CO@975",
     "m4": "",
     "m5": "",
-    "o0": "NP@510,CO@540,NP@555,NP@595,CO@625,NP@650,NP@690",
-    "o1": "NP@510,CO@540,NP@555,NP@595,CO@625,NP@650,NP@690",
-    "o2": "NP@510,CO@540,NP@555,NP@595,CO@625,NP@650,NP@690",
+    "o0": "NP@510,OCH@540,NP@560,CO@600,NP@615,OCH@655,NP@690",
+    "o1": "NP@510,CO@540,NP@555,CO@595,NP@610,CO@650,NP@665,CO@705",
+    "o2": "NP@510,CO@540,NP@555,CO@595,NP@610,CO@650,NP@665,CO@705",
+    "o3": "NP@510,CO@540,NP@555,NP@595,CO@625,NP@650,NP@690",
+    "o4": "NP@510,CO@540,NP@555,CO@595,NP@610,CO@650,NP@665,CO@705",
+    "o5": ""
+   },
+   "1": {
+    "m0": "NP@780,CO@810,NP@825,CO@865,NP@880,CO@920,NP@935,CO@975",
+    "m1": "NP@780,CO@810,NP@825,CO@865,NP@880,CO@920,NP@935,CO@975",
+    "m2": "NP@780,CO@810,NP@825,CO@865,NP@880,CO@920,NP@935,CO@975",
+    "m3": "NP@780,CO@810,NP@825,NP@865,CO@895,NP@920,NP@960",
+    "m4": "",
+    "m5": "",
+    "o0": "NP@510,CO@540,NP@555,CO@595,NP@610,CO@650,NP@665,CO@705",
+    "o1": "NP@510,CO@540,NP@555,CO@595,NP@610,CO@650,NP@665,CO@705",
+    "o2": "NP@510,CO@540,NP@555,CO@595,NP@610,CO@650,NP@665,CO@705",
     "o3": "",
     "o4": "",
     "o5": ""
@@ -12135,18 +12063,18 @@
     "o2": "OCH@510,OCH@530,OCH@550,OCH@570,OCH@600,OCH@620,OCH@650,OCH@670,OCH@700",
     "o3": "OCH@510,OCH@530,OCH@550,OCH@570,OCH@600,OCH@620,OCH@650,OCH@670,OCH@700",
     "o4": "OCH@510,OCH@530,OCH@550,OCH@570,OCH@600,OCH@620,OCH@650,OCH@670,OCH@700",
-    "o5": ""
+    "o5": "OCH@510,CO@530,OCH@545,CO@565,OCH@580,CO@610,OCH@625,CO@655,OCH@670,CO@705"
    },
    "3": {
-    "m0": "NP@780,CO@810,NP@825,NP@865,CO@895,NP@920,NP@960",
+    "m0": "NP@780,CO@810,NP@825,CO@865,NP@880,CO@920,NP@935,CO@975",
     "m1": "NP@780,CO@810,NP@825,CO@865,NP@880,CO@920,NP@935,CO@975",
-    "m2": "NP@780,CO@810,NP@825,NP@865,CO@895,NP@920,NP@960",
-    "m3": "NP@780,CO@810,NP@825,CO@865,NP@880,CO@920,NP@935,CO@975",
+    "m2": "NP@780,CO@810,NP@825,CO@865,NP@880,CO@920,NP@935,CO@975",
+    "m3": "NP@780,CO@810,NP@825,NP@865,CO@895,NP@920,NP@960",
     "m4": "",
     "m5": "",
-    "o0": "NP@510,CO@540,NP@555,NP@595,CO@625,NP@650,NP@690",
-    "o1": "NP@510,CO@540,NP@555,NP@595,CO@625,NP@650,NP@690",
-    "o2": "NP@510,CO@540,NP@555,NP@595,CO@625,NP@650,NP@690",
+    "o0": "NP@510,CO@540,NP@555,CO@595,NP@610,CO@650,NP@665,CO@705",
+    "o1": "NP@510,CO@540,NP@555,CO@595,NP@610,CO@650,NP@665,CO@705",
+    "o2": "NP@510,CO@540,NP@555,CO@595,NP@610,CO@650,NP@665,CO@705",
     "o3": "",
     "o4": "",
     "o5": ""
@@ -12162,25 +12090,24 @@
     "o1": "OCH@510,OCH@530,OCH@550,OCH@570,OCH@600,OCH@620,OCH@650,OCH@670,OCH@700",
     "o2": "OCH@510,OCH@530,OCH@550,OCH@570,OCH@600,OCH@620,OCH@650,OCH@670,OCH@700",
     "o3": "OCH@510,OCH@530,OCH@550,OCH@570,OCH@600,OCH@620,OCH@650,OCH@670,OCH@700",
-    "o4": "OCH@510,OCH@530,OCH@550,OCH@570,OCH@600,OCH@620,OCH@650,OCH@670,OCH@700",
+    "o4": "OCH@510,CO@530,OCH@545,CO@565,OCH@580,CO@610,OCH@625,CO@655,OCH@670,OCH@700",
     "o5": ""
    }
   },
-  "ntp": "",
+  "ntp": "CO,NP,NP,NP,NP,NP",
   "rooms": 6,
   "kpi": {
-   "appts": 335,
-   "planned": 6995,
-   "capacity": 8190,
-   "flex": 1195,
-   "benutting": 85,
-   "spreiding": 80,
-   "wissels": 128
+   "appts": 329,
+   "planned": 6830,
+   "capacity": 7980,
+   "flex": 1150,
+   "benutting": 86,
+   "spreiding": 90,
+   "wissels": 168
   },
   "notices": [
-   "Eigen digitaal spreekuur:info",
-   "Nieuw en controle afwisselen:info",
-   "Onderbezet spreekuur:warn",
+   "Nog te plannen:warn",
+   "Restruimte verwerkt:ok",
    "Restvraag gebundeld:ok",
    "Spoed eerst × Starten met nieuw:info"
   ],
@@ -12640,48 +12567,38 @@
   "d": {
    "0": {
     "m0": "",
-    "m1": "",
-    "o0": "CP@510,NP@525,CP@545,CP@560,NP@575,CP@595,CP@610,CP@625,NP@640,CP@660,CP@675",
-    "o1": "CP@510,NP@525,CP@545,NP@560,CP@580,NP@595,CP@615,NP@630"
+    "o0": "CP@510,NP@525,CP@545,CP@560,NP@575,CP@595,CP@610,CP@625,NP@640,CP@660,CP@675"
    },
    "1": {
     "m0": "",
-    "m1": "",
-    "o0": "CP@510,NP@525,CP@545,CP@560,NP@575,CP@595,CP@610,CP@625,NP@640,CP@660,CP@675",
-    "o1": ""
+    "o0": "CP@510,NP@525,CP@545,CP@560,NP@575,CP@595,CP@610,CP@625,NP@640,CP@660,CP@675"
    },
    "2": {
     "m0": "",
-    "m1": "",
-    "o0": "",
-    "o1": ""
+    "o0": ""
    },
    "3": {
     "m0": "",
-    "m1": "",
-    "o0": "",
-    "o1": ""
+    "o0": ""
    },
    "4": {
     "m0": "",
-    "m1": "",
-    "o0": "",
-    "o1": ""
+    "o0": ""
    }
   },
-  "ntp": "",
-  "rooms": 2,
+  "ntp": "CP,CP,CP,CP,NP,NP,NP,NP",
+  "rooms": 1,
   "kpi": {
-   "appts": 30,
-   "planned": 500,
-   "capacity": 630,
-   "flex": 130,
-   "benutting": 79,
+   "appts": 22,
+   "planned": 360,
+   "capacity": 420,
+   "flex": 60,
+   "benutting": 86,
    "spreiding": 0,
-   "wissels": 19
+   "wissels": 12
   },
   "notices": [
-   "Eigen digitaal spreekuur:info",
+   "Nog te plannen:warn",
    "Restvraag gebundeld:ok"
   ],
   "dig": []

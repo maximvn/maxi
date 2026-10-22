@@ -194,12 +194,7 @@ def bouw_meldingen(ctx: PlanContext, res: dict) -> None:
             notices.append({"level": "info", "rule": "Digitale consulten",
                             "msg": f"{zonder} van de {len(spreekuren)} spreekuren heeft geen digitale consulten (te weinig digitaal volume), dus daar valt niets achteraan te plannen.",
                             "fix": f"De {dig_totaal} digitale consulten zijn zo gelijk mogelijk over de overige spreekuren verdeeld. Meer digitaal volume (hoger percentage TC) vult meer spreekuren."})
-    # 3) Benutting onder het doel (alleen bij 'gelijk verdelen')
     wb = kpi["week"]["benutting"]
-    if rules.get("kamerVerdeling") == "gelijk" and not ntp and wb > 0 and wb < m2["benutting"] - 4:
-        notices.append({"level": "info", "rule": "Benutting",
-                        "msg": f"De weekvraag deelt niet rond op volledige kamers (ochtend + middag) bij {S(m2['benutting'])}% benutting. Om halve dagen te voorkomen zijn alle geopende kamers als volledige dag ingepland op ~{S(wb)}%.",
-                        "fix": f'Wil je richting {S(m2["benutting"])}%? Zet "Vast aantal kamers" op één minder — wat dan niet past komt op "nog te plannen". Meer kamers verlaagt de benutting juist verder.'})
     # 3c) Halve dagen
     if not ntp:
         halve_dagen = 0

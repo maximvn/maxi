@@ -15,8 +15,8 @@
  * Schrijft naar de context startOptimiser, setToonAfgewezen
  *
  * Waar kan het misgaan en hoe zie je dat
- *   - "NU ACTIEF" staat op de verkeerde rij → isHuidig vergelijkt restDag, minBezetting en
- *     kamerVerdeling met rules.
+ *   - "NU ACTIEF" staat op de verkeerde rij → isHuidig vergelijkt restDag en minBezetting met
+ *     rules.
  *   - Een afgewezen rij komt terug → "↺ Terug" roept vergeetScenario aan (useGeheugen).
  */
 import React from 'react'
@@ -106,8 +106,8 @@ export function OptimiserDetails() {
       </div>
       <div style={{ padding: '12px 14px' }}>
         <p style={{ fontSize: 11.5, color: C.muted, margin: '0 0 10px', lineHeight: 1.5 }}>
-          De tool rekent jouw gegevens door <b style={{ color: C.text }}>70 combinaties</b> van
-          rest-dag × minimumbezetting × kamerverdeling en zet de uitkomsten op een rij. Je{' '}
+          De tool rekent jouw gegevens door <b style={{ color: C.text }}>35 combinaties</b> van
+          rest-dag × minimumbezetting en zet de uitkomsten op een rij. Je{' '}
           <b style={{ color: C.text }}>voorkeursregels</b> (spoed, starten met, afwisselen,
           digitaal, flex) blijven staan zoals jij ze koos — daaronder zie je wél wat elke regel je
           kost.
@@ -241,10 +241,7 @@ export function OptimiserDetails() {
                 <div style={{ fontSize: 11.5, color: C.text, lineHeight: 1.5 }}>
                   <b>
                     {RESTDAG_LABEL[optim.gewoonte.k.restDag]} · drempel{' '}
-                    {optim.gewoonte.k.minBezetting}% ·{' '}
-                    {optim.gewoonte.k.kamerVerdeling === 'gelijk'
-                      ? 'gelijk verdelen'
-                      : 'dagdeel voor dagdeel'}
+                    {optim.gewoonte.k.minBezetting}%
                   </b>
                   {' — '}met de gegevens van nu: {optim.gewoonte.m.placed} ingepland,{' '}
                   {optim.gewoonte.m.ntp} op de restlijst, {optim.gewoonte.m.kamerDagen} kamer-dagen,{' '}

@@ -30,7 +30,7 @@ const R = await page.evaluate(()=>{
     avondEnd:'20:00',verAvond:0,verOch:50,benutting:85,days:{ma:20,di:20,wo:20,do:20,vr:20},
     ddDagen:{O:{MA:1,DI:1,WO:1,DO:1,VR:1},M:{MA:1,DI:1,WO:1,DO:1,VR:1},A:{}}}
   const BASIS={spoedFirst:false,startNieuw:true,startControle:false,mixNC:true,digitalMode:'spread',
-    flexMode:'spread',kamerVerdeling:'dagdeel',restDag:'uit',restOpruimen:true,minBezetting:75,spoedDagdeel:'both',
+    flexMode:'spread',restDag:'uit',restOpruimen:true,minBezetting:75,spoedDagdeel:'both',
     digitalSlots:[],startNieuwWaar:'both',startControleWaar:'both',mixWaar:'both',digitalWaar:'both',
     flexWaar:'both',flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30}
   const nr=[mk({afspraakcode:'NP',duur:20,percentage:100})]

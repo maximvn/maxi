@@ -894,9 +894,10 @@ vallen, kiezen die slots (kamer × dagdeel), en vullen ze gericht op dat doel.
 Een dagdeel dat niet nodig is blijft leeg en wordt flexruimte — liever één
 ochtend op 85% dan twee dagdelen op 45%.
 
-``rules.kamerVerdeling`` bepaalt hoe binnen een dag wordt verdeeld:
-'dagdeel' — kamer voor kamer AFRONDEN (kamer 1 ochtend, kamer 1 middag, kamer 2 …),
-'gelijk' — de vraag gelijkmatig over alle benodigde kamers en dagdelen.
+Binnen een dag wordt kamer voor kamer AFGEROND (kamer 1 ochtend, kamer 1 middag,
+kamer 2 …). De vroegere modus 'gelijk' (eerst alle ochtenden, dan alle middagen) gaf
+vrijwel dezelfde spreekuren maar middagen met één categorie bij "afwisselen" en is
+verwijderd; ``rules.kamerVerdeling`` wordt niet meer gelezen.
 
 
 ### Plaats in de keten

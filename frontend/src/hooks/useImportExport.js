@@ -127,7 +127,9 @@ export function useImportExport(deps) {
         ddDagen: ddDagenVan(state.m2),
       })
     if (state.rules) {
-      const sr = state.rules
+      // Oude bestanden kunnen nog de vervallen regel kamerVerdeling bevatten; die laten we weg.
+      const sr = { ...state.rules }
+      delete sr.kamerVerdeling
       setRules({
         spoedFirst: false,
         startNieuw: false,
@@ -135,7 +137,6 @@ export function useImportExport(deps) {
         mixNC: true,
         digitalMode: 'spread',
         flexMode: 'end',
-        kamerVerdeling: 'dagdeel',
         restDag: 'uit',
         restOpruimen: true,
         minBezetting: 75,
@@ -149,7 +150,6 @@ export function useImportExport(deps) {
         flexBlokMin: 10,
         digitalEndMinutes: 30,
         ...sr,
-        ...(sr.kamerVerdeling === 'kamer' ? { kamerVerdeling: 'dagdeel' } : {}),
       })
     }
     if (state.fk && (state.fk.kamers || []).length) {

@@ -45,9 +45,8 @@ twee onderdelen.
  *
  * Wat doet dit onderdeel
  *   De gebruiker zet hier de planregels aan of uit (spoed eerst, starten met,
- *   afwisselen, digitaal, kamerverdeling, rest-dag, minimumbezetting). Elke
- *   wijziging gaat via setRules naar de AppContext; useLiveRaster rekent dan
- *   automatisch opnieuw.
+ *   afwisselen, digitaal, flex). Elke wijziging gaat via setRules naar de
+ *   AppContext; useLiveRaster rekent dan automatisch opnieuw.
  *
  * Plaats in de tool
  *   Stap 3 van 4 (Tijden → Gegevens → Regels → Raster). Wordt getoond door

@@ -50,8 +50,7 @@ export function OptimiserPaneel() {
   const isNu =
     beste &&
     beste.k.restDag === (rules.restDag || 'uit') &&
-    beste.k.minBezetting === (rules.minBezetting ?? 75) &&
-    beste.k.kamerVerdeling === rules.kamerVerdeling
+    beste.k.minBezetting === (rules.minBezetting ?? 75)
   const winstNtp = beste ? h.ntp - beste.m.ntp : 0
   const winstKd = beste ? h.kamerDagen - beste.m.kamerDagen : 0
   const zin = adviesZin({ beste, isNu, winstNtp, winstKd })

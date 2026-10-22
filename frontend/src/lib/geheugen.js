@@ -44,11 +44,37 @@ export const memLees = () => {
     const raw = window.localStorage.getItem(MEM_KEY)
     if (!raw) return { ...LEEG_MEM }
     const o = JSON.parse(raw)
-    return { scenarios: o.scenarios || [], intake: o.intake || {}, ijkpunten: o.ijkpunten || [] }
+    return {
+      scenarios: oudeScenarios(o.scenarios || []),
+      intake: oudeIntake(o.intake || {}),
+      ijkpunten: o.ijkpunten || [],
+    }
   } catch (e) {
     return { ...LEEG_MEM }
   }
 }
+// De vervallen regel kamerVerdeling: oudere geheugens hebben sleutels als
+// "uit|75|dagdeel" en een intake-antwoord "kamerverdeling". Die zetten we om naar de
+// huidige sleutel (rest-dag | drempel); bij dubbelen blijft de nieuwste staan.
+const oudeScenarios = lijst => {
+  const perSleutel = new Map()
+  lijst.forEach(s => {
+    if (!s || !s.k) return
+    const { kamerVerdeling, ...k } = s.k
+    const n = { ...s, k, sleutel: scenSleutel(k) }
+    const id = `${n.spec}§${n.sleutel}`
+    const oud = perSleutel.get(id)
+    if (!oud || (n.ts || 0) >= (oud.ts || 0)) perSleutel.set(id, n)
+  })
+  return [...perSleutel.values()]
+}
+const oudeIntake = intake =>
+  Object.fromEntries(
+    Object.entries(intake).map(([sp, perSpec]) => {
+      const { kamerverdeling, ...rest } = perSpec || {}
+      return [sp, rest]
+    })
+  )
 /**
  * Schrijft het geheugen weg; faalt stil.
  * @param {object} m het geheugen
@@ -60,11 +86,11 @@ export const memSchrijf = m => {
   } catch (e) {}
 }
 /**
- * De sleutel van een scenario: rest-dag | drempel | kamerverdeling.
- * @param {object} k {restDag, minBezetting, kamerVerdeling}
+ * De sleutel van een scenario: rest-dag | drempel.
+ * @param {object} k {restDag, minBezetting}
  * @returns {string}
  */
-export const scenSleutel = k => `${k.restDag}|${k.minBezetting}|${k.kamerVerdeling}`
+export const scenSleutel = k => `${k.restDag}|${k.minBezetting}`
 // Leesbare namen van de intake-vragen — gebruikt in de samenvatting én het geheugen.
 /**
  * Leesbare namen van de intake-vragen (samenvatting en geheugen).
@@ -89,7 +115,6 @@ export const INTAKE_LABELS = {
   flex: 'Flexruimte',
   drempel: 'Minimumbezetting',
   restdag: 'Rest-dag',
-  kamerverdeling: 'Kamers vullen',
   doel: 'Optimaliseren op',
 }
 /**

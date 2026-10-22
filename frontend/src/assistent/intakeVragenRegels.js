@@ -4,8 +4,7 @@
  * Wat doet dit onderdeel
  *   De tweede helft van de intakevragen: benutting en kamers, waarmee een spreekuur opent,
  *   afwisselen, spoed (alleen als er spoedcodes zijn), digitaal (alleen als er digitale
- *   codes zijn), flexruimte, minimumbezetting, rest-dag, kamerverdeling en het
- *   optimalisatiedoel.
+ *   codes zijn), flexruimte, minimumbezetting, rest-dag en het optimalisatiedoel.
  *
  * Plaats in de tool
  *   assistent/intakeVragen.js voegt deze vragen achter deel 1; Intake.jsx toont ze.
@@ -512,49 +511,10 @@ export function vragenCapaciteitEnRegels(ctx, { spoed, dig }) {
   })
 
   S.push({
-    k: 'kamerverdeling',
-    sec: 'Ruimte',
-    v: 'Hoe moeten de kamers gevuld worden?',
-    u: 'Kamer voor kamer volmaken houdt het aantal kamer-dagen laag; gelijk verdelen geeft rustiger, gelijkmatiger spreekuren.',
-    o: [
-      {
-        l: 'Dagdeel voor dagdeel',
-        s: 'eerst deze kamer vol, dan de volgende',
-        fn: () => setRules(p => ({ ...p, kamerVerdeling: 'dagdeel' })),
-      },
-      {
-        l: 'Gelijk verdelen',
-        s: 'alle kamers even zwaar belasten',
-        fn: () => setRules(p => ({ ...p, kamerVerdeling: 'gelijk' })),
-      },
-    ],
-    vrij: {
-      uitleg:
-        'Deze vraag heeft maar twee zinvolle antwoorden. Kies hier expliciet welke, dan staat je keuze vast in de samenvatting.',
-      velden: [
-        {
-          k: 'v',
-          type: 'keuze',
-          label: 'Vullen',
-          def: 'dagdeel',
-          opts: [
-            { v: 'dagdeel', l: 'Dagdeel voor dagdeel' },
-            { v: 'gelijk', l: 'Gelijk verdelen' },
-          ],
-        },
-      ],
-      fn: w => {
-        setRules(p => ({ ...p, kamerVerdeling: w.v }))
-        return { l: w.v === 'gelijk' ? 'Gelijk verdelen' : 'Dagdeel voor dagdeel' }
-      },
-    },
-  })
-
-  S.push({
     k: 'doel',
     sec: 'Afronden',
     v: 'Waar moet ik straks op optimaliseren?',
-    u: 'Na het genereren zoek ik alle combinaties van rest-dag × drempel × kamerverdeling door. Wat is voor jou "het beste"?',
+    u: 'Na het genereren zoek ik alle combinaties van rest-dag × drempel door. Wat is voor jou "het beste"?',
     o: [
       {
         l: 'Balans',

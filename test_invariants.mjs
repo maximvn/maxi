@@ -9,7 +9,7 @@ await page.goto(url); await page.waitForFunction(()=>window.__cr,null,{timeout:8
 
 const results = await page.evaluate(()=>{
   const M2={ochStart:'08:30',ochEnd:'12:00',midStart:'13:00',midEnd:'16:30',avondOn:false,avondStart:'17:00',avondEnd:'20:00',verAvond:0,verOch:50,benutting:85,days:{ma:20,di:20,wo:20,do:20,vr:20},ddDagen:{O:{MA:1,DI:1,WO:1,DO:1,VR:1},M:{MA:1,DI:1,WO:1,DO:1,VR:1},A:{}}}
-  const BASE={spoedFirst:false,startNieuw:false,startControle:false,mixNC:true,digitalMode:'spread',flexMode:'end',kamerVerdeling:'dagdeel',restDag:'uit',restOpruimen:true,minBezetting:75,spoedDagdeel:'both',startNieuwWaar:'both',startControleWaar:'both',mixWaar:'both',digitalWaar:'both',flexWaar:'both',flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30}
+  const BASE={spoedFirst:false,startNieuw:false,startControle:false,mixNC:true,digitalMode:'spread',flexMode:'end',restDag:'uit',restOpruimen:true,minBezetting:75,spoedDagdeel:'both',startNieuwWaar:'both',startControleWaar:'both',mixWaar:'both',digitalWaar:'both',flexWaar:'both',flexNoFirstMin:60,flexBlokMin:10,digitalEndMinutes:30}
   const wd={MA:1,DI:1,WO:1,DO:1,VR:1},dd={O:true,M:true,A:false}
   const mk=o=>Object.assign({afspraakcode:'X',omschrijving:'x',duur:15,digitaal:false,spoed:false,onzeker:'gemiddeld',percentage:100,weekdagen:wd,dagdelen:dd},o)
   // Jouw testcase: 100 nieuw (70% NP 20m zeker, 30% NPX 25m spoed onzeker), 200 controle (75% CO 15m zeker, 25% TC 10m digitaal)
@@ -264,7 +264,6 @@ const results = await page.evaluate(()=>{
   const extra=[]
   for(const c of cases){
     extra.push(Object.assign({},c,{restDag:'ma'}))
-    if(c.flexMode==='spread') extra.push(Object.assign({},c,{kamerVerdeling:'gelijk'}))
     if(!c.mixNC) extra.push(Object.assign({},c,{restOpruimen:false}))
     if(c.spoedFirst) extra.push(Object.assign({},c,{_cap:{mode:'vast',kamers:3}}))
     if(c.startNieuw||c.startControle) extra.push(Object.assign({},c,{_cap:{mode:'vast',kamers:2}}))

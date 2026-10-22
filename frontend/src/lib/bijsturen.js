@@ -23,7 +23,7 @@
  *      per code een weekdag aan of uit — zonder dat blijft een dag leeg ook al staat er een
  *      aandeel op.
  *   2. Per opdrachttype (dag-open, dag-dicht, benutting, kamers, verdeling,
- *      dagdeelverdeling, volgorde, opening, kamerverdeling, tijden, drempel, spoed, digitaal,
+ *      dagdeelverdeling, volgorde, opening, tijden, drempel, spoed, digitaal,
  *      flex, aantallen, duur, strak, restlijst) een vaste set kandidaten.
  *   3. meetDoel kiest per type de meting: dagMeting, celMeting (laagst bezette dagdeel),
  *      restlijst, halve dagen (strak), of de algemene meting (meetRasterPuur).
@@ -133,14 +133,6 @@ export function bouwKandidaten(op, stand, raster) {
       st: { ...nu, rules: { ...rules, restOpruimen: true, minBezetting: p, restDag: 'auto' } },
     })
     K.push({
-      l: `Drempel ${p}% en kamers één voor één volmaken`,
-      knoppen: [`Minimumbezetting → ${p}%`, 'Kamers vullen → dagdeel voor dagdeel'],
-      st: {
-        ...nu,
-        rules: { ...rules, restOpruimen: true, minBezetting: p, kamerVerdeling: 'dagdeel' },
-      },
-    })
-    K.push({
       l: `Drempel ${p}% en de doelbenutting per spreekuur mee omhoog naar ${p}%`,
       knoppen: [`Minimumbezetting → ${p}%`, `Doelbenutting → ${p}%`],
       st: {
@@ -246,14 +238,6 @@ export function bouwKandidaten(op, stand, raster) {
         },
       },
     })
-  if (op.type === 'kamerverdeling')
-    K.push({
-      l: op.v === 'gelijk' ? 'Alle kamers gelijk belasten' : 'Kamers één voor één volmaken',
-      knoppen: [
-        `Kamers vullen → ${op.v === 'gelijk' ? 'gelijk verdelen' : 'dagdeel voor dagdeel'}`,
-      ],
-      st: { ...nu, rules: { ...rules, kamerVerdeling: op.v } },
-    })
   if (op.type === 'tijden') {
     const verschuif = (t, min) => toTime(clamp(toMin(t) + min, 0, 23 * 60 + 55))
     const varianten = {
@@ -335,18 +319,14 @@ export function bouwKandidaten(op, stand, raster) {
   }
   // ── ZO STRAK MOGELIJK ──
   // Alles gepland, zo min mogelijk kamer-dagen en geen kamer die maar één dagdeel
-  // draait. We proberen de zinvolle combinaties van kamervulling × rest-dag ×
-  // drempel en laten de meting kiezen; de gebruiker ziet welke wint en waarom.
+  // draait. We proberen de zinvolle combinaties van rest-dag × drempel en laten de meting kiezen; de gebruiker ziet welke wint en waarom.
   if (op.type === 'strak') {
     const vari = []
-    ;['gelijk', 'dagdeel'].forEach(kv =>
-      ['auto', 'uit'].forEach(rd => [60, 75, 80].forEach(mb => vari.push({ kv, rd, mb })))
-    )
+    ;['auto', 'uit'].forEach(rd => [60, 75, 80].forEach(mb => vari.push({ rd, mb })))
     vari.forEach(v =>
       K.push({
-        l: `${v.kv === 'gelijk' ? 'Kamers gelijk belasten' : 'Kamer voor kamer volmaken'} · ${v.rd === 'auto' ? 'restvraag bundelen' : 'niet bundelen'} · drempel ${v.mb}%`,
+        l: `${v.rd === 'auto' ? 'Restvraag bundelen' : 'Niet bundelen'} · drempel ${v.mb}%`,
         knoppen: [
-          `Kamers vullen → ${v.kv === 'gelijk' ? 'gelijk verdelen' : 'dagdeel voor dagdeel'}`,
           `Rest-dag → ${v.rd === 'auto' ? 'automatisch' : 'niet bundelen'}`,
           `Minimumbezetting → ${v.mb}%`,
         ],
@@ -354,7 +334,6 @@ export function bouwKandidaten(op, stand, raster) {
           ...nu,
           rules: {
             ...rules,
-            kamerVerdeling: v.kv,
             restDag: v.rd,
             restOpruimen: true,
             minBezetting: v.mb,

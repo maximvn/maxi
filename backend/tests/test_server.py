@@ -90,7 +90,7 @@ def test_poli_endpoint():
                    "verAvond": 0, "verOch": 50, "benutting": 85, "days": {"ma": 20, "di": 20, "wo": 20, "do": 20, "vr": 20},
                    "ddDagen": {"O": {"ma": 1, "di": 1, "wo": 1, "do": 1, "vr": 1}, "M": {"ma": 1, "di": 1, "wo": 1, "do": 1, "vr": 1}, "A": {}}},
             "rules": {"spoedFirst": False, "startNieuw": False, "startControle": False, "mixNC": True, "digitalMode": "spread", "flexMode": "end",
-                      "digitalSlots": [], "kamerVerdeling": "dagdeel", "restDag": "uit", "restOpruimen": True, "minBezetting": 75, "spoedDagdeel": "both",
+                      "digitalSlots": [], "restDag": "uit", "restOpruimen": True, "minBezetting": 75, "spoedDagdeel": "both",
                       "startNieuwWaar": "both", "startControleWaar": "both", "mixWaar": "both", "digitalWaar": "both", "flexWaar": "both",
                       "flexNoFirstMin": 60, "flexBlokMin": 10, "digitalEndMinutes": 30},
             "capacity": {"mode": "auto", "kamers": 3}}
