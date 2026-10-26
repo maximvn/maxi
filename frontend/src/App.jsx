@@ -76,6 +76,7 @@ import { Raster } from './modules/Raster.jsx'
 import { AssistentModal } from './assistent/AssistentModal.jsx'
 import { ResetDialoog } from './dialogen/ResetDialoog.jsx'
 import { OpslaanDialoog } from './dialogen/OpslaanDialoog.jsx'
+import { ProjectenPaneel } from './layout/ProjectenPaneel.jsx'
 
 // De bouwvlaggen (SIMPEL, API) blijven via App.jsx bereikbaar voor main.jsx en raster_model_2.jsx.
 export { BOUWVLAGGEN }
@@ -605,6 +606,7 @@ export default function RasterTool() {
         )}
         <AssistentModal />
         {showFullReset && <ResetDialoog />}
+        {account.inAccount && projecten.projectenOpen && <ProjectenPaneel />}
         {account.inAccount && projecten.opslaanOpen && <OpslaanDialoog />}
         {account.inAccount && <StandLaden />}
         {account.inAccount && <WachtwoordWijzigen />}

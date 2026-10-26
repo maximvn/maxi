@@ -2,9 +2,7 @@
  * ═══ START — het beginscherm: verder, nieuw of inladen ═════════════════════════════
  *
  * Wat doet dit onderdeel
- *   Het scherm vóór de vier stappen. Bovenaan (accountmodus) de opgeslagen projecten
- *   (layout/ProjectenLijst.jsx: "Dermatologie", "Urologie" … openen of verwijderen), daaronder
- *   grote keuzekaarten:
+ *   Het scherm vóór de vier stappen, met grote keuzekaarten:
  *   - **Verder waar je was** (alleen in de accountmodus, als er een opgeslagen stand is):
  *     wanneer opgeslagen, planmodus, poli/specialisme, aantal codes en de module waar je
  *     was. Klikken zet de stand terug (useStand.verderWaarJeWas → pasSessieToe) en gaat
@@ -15,6 +13,8 @@
  *   - **Raster of sessie inladen**: dezelfde import als in Gegevens (handleImport voor een
  *     export van deze tool met het blad _rasterdata, handleSpreekuur voor een
  *     spreekuurgegevens-Excel; in de functiekamer-modus fkImporteer).
+ *   - **Opgeslagen project openen** (accountmodus): de drie laatst opgeslagen projecten om
+ *     direct te openen, en "Alle projecten" voor het zijpaneel (layout/ProjectenPaneel.jsx).
  *   - **Eerdere versies** (accountmodus): de lijst uit /api/stand/versies (VersieLijst).
  *   Bovenaan de keuze Poli-spreekuren / Functiekamers (zet alleen de modus, navigeert niet).
  *
@@ -29,9 +29,11 @@
  *     welkomstscherm, zonder "Verder" en zonder versies (er is geen opgeslagen stand).
  *
  * Leest uit de context     inAccount, standFase, opgehaald, opslag, laatsteModule, versies, project,
+ *                          projecten, projectMelding,
  *                          modus, poli, newRows, ctrlRows, fk, capacity, raster, heeftCodes
  * Schrijft naar de context verderWaarJeWas, beginZonderStand, openVersies, sluitVersies,
  *                          kiesVersie, zetVersieTerug, setModus, setSelDay, handleFullReset, setProject,
+ *                          openProject, openProjecten,
  *                          setActive, setVisited, setM1Mode, setM1Section, handleImport,
  *                          handleSpreekuur, fkImporteer
  *
@@ -44,7 +46,7 @@
 import React, { useEffect, useState } from 'react'
 import { useApp } from '../context/AppContext.jsx'
 import { vatSessieSamen } from '../lib/sessie.js'
-import { ProjectenLijst } from '../layout/ProjectenLijst.jsx'
+import { groepeerProjecten, projectTijd } from '../hooks/useProjecten.js'
 import { VersieLijst } from '../layout/VersieLijst.jsx'
 import { C } from '../ui/kleuren.js'
 import { StandSamenvatting, StartKaart } from './StartKaart.jsx'
@@ -98,6 +100,100 @@ function dataVan(stand) {
     }
   }
   return stand.data || null
+}
+
+/**
+ * Kaart "Opgeslagen project openen": de drie nieuwste projecten en een knop naar het zijpaneel.
+ * @returns {JSX.Element}
+ */
+function ProjectenKaart() {
+  const { projecten, project, openProject, openProjecten, projectMelding } = useApp()
+  const groepen = groepeerProjecten(projecten.lijst)
+  const huidig = project ? project.naam.toLocaleLowerCase('nl') : null
+  return (
+    <StartKaart
+      kenmerk="projecten"
+      icoon="📁"
+      titel="Opgeslagen project openen"
+      uitleg={
+        groepen.length
+          ? 'Ga verder met een project dat je eerder opsloeg, bijvoorbeeld als er een vraag van die poli komt.'
+          : 'Nog geen projecten. Met 💾 Opslaan in het menu bewaar je je werk als project, bijvoorbeeld "Dermatologie".'
+      }
+    >
+      {groepen.length > 0 && (
+        <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+          {groepen.slice(0, 3).map(g => (
+            <li key={g.sleutel} style={{ borderTop: `1px solid ${C.border}` }}>
+              <button
+                type="button"
+                data-startproject={g.naam}
+                onClick={() => openProject(g.versies[0])}
+                title={`${g.naam} openen (versie van ${projectTijd(g.versies[0].tijd)})`}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'baseline',
+                  gap: 8,
+                  padding: '7px 0',
+                  border: 'none',
+                  background: 'transparent',
+                  cursor: 'pointer',
+                  font: 'inherit',
+                  textAlign: 'left',
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 700,
+                    color: C.primary,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    minWidth: 0,
+                  }}
+                >
+                  {g.naam}
+                </span>
+                {g.sleutel === huidig && (
+                  <span style={{ fontSize: 10.5, color: '#1F6B4A', whiteSpace: 'nowrap' }}>
+                    · nu open
+                  </span>
+                )}
+                <span
+                  style={{
+                    marginLeft: 'auto',
+                    fontSize: 11.5,
+                    color: C.muted,
+                    whiteSpace: 'nowrap',
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {projectTijd(g.versies[0].tijd)}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {projectMelding && projectMelding.soort === 'fout' && (
+        <div role="alert" style={{ fontSize: 12, color: C.danger }}>
+          {projectMelding.tekst}
+        </div>
+      )}
+      <div>
+        <button
+          type="button"
+          data-alle-projecten
+          onClick={openProjecten}
+          style={KNOP(groepen.length > 0)}
+        >
+          {groepen.length ? `Alle projecten (${groepen.length})` : 'Projecten bekijken'}
+        </button>
+      </div>
+    </StartKaart>
+  )
 }
 
 /**
@@ -227,9 +323,6 @@ export function Start() {
           Waar wil je beginnen? Je kunt altijd terug naar dit scherm via <b>Start</b> in het menu.
         </p>
 
-        {/* opgeslagen projecten — bovenaan, zodat je een vraag van een poli direct oppakt */}
-        {inAccount && (standFase === 'kiezen' || standFase === 'klaar') && <ProjectenLijst />}
-
         {/* planmodus — zet alleen de modus; de kaarten hieronder volgen hem */}
         <div
           role="radiogroup"
@@ -289,6 +382,8 @@ export function Start() {
               <StandSamenvatting sam={verder.sam} tijd={verder.tijd} />
             </StartKaart>
           )}
+
+          {inAccount && (standFase === 'kiezen' || standFase === 'klaar') && <ProjectenKaart />}
 
           <StartKaart
             kenmerk="nieuw"

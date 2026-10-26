@@ -5,13 +5,15 @@
  *   Naast het automatische opslaan ("verder waar je was", useStand) kan de gebruiker zelf
  *   op Opslaan klikken. Het hele werk komt dan onder een projectnaam op de server, met de
  *   tijd erbij: "Dermatologie 26-10-2026 08:00". Elke keer opslaan is een nieuwe versie; de
- *   eerdere versies van hetzelfde project blijven staan. Op het Start-scherm staat de lijst
- *   (gegroepeerd per project) om een versie in te laden of te verwijderen.
+ *   eerdere versies van hetzelfde project blijven staan. Het overzicht staat in een zijpaneel
+ *   (knop Projecten in de rail, of de kaart op Start), gegroepeerd per project, om een versie
+ *   in te laden of te verwijderen.
  *
  * Plaats in de tool
  *   App.jsx roept de hook aan (alleen actief in de accountmodus) en zet alles in de context.
- *   dialogen/OpslaanDialoog.jsx (naam kiezen en opslaan), layout/ProjectenLijst.jsx (de
- *   lijst op Start), de knop Opslaan in layout/Rail.jsx en modules/raster/RasterKop.jsx.
+ *   dialogen/OpslaanDialoog.jsx (naam kiezen en opslaan), layout/ProjectenPaneel.jsx (het
+ *   zijpaneel, met layout/ProjectenLijst.jsx), de knoppen Projecten en Opslaan in
+ *   layout/Rail.jsx, Opslaan in modules/raster/RasterKop.jsx en de kaart op modules/Start.jsx.
  *   De server: backend/projecten.py (routes /api/projecten*).
  *
  * Invoer
@@ -20,7 +22,8 @@
  *   opgeslagen state toe zoals een eerdere versie (useStand).
  * Uitvoer
  *   {projecten, laadProjecten, opslaanOpen, openOpslaan, sluitOpslaan, slaProjectOp,
- *   openProject, verwijderProject, projectMelding, setProjectMelding}
+ *   openProject, verwijderProject, projectMelding, setProjectMelding, projectenOpen,
+ *   openProjecten, sluitProjecten}
  *
  * Hoe het werkt
  *   1. openOpslaan opent de dialoog; de voorgestelde naam is het project waar je in werkt,
@@ -84,6 +87,8 @@ export function useProjecten(deps) {
   const { actief, naarLogin, huidigeData, laadData, project, setProject, poliNaam } = deps
   const [projecten, setProjecten] = useState({ laden: false, lijst: [], fout: null })
   const [opslaanOpen, setOpslaanOpen] = useState(false)
+  // Het zijpaneel met alle projecten (layout/ProjectenPaneel.jsx), te openen vanuit de rail en Start.
+  const [projectenOpen, setProjectenOpen] = useState(false)
   // Korte melding na opslaan/inladen (toont de Start-lijst en de dialoog).
   const [projectMelding, setProjectMelding] = useState(null)
 
@@ -114,6 +119,12 @@ export function useProjecten(deps) {
     if (actief) laadProjecten()
   }, [actief, laadProjecten])
 
+  const openProjecten = useCallback(() => {
+    setProjectMelding(null)
+    setProjectenOpen(true)
+    laadProjecten()
+  }, [laadProjecten])
+  const sluitProjecten = useCallback(() => setProjectenOpen(false), [])
   const openOpslaan = useCallback(() => {
     setProjectMelding(null)
     setOpslaanOpen(true)
@@ -209,6 +220,9 @@ export function useProjecten(deps) {
     projecten,
     laadProjecten,
     opslaanOpen,
+    projectenOpen,
+    openProjecten,
+    sluitProjecten,
     openOpslaan,
     sluitOpslaan,
     voorstelNaam,

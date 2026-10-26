@@ -2,15 +2,15 @@
  * ═══ PROJECTENLIJST — opgeslagen projecten openen of verwijderen ══════════════════
  *
  * Wat doet dit onderdeel
- *   De lijst op het Start-scherm met alles wat met Opslaan is bewaard, per project
+ *   De lijst in het zijpaneel met alles wat met Opslaan is bewaard, per project
  *   gegroepeerd ("Dermatologie", "Urologie"), nieuwste project bovenaan. Per project:
  *   de laatste versie openen met één klik, de eerdere versies uitklappen (elk te openen of
  *   te verwijderen) en het hele project verwijderen. Verwijderen vraagt eerst een
  *   bevestiging in de pagina (geen window.confirm). Bij veel projecten is er een zoekveld.
  *
  * Plaats in de tool
- *   modules/Start.jsx, bovenaan (alleen in de accountmodus). De gegevens en handelingen
- *   komen uit hooks/useProjecten.js.
+ *   layout/ProjectenPaneel.jsx (het zijpaneel naast de rail, alleen in de accountmodus). De
+ *   gegevens en handelingen komen uit hooks/useProjecten.js.
  *
  * Leest uit de context     projecten, project, projectMelding
  * Schrijft naar de context openProject, verwijderProject, laadProjecten, openOpslaan
@@ -43,7 +43,7 @@ const KNOP = {
   fontSize: 12.5,
   cursor: 'pointer',
 }
-const ZOEK_VANAF = 6 // zoekveld pas bij zoveel projecten
+const ZOEK_VANAF = 5 // zoekveld pas bij zoveel projecten
 
 /**
  * Bevestiging in de pagina voor verwijderen.
@@ -96,10 +96,12 @@ function Bevestig({ tekst, ja, nee }) {
 }
 
 /**
- * De projectenlijst.
+ * De projectenlijst (inhoud van het zijpaneel).
+ * @param {object} props
+ * @param {Function} [props.opGeopend] — na het openen van een project (sluit het paneel)
  * @returns {JSX.Element}
  */
-export function ProjectenLijst() {
+export function ProjectenLijst({ opGeopend }) {
   const { projecten, project, projectMelding, openProject, verwijderProject, openOpslaan } =
     useApp()
   const [open, setOpen] = useState(null) // sleutel van het uitgeklapte project
@@ -114,8 +116,9 @@ export function ProjectenLijst() {
 
   const openen = async v => {
     setBezig(v.id)
-    await openProject(v)
+    const gelukt = await openProject(v)
     setBezig(null)
+    if (gelukt && opGeopend) opGeopend()
   }
   const verwijder = async () => {
     const w = weg
@@ -124,55 +127,25 @@ export function ProjectenLijst() {
   }
 
   return (
-    <section
-      aria-labelledby="projecten-titel"
-      data-projectenlijst
-      style={{
-        background: C.white,
-        border: `1px solid ${C.border}`,
-        borderRadius: 12,
-        padding: 16,
-        marginBottom: 16,
-      }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          flexWrap: 'wrap',
-          marginBottom: 6,
-        }}
-      >
-        <h2
-          id="projecten-titel"
-          style={{ fontSize: 15, fontWeight: 700, color: C.text, margin: 0 }}
-        >
-          💾 Opgeslagen projecten
-        </h2>
-        {groepen.length >= ZOEK_VANAF && (
-          <input
-            type="search"
-            aria-label="Zoek een project"
-            placeholder="Zoek een project…"
-            value={zoek}
-            onChange={e => setZoek(e.target.value)}
-            style={{
-              marginLeft: 'auto',
-              padding: '6px 10px',
-              borderRadius: 8,
-              border: `1px solid ${C.border}`,
-              fontSize: 12.5,
-              minWidth: 180,
-            }}
-          />
-        )}
-      </div>
-      <p style={{ fontSize: 12, color: C.muted, margin: '0 0 10px', lineHeight: 1.5 }}>
-        Klik op <b>Openen</b> om een project in te laden. Je huidige werk blijft bewaard bij
-        &quot;Eerdere versies&quot;. Opslaan doe je met de knop <b>Opslaan</b> in het menu of naast
-        Export.
-      </p>
+    <div data-projectenlijst>
+      {groepen.length >= ZOEK_VANAF && (
+        <input
+          type="search"
+          aria-label="Zoek een project"
+          placeholder="Zoek een project…"
+          value={zoek}
+          onChange={e => setZoek(e.target.value)}
+          style={{
+            width: '100%',
+            boxSizing: 'border-box',
+            padding: '7px 10px',
+            borderRadius: 8,
+            border: `1px solid ${C.border}`,
+            fontSize: 12.5,
+            marginBottom: 10,
+          }}
+        />
+      )}
       {projectMelding && (
         <div
           role={projectMelding.soort === 'fout' ? 'alert' : 'status'}
@@ -332,6 +305,6 @@ export function ProjectenLijst() {
           Geen project gevonden met &quot;{zoek}&quot;.
         </div>
       )}
-    </section>
+    </div>
   )
 }

@@ -3,7 +3,8 @@
  *
  * Wat doet dit onderdeel
  *   De donkere zijbalk: merk, planmodus (poli / functiekamers), de assistent-knop (niet in
- *   de simpele variant), de knop Start (het beginscherm, modules/Start.jsx), de vier
+ *   de simpele variant), de knop Start (het beginscherm, modules/Start.jsx), de knop
+ *   Projecten (accountmodus: zijpaneel layout/ProjectenPaneel.jsx), de vier
  *   stappen met voortgangsvinkjes, de acties Opslaan (accountmodus; met de naam van het
  *   project waar je in werkt), Export en Opnieuw, en in de accountmodus het accountblok (RailAccount.jsx: naam, Beheer,
  *   wachtwoord, uitloggen).
@@ -11,9 +12,10 @@
  * Plaats in de tool
  *   App.jsx, helemaal links.
  *
- * Leest uit de context     active, poli, modus, fk, newRows, ctrlRows, raster, inAccount, project
+ * Leest uit de context     active, poli, modus, fk, newRows, ctrlRows, raster, inAccount, project,
+ *                          projecten, projectenOpen
  * Schrijft naar de context setWiz, setShowExport, setShowFullReset, wisselModus, nav, setBijstuur,
- *                          openOpslaan
+ *                          openOpslaan, openProjecten, sluitProjecten
  *
  * Waar kan het misgaan en hoe zie je dat
  *   - Een stap toont geen vinkje → de "done"-regel hieronder: Gegevens is klaar bij
@@ -23,6 +25,7 @@
 import React from 'react'
 import { SIMPEL } from '../bouwvlaggen.js'
 import { useApp } from '../context/AppContext.jsx'
+import { groepeerProjecten } from '../hooks/useProjecten.js'
 import { fkCodeLabel } from '../engine/functiekamers.js'
 import { START } from '../lib/planregels.js'
 import { RailAccount } from './RailAccount.jsx'
@@ -126,6 +129,22 @@ const START_ICOON = (
     <path d="M10 20v-6h4v6" />
   </svg>
 )
+const PROJECTEN_ICOON = (
+  <svg
+    width="19"
+    height="19"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+  </svg>
+)
+// Aantal verschillende projecten (niet versies) voor het bolletje bij de knop Projecten.
+const aantalProjecten = lijst => groepeerProjecten(lijst).length
 const ACTIEF_STREEP = {
   position: 'absolute',
   left: 0,
@@ -156,6 +175,10 @@ export function Rail() {
     inAccount,
     openOpslaan,
     project,
+    projecten,
+    projectenOpen,
+    openProjecten,
+    sluitProjecten,
     wisselModus,
     nav,
     setBijstuur,
@@ -354,6 +377,65 @@ export function Rail() {
             Start
           </span>
         </button>
+        {/* Projecten: zijpaneel met alle opgeslagen projecten (alleen met een account) */}
+        {inAccount && (
+          <button
+            data-projecten-knop
+            onClick={projectenOpen ? sluitProjecten : openProjecten}
+            title="Projecten — je opgeslagen projecten openen of verwijderen"
+            aria-expanded={!!projectenOpen}
+            style={{
+              position: 'relative',
+              padding: '9px 4px 7px',
+              borderRadius: 13,
+              border: 'none',
+              cursor: 'pointer',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 4,
+              background: projectenOpen ? 'rgba(255,255,255,0.17)' : 'transparent',
+              color: projectenOpen ? '#fff' : 'rgba(255,255,255,0.6)',
+              transition: 'all 0.14s',
+            }}
+            onMouseEnter={e => stapZweefAan(e, projectenOpen)}
+            onMouseLeave={e => stapZweefUit(e, projectenOpen)}
+          >
+            {projectenOpen && <span style={ACTIEF_STREEP} />}
+            {PROJECTEN_ICOON}
+            {projecten && aantalProjecten(projecten.lijst) > 0 && (
+              <span
+                data-projecten-aantal
+                style={{
+                  position: 'absolute',
+                  top: 4,
+                  right: 18,
+                  minWidth: 15,
+                  height: 15,
+                  padding: '0 3px',
+                  borderRadius: 8,
+                  background: '#39C6AC',
+                  color: '#04120D',
+                  fontSize: 9,
+                  fontWeight: 800,
+                  lineHeight: '15px',
+                  textAlign: 'center',
+                }}
+              >
+                {aantalProjecten(projecten.lijst)}
+              </span>
+            )}
+            <span
+              style={{
+                fontSize: 9.5,
+                fontWeight: projectenOpen ? 700 : 600,
+                letterSpacing: '0.02em',
+              }}
+            >
+              Projecten
+            </span>
+          </button>
+        )}
         {RAIL.map((r, i) => {
           const on = active === r.id
           const done =

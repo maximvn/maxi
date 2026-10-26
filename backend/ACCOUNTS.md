@@ -255,7 +255,7 @@ Het logboek wordt niet automatisch opgeschoond.
   verlaten van de pagina (`PUT /api/stand`). Een klein label in de kopbalk: "opgeslagen 11:42"
   of "opslaan mislukt — opnieuw". Een lijstje "eerdere versies" om terug te gaan.
 - `hooks/useProjecten.js`: de knop **Opslaan** (rail en naast Export) opent
-  `dialogen/OpslaanDialoog.jsx`; op Start toont `layout/ProjectenLijst.jsx` de projecten
+  `dialogen/OpslaanDialoog.jsx`; de knop **Projecten** in de rail opent het zijpaneel `layout/ProjectenPaneel.jsx` (met `layout/ProjectenLijst.jsx`) en op Start staat de kaart "Opgeslagen project openen"; het paneel toont de projecten
   (per naam gegroepeerd) om een versie te openen of te verwijderen.
 - `modules/beheer/`: alleen voor beheer. Tabbladen **Gebruikers** (aanmaken, blokkeren,
   wachtwoord resetten, rol), **Logboek** (filter op soort en gebruiker, meer laden),

@@ -12,8 +12,8 @@
 //       tweede wijziging via "eerdere versies" terugzetten (bevestiging in de pagina);
 //    5. nieuwe browsercontext (ander apparaat), opnieuw inloggen → de wijziging staat er nog
 //       en de tool staat weer op Regels (verder waar je was); eerdere versies zichtbaar;
-//    5b. projecten: Opslaan met een naam (Dermatologie, Urologie, nieuwe versie), op Start
-//       een project openen (alles terug), een versie en een heel project verwijderen;
+//    5b. projecten: Opslaan met een naam (Dermatologie, Urologie, nieuwe versie), de kaart op
+//       Start, het zijpaneel (rail → Projecten): openen (alles terug), versie/project verwijderen;
 //    6. Beheer → tegels, gebruiker aanmaken (en dubbel → 409), wachtwoord resetten, logboek
 //       met login_ok en login_fout, filter, sessies, "bekijk laatste stand";
 //    7. de nieuwe gebruiker logt in met het tijdelijke wachtwoord → eerst het scherm
@@ -311,20 +311,28 @@ try {
     await P.waitForSelector('[data-opslaan-klaar]', { timeout: 8000 })
     await P.waitForSelector('[data-opslaan-dialoog]', { state: 'detached', timeout: 5000 })
 
-    // Start: twee projecten, nieuwste bovenaan; Urologie openen zet alles terug.
+    // Start: de kaart "Opgeslagen project openen" toont de nieuwste projecten.
     await P.click('nav [data-stap-start]')
-    await P.waitForSelector('[data-projectenlijst] [data-project]', { timeout: 8000 })
-    const namen = await P.$$eval('[data-projectenlijst] li[data-project]', l => l.map(x => x.getAttribute('data-project')))
-    check('Start: twee projecten, Dermatologie (nieuwste) bovenaan', JSON.stringify(namen) === JSON.stringify(['dermatologie', 'Urologie']), JSON.stringify(namen))
-    check('Start: Dermatologie heeft 2 versies', /2 versies/.test(await P.textContent('li[data-project="dermatologie"]')))
-    await P.locator('li[data-project="Urologie"] [data-project-open]').click()
+    await P.waitForSelector('[data-startkaart="projecten"] [data-startproject]', { timeout: 8000 })
+    const opStart = await P.$$eval('[data-startproject]', l => l.map(x => x.getAttribute('data-startproject')))
+    check('Start-kaart: twee projecten, Dermatologie (nieuwste) bovenaan', JSON.stringify(opStart) === JSON.stringify(['dermatologie', 'Urologie']), JSON.stringify(opStart))
+    check('rail: knop Projecten met aantal 2', ((await P.textContent('[data-projecten-aantal]')) || '').trim() === '2')
+    // Zijpaneel via de rail: alle projecten met versies; Urologie openen zet alles terug.
+    await P.click('[data-projecten-knop]')
+    await P.waitForSelector('[data-projectenpaneel] [data-project]', { timeout: 8000 })
+    const namen = await P.$$eval('[data-projectenpaneel] li[data-project]', l => l.map(x => x.getAttribute('data-project')))
+    check('zijpaneel: twee projecten, Dermatologie (nieuwste) bovenaan', JSON.stringify(namen) === JSON.stringify(['dermatologie', 'Urologie']), JSON.stringify(namen))
+    check('zijpaneel: Dermatologie heeft 2 versies', /2 versies/.test(await P.textContent('[data-projectenpaneel] li[data-project="dermatologie"]')))
+    await P.locator('[data-projectenpaneel] li[data-project="Urologie"] [data-project-open]').click()
     await P.waitForFunction(() => document.querySelector('input[placeholder="Naam van de poli…"]') && document.querySelector('input[placeholder="Naam van de poli…"]').value === 'Uro-poli', null, { timeout: 8000 })
     check('Urologie geopend: poli-naam en regel terug', (await P.evaluate(() => window.__rules().minBezetting)) === 70)
     check('rail toont nu Urologie', ((await P.textContent('[data-rail-project]')) || '').trim() === 'Urologie')
+    check('zijpaneel sluit na het openen', (await P.locator('[data-projectenpaneel]').count()) === 0)
     await P.waitForSelector('[data-opslag="opgeslagen"]', { timeout: 10000 })
 
-    // Verwijderen: één versie van Dermatologie, daarna het hele project (met bevestiging).
-    await P.click('nav [data-stap-start]')
+    // Verwijderen in het zijpaneel: één versie van Dermatologie, daarna het hele project.
+    await P.click('[data-projecten-knop]')
+    await P.waitForSelector('[data-projectenpaneel] li[data-project="dermatologie"]', { timeout: 8000 })
     await P.locator('li[data-project="dermatologie"] [data-project-versies]').click()
     await P.locator('li[data-project="dermatologie"] li button', { hasText: 'verwijderen' }).first().click()
     await P.click('[data-bevestig-verwijder]')
@@ -336,6 +344,8 @@ try {
     await P.click('[data-bevestig-verwijder]')
     await P.waitForFunction(() => document.querySelectorAll('[data-projectenlijst] li[data-project]').length === 1, null, { timeout: 8000 })
     check('Dermatologie helemaal weg, Urologie blijft', (await P.getAttribute('[data-projectenlijst] li[data-project]', 'data-project')) === 'Urologie')
+    await P.keyboard.press('Escape')
+    check('zijpaneel sluit met Esc', (await P.locator('[data-projectenpaneel]').count()) === 0)
     szProject = await P.evaluate(async () => (await (await fetch('/api/projecten')).json()).projecten[0].id)
   }
 
