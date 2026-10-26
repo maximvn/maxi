@@ -98,20 +98,32 @@ X-Forwarded-Proto $scheme;` en `X-Forwarded-For`, en in de omgeving
   (React, gebouwd met Vite), de server is Python (FastAPI) en op Vercel draait daarnaast
   alleen `middleware.js` (JavaScript). Lekken in PHP raken deze tool dus niet.
 - Controle op bekende lekken (oktober 2026): `pip-audit` op `requirements.txt` en
-  `backend/requirements.txt` → geen bekende lekken. `npm audit --omit=dev` → één melding:
-  **SheetJS (`xlsx` 0.18.5)**, de Excel-bibliotheek. Die heeft twee bekende zwakheden bij het
-  *lezen* van een kwaadaardig bestand (prototype pollution GHSA-4r6h-8v6p-xvw6, trage reguliere
-  expressie GHSA-5pgg-2g8v-p4x9). De makers publiceren de verbeterde versie (0.20.x) niet meer
-  op npm maar op hun eigen server (cdn.sheetjs.com).
-  - **Wat we doen:** elk geüpload Excel/CSV-bestand wordt gelezen in een aparte Web Worker
-    (`frontend/src/excel/`), met een grens van 15 MB en een time-out van 20 s. Alleen gewone
-    rijen komen terug naar de pagina; een kwaadaardig bestand kan de pagina dus niet
-    vervuilen of laten hangen. Bestanden worden alleen in de browser van de gebruiker zelf
-    gelezen, nooit op de server.
-  - **Aanrader:** vervang de afhankelijkheid door de officiële verbeterde versie:
-    `npm install https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz` in `frontend/` (en de
-    wortelmap) en draai daarna de import-tests (`test_invoer.mjs`,
-    `frontend/test_accounts_e2e.mjs`).
+  `backend/requirements.txt` → geen bekende lekken. `npm audit --omit=dev` (alles wat online
+  gaat) → **0 lekken**.
+- **SheetJS (de Excel-bibliotheek).** Versie 0.18.5 (de laatste die SheetJS zelf op npm zette)
+  had twee bekende zwakheden bij het *lezen* van een kwaadaardig bestand (prototype pollution
+  GHSA-4r6h-8v6p-xvw6, trage reguliere expressie GHSA-5pgg-2g8v-p4x9). De verbeterde versie
+  **0.20.3** staat officieel alleen op cdn.sheetjs.com. We gebruiken die versie via het
+  npm-pakket `@e965/xlsx` (in `frontend/package.json`: `"xlsx": "npm:@e965/xlsx@0.20.3"`,
+  exact vastgezet, zodat de code gewoon `import 'xlsx'` blijft). Gecontroleerd (oktober 2026):
+  - het publicatiescript (github.com/e965/sheetjs-npm-publisher) downloadt het officiële
+    pakket van cdn.sheetjs.com en wijzigt alleen naam, repository-adres en README;
+  - het pakket heeft npm-provenance (SLSA): gebouwd door dat GitHub-workflow op een
+    GitHub-runner; de vingerafdruk in de attestatie is gelijk aan de `integrity` in
+    `frontend/package-lock.json` (sha512-703RN/…), die npm bij elke installatie controleert;
+  - geen installatiescripts, geen afhankelijkheden, geen netwerkcode.
+  Kan de omgeving later cdn.sheetjs.com bereiken, dan kan het ook rechtstreeks:
+  `npm install --save-exact https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`.
+- **Tweede verdedigingslinie:** elk geüpload Excel/CSV-bestand wordt gelezen in een aparte Web
+  Worker (`frontend/src/excel/`), met een grens van 15 MB en een time-out van 20 s. Alleen
+  gewone rijen komen terug naar de pagina. Bestanden worden alleen in de browser van de
+  gebruiker zelf gelezen, nooit op de server.
+- **Alleen voor ontwikkelaars:** `npm audit` (inclusief ontwikkelgereedschap) meldt nog een lek
+  in de ontwikkelserver van Vite/esbuild (GHSA-67mh-4wv8-2f99): een website kan verzoeken doen
+  naar `npm run dev` terwijl die op je eigen computer draait. Dit zit niet in wat online staat
+  (Vercel bouwt met `vite build`; de ontwikkelserver draait daar nooit). Oplossen kan met een
+  grote Vite-update; gebruik tot die tijd `npm run dev` niet terwijl je onbekende sites open
+  hebt.
 
 ## 6. Bekende grenzen
 

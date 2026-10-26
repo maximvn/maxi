@@ -3,11 +3,11 @@
  *
  * Wat doet dit onderdeel
  *   Leest een Excel/CSV-bestand (parseWerkboek) in een aparte Web Worker en stuurt alleen
- *   gewone rijen terug. Waarom apart: de gebruikte SheetJS-versie (xlsx 0.18.5, de laatste
- *   op npm) heeft twee bekende zwakheden bij het LEZEN van kwaadaardige bestanden
- *   (prototype pollution, GHSA-4r6h-8v6p-xvw6; trage reguliere expressies, GHSA-5pgg-2g8v-p4x9).
- *   In de worker kan zo'n bestand de pagina niet raken: de worker heeft een eigen geheugen,
- *   en hangt hij, dan breekt leesWerkboek hem na de time-out af.
+ *   gewone rijen terug. Waarom apart: een geüpload bestand komt van buiten. SheetJS 0.20.3
+ *   (zie backend/BEVEILIGING.md §5) heeft geen bekende lekken meer, maar oudere versies hadden
+ *   zwakheden bij het LEZEN van kwaadaardige bestanden (prototype pollution, trage reguliere
+ *   expressies). Lezen in de worker is een tweede verdedigingslinie: zo'n bestand kan de
+ *   pagina niet raken (eigen geheugen), en hangt de worker, dan breekt leesWerkboek hem af.
  *
  * Plaats in de tool
  *   Gestart door excel/leesWerkboek.js (new Worker(new URL(...)), Vite bundelt hem apart).
