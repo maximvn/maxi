@@ -4,15 +4,16 @@
  * Wat doet dit onderdeel
  *   De donkere zijbalk: merk, planmodus (poli / functiekamers), de assistent-knop (niet in
  *   de simpele variant), de knop Start (het beginscherm, modules/Start.jsx), de vier
- *   stappen met voortgangsvinkjes, de acties Export en
- *   Opnieuw, en in de accountmodus het accountblok (RailAccount.jsx: naam, Beheer,
+ *   stappen met voortgangsvinkjes, de acties Opslaan (accountmodus; met de naam van het
+ *   project waar je in werkt), Export en Opnieuw, en in de accountmodus het accountblok (RailAccount.jsx: naam, Beheer,
  *   wachtwoord, uitloggen).
  *
  * Plaats in de tool
  *   App.jsx, helemaal links.
  *
- * Leest uit de context     active, poli, modus, fk, newRows, ctrlRows, raster
- * Schrijft naar de context setWiz, setShowExport, setShowFullReset, wisselModus, nav, setBijstuur
+ * Leest uit de context     active, poli, modus, fk, newRows, ctrlRows, raster, inAccount, project
+ * Schrijft naar de context setWiz, setShowExport, setShowFullReset, wisselModus, nav, setBijstuur,
+ *                          openOpslaan
  *
  * Waar kan het misgaan en hoe zie je dat
  *   - Een stap toont geen vinkje → de "done"-regel hieronder: Gegevens is klaar bij
@@ -152,6 +153,9 @@ export function Rail() {
     setWiz,
     setShowExport,
     setShowFullReset,
+    inAccount,
+    openOpslaan,
+    project,
     wisselModus,
     nav,
     setBijstuur,
@@ -437,6 +441,53 @@ export function Rail() {
           borderTop: '1px solid rgba(255,255,255,0.12)',
         }}
       >
+        {/* Opslaan met een naam (alleen met een account; lokaal is Export de manier) */}
+        {inAccount && (
+          <button
+            data-opslaan-knop="rail"
+            onClick={openOpslaan}
+            title={
+              project
+                ? `Opslaan — je werkt in project ${project.naam}`
+                : 'Het hele project opslaan met een naam, bijvoorbeeld Dermatologie'
+            }
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 2,
+              padding: '9px 4px',
+              borderRadius: 11,
+              border: 'none',
+              cursor: 'pointer',
+              background: 'rgba(255,255,255,0.12)',
+              color: '#EAF6FB',
+              fontSize: 10,
+              fontWeight: 700,
+            }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.2)')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.12)')}
+          >
+            <span>💾 Opslaan</span>
+            {project && (
+              <span
+                data-rail-project
+                style={{
+                  maxWidth: '100%',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  fontSize: 9,
+                  fontWeight: 600,
+                  color: 'rgba(234,246,251,0.7)',
+                }}
+              >
+                {project.naam}
+              </span>
+            )}
+          </button>
+        )}
         <button
           onClick={() => setShowExport(true)}
           title="Exporteren naar Excel"

@@ -41,7 +41,8 @@ Fouten bij het rekenen komen als HTTP 200 met `{ok:false, fout, type, spoor}` te
 frontend ze in de live-banner toont. CORS staat dicht, behalve voor `POLIRASTER_ORIGINS`.
 
 Daarnaast, met accounts aan (zie hieronder en `ACCOUNTS.md` §5): `/api/auth/*` (inloggen,
-uitloggen, wie ben ik, wachtwoord wijzigen), `/api/stand*` (opgeslagen stand, eerdere versies) en
+uitloggen, wie ben ik, wachtwoord wijzigen), `/api/stand*` (opgeslagen stand, eerdere versies),
+`/api/projecten*` (opslaan met een naam: "Dermatologie 26-10-2026 08:00", `projecten.py`) en
 `/api/beheer/*` (gebruikers, logboek, sessies, meekijken). Zonder `POLIRASTER_GEHEIM` draait de
 server in de **open ontwikkelstand**: geen login, en die routes geven 503 "Accounts niet ingesteld".
 

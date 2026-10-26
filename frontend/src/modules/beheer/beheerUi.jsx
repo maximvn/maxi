@@ -35,6 +35,10 @@ export const SOORT_NAAM = {
   gebruiker_gewijzigd: 'gebruiker gewijzigd',
   sessie_ingetrokken: 'sessie ingetrokken',
   stand_hersteld: 'oudere versie teruggezet',
+  stand_bekeken: 'stand bekeken door beheer',
+  project_opgeslagen: 'project opgeslagen',
+  project_geopend: 'project geopend',
+  project_verwijderd: 'project verwijderd',
 }
 
 /**

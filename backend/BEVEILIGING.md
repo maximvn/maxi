@@ -92,7 +92,28 @@ X-Forwarded-Proto $scheme;` en `X-Forwarded-For`, en in de omgeving
 - **Pentest**: laat de installatie één keer toetsen door de security-afdeling voordat er
   echte poli-gegevens in gaan.
 
-## 5. Bekende grenzen
+## 5. Software van derden en bekende zwakheden
+
+- **Geen PHP.** De tool bevat geen PHP-code en draait geen PHP: de pagina's zijn JavaScript
+  (React, gebouwd met Vite), de server is Python (FastAPI) en op Vercel draait daarnaast
+  alleen `middleware.js` (JavaScript). Lekken in PHP raken deze tool dus niet.
+- Controle op bekende lekken (oktober 2026): `pip-audit` op `requirements.txt` en
+  `backend/requirements.txt` → geen bekende lekken. `npm audit --omit=dev` → één melding:
+  **SheetJS (`xlsx` 0.18.5)**, de Excel-bibliotheek. Die heeft twee bekende zwakheden bij het
+  *lezen* van een kwaadaardig bestand (prototype pollution GHSA-4r6h-8v6p-xvw6, trage reguliere
+  expressie GHSA-5pgg-2g8v-p4x9). De makers publiceren de verbeterde versie (0.20.x) niet meer
+  op npm maar op hun eigen server (cdn.sheetjs.com).
+  - **Wat we doen:** elk geüpload Excel/CSV-bestand wordt gelezen in een aparte Web Worker
+    (`frontend/src/excel/`), met een grens van 15 MB en een time-out van 20 s. Alleen gewone
+    rijen komen terug naar de pagina; een kwaadaardig bestand kan de pagina dus niet
+    vervuilen of laten hangen. Bestanden worden alleen in de browser van de gebruiker zelf
+    gelezen, nooit op de server.
+  - **Aanrader:** vervang de afhankelijkheid door de officiële verbeterde versie:
+    `npm install https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz` in `frontend/` (en de
+    wortelmap) en draai daarna de import-tests (`test_invoer.mjs`,
+    `frontend/test_accounts_e2e.mjs`).
+
+## 6. Bekende grenzen
 
 - De tijdslimiet breekt een lopende berekening niet af (Python kan een thread niet
   stoppen); hij zorgt wel dat de aanvrager niet eindeloos wacht. Het aantal gelijktijdige

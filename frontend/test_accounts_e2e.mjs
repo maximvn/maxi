@@ -12,11 +12,14 @@
 //       tweede wijziging via "eerdere versies" terugzetten (bevestiging in de pagina);
 //    5. nieuwe browsercontext (ander apparaat), opnieuw inloggen → de wijziging staat er nog
 //       en de tool staat weer op Regels (verder waar je was); eerdere versies zichtbaar;
+//    5b. projecten: Opslaan met een naam (Dermatologie, Urologie, nieuwe versie), op Start
+//       een project openen (alles terug), een versie en een heel project verwijderen;
 //    6. Beheer → tegels, gebruiker aanmaken (en dubbel → 409), wachtwoord resetten, logboek
 //       met login_ok en login_fout, filter, sessies, "bekijk laatste stand";
 //    7. de nieuwe gebruiker logt in met het tijdelijke wachtwoord → eerst het scherm
 //       "wachtwoord wijzigen", daarna Start → Nieuw en Start → inladen (export met _rasterdata,
-//       eerste opslag met nieuwe_versie), geen Beheer-knop, eigen stand, 403 op beheer;
+//       eerste opslag met nieuwe_versie), geen Beheer-knop, eigen stand, 403 op beheer,
+//       en de projecten van SZ niet zien of openen (404);
 //    8. uitloggen → login.html, en / vraagt daarna weer om in te loggen;
 //    9. een wijziging vlak voor het sluiten van de pagina wordt bewaard (keepalive bij pagehide);
 //   10. lokale modus (dist/polimodel.html via file://): opent op Tijden, Start via de rail.
@@ -108,6 +111,7 @@ check('server antwoordt op /api/health', await wachtOp(URL0 + '/api/health'), se
 
 const b = await chromium.launch({ executablePath: CHROMIUM })
 const errs = []
+const meldingen = [] // tekst van alert()-meldingen, voor de import-checks
 const nieuweContext = async (viewport = { width: 1400, height: 900 }) => {
   const ctx = await b.newContext({ viewport })
   const page = await ctx.newPage()
@@ -118,8 +122,9 @@ const nieuweContext = async (viewport = { width: 1400, height: 900 }) => {
       errs.push('console: ' + m.text())
   })
   page.on('dialog', d => {
-    // De bestaande sessie-import meldt "Sessie hersteld" met alert(); alleen die verwachten we.
-    if (/Sessie hersteld/.test(d.message())) return d.accept()
+    // De imports melden hun uitkomst met alert(); die verwachten we (en bewaren we voor checks).
+    meldingen.push(d.message())
+    if (/Sessie hersteld|Spreekuurgegevens geladen|Laden mislukt/.test(d.message())) return d.accept()
     errs.push('onverwachte dialoog: ' + d.message())
     d.dismiss()
   })
@@ -269,6 +274,71 @@ try {
   check('eerdere versies: minstens één', (await B.page.locator('[data-versielijst="kop"] li').count()) >= 1)
   await B.page.click('[data-versies-knop]')
 
+  // ── 5b. projecten: opslaan met een naam en weer openen ──────────────────────
+  console.log('— 5b. projecten —')
+  let szProject = null
+  {
+    const P = B.page
+    check('knop Opslaan in de rail', await P.locator('[data-opslaan-knop="rail"]').isVisible())
+    await P.click('[data-opslaan-knop="rail"]')
+    await P.waitForSelector('[data-opslaan-dialoog]', { timeout: 5000 })
+    check('dialoog: naam voorgesteld uit de poli', (await P.inputValue('[data-opslaan-naam]')) === 'Poli E2E-test')
+    await P.fill('[data-opslaan-naam]', 'Dermatologie')
+    const voorbeeld = await P.textContent('[data-opslaan-dialoog]')
+    check('dialoog: "Dermatologie DD-MM-JJJJ UU:MM" en "Nieuw project"', /Dermatologie \d{2}-\d{2}-\d{4} \d{2}:\d{2}/.test(voorbeeld) && /Nieuw project/.test(voorbeeld))
+    await P.click('[data-opslaan-ok]')
+    await P.waitForSelector('[data-opslaan-klaar]', { timeout: 8000 })
+    check('opgeslagen als Dermatologie …', /Opgeslagen als Dermatologie \d{2}-\d{2}-\d{4} \d{2}:\d{2}/.test(await P.textContent('[data-opslaan-klaar]')))
+    await P.waitForSelector('[data-opslaan-dialoog]', { state: 'detached', timeout: 5000 })
+    check('rail toont het huidige project', ((await P.textContent('[data-rail-project]')) || '').trim() === 'Dermatologie')
+
+    // Urologie: andere poli-naam en een andere regel.
+    await P.fill('input[placeholder="Naam van de poli…"]', 'Uro-poli')
+    await P.evaluate(() => window.__setRules(r => ({ ...r, minBezetting: 70 })))
+    await P.click('[data-opslaan-knop="rail"]')
+    await P.fill('[data-opslaan-naam]', 'Urologie')
+    await P.click('[data-opslaan-ok]')
+    await P.waitForSelector('[data-opslaan-klaar]', { timeout: 8000 })
+    await P.waitForSelector('[data-opslaan-dialoog]', { state: 'detached', timeout: 5000 })
+
+    // Nieuwe versie van Dermatologie (hoofdletters tellen niet).
+    await P.evaluate(() => window.__setRules(r => ({ ...r, minBezetting: 80 })))
+    await P.click('[data-opslaan-knop="rail"]')
+    check('dialoog: voorstel is het huidige project (Urologie)', (await P.inputValue('[data-opslaan-naam]')) === 'Urologie')
+    await P.fill('[data-opslaan-naam]', 'dermatologie')
+    check('dialoog: "Nieuwe versie van Dermatologie"', /Nieuwe versie van Dermatologie/.test(await P.textContent('[data-opslaan-dialoog]')))
+    await P.click('[data-opslaan-ok]')
+    await P.waitForSelector('[data-opslaan-klaar]', { timeout: 8000 })
+    await P.waitForSelector('[data-opslaan-dialoog]', { state: 'detached', timeout: 5000 })
+
+    // Start: twee projecten, nieuwste bovenaan; Urologie openen zet alles terug.
+    await P.click('nav [data-stap-start]')
+    await P.waitForSelector('[data-projectenlijst] [data-project]', { timeout: 8000 })
+    const namen = await P.$$eval('[data-projectenlijst] li[data-project]', l => l.map(x => x.getAttribute('data-project')))
+    check('Start: twee projecten, Dermatologie (nieuwste) bovenaan', JSON.stringify(namen) === JSON.stringify(['dermatologie', 'Urologie']), JSON.stringify(namen))
+    check('Start: Dermatologie heeft 2 versies', /2 versies/.test(await P.textContent('li[data-project="dermatologie"]')))
+    await P.locator('li[data-project="Urologie"] [data-project-open]').click()
+    await P.waitForFunction(() => document.querySelector('input[placeholder="Naam van de poli…"]') && document.querySelector('input[placeholder="Naam van de poli…"]').value === 'Uro-poli', null, { timeout: 8000 })
+    check('Urologie geopend: poli-naam en regel terug', (await P.evaluate(() => window.__rules().minBezetting)) === 70)
+    check('rail toont nu Urologie', ((await P.textContent('[data-rail-project]')) || '').trim() === 'Urologie')
+    await P.waitForSelector('[data-opslag="opgeslagen"]', { timeout: 10000 })
+
+    // Verwijderen: één versie van Dermatologie, daarna het hele project (met bevestiging).
+    await P.click('nav [data-stap-start]')
+    await P.locator('li[data-project="dermatologie"] [data-project-versies]').click()
+    await P.locator('li[data-project="dermatologie"] li button', { hasText: 'verwijderen' }).first().click()
+    await P.click('[data-bevestig-verwijder]')
+    await P.waitForFunction(() => /1 versie(?!s)/.test(document.querySelector('li[data-project="Dermatologie"], li[data-project="dermatologie"]').textContent), null, { timeout: 8000 })
+    check('één versie verwijderd (Dermatologie: 1 versie)', true)
+    // Dermatologie staat nog uitgeklapt (zelfde project), dus de knop "hele project" is er.
+    await P.locator('li[data-project="Dermatologie"] [data-project-weg-alles]').click()
+    check('heel project verwijderen vraagt bevestiging', /alle versies/.test(await P.textContent('[data-projectenlijst] [role=alert]')))
+    await P.click('[data-bevestig-verwijder]')
+    await P.waitForFunction(() => document.querySelectorAll('[data-projectenlijst] li[data-project]').length === 1, null, { timeout: 8000 })
+    check('Dermatologie helemaal weg, Urologie blijft', (await P.getAttribute('[data-projectenlijst] li[data-project]', 'data-project')) === 'Urologie')
+    szProject = await P.evaluate(async () => (await (await fetch('/api/projecten')).json()).projecten[0].id)
+  }
+
   // ── 6. beheer ───────────────────────────────────────────────────────────────
   console.log('— 6. beheer —')
   await B.page.click('[data-beheer-knop]')
@@ -330,7 +400,8 @@ try {
   await B.page.locator('[data-gebruiker="SZ"] button', { hasText: 'Bekijk laatste stand' }).click()
   await B.page.waitForSelector('[data-beheer-stand] dl', { timeout: 8000 })
   const standTekst = await B.page.textContent('[data-beheer-stand]')
-  check('bekijk laatste stand: poli-naam en module', /Poli E2E-test/.test(standTekst) && /Planregels/.test(standTekst), standTekst.replace(/\s+/g, ' ').slice(0, 140))
+  // De laatste stand is het in stap 5b geopende project Urologie (poli-naam Uro-poli).
+  check('bekijk laatste stand: poli-naam en module', /Uro-poli/.test(standTekst) && /Planregels/.test(standTekst), standTekst.replace(/\s+/g, ' ').slice(0, 220))
   await B.page.locator('[data-beheer-stand] button', { hasText: 'Sluiten' }).click()
 
   // ── 7. de nieuwe gebruiker ──────────────────────────────────────────────────
@@ -383,7 +454,31 @@ try {
   }
   check('nieuwe gebruiker: geen Beheer-knop', (await C.page.locator('[data-beheer-knop]').count()) === 0)
   check('nieuwe gebruiker: eigen stand, niet die van SZ', (await C.page.inputValue('input[placeholder="Naam van de poli…"]')) === '')
+  check('nieuwe gebruiker: ziet geen projecten van SZ', (await C.page.evaluate(async () => (await (await fetch('/api/projecten')).json()).projecten.length)) === 0)
+  check('nieuwe gebruiker: project van SZ openen → 404', (await C.page.evaluate(async id => (await fetch('/api/projecten/' + id)).status, szProject)) === 404)
+  check('nieuwe gebruiker: project van SZ verwijderen → 404', (await C.page.evaluate(async id => (await fetch('/api/projecten/' + id, { method: 'DELETE' })).status, szProject)) === 404)
   check('nieuwe gebruiker: /api/beheer/overzicht → 403', (await C.page.evaluate(async () => (await fetch('/api/beheer/overzicht')).status)) === 403)
+  // Excel/CSV lezen gebeurt in een aparte worker (excel/leesWerkboek.js): een UTF-8-CSV met
+  // accenten komt goed over, en een kapot bestand geeft een nette melding.
+  {
+    const csv = join(tmp, 'spreekuur-e2e.csv')
+    writeFileSync(csv, 'Code;Naam;Categorie;Duur (min);Aantal/week\nNPE;Nieuwe patiënt één;nieuw;20;10\nCTE;Controle ü;controle;10;20\n', 'utf8')
+    await C.page.click('nav [data-stap-start]')
+    meldingen.length = 0
+    await C.page.setInputFiles('#start-spreekuur-file', csv)
+    await C.page.waitForFunction(() => document.body.innerText.includes('NPE'), null, { timeout: 10000 })
+    check('CSV via de Excel-worker: "Nieuwe patiënt één" met accenten', await C.page.evaluate(() => document.body.innerHTML.includes('Nieuwe patiënt één')), meldingen.join(' | ').slice(0, 120))
+    const werkers = await C.page.evaluate(() => performance.getEntriesByType('resource').map(r => r.name).filter(n => /excel\.worker/.test(n)))
+    check('…gelezen in de aparte Excel-worker', werkers.length >= 1, JSON.stringify(werkers))
+    const kapot = join(tmp, 'kapot.xlsx')
+    writeFileSync(kapot, Buffer.from('PK\u0003\u0004 dit is geen echte werkmap', 'binary'))
+    await C.page.click('nav [data-stap-start]')
+    meldingen.length = 0
+    await C.page.setInputFiles('#start-spreekuur-file', kapot)
+    await C.page.waitForFunction(() => true, null, { timeout: 1000 })
+    for (let i = 0; i < 50 && !meldingen.length; i++) await slaap(100)
+    check('kapot bestand → nette melding, tool werkt door', /Laden mislukt/.test(meldingen.join(' ')) && (await C.page.locator('[data-start]').isVisible()), meldingen.join(' | ').slice(0, 120))
+  }
   await C.ctx.close()
 
   // ── 8. uitloggen ────────────────────────────────────────────────────────────

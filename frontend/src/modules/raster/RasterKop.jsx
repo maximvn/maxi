@@ -4,7 +4,7 @@
  * Wat doet dit onderdeel
  *   De kop boven het raster met de assistent-knop ("Vraag de assistent" of "Toon het
  *   rasteradvies"), dag/week-schakelaar, zoom, de live-status van de engine (bijwerken /
- *   bijgewerkt / mislukt), "Analyseer & herbouw" en Export.
+ *   bijgewerkt / mislukt), "Analyseer & herbouw", Opslaan (accountmodus) en Export.
  *
  * Plaats in de tool
  *   Bovenaan Raster.jsx.
@@ -12,7 +12,7 @@
  *                          herbouwNu, setBijstuur
  * Leest uit de context     modus, raster, calZoom, viewMode, liveBezig, liveFout, engineStatus
  * Schrijft naar de context setCalZoom, setViewMode, setWiz, setOpenPanels, setShowExport,
- *                           doGenerate, herbouwNu, setBijstuur
+ *                           doGenerate, herbouwNu, setBijstuur, openOpslaan (inAccount)
  *
  * Waar kan het misgaan en hoe zie je dat
  *   - De status blijft op "mislukt" → liveFout; klikken start doGenerate opnieuw.
@@ -61,6 +61,8 @@ export function RasterKop() {
     setWiz,
     setOpenPanels,
     setShowExport,
+    inAccount,
+    openOpslaan,
     liveBezig,
     liveFout,
     doGenerate,
@@ -305,6 +307,17 @@ export function RasterKop() {
         >
           🔄 Analyseer &amp; herbouw
         </button>
+        {inAccount && (
+          <Btn
+            small
+            variant="secondary"
+            data-opslaan-knop="raster"
+            onClick={openOpslaan}
+            title="Het hele project opslaan met een naam, bijvoorbeeld Dermatologie"
+          >
+            💾 Opslaan
+          </Btn>
+        )}
         <Btn
           small
           onClick={() => setShowExport(true)}

@@ -39,8 +39,8 @@ Hoe het werkt (per verzoek)
      (``/api/raster``, ``/api/functiekamers``, ``/api/batch``) mag ook met
      ``Authorization: Bearer <POLIRASTER_TOKEN>``. Zonder sessie: HTML → ``302`` naar
      ``/login.html?naar=<pad>``, ``/api/*`` → ``401 {"ok":false,"fout":"Niet ingelogd."}``.
-   - **Accounts uit** (open ontwikkelstand): geen login; ``/api/auth/*``, ``/api/stand*`` en
-     ``/api/beheer/*`` geven ``503 accounts niet ingesteld``. Met
+   - **Accounts uit** (open ontwikkelstand): geen login; ``/api/auth/*``, ``/api/stand*``,
+     ``/api/projecten*`` en ``/api/beheer/*`` geven ``503 accounts niet ingesteld``. Met
      ``POLIRASTER_ACCOUNTS_VERPLICHT=1`` (zo staat ``api/index.py`` op Vercel) is de open stand
      verboden: alles behalve ``/api/health`` geeft dan 503.
 4. CSRF bij ``POST``/``PUT``/``PATCH``/``DELETE``: ``Sec-Fetch-Site`` (same-origin/none → goed,
@@ -99,7 +99,7 @@ COOKIE = "poliraster_sessie"
 VRIJE_PADEN = frozenset({"/login.html", "/login.js", "/login.css", "/favicon.ico", "/api/health"})
 VRIJ_POST = frozenset({"/api/auth/login"})
 REKEN_PADEN = frozenset({"/api/raster", "/api/functiekamers", "/api/batch"})   # mogen ook met het Bearer-token
-ACCOUNT_PADEN = ("/api/auth/", "/api/stand", "/api/beheer/")                    # bestaan alleen met accounts
+ACCOUNT_PADEN = ("/api/auth/", "/api/stand", "/api/projecten", "/api/beheer/")  # bestaan alleen met accounts
 MIN_GEHEIM = 48
 
 

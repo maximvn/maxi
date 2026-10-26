@@ -2,7 +2,9 @@
  * ═══ START — het beginscherm: verder, nieuw of inladen ═════════════════════════════
  *
  * Wat doet dit onderdeel
- *   Het scherm vóór de vier stappen, met grote keuzekaarten:
+ *   Het scherm vóór de vier stappen. Bovenaan (accountmodus) de opgeslagen projecten
+ *   (layout/ProjectenLijst.jsx: "Dermatologie", "Urologie" … openen of verwijderen), daaronder
+ *   grote keuzekaarten:
  *   - **Verder waar je was** (alleen in de accountmodus, als er een opgeslagen stand is):
  *     wanneer opgeslagen, planmodus, poli/specialisme, aantal codes en de module waar je
  *     was. Klikken zet de stand terug (useStand.verderWaarJeWas → pasSessieToe) en gaat
@@ -26,10 +28,10 @@
  *     Tijden (de bestaande tests rekenen daarop); Start is bereikbaar via de rail en het
  *     welkomstscherm, zonder "Verder" en zonder versies (er is geen opgeslagen stand).
  *
- * Leest uit de context     inAccount, standFase, opgehaald, opslag, laatsteModule, versies,
+ * Leest uit de context     inAccount, standFase, opgehaald, opslag, laatsteModule, versies, project,
  *                          modus, poli, newRows, ctrlRows, fk, capacity, raster, heeftCodes
  * Schrijft naar de context verderWaarJeWas, beginZonderStand, openVersies, sluitVersies,
- *                          kiesVersie, zetVersieTerug, setModus, setSelDay, handleFullReset,
+ *                          kiesVersie, zetVersieTerug, setModus, setSelDay, handleFullReset, setProject,
  *                          setActive, setVisited, setM1Mode, setM1Section, handleImport,
  *                          handleSpreekuur, fkImporteer
  *
@@ -42,6 +44,7 @@
 import React, { useEffect, useState } from 'react'
 import { useApp } from '../context/AppContext.jsx'
 import { vatSessieSamen } from '../lib/sessie.js'
+import { ProjectenLijst } from '../layout/ProjectenLijst.jsx'
 import { VersieLijst } from '../layout/VersieLijst.jsx'
 import { C } from '../ui/kleuren.js'
 import { StandSamenvatting, StartKaart } from './StartKaart.jsx'
@@ -180,11 +183,13 @@ export function Start() {
   const laadIn = handler => e => {
     if (!e.target.files || !e.target.files[0]) return
     app.beginZonderStand()
+    if (app.setProject) app.setProject(null) // een bestand is geen opgeslagen project
     handler(e)
   }
   const laadFkIn = e => {
     if (!e.target.files || !e.target.files[0]) return
     app.beginZonderStand()
+    if (app.setProject) app.setProject(null)
     app.fkImporteer(e)
     app.setActive(1)
     app.setVisited(new Set([0, 1]))
@@ -221,6 +226,9 @@ export function Start() {
         <p style={{ fontSize: 13.5, color: C.muted, margin: '0 0 18px', lineHeight: 1.6 }}>
           Waar wil je beginnen? Je kunt altijd terug naar dit scherm via <b>Start</b> in het menu.
         </p>
+
+        {/* opgeslagen projecten — bovenaan, zodat je een vraag van een poli direct oppakt */}
+        {inAccount && (standFase === 'kiezen' || standFase === 'klaar') && <ProjectenLijst />}
 
         {/* planmodus — zet alleen de modus; de kaarten hieronder volgen hem */}
         <div

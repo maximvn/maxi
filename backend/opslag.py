@@ -89,8 +89,19 @@ log = logging.getLogger("poliraster.opslag")
 
 HIER = Path(__file__).resolve().parent
 STANDAARD_PAD = HIER / "data" / "poliraster.db"
-SCHEMA_VERSIE = 2
+SCHEMA_VERSIE = 3
 TURSO_TIMEOUT = 15   # seconden per HTTP-verzoek naar Turso
+
+# Tabel en index voor projecten (versie 3); apart benoemd omdat de migratie ze ook gebruikt.
+PROJECTEN_TABEL = """CREATE TABLE IF NOT EXISTS projecten (
+        id INTEGER PRIMARY KEY,
+        gebruiker_id INTEGER NOT NULL REFERENCES gebruikers(id) ON DELETE CASCADE,
+        naam TEXT NOT NULL,
+        tijd TEXT NOT NULL,
+        modus TEXT,
+        data TEXT NOT NULL,
+        grootte INTEGER NOT NULL)"""
+PROJECTEN_INDEX = "CREATE INDEX IF NOT EXISTS idx_projecten_gebruiker ON projecten(gebruiker_id, naam COLLATE NOCASE, id)"
 
 SCHEMA: list[str] = [
     """CREATE TABLE IF NOT EXISTS gebruikers (
@@ -121,6 +132,7 @@ SCHEMA: list[str] = [
         data TEXT NOT NULL,
         grootte INTEGER NOT NULL,
         begonnen TEXT)""",   # begonnen = begin van het werkblok van deze versie (stand.py)
+    PROJECTEN_TABEL,   # bewust opgeslagen werk met een naam (projecten.py)
     """CREATE TABLE IF NOT EXISTS logboek (
         id INTEGER PRIMARY KEY,
         tijd TEXT NOT NULL,
@@ -134,6 +146,7 @@ SCHEMA: list[str] = [
         sleutel TEXT PRIMARY KEY,
         waarde TEXT)""",
     "CREATE INDEX IF NOT EXISTS idx_standen_gebruiker ON standen(gebruiker_id, id)",
+    PROJECTEN_INDEX,
     "CREATE INDEX IF NOT EXISTS idx_logboek_tijd ON logboek(tijd)",
     "CREATE INDEX IF NOT EXISTS idx_logboek_gebruiker ON logboek(gebruiker_id)",
     "CREATE INDEX IF NOT EXISTS idx_logboek_soort_tijd ON logboek(soort, tijd)",   # blokkade-telling
@@ -143,8 +156,10 @@ SCHEMA: list[str] = [
 
 # Migraties: (versie, [sql]) — elke stap draait één keer, op databases met een lagere schema_versie.
 # Versie 2: standen.begonnen (begin van het werkblok; oude rijen gebruiken tijd als terugval).
+# Versie 3: tabel projecten (Opslaan met een naam, projecten.py).
 MIGRATIES: list[tuple[int, list[str]]] = [
     (2, ["ALTER TABLE standen ADD COLUMN begonnen TEXT"]),
+    (3, [PROJECTEN_TABEL, PROJECTEN_INDEX]),
 ]
 
 

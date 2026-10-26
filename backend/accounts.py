@@ -101,7 +101,7 @@ NAAM_PATROON = re.compile(r"^[A-Za-z0-9._@-]{2,64}$")
 
 LOGSOORTEN = ("login_ok", "login_fout", "login_geblokkeerd", "logout", "wachtwoord_gewijzigd",
               "gebruiker_aangemaakt", "gebruiker_gewijzigd", "sessie_ingetrokken", "stand_hersteld",
-              "stand_bekeken")
+              "stand_bekeken", "project_opgeslagen", "project_geopend", "project_verwijderd")
 
 
 class Fout(Exception):

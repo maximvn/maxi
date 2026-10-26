@@ -20,7 +20,7 @@
  * Schrijft naar de context  alles — zie het value-object onderaan (één regel per naam)
  * Roept aan                useAccount, useRasterBewerking, useLiveRaster, useGeheugen,
  *                          useOptimiser, useBijsturen, useAssistent, useFunctiekamers,
- *                          useImportExport, useStand, useTestHaken
+ *                          useImportExport, useStand, useProjecten, useTestHaken
  *
  * Waar kan het misgaan en hoe zie je dat
  *   - Een module ziet een naam niet (undefined uit useApp) → de naam ontbreekt in het
@@ -28,7 +28,8 @@
  *   - De hooks staan in een vaste volgorde omdat ze van elkaar afhangen (nav heeft
  *     doGenerate nodig, useAssistent heeft zoekVoorstel en nav nodig, useImportExport
  *     heeft m2c en de functiekamer-hulpen nodig, useStand heeft pasSessieToe uit
- *     useImportExport nodig). Verander die volgorde niet.
+ *     useImportExport nodig, useProjecten heeft huidigeData/laadData uit useStand nodig).
+ *     Verander die volgorde niet.
  *   - In de lokale modus (geen server met accounts) zijn account en stand leeg en ziet de
  *     tool er precies zo uit als zonder accounts; zie hooks/useAccount.js.
  *   - Reset en import zetten dezelfde standaardwaarden als de start: STANDAARD_* en de
@@ -55,6 +56,7 @@ import { useImportExport } from './hooks/useImportExport.js'
 import { useTestHaken } from './hooks/useTestHaken.js'
 import { useAccount } from './hooks/useAccount.js'
 import { useStand } from './hooks/useStand.js'
+import { useProjecten } from './hooks/useProjecten.js'
 import { GlobaleStijl } from './layout/GlobaleStijl.jsx'
 import { Rail } from './layout/Rail.jsx'
 import { InstellingenPaneel } from './layout/InstellingenPaneel.jsx'
@@ -73,6 +75,7 @@ import { RegelsFunctiekamers } from './modules/RegelsFunctiekamers.jsx'
 import { Raster } from './modules/Raster.jsx'
 import { AssistentModal } from './assistent/AssistentModal.jsx'
 import { ResetDialoog } from './dialogen/ResetDialoog.jsx'
+import { OpslaanDialoog } from './dialogen/OpslaanDialoog.jsx'
 
 // De bouwvlaggen (SIMPEL, API) blijven via App.jsx bereikbaar voor main.jsx en raster_model_2.jsx.
 export { BOUWVLAGGEN }
@@ -162,6 +165,8 @@ export default function RasterTool() {
   // ── gegevens, tijden, regels, capaciteit ───────────────────────────────────
   const [cfg, setCfg] = useState(STANDAARD_CFG)
   const [poli, setPoli] = useState(STANDAARD_POLI)
+  // Het opgeslagen project waar je nu in werkt ({naam, id, tijd}) of null — zie useProjecten.
+  const [project, setProject] = useState(null)
   const [modus, setModus] = useState('poli')
   const [fk, setFk] = useState(standaardFk)
   const [capacity, setCapacity] = useState(STANDAARD_CAPACITEIT)
@@ -372,8 +377,20 @@ export default function RasterTool() {
     setM1Section,
     setSelDay,
     setViewMode,
+    project,
+    setProject,
   })
   standRef.current = stand
+  // Opslaan met een naam ("Dermatologie 26-10-2026 08:00") en elk project weer inladen.
+  const projecten = useProjecten({
+    actief: account.inAccount && !account.moetWachtwoord,
+    naarLogin: account.naarLogin,
+    huidigeData: stand.huidigeData,
+    laadData: stand.laadData,
+    project,
+    setProject,
+    poliNaam: poli.naam,
+  })
   // Uitloggen: eerst een openstaande wijziging opslaan, dan pas de sessie beëindigen.
   const uitloggenMetOpslaan = async () => {
     try {
@@ -426,6 +443,7 @@ export default function RasterTool() {
     setModus('poli')
     setFk(standaardFk())
     setRoomNames({})
+    setProject(null)
     setShowFullReset(false)
   }
 
@@ -537,6 +555,9 @@ export default function RasterTool() {
     setToonWachtwoord,
     uitloggenMetOpslaan,
     ...stand,
+    project,
+    setProject,
+    ...projecten,
     // hooks
     ...rasterBewerking,
     ...live,
@@ -584,6 +605,7 @@ export default function RasterTool() {
         )}
         <AssistentModal />
         {showFullReset && <ResetDialoog />}
+        {account.inAccount && projecten.opslaanOpen && <OpslaanDialoog />}
         {account.inAccount && <StandLaden />}
         {account.inAccount && <WachtwoordWijzigen />}
       </div>

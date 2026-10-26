@@ -14,7 +14,7 @@ losse bestand ``dist/polimodel-api.html`` met de vlag ``window.__POLIRASTER_API=
 Plaats in de keten
 ------------------
 Browser → ``beveiliging.Beveiliging`` (limieten, toegang, CSRF, koppen) → de routes hieronder →
-rekenkern (``poliraster/``), ``accounts.py`` en ``stand.py`` → ``opslag.py`` (SQLite of Turso).
+rekenkern (``poliraster/``), ``accounts.py``, ``stand.py`` en ``projecten.py`` → ``opslag.py`` (SQLite of Turso).
 Op Vercel laadt ``api/index.py`` deze app als serverless-functie.
 
 Invoer
@@ -40,6 +40,7 @@ Accounts, stand en beheer (``ACCOUNTS.md`` §5; fouten als ``{ok:false, fout}`` 
 
 - ``POST /api/auth/login`` · ``POST /api/auth/logout`` · ``GET /api/auth/ik`` · ``POST /api/auth/wachtwoord``
 - ``GET|PUT /api/stand`` · ``GET /api/stand/versies`` · ``GET /api/stand/{id}``
+- ``GET|POST /api/projecten`` · ``GET|DELETE /api/projecten/{id}`` (opslaan met een naam, projecten.py)
 - ``GET /api/beheer/overzicht`` · ``GET|POST /api/beheer/gebruikers`` · ``PATCH /api/beheer/gebruikers/{id}``
   · ``GET /api/beheer/logboek`` · ``GET /api/beheer/sessies`` · ``DELETE /api/beheer/sessies/{id}``
   · ``GET /api/beheer/stand/{gebruiker_id}``
@@ -52,7 +53,7 @@ Hoe het werkt
 1. ``Beveiliging`` (``beveiliging.py``) beslist per verzoek of het door mag en legt de sessie in
    ``request.state.sessie``. Accounts staan aan zodra ``POLIRASTER_GEHEIM`` is gezet; zonder
    geheim draait de server in de open ontwikkelstand zonder login (en geven ``/api/auth/*``,
-   ``/api/stand*``, ``/api/beheer/*`` een nette 503).
+   ``/api/stand*``, ``/api/projecten*``, ``/api/beheer/*`` een nette 503).
 2. ``DIENSTEN`` maakt bij het eerste gebruik de opslag (``opslag_uit_omgeving``), ``Accounts`` en
    ``Standen``, en de eerste beheerder uit de omgeving. Lukt dat niet (bv. op Vercel geen
    Turso), dan krijgt elk accountverzoek 503 met de reden en wordt het bij het volgende verzoek
@@ -112,6 +113,7 @@ from accounts import Accounts, Bron, Fout, Sessie  # noqa: E402
 from beveiliging import Beveiliging, Instellingen, sessie_cookie  # noqa: E402
 from opslag import Opslag, OpslagFout, opslag_uit_omgeving  # noqa: E402
 from poliraster.meting import meet_raster_puur  # noqa: E402
+from projecten import Projecten  # noqa: E402
 from stand import MAX_STAND_BYTES, Standen  # noqa: E402
 
 logging.basicConfig(level=os.environ.get("POLIRASTER_LOG", "INFO").upper(),
@@ -139,11 +141,12 @@ class Diensten:
         self._db: Optional[Opslag] = None
         self._accounts: Optional[Accounts] = None
         self._standen: Optional[Standen] = None
+        self._projecten: Optional[Projecten] = None
 
     def zet_opslag(self, db: Optional[Opslag]) -> None:
         """Gebruik ``db`` in plaats van de opslag uit de omgeving (``None`` = opnieuw uit de omgeving)."""
         with self._slot:
-            self._db, self._accounts, self._standen = db, None, None
+            self._db, self._accounts, self._standen, self._projecten = db, None, None, None
 
     def krijg(self) -> tuple[Accounts, Standen]:
         """``(accounts, standen)``; ``Fout(503)`` zonder geheim, ``OpslagFout`` als de database niet lukt."""
@@ -161,7 +164,13 @@ class Diensten:
                     log.error("accounts niet beschikbaar: %s", e)
                     raise
                 self._db, self._accounts, self._standen = db, acc, Standen(db, acc)
+                self._projecten = Projecten(db, acc)
             return self._accounts, self._standen
+
+    def projecten(self) -> Projecten:
+        """De projectenopslag (na ``krijg``; zelfde fouten)."""
+        self.krijg()
+        return self._projecten
 
     def controleer_sessie(self, token: Optional[str]) -> Optional[Sessie]:
         """Voor de middleware: volledige sessiecontrole (handtekening, exp, database)."""
@@ -534,6 +543,36 @@ async def api_stand_versies(request: Request) -> Response:
 async def api_stand_een(request: Request, stand_id: str) -> Response:
     """``{ok, stand}`` — één eigen versie (oudere versie terughalen → ``stand_hersteld`` in het logboek)."""
     return await account_actie(request, lambda _a, st, sessie, _b, bron: {"stand": st.een(sessie, _id(stand_id), bron)})
+
+
+# Projecten (opslaan met een naam) ─────────────────────────────────────────────
+@app.get("/api/projecten")
+async def api_projecten(request: Request) -> Response:
+    """``{ok, projecten:[{id, naam, tijd, modus, grootte}]}`` — alle versies van de eigen projecten, nieuwste eerst."""
+    return await account_actie(request, lambda _a, _st, sessie, _b, _bron: {"projecten": DIENSTEN.projecten().lijst(sessie.uid)})
+
+
+@app.post("/api/projecten")
+async def api_project_opslaan(request: Request) -> Response:
+    """``{naam, data, modus?}`` → ``{ok, id, naam, tijd}``; elke aanroep is een nieuwe versie; max 1 MB."""
+    def werk(_a, _st, sessie, b, bron):
+        if "data" not in b:
+            raise Fout(400, "De body mist 'data'.")
+        return DIENSTEN.projecten().opslaan(sessie, b.get("naam"), b.get("data"), b.get("modus"), bron)
+    return await account_actie(request, werk, body=MAX_STAND_BODY)
+
+
+@app.get("/api/projecten/{project_id}")
+async def api_project_een(request: Request, project_id: str) -> Response:
+    """``{ok, project:{id, naam, tijd, modus, data}}`` — één eigen versie (komt als ``project_geopend`` in het logboek)."""
+    return await account_actie(request, lambda _a, _st, sessie, _b, bron: {"project": DIENSTEN.projecten().een(sessie, _id(project_id), bron)})
+
+
+@app.delete("/api/projecten/{project_id}")
+async def api_project_verwijder(request: Request, project_id: str) -> Response:
+    """``{ok, verwijderd}`` — één eigen versie, of met ``?alle=1`` alle versies van dat project."""
+    alle = request.query_params.get("alle") in ("1", "true")
+    return await account_actie(request, lambda _a, _st, sessie, _b, bron: DIENSTEN.projecten().verwijder(sessie, _id(project_id), alle, bron))
 
 
 # Beheer ───────────────────────────────────────────────────────────────────────

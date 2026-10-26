@@ -20,11 +20,11 @@
  *   deps: {actief (accountmodus en geen verplicht wachtwoordscherm), naarLogin,
  *   pasSessieToe, cfg, newRows, ctrlRows, m2, rules, modus, fk, capacity, poli, roomNames,
  *   active, m1Mode, m1Section, selDay, viewMode, setActive, setVisited, setM1Mode,
- *   setM1Section, setSelDay, setViewMode}.
+ *   setM1Section, setSelDay, setViewMode, project, setProject}.
  * Uitvoer
  *   {standFase, opgehaald, laatsteModule, verderWaarJeWas, beginZonderStand, opslag, slaNuOp,
  *   laadStandOpnieuw, doorgaanZonderStand, versies, openVersies, sluitVersies, kiesVersie,
- *   zetVersieTerug}.
+ *   zetVersieTerug, huidigeData, laadData}.
  *
  * Hoe het werkt
  *   1. standFase: 'uit' (lokale modus) → 'laden' → 'kiezen' (er is een stand; de gebruiker
@@ -45,6 +45,9 @@
  *      direct (keepalive mag tot 64 kB; is de stand groter, dan een gewone fetch).
  *   5. Een eerdere versie terugzetten: GET /api/stand/{id} → pasSessieToe → de gewone
  *      autosave slaat hem 2 s later op als nieuwste versie.
+ *   5b. Een opgeslagen project (useProjecten) inladen gaat via laadData, net als een eerdere
+ *      versie. Het huidige project ({naam, id, tijd}) gaat mee in de stand (veld `project`),
+ *      zodat Start na het inloggen weet in welk project je werkte.
  *   6. De server bewaart één versie per werkblok van 10 minuten: een autosave werkt de
  *      nieuwste versie bij. Na "nieuw beginnen", een bestand inladen (beide via
  *      beginZonderStand) of een versie terugzetten stuurt de eerste PUT nieuwe_versie: true,
@@ -117,6 +120,8 @@ export function useStand(deps) {
     setM1Section,
     setSelDay,
     setViewMode,
+    project,
+    setProject,
   } = deps
 
   const [standFase, setStandFase] = useState('uit')
@@ -147,6 +152,7 @@ export function useStand(deps) {
           capacity,
           poli,
           roomNames,
+          project,
           verder: { active: moduleNu, m1Mode, m1Section, selDay, viewMode },
         },
         { zonderDatum: true }
@@ -165,6 +171,7 @@ export function useStand(deps) {
       capacity,
       poli,
       roomNames,
+      project,
       moduleNu,
       m1Mode,
       m1Section,
@@ -192,6 +199,9 @@ export function useStand(deps) {
       const d = leesData(stand)
       if (!d) return false
       pasSessieToe(d, { bron: 'je opgeslagen stand' })
+      // Het project waar deze stand bij hoorde (of geen).
+      const p = d.project
+      setProject(p && typeof p === 'object' && typeof p.naam === 'string' ? p : null)
       const v = d.verder && typeof d.verder === 'object' ? d.verder : {}
       const heeftCodes = (d.newRows || []).length > 0 || (d.ctrlRows || []).length > 0
       let module = 0
@@ -207,7 +217,16 @@ export function useStand(deps) {
       setVisited(new Set([0, 1, 2, 3]))
       return true
     },
-    [pasSessieToe, setActive, setVisited, setM1Mode, setM1Section, setSelDay, setViewMode]
+    [
+      pasSessieToe,
+      setActive,
+      setVisited,
+      setM1Mode,
+      setM1Section,
+      setSelDay,
+      setViewMode,
+      setProject,
+    ]
   )
 
   // ── 1. ophalen na het inloggen ─────────────────────────────────────────────────
@@ -417,7 +436,29 @@ export function useStand(deps) {
     [pasStandToe]
   )
 
+  // ── 5. voor useProjecten: het werk van nu, en een opgeslagen project inladen ─────
+  const huidigeData = useCallback(() => huidig.current.data, [])
+  /**
+   * Past opgeslagen data toe (een project), net als een eerdere versie: het werk van
+   * daarvoor blijft bewaard, de eerstvolgende autosave wordt een nieuwe versie.
+   * @param {object} d — het state-object
+   * @returns {boolean} false als de data onbruikbaar is
+   */
+  const laadData = useCallback(
+    d => {
+      if (opgeslagen.current === null) opgeslagen.current = huidig.current.json
+      nieuweVersie.current = true
+      if (!pasStandToe({ data: d })) return false
+      setOpgehaald(null)
+      setStandFase('klaar')
+      return true
+    },
+    [pasStandToe]
+  )
+
   return {
+    huidigeData,
+    laadData,
     standFase,
     opgehaald,
     laatsteModule: moduleNu,

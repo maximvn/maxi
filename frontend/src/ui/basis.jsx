@@ -27,9 +27,20 @@ import { C } from './kleuren.js'
  * @param props.disabled uitgeschakeld
  * @param props.onClick klik-handler
  * @param props.style extra stijl
+ * @param props.type 'button' (standaard) of 'submit' in een formulier
+ * @param props.rest overige attributen (bv. data-*, aria-*) gaan door naar de knop
  * @returns {JSX.Element}
  */
-export const Btn = ({ children, variant = 'primary', onClick, disabled, small, style = {} }) => {
+export const Btn = ({
+  children,
+  variant = 'primary',
+  onClick,
+  disabled,
+  small,
+  style = {},
+  type = 'button',
+  ...rest
+}) => {
   const [h, sH] = useState(false)
   const base =
     variant === 'primary'
@@ -47,6 +58,8 @@ export const Btn = ({ children, variant = 'primary', onClick, disabled, small, s
         }
   return (
     <button
+      {...rest}
+      type={type}
       onClick={onClick}
       disabled={disabled}
       onMouseEnter={() => sH(true)}

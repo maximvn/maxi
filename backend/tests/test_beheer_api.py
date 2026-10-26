@@ -164,6 +164,45 @@ def test_stand_routes(server, beheer):
     assert "stand_hersteld" in soorten and "stand_bekeken" in soorten
 
 
+# ── Projecten (opslaan met een naam) ───────────────────────────────────────────
+def test_projecten_routes(server, beheer):
+    maak(beheer, "projanna")
+    maak(beheer, "projbert")
+    projanna, projbert = ingelogd(server, "projanna", WW), ingelogd(server, "projbert", WW)
+    assert projanna.get("/api/projecten").json() == {"ok": True, "projecten": []}
+    d = projanna.post("/api/projecten", json={"naam": "Dermatologie", "data": {"cfg": {"newPat": 1}}, "modus": "poli"}, headers=EIGEN).json()
+    u = projanna.post("/api/projecten", json={"naam": "Urologie", "data": {"cfg": {"newPat": 2}}, "modus": "poli"}, headers=EIGEN).json()
+    assert d["ok"] and d["naam"] == "Dermatologie" and u["id"] > d["id"]
+    lijst = projanna.get("/api/projecten").json()["projecten"]
+    assert [(x["id"], x["naam"]) for x in lijst] == [(u["id"], "Urologie"), (d["id"], "Dermatologie")]
+    p = projanna.get(f"/api/projecten/{d['id']}").json()["project"]
+    assert p["naam"] == "Dermatologie" and p["data"] == {"cfg": {"newPat": 1}}
+    # Alleen eigen projecten: projbert ziet, opent en verwijdert niets van projanna.
+    assert projbert.get("/api/projecten").json()["projecten"] == []
+    assert projbert.get(f"/api/projecten/{d['id']}").status_code == 404
+    assert projbert.delete(f"/api/projecten/{d['id']}", headers=EIGEN).status_code == 404
+    assert projbert.delete(f"/api/projecten/{d['id']}?alle=1", headers=EIGEN).status_code == 404
+    # Foute invoer.
+    assert projanna.get("/api/projecten/abc").status_code == 400
+    assert projanna.post("/api/projecten", json={"naam": "X"}, headers=EIGEN).status_code == 400
+    assert projanna.post("/api/projecten", json={"naam": "", "data": {}}, headers=EIGEN).status_code == 400
+    assert projanna.post("/api/projecten", json={"naam": "a\nb", "data": {}}, headers=EIGEN).status_code == 400
+    assert projanna.post("/api/projecten", json={"naam": "Groot", "data": {"x": "a" * (1024 * 1024)}}, headers=EIGEN).status_code == 413
+    # Zonder sessie of van een vreemde site: geweigerd.
+    assert client(server).get("/api/projecten").status_code == 401
+    assert client(server).post("/api/projecten", json={"naam": "X", "data": {}}, headers=EIGEN).status_code == 401
+    vreemd = {"origin": "https://kwaadwillend.example"}
+    assert projanna.post("/api/projecten", json={"naam": "X", "data": {}}, headers=vreemd).status_code == 403
+    assert projanna.delete(f"/api/projecten/{d['id']}", headers=vreemd).status_code == 403
+    # Verwijderen: één versie, daarna alles van een project.
+    assert projanna.delete(f"/api/projecten/{d['id']}", headers=EIGEN).json() == {"ok": True, "verwijderd": 1}
+    assert projanna.delete(f"/api/projecten/{u['id']}?alle=1", headers=EIGEN).json() == {"ok": True, "verwijderd": 1}
+    assert projanna.get("/api/projecten").json()["projecten"] == []
+    projanna_id = projanna.get("/api/auth/ik").json()["gebruiker"]["id"]
+    soorten = [r["soort"] for r in beheer.get("/api/beheer/logboek", params={"gebruiker_id": projanna_id}).json()["regels"]]
+    assert {"project_opgeslagen", "project_geopend", "project_verwijderd"} <= set(soorten)
+
+
 # ── Beheer ─────────────────────────────────────────────────────────────────────
 def test_beheer_alleen_voor_beheer(server, beheer):
     maak(beheer, "carla")

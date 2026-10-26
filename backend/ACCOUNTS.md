@@ -39,11 +39,13 @@ gebruikers(id INTEGER PK, gebruikersnaam TEXT UNIQUE COLLATE NOCASE, naam TEXT, 
            wachtwoord_hash TEXT, actief INTEGER DEFAULT 1, aangemaakt TEXT, gewijzigd TEXT, moet_wachtwoord_wijzigen INTEGER DEFAULT 0)
 sessies(id TEXT PK, gebruiker_id INTEGER, aangemaakt TEXT, verloopt TEXT, laatst_gezien TEXT, ip TEXT, user_agent TEXT, ingetrokken INTEGER DEFAULT 0)
 standen(id INTEGER PK, gebruiker_id INTEGER, tijd TEXT, module INTEGER, modus TEXT, data TEXT, grootte INTEGER)
+projecten(id INTEGER PK, gebruiker_id INTEGER, naam TEXT, tijd TEXT, modus TEXT, data TEXT, grootte INTEGER)   -- schema 3
 logboek(id INTEGER PK, tijd TEXT, gebruiker_id INTEGER NULL, gebruikersnaam TEXT, soort TEXT, ip TEXT, user_agent TEXT, details TEXT)
 instellingen(sleutel TEXT PK, waarde TEXT)
 ```
 
 Tijden in UTC als ISO-tekst (`2026-10-20T11:42:05Z`). Indexen op `standen(gebruiker_id,id)`,
+`projecten(gebruiker_id, naam COLLATE NOCASE, id)`,
 `logboek(tijd)`, `logboek(gebruiker_id)`, `sessies(gebruiker_id)`.
 
 ## 3. Wachtwoorden en sessies
@@ -127,7 +129,7 @@ is, wordt in hetzelfde antwoord gewist (`Max-Age=0`). Het Bearer-token geldt all
 reken-paden.
 
 **Zonder `POLIRASTER_GEHEIM`** (open ontwikkelstand, alleen eigen server): geen login; `/api/auth/*`,
-`/api/stand*` en `/api/beheer/*` geven `503 {"ok":false,"fout":"Accounts niet ingesteld: …","accounts":false}`
+`/api/stand*`, `/api/projecten*` en `/api/beheer/*` geven `503 {"ok":false,"fout":"Accounts niet ingesteld: …","accounts":false}`
 — de frontend valt dan in de lokale modus (alles behalve 401 = lokaal). `GET /api/health` geeft
 `accounts: true|false`. Op Vercel zet `api/index.py` `POLIRASTER_ACCOUNTS_VERPLICHT=1`: zonder
 geheim geeft daar alles behalve `/api/health` een 503 (geen open stand op internet).
@@ -159,6 +161,25 @@ Alle antwoorden JSON met `ok`. Fouten: `{"ok":false,"fout":"…"}` met HTTP 400/
 | `PUT /api/stand` | `{data, module, modus}` | `{ok, id, tijd}`; max 1 MB; bewaart de laatste 30 per gebruiker |
 | `GET /api/stand/versies` | — | `{ok, versies:[{id, tijd, module, modus, grootte}]}` (nieuwste eerst) |
 | `GET /api/stand/{id}` | — | `{ok, stand}` (alleen eigen standen) |
+
+### Projecten (opslaan met een naam)
+
+Naast de automatische stand kan de gebruiker zelf op **Opslaan** klikken: het werk komt onder
+een projectnaam op de server ("Dermatologie 26-10-2026 08:00" in de tool). Elke keer opslaan
+is een nieuwe versie; eerdere versies blijven staan. Zie `projecten.py`.
+
+| Methode en pad | Body | Antwoord |
+|---|---|---|
+| `GET /api/projecten` | — | `{ok, projecten:[{id, naam, tijd, modus, grootte}]}` (alle versies, nieuwste eerst) |
+| `POST /api/projecten` | `{naam, data, modus}` | `{ok, id, naam, tijd}`; max 1 MB |
+| `GET /api/projecten/{id}` | — | `{ok, project:{id, naam, tijd, modus, data}}` (alleen eigen projecten) |
+| `DELETE /api/projecten/{id}` | — | `{ok, verwijderd}`; met `?alle=1` alle versies van dat project |
+
+- `naam`: 1–80 tekens na opschonen (spaties aan de randen weg, meerdere spaties → één), geen
+  stuurtekens of onzichtbare opmaaktekens (400). Hoofdletters tellen niet bij het groeperen.
+- Grenzen per gebruiker: 100 projectnamen (409), 50 versies per project (de oudste valt eraf),
+  50 MB samen (409).
+- Een id van iemand anders of een onbekend id → 404 (niet te raden welke ids bestaan).
 
 `data` is precies het state-object dat de frontend ook als sessie-export bewaart
 (`useImportExport`: cfg, newRows, ctrlRows, m2, rules, capacity, poli, roomNames, modus, fk,
@@ -204,7 +225,9 @@ Alle antwoorden JSON met `ok`. Fouten: `{"ok":false,"fout":"…"}` met HTTP 400/
 
 `login_ok`, `login_fout`, `login_geblokkeerd`, `logout`, `wachtwoord_gewijzigd`,
 `gebruiker_aangemaakt`, `gebruiker_gewijzigd`, `sessie_ingetrokken`, `stand_hersteld`
-(gebruiker haalt een oudere versie terug). Opslaan zelf komt niet in het logboek (te vaak);
+(gebruiker haalt een oudere versie terug), `project_opgeslagen`, `project_geopend` en
+`project_verwijderd` (details: projectnaam en versie). Het automatisch opslaan van de stand
+komt niet in het logboek (te vaak);
 dat staat in `standen` en is zichtbaar als "laatst opgeslagen". In `details` staat een korte
 uitleg (bv. "onbekende gebruiker", "verkeerd wachtwoord", "door beheer: SZ").
 
@@ -231,6 +254,9 @@ Het logboek wordt niet automatisch opgeschoond.
   sessie-import); daarna automatisch opslaan, 2 s na de laatste wijziging en bij het
   verlaten van de pagina (`PUT /api/stand`). Een klein label in de kopbalk: "opgeslagen 11:42"
   of "opslaan mislukt — opnieuw". Een lijstje "eerdere versies" om terug te gaan.
+- `hooks/useProjecten.js`: de knop **Opslaan** (rail en naast Export) opent
+  `dialogen/OpslaanDialoog.jsx`; op Start toont `layout/ProjectenLijst.jsx` de projecten
+  (per naam gegroepeerd) om een versie te openen of te verwijderen.
 - `modules/beheer/`: alleen voor beheer. Tabbladen **Gebruikers** (aanmaken, blokkeren,
   wachtwoord resetten, rol), **Logboek** (filter op soort en gebruiker, meer laden),
   **Sessies** (intrekken), en per gebruiker "bekijk laatste stand".

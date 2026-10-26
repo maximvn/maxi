@@ -24,6 +24,9 @@
  *   setDlMelding}.
  *
  * Hoe het werkt
+ *   0. Elk geüpload bestand gaat eerst door excel/leesWerkboek.js: grootte-controle (15 MB),
+ *      lezen in een aparte Excel-worker met time-out, en alleen gewone rijen terug
+ *      (wb.SheetNames, wb.bladen[blad]). Zo raakt een kwaadaardig bestand de pagina niet.
  *   1. handleImport leest het blad _rasterdata, zet alle instellingen terug via
  *      pasSessieToe (migratie-standaarden voor oudere bestanden) en navigeert naar Gegevens;
  *      het raster wordt niet opgeslagen maar opnieuw berekend. pasSessieToe is ook de weg
@@ -38,11 +41,13 @@
  * Waar kan het misgaan en hoe zie je dat
  *   - "Dit bestand bevat geen hersteldata" → het blad _rasterdata ontbreekt; alleen exports
  *     van deze tool zijn herlaadbaar.
+ *   - "Het bestand is te groot" / "Het lezen duurde te lang" → zie excel/leesWerkboek.js.
  *   - De download doet niets in de gedeelde pagina → zie kanViewerOpslaan in lib/excel.js;
  *     de dialoog toont dan de viewer-route.
  */
 import React, { useState, useCallback } from 'react'
 import * as XLSX from 'xlsx'
+import { leesWerkboek } from '../excel/leesWerkboek.js'
 import {
   FK_DD_NAAM,
   FK_PRESETS,
@@ -179,17 +184,14 @@ export function useImportExport(deps) {
     if (!file) return
     // Reset the file input so the same file can be re-selected
     e.target.value = ''
-    const reader = new FileReader()
-    reader.onload = ev => {
-      try {
-        const wb = XLSX.read(ev.target.result, { type: 'binary' })
-        const ws = wb.Sheets['_rasterdata']
-        if (!ws)
+    leesWerkboek(file)
+      .then(wb => {
+        const rows = wb.bladen['_rasterdata']
+        if (!rows)
           throw new Error(
             'Dit bestand bevat geen hersteldata (_rasterdata). Exporteer opnieuw vanuit de Raster Tool.'
           )
-        const rows = XLSX.utils.sheet_to_json(ws, { header: 1 })
-        if (!rows || !rows[0] || !rows[0][0]) throw new Error('Hersteldata is leeg of beschadigd.')
+        if (!rows[0] || !rows[0][0]) throw new Error('Hersteldata is leeg of beschadigd.')
         const state = JSON.parse(rows[0][0])
         pasSessieToe(state, { bron: file.name })
         setImportBadge({
@@ -206,11 +208,8 @@ export function useImportExport(deps) {
         alert(
           '✅ Sessie hersteld!\n\nGegevens, codes, tijden en planregels zijn ingeladen.\nGa naar "Rasterproces" om het rooster opnieuw te genereren.'
         )
-      } catch (err) {
-        alert('Import mislukt:\n\n' + err.message)
-      }
-    }
-    reader.readAsBinaryString(file)
+      })
+      .catch(err => alert('Import mislukt:\n\n' + err.message))
   }
 
   // ── SPREEKUURGEGEVENS UIT EXCEL ─────────────────────────────────────────────
@@ -221,15 +220,12 @@ export function useImportExport(deps) {
     const file = e.target.files[0]
     if (!file) return
     e.target.value = ''
-    const reader = new FileReader()
-    reader.onload = ev => {
-      try {
-        const wb = XLSX.read(ev.target.result, { type: 'binary' })
+    leesWerkboek(file)
+      .then(wb => {
         // Kies het eerste blad met inhoud (sla verborgen hersteldata over)
         const naam = wb.SheetNames.find(n => n !== '_rasterdata') || wb.SheetNames[0]
-        const ws = wb.Sheets[naam]
-        if (!ws) throw new Error('Geen werkblad gevonden in dit bestand.')
-        const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
+        const aoa = wb.bladen[naam]
+        if (!aoa) throw new Error('Geen werkblad gevonden in dit bestand.')
         const { newRows: nr, ctrlRows: cr, newPat, ctrlPat } = parseSpreekuurRows(aoa)
         setNewRows(nr)
         setCtrlRows(cr)
@@ -253,15 +249,14 @@ export function useImportExport(deps) {
             '/week\n\n' +
             'Controleer de codes en ga daarna naar "Regels".'
         )
-      } catch (err) {
+      })
+      .catch(err =>
         alert(
           'Laden mislukt:\n\n' +
             err.message +
             '\n\nTip: gebruik de knop "Voorbeeld-Excel" voor het juiste kolomformaat.'
         )
-      }
-    }
-    reader.readAsBinaryString(file)
+      )
   }
   // Genereer en download een voorbeeld-Excel met de verwachte kolommen.
   const downloadSpreekuurTemplate = () => {
@@ -354,13 +349,11 @@ export function useImportExport(deps) {
     const file = e.target.files[0]
     if (!file) return
     e.target.value = ''
-    const reader = new FileReader()
-    reader.onload = ev => {
-      try {
-        const wb = XLSX.read(ev.target.result, { type: 'binary' })
+    leesWerkboek(file)
+      .then(wb => {
         // 1) Een eerder opgeslagen sessie van deze tool → alles terugzetten.
-        if (wb.Sheets['_rasterdata']) {
-          const rows = XLSX.utils.sheet_to_json(wb.Sheets['_rasterdata'], { header: 1 })
+        if (wb.bladen['_rasterdata']) {
+          const rows = wb.bladen['_rasterdata']
           const state = JSON.parse(rows[0][0])
           if (!state.fk || !(state.fk.kamers || []).length)
             throw new Error(
@@ -393,15 +386,13 @@ export function useImportExport(deps) {
         }
         // 2) Een codelijst, eventueel met een blad "Kamers".
         const kamerBlad = wb.SheetNames.find(n => /kamer/i.test(n))
-        const kamersNieuw = kamerBlad
-          ? fkParseKamers(XLSX.utils.sheet_to_json(wb.Sheets[kamerBlad], { header: 1, defval: '' }))
-          : []
+        const kamersNieuw = kamerBlad ? fkParseKamers(wb.bladen[kamerBlad]) : []
         const kamersVoor = kamersNieuw.length ? kamersNieuw : fkKamers
         const codeBlad =
           wb.SheetNames.find(n => /code|onderzoek/i.test(n) && n !== kamerBlad) ||
           wb.SheetNames.find(n => n !== kamerBlad) ||
           wb.SheetNames[0]
-        const aoa = XLSX.utils.sheet_to_json(wb.Sheets[codeBlad], { header: 1, defval: '' })
+        const aoa = wb.bladen[codeBlad] || []
         const codes = fkParseCodes(aoa, kamersVoor)
         // Kamers die alleen in de codelijst genoemd worden (A1.213 in een opmerking) maar nog niet bestaan → aanmaken.
         const kamersAf = [...kamersVoor]
@@ -434,11 +425,8 @@ export function useImportExport(deps) {
             t: `${codes2.length} codes${kamersNieuw.length ? ` en ${kamersNieuw.length} kamers` : ''} ingelezen uit ${file.name}${zonder ? ` — bij ${zonder} codes is nog geen kamer herkend; vink die hieronder aan` : ''}.`,
           },
         }))
-      } catch (err) {
-        alert('Import mislukt:\n\n' + err.message)
-      }
-    }
-    reader.readAsBinaryString(file)
+      })
+      .catch(err => alert('Import mislukt:\n\n' + err.message))
   }
   const fkVoorbeeldExcel = () => {
     const wb = XLSX.utils.book_new()

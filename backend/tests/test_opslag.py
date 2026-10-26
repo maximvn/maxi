@@ -20,9 +20,9 @@ from tests.conftest import NepHrana
 # ── Gezamenlijke testset (beide uitvoeringen) ─────────────────────────────────
 def test_schema_en_versie(db):
     tabellen = {r["name"] for r in db.haal("SELECT name FROM sqlite_master WHERE type = 'table'")}
-    assert {"gebruikers", "sessies", "standen", "logboek", "instellingen"} <= tabellen
+    assert {"gebruikers", "sessies", "standen", "projecten", "logboek", "instellingen"} <= tabellen
     indexen = {r["name"] for r in db.haal("SELECT name FROM sqlite_master WHERE type = 'index'")}
-    assert {"idx_standen_gebruiker", "idx_logboek_tijd", "idx_logboek_gebruiker", "idx_sessies_gebruiker"} <= indexen
+    assert {"idx_standen_gebruiker", "idx_projecten_gebruiker", "idx_logboek_tijd", "idx_logboek_gebruiker", "idx_sessies_gebruiker"} <= indexen
     assert db.haal_een("SELECT waarde FROM instellingen WHERE sleutel = 'schema_versie'") == {"waarde": str(opslag.SCHEMA_VERSIE)}
     # Nogmaals aanmaken (ander object, zelfde database) is onschadelijk.
     db._schema_klaar = False
@@ -174,7 +174,7 @@ def test_omgeving_vercel_zonder_url():
 
 def test_omgeving_turso_namen(nep_turso):
     d = opslag_uit_omgeving({"VERCEL": "1", "TURSO_DATABASE_URL": nep_turso.url, "TURSO_AUTH_TOKEN": nep_turso.token})
-    assert isinstance(d, TursoOpslag) and d.haal_een("SELECT waarde FROM instellingen")["waarde"] == "2"
+    assert isinstance(d, TursoOpslag) and d.haal_een("SELECT waarde FROM instellingen")["waarde"] == str(opslag.SCHEMA_VERSIE)
     d2 = opslag_uit_omgeving({"POLIRASTER_DB_URL": nep_turso.url, "POLIRASTER_DB_TOKEN": nep_turso.token,
                               "TURSO_DATABASE_URL": "libsql://wordt-genegeerd"})
     assert isinstance(d2, TursoOpslag) and d2.url == nep_turso.url
@@ -209,6 +209,7 @@ def test_migratie_van_schema_1(tmp_path):
     c.close()
     db = SqliteOpslag(pad)
     db.zorg_voor_schema()
-    assert db.haal_een("SELECT waarde FROM instellingen WHERE sleutel='schema_versie'")["waarde"] == "2"
+    assert db.haal_een("SELECT waarde FROM instellingen WHERE sleutel='schema_versie'")["waarde"] == str(opslag.SCHEMA_VERSIE)
+    assert db.haal("SELECT id FROM projecten") == []   # versie 3: de tabel projecten bestaat (leeg)
     rij = db.haal_een("SELECT data, begonnen FROM standen WHERE id=1")
     assert rij == {"data": "{}", "begonnen": None}   # oude rij blijft, begonnen leeg (terugval op tijd)
