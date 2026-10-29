@@ -10,7 +10,7 @@
  *   view "stap1"; gebruikt modules/stap1/KamerKaart.jsx per kamer.
  *
  * Leest uit de context
- *   `state`, `setState`, `modId`, `setModId`, `importInvoerlijst1`, `laadVoorbeeld`, `toast`.
+ *   `state`, `setState`, `modId`, `setModId`, `importInvoerlijst1`, `laadVoorbeeld`, `toast`, `simpel`.
  * Schrijft naar de context
  *   `state` (kamers, modaliteiten, rooster, plan, plangroepen) via setState; `modId` via setModId.
  *
@@ -41,7 +41,7 @@ import * as E from '../../engine/index.js'
  * @returns {JSX.Element}
  */
 export default function Stap1() {
-  const { state, setState, modId, setModId, importInvoerlijst1, laadVoorbeeld, toast } = useApp()
+  const { state, setState, modId, setModId, importInvoerlijst1, laadVoorbeeld, toast, simpel } = useApp()
   const [open, setOpen] = useState(() => new Set())
   const [nieuweMod, setNieuweMod] = useState('')
   const confirm = useConfirm()
@@ -193,7 +193,7 @@ export default function Stap1() {
                 Toevoegen
               </Btn>
             </div>
-            {!state.kamers.length && (
+            {!state.kamers.length && !simpel && (
               <Btn size="sm" variant="ghost" icon="wand" onClick={laadVoorbeeld}>
                 Voorbeeld laden (jaarplan 2027)
               </Btn>

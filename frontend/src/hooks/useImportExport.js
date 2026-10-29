@@ -27,6 +27,7 @@
  *   2. De inleesfunctie zet de rijen om; de wijziging gaat via setState (dus Ctrl+Z werkt).
  *   3. Een melding vat samen wat er is ingelezen, of zegt waarom het niet lukte.
  *   4. Export: het werkboek wordt gebouwd, als Blob gedownload en de link blijft 60 s geldig.
+ *   5. In de SIMPEL-variant (bouwvlaggen.js) laadt laadVoorbeeld niets: daar is geen demodata.
  *
  * Waar kan het misgaan en hoe zie je dat
  *   - "Import mislukt: …": de tekst komt van de inleesfunctie of van leesWerkboek (te groot,
@@ -49,6 +50,7 @@ import { bouwWerkboek } from '../lib/exporter.js'
 import { download } from '../lib/download.js'
 import { modSessies } from '../engine/index.js'
 import { VIEWS } from './useNavigatie.js'
+import { SIMPEL } from '../bouwvlaggen.js'
 
 /**
  * Een bestandsnaam zonder vreemde tekens.
@@ -175,8 +177,9 @@ export function useImportExport({
     [setState, setVisited, setModId, toast, nav, beginZonderStand]
   )
 
-  /** Laadt het voorbeeld (jaarplan 2027) en opent stap 1. */
+  /** Laadt het voorbeeld (jaarplan 2027) en opent stap 1; doet niets in de SIMPEL-variant. */
   const laadVoorbeeld = useCallback(() => {
+    if (SIMPEL) return
     const { state: st, ctId } = maakVoorbeeld()
     beginZonderStand()
     if (ctId) setModId(ctId)

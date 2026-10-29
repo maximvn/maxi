@@ -4,7 +4,8 @@
  * Wat doet dit onderdeel
  *   Bouwt de varianten van de frontend en controleert ze in een echte browser, met de echte
  *   Python-server (backend/server.py) als webserver:
- *   - build:simpel → bouwt zonder fouten;
+ *   - build:simpel → bouwt zonder fouten, en het voorbeeld staat niet op het voorblad en in stap 1
+ *     (met RASTERPLANNER_SCHERMAFDRUKKEN=<map> ook schermafdrukken daarvan);
  *   - build:api    → rekent via POST /api/voorstel; valt de server weg, dan een duidelijke fout met
  *                    "Opnieuw", en na herstel werkt "Opnieuw";
  *   - build        → rekent in de Web Worker (geen /api-verzoek, geen terugval), ook onder de CSP;
@@ -38,6 +39,8 @@ const FRONTEND = fileURLToPath(new URL('..', import.meta.url))
 const ROOT = fileURLToPath(new URL('../..', import.meta.url))
 const POORT = Number(process.env.RASTERPLANNER_TEST_POORT || 8765)
 const BASIS = `http://127.0.0.1:${POORT}`
+/** Map voor schermafdrukken van de SIMPEL-variant (optioneel; leeg = geen schermafdrukken). */
+const SCHERMAFDRUKKEN = process.env.RASTERPLANNER_SCHERMAFDRUKKEN || ''
 
 let n = 0
 /**
@@ -142,6 +145,24 @@ try {
     bouw('build:simpel')
     assert.ok(fs.existsSync(FRONTEND + 'dist/index.html'))
   })
+  await startServer()
+  await stap('simpel-variant: geen voorbeeld op het voorblad en in stap 1', async () => {
+    const p = await (await browser.newContext({ viewport: { width: 1500, height: 940 } })).newPage()
+    const fouten = []
+    p.on('pageerror', (e) => fouten.push(e.message))
+    await p.goto(BASIS + '/')
+    await p.waitForTimeout(600)
+    assert.equal(await p.getByText('Voorbeeld verkennen').count(), 0)
+    if (SCHERMAFDRUKKEN) await p.screenshot({ path: SCHERMAFDRUKKEN + '/simpel_voorblad.png' })
+    await p.getByText('Nieuw raster ontwerpen').click()
+    await p.waitForTimeout(400)
+    assert.equal(await p.getByText(/Voorbeeld laden/).count(), 0)
+    assert.ok(await p.getByText('Nog geen modaliteiten').count())
+    if (SCHERMAFDRUKKEN) await p.screenshot({ path: SCHERMAFDRUKKEN + '/simpel_stap1.png' })
+    assert.deepEqual(fouten, [])
+    await p.context().close()
+  })
+  await stopServer()
 
   await stap('build:api bouwt', () => {
     bouw('build:api')

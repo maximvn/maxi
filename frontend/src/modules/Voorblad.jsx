@@ -9,7 +9,7 @@
  *   view "home" in App.jsx; zonder rail en voetnavigatie.
  *
  * Leest uit de context
- *   `state`, `nav`, `laadBestaand`, `laadVoorbeeld`, `nieuwStarten`, `busy`.
+ *   `state`, `nav`, `laadBestaand`, `laadVoorbeeld`, `nieuwStarten`, `busy`, `simpel`.
  * Schrijft naar de context
  *   — (via de handelingen hierboven)
  *
@@ -21,6 +21,7 @@
  * Hoe het werkt
  *   1. "Doorgaan" verschijnt alleen als er al kamers zijn.
  *   2. "Bestaand raster aanpassen" leest een .xlsx met herstelblad of een .json (useImportExport.laadBestaand).
+ *   3. "Voorbeeld verkennen" staat er niet in de SIMPEL-variant (bouwvlaggen.js).
  *
  * Waar kan het misgaan en hoe zie je dat
  *   - "Inladen mislukt": het bestand is geen export van deze tool (geen _rasterdata) of beschadigd.
@@ -85,7 +86,7 @@ const Preview = () => {
  * @returns {JSX.Element}
  */
 export default function Voorblad() {
-  const { state, nav, laadBestaand, laadVoorbeeld, nieuwStarten, busy } = useApp()
+  const { state, nav, laadBestaand, laadVoorbeeld, nieuwStarten, busy, simpel } = useApp()
   const heeftData = state.kamers.length > 0
   return (
     <section className="hero">
@@ -168,16 +169,18 @@ export default function Voorblad() {
             }}
           />
         </label>
-        <button type="button" className="choice warm" onClick={laadVoorbeeld}>
-          <span className="ic">
-            <Icon name="wand" size={22} />
-          </span>
-          <span>
-            <h3>Voorbeeld verkennen</h3>
-            <p>Jaarplan 2027 met 15 kamers, 33 plangroepen en een uitgewerkt CT-raster — om de werking te zien.</p>
-          </span>
-          <Icon name="arrowR" size={20} className="arrow" />
-        </button>
+        {!simpel && (
+          <button type="button" className="choice warm" onClick={laadVoorbeeld}>
+            <span className="ic">
+              <Icon name="wand" size={22} />
+            </span>
+            <span>
+              <h3>Voorbeeld verkennen</h3>
+              <p>Jaarplan 2027 met 15 kamers, 33 plangroepen en een uitgewerkt CT-raster — om de werking te zien.</p>
+            </span>
+            <Icon name="arrowR" size={20} className="arrow" />
+          </button>
+        )}
       </div>
       <Preview />
     </section>
