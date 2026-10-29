@@ -1,6 +1,14 @@
 // Kleine, pure hulpfuncties — geen React, geen DOM.
 
-export const uid = (p = 'id') => p + '_' + Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-3)
+// Id-maker. Standaard willekeurig; tests (pariteit, stabiliteit) zetten met zetIdMaker een voorspelbare teller,
+// zodat JavaScript en Python exact dezelfde id's uitdelen ('a_1', 'fx_2', …).
+const willekeurigId = (p) => p + '_' + Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-3)
+let idMaker = willekeurigId
+export const uid = (p = 'id') => idMaker(p)
+/** Zet een eigen id-maker (functie prefix → id), of herstel de willekeurige met `null`. */
+export const zetIdMaker = (fn) => { idMaker = fn || willekeurigId }
+/** Een teller-id-maker: `${prefix}_${n}` met n = 1, 2, 3 … (zoals hulp/ids.py `TellerIds`). */
+export const tellerIds = () => { let n = 0; return (p) => `${p}_${++n}` }
 
 export const toMin = (hhmm) => {
   if (typeof hhmm === 'number') return hhmm

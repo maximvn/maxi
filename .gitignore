@@ -1,1 +1,12 @@
 node_modules/
+backend/tests/pariteit/verwacht/
+backend/tests/js_referentie/*.bundle.cjs
+__pycache__/
+.pytest_cache/
+*.db
+*.db-wal
+*.db-shm
+.env
+.env.local
+.env.*.local
+deploy/.env
