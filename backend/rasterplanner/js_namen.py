@@ -54,7 +54,8 @@ FUNCTIES = {
     "orden": volgorde.orden, "layoutSessie": tijdlijn.layout_sessie, "sluitGaten": tijdlijn.sluit_gaten,
     # flex per sessie
     "herbouwFlex": sessieflex.herbouw_flex, "zetFlex": sessieflex.zet_flex, "voegFlexToe": sessieflex.voeg_flex_toe,
-    "leegSessie": sessieflex.leeg_sessie, "leegModaliteit": sessieflex.leeg_modaliteit, "normaliseerSessie": sessieflex.normaliseer_sessie,
+    "leegSessie": sessieflex.leeg_sessie, "leegModaliteit": sessieflex.leeg_modaliteit,
+    "wisAfspraken": sessieflex.wis_afspraken, "normaliseerSessie": sessieflex.normaliseer_sessie,
     # voorstel en sessierooster
     "voorstel": voorstel.voorstel, "vulSessierooster": sessierooster.vul_sessierooster,
     "sessieToevoegen": sessierooster.sessie_toevoegen, "sessieVerwijderen": sessierooster.sessie_verwijderen,

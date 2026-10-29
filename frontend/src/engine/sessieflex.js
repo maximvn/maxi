@@ -118,7 +118,24 @@ export function leegSessie(state, sessieId) {
 }
 
 /**
- * Alle sessies van een modaliteit leegmaken.
+ * Alleen de afspraken van een modaliteit weghalen; de flex blijft zoals hij is (ook handmatig
+ * aangepaste flex). Dit is "Zelf raster ontwerpen" in stap 3.3; "Raster leegmaken" is leegModaliteit.
+ * Een sessie zonder plan krijgt de flex volgens de planregels.
+ * Python: `wis_afspraken` in backend/rasterplanner/sessieflex.py.
+ * @param {object} state de state (zie backend/ARCHITECTUUR.md)
+ * @param {string} modId id van de modaliteit
+ * @returns {object} nieuwe state
+ */
+export function wisAfspraken(state, modId) {
+  let st = state
+  modSessies(state, modId).forEach((s) => {
+    st = st.plan[s.id] ? { ...st, plan: { ...st.plan, [s.id]: { ...st.plan[s.id], appts: [] } } } : leegSessie(st, s.id)
+  })
+  return st
+}
+
+/**
+ * Alle sessies van een modaliteit leegmaken: afspraken weg en flex terug naar de planregels.
  * Python: `leeg_modaliteit` in backend/rasterplanner/sessieflex.py.
  * @param {object} state de state (zie backend/ARCHITECTUUR.md)
  * @param {string} modId id van de modaliteit

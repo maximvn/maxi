@@ -243,7 +243,8 @@ export function voegAfspraakToe(state, sessieId, pgId, vanaf = null) {
 }
 
 /**
- * Afspraak weghalen, samen met een afspraak die er dubbel op geboekt is.
+ * Eén afspraak weghalen. Stond er een afspraak dubbel op geboekt (Bailey-Welch), dan blijft die
+ * staan als gewone afspraak op hetzelfde tijdstip.
  * Python: `verwijder_afspraak` in backend/rasterplanner/plaatsing.py.
  * @param {object} state de state (zie backend/ARCHITECTUUR.md)
  * @param {string} sessieId id van de sessie
@@ -253,7 +254,7 @@ export function voegAfspraakToe(state, sessieId, pgId, vanaf = null) {
 export function verwijderAfspraak(state, sessieId, apptId) {
   const entry = getEntry(state.plan, sessieId)
   const appts = entry.appts
-    .filter((a) => a.id !== apptId && a.partner !== apptId)
+    .filter((a) => a.id !== apptId)
     .map((a) => (a.partner === apptId ? { ...a, double: false, partner: null } : a))
   return { ...state, plan: { ...state.plan, [sessieId]: { ...entry, appts } } }
 }

@@ -226,14 +226,14 @@ def voeg_afspraak_toe(state: dict, sessie_id: Any, pg_id: Any, vanaf: Any = None
 
 
 def verwijder_afspraak(state: dict, sessie_id: Any, appt_id: Any) -> dict:
-    """Afspraak weghalen, samen met een afspraak die er dubbel op geboekt is. Port van ``verwijderAfspraak``.
+    """Eén afspraak weghalen. Port van ``verwijderAfspraak``.
 
-    De ``map`` hieronder (partner → gewone afspraak) wordt nooit bereikt, omdat het filter de
-    partner al verwijdert; dit gedrag is gelijk aan JavaScript en wordt in onderdeel 7 bekeken.
+    Stond er een afspraak dubbel op geboekt (Bailey-Welch), dan blijft die staan als gewone
+    afspraak op hetzelfde tijdstip (vroeger verdween die mee; gevonden met de stabiliteitstest).
     """
     entry = get_entry(state.get("plan"), sessie_id)
     appts = [({**a, "double": False, "partner": None} if js_is(prop(a, "partner"), appt_id) else a)
-             for a in entry["appts"] if not js_is(prop(a, "id"), appt_id) and not js_is(prop(a, "partner"), appt_id)]
+             for a in entry["appts"] if not js_is(prop(a, "id"), appt_id)]
     return {**state, "plan": {**of(state.get("plan"), {}), sessie_id: {**entry, "appts": appts}}}
 
 

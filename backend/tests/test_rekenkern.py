@@ -87,3 +87,34 @@ def test_spoor_uit_kost_niets():
     s = Spoor(aan=False)
     s.stap("x", a=1)
     assert s.lijst() == []
+
+
+def test_dubbel_paar_weghalen_laat_de_partner_staan(ct_state):
+    """Gevonden met test_stabiliteit.mjs: de eerste van een Bailey-Welch-paar weghalen nam de tweede mee."""
+    from rasterplanner.plaatsing import verwijder_afspraak
+    state, mod = ct_state
+    for k in state["kamers"]:
+        k["planregels"] = {"grouping": "gespreid", "methoden": [{"key": "bailyWelch", "on": True}], "flexRules": []}
+    with met_teller():
+        st = voorstel(state, mod)["state"]
+    s, eerste, tweede = next((s, a, b) for s in mod_sessies(st, mod) for a in get_entry(st["plan"], s["id"])["appts"]
+                             for b in get_entry(st["plan"], s["id"])["appts"] if b.get("partner") == a["id"])
+    na = get_entry(verwijder_afspraak(st, s["id"], eerste["id"])["plan"], s["id"])["appts"]
+    assert len(na) == len(get_entry(st["plan"], s["id"])["appts"]) - 1
+    blijft = next(a for a in na if a["id"] == tweede["id"])
+    assert blijft["double"] is False and blijft["partner"] is None
+
+
+def test_zelf_ontwerpen_laat_flex_staan_leegmaken_niet(ct_state):
+    from rasterplanner.sessieflex import leeg_modaliteit, voeg_flex_toe, wis_afspraken
+    state, mod = ct_state
+    with met_teller():
+        st = voorstel(state, mod)["state"]
+        eerste = mod_sessies(st, mod)[0]["id"]
+        st = voeg_flex_toe(st, eerste, 10)["state"]
+    gewist, leeg = wis_afspraken(st, mod), leeg_modaliteit(st, mod)
+    for s in mod_sessies(st, mod):
+        assert get_entry(gewist["plan"], s["id"])["appts"] == [] and get_entry(leeg["plan"], s["id"])["appts"] == []
+        assert get_entry(gewist["plan"], s["id"])["flex"] == get_entry(st["plan"], s["id"])["flex"]
+    assert get_entry(gewist["plan"], eerste)["flexHandmatig"] is True
+    assert get_entry(leeg["plan"], eerste)["flexHandmatig"] is False

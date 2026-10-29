@@ -36,13 +36,7 @@
 import { useCallback, useState } from 'react'
 import * as XLSX from 'xlsx'
 import { leesWerkboek } from '../excel/leesWerkboek.js'
-import {
-  emptyState,
-  VOORBEELD_INVOERLIJST_1,
-  VOORBEELD_VERRIJKING,
-  VOORBEELD_PLANGROEPEN,
-  VOORBEELD_VERRICHTINGEN,
-} from '../lib/data.js'
+import { emptyState } from '../lib/data.js'
 import {
   parseInvoerlijst1,
   applyInvoerlijst1,
@@ -50,73 +44,11 @@ import {
   applyInvoerlijst2,
   parseHerstel,
 } from '../lib/importers.js'
+import { maakVoorbeeld } from '../lib/voorbeeld.js'
 import { bouwWerkboek } from '../lib/exporter.js'
 import { download } from '../lib/download.js'
-import { herbouwFlex, modSessies, voorstel, vulSessierooster } from '../engine/index.js'
+import { modSessies } from '../engine/index.js'
 import { VIEWS } from './useNavigatie.js'
-
-/**
- * Maakt het voorbeeld: jaarplan 2027 met 15 kamers, 33 plangroepen, een gevuld sessierooster en een
- * CT-voorstelraster.
- * @returns {{state: object, ctId: string|null}}
- */
-export function maakVoorbeeld() {
-  let st = applyInvoerlijst1(
-    emptyState(),
-    {
-      meta: VOORBEELD_INVOERLIJST_1.meta,
-      kamers: VOORBEELD_INVOERLIJST_1.kamers.map((k) => ({ ...k, ingevuld: k.benutting != null })),
-    },
-    { verrijking: VOORBEELD_VERRIJKING, bron: 'Voorbeeld: Invoerlijst 1 (jaarplan 2027)' }
-  )
-  st = applyInvoerlijst2(
-    st,
-    { plangroepen: VOORBEELD_PLANGROEPEN, verrichtingen: VOORBEELD_VERRICHTINGEN },
-    { bron: 'Voorbeeld: Invoerlijst 2' }
-  ).state
-  st.rooster = {
-    ...st.rooster,
-    omschrijving: 'Sessierooster radiologie — voorbeeld',
-    type: 'regulier',
-    vanaf: '2027-01-04',
-    tot: '',
-  }
-  st = vulSessierooster(st).state
-  // CT krijgt alvast flexregels en een voorstel, zodat het voorbeeld meteen iets laat zien.
-  const ct = st.modaliteiten.find((m) => m.naam === 'CT')
-  if (!ct) return { state: st, ctId: null }
-  st.kamers = st.kamers.map((k) =>
-    k.modId !== ct.id
-      ? k
-      : {
-          ...k,
-          planregels: {
-            grouping: 'gespreid',
-            methoden: [
-              { key: 'shortFirst', on: true },
-              { key: 'bailyWelch', on: false },
-            ],
-            flexRules:
-              k.naam === 'CT 1'
-                ? [
-                    { id: 'fx_demo1', type: 'interval', minuten: 5, per: 30 },
-                    { id: 'fx_demo2', type: 'einde', minuten: 15 },
-                  ]
-                : [
-                    { id: 'fx_demo3', type: 'tijd', minuten: 10, tijd: '10:00' },
-                    { id: 'fx_demo4', type: 'einde', minuten: 10 },
-                  ],
-          },
-        }
-  )
-  st.kamers
-    .filter((k) => k.modId === ct.id)
-    .forEach((k) => {
-      st = herbouwFlex(st, k.id, true)
-    })
-  st = voorstel(st, ct.id).state
-  return { state: st, ctId: ct.id }
-}
 
 /**
  * Een bestandsnaam zonder vreemde tekens.

@@ -23,10 +23,12 @@
  *
  * Hoe het werkt
  *   1. "Voorstelraster door AI" vraagt eerst bevestiging als er al afspraken staan, en rekent dan in de worker.
- *   2. Slepen in de detailweergave: de tijd onder de bovenkant van het blok bepaalt de landingsplek
- *   3. (engine/plaatsing.js, plaatsOpTijd); latere afspraken schuiven op.
+ *   2. "Zelf raster ontwerpen" haalt alleen de afspraken weg (engine wisAfspraken; de flex blijft);
+ *      "Raster leegmaken" zet ook de flex terug naar de planregels (engine leegModaliteit).
+ *   3. Slepen in de detailweergave: de tijd onder de bovenkant van het blok bepaalt de landingsplek
+ *      (engine/plaatsing.js, plaatsOpTijd); latere afspraken schuiven op.
  *   4. Een handeling die niet mag (verkeerde kamer, planmoment, geen ruimte) geeft een melding en
- *   5. laat de sessie kort oplichten.
+ *      laat de sessie kort oplichten.
  *
  * Waar kan het misgaan en hoe zie je dat
  *   - "Geen ruimte meer in deze sessie": er past geen aaneengesloten blok van die duur meer.
@@ -139,23 +141,40 @@ export default function Stap33() {
     const ok = r.meldingen.find((m) => m.type === 'ok')
     toast(ok ? ok.msg : 'Voorstelraster gemaakt — zie de meldingen rechts.', ok ? 'ok' : 'warn', 5000)
   }
-  const leeg = async (vraag = true, titel = 'Raster leegmaken?') => {
+  /**
+   * "Zelf raster ontwerpen" (alleenAfspraken) haalt alleen de afspraken weg; de flex blijft zoals hij
+   * is, ook met de hand aangepaste flex. "Raster leegmaken" zet ook de flex terug naar de planregels.
+   * @param {boolean} alleenAfspraken
+   */
+  const leeg = async (alleenAfspraken) => {
+    const metAfspraken = modSess.some((s) => E.getEntry(state.plan, s.id).appts.length)
+    const metHandFlex = modSess.some((s) => E.getEntry(state.plan, s.id).flexHandmatig)
     if (
-      vraag &&
-      modSess.some((s) => E.getEntry(state.plan, s.id).appts.length) &&
-      !(await confirm({
-        title: titel,
-        msg: `Alle afspraken in het raster van ${mod.naam} worden verwijderd. De sessies blijven staan en krijgen de flexblokken uit de planregels. Met Ctrl+Z kun je terug.`,
-        okLabel: 'Leegmaken',
-        danger: true,
-        icon: 'eraser',
-      }))
+      (metAfspraken || (!alleenAfspraken && metHandFlex)) &&
+      !(await confirm(
+        alleenAfspraken
+          ? {
+              title: 'Zelf ontwerpen vanaf een leeg template?',
+              msg: `Alle afspraken in het raster van ${mod.naam} worden weggehaald. De flexblokken blijven staan zoals ze nu zijn, ook flex die je met de hand hebt aangepast. Met Ctrl+Z kun je terug.`,
+              okLabel: 'Afspraken weghalen',
+              icon: 'grid',
+            }
+          : {
+              title: 'Raster leegmaken?',
+              msg: `Alle afspraken in het raster van ${mod.naam} worden verwijderd en de flex gaat terug naar de planregels uit stap 3.2 (met de hand aangepaste flex vervalt). De sessies blijven staan. Met Ctrl+Z kun je terug.`,
+              okLabel: 'Leegmaken',
+              danger: true,
+              icon: 'eraser',
+            }
+      ))
     )
       return
-    setState((s) => E.leegModaliteit(s, mod.id))
+    setState((s) => (alleenAfspraken ? E.wisAfspraken(s, mod.id) : E.leegModaliteit(s, mod.id)))
     setMeldingen([])
     toast(
-      'Raster leeggemaakt — lege sessies met flexblokken volgens de planregels. Vul nu zelf de plangroepen in.',
+      alleenAfspraken
+        ? 'Afspraken weggehaald; de flex staat er nog. Vul nu zelf de plangroepen in.'
+        : 'Raster leeggemaakt; de flex volgt weer de planregels.',
       'ok'
     )
   }
@@ -376,16 +395,16 @@ export default function Stap33() {
             </Btn>
             <Btn
               icon="grid"
-              onClick={() => leeg(true, 'Zelf ontwerpen vanaf een leeg template?')}
-              title="Lege sessies met flexblokken volgens de planregels; vul zelf de plangroepen in"
+              onClick={() => leeg(true)}
+              title="Haalt alleen de afspraken weg; de flex (ook met de hand aangepast) blijft staan"
             >
               Zelf raster ontwerpen (leeg template)
             </Btn>
             <Btn
               variant="ghost"
               icon="eraser"
-              onClick={() => leeg(true)}
-              title="Het gehele raster van deze modaliteit leegmaken en opnieuw beginnen"
+              onClick={() => leeg(false)}
+              title="Afspraken weg en de flex terug naar de planregels: helemaal opnieuw beginnen"
             >
               Raster leegmaken
             </Btn>

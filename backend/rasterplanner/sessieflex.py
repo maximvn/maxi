@@ -4,7 +4,7 @@ Wat doet dit onderdeel
 ----------------------
 De handelingen op de flexibele tijd van één sessie of één kamer: opnieuw opbouwen uit de
 planregels (na een wijziging in stap 3.2), handmatig aangepaste blokken vastleggen, een blok
-toevoegen, een sessie of hele modaliteit leegmaken, en een sessie rechtzetten nadat haar tijden
+toevoegen, alleen de afspraken wissen, een sessie of hele modaliteit leegmaken, en een sessie rechtzetten nadat haar tijden
 zijn veranderd (afspraken die buiten de sessie vallen opnieuw plaatsen).
 
 Plaats in de keten
@@ -97,8 +97,25 @@ def leeg_sessie(state: dict, sessie_id: Any) -> dict:
         "appts": [], "flex": materialize_flex(sessie, planregels_van(kamer)["flexRules"]), "flexHandmatig": False}}}
 
 
+def wis_afspraken(state: dict, mod_id: Any) -> dict:
+    """Alleen de afspraken van een modaliteit weghalen; de flex blijft staan. Port van ``wisAfspraken``.
+
+    Dit is "Zelf raster ontwerpen" in stap 3.3; "Raster leegmaken" is ``leeg_modaliteit``. Een
+    sessie zonder plan krijgt de flex volgens de planregels.
+    """
+    st = state
+    for s in mod_sessies(state, mod_id):
+        sid = s.get("id")
+        plan = of(st.get("plan"), {})
+        if waar(plan.get(sid)):
+            st = {**st, "plan": {**plan, sid: {**plan[sid], "appts": []}}}
+        else:
+            st = leeg_sessie(st, sid)
+    return st
+
+
 def leeg_modaliteit(state: dict, mod_id: Any) -> dict:
-    """Alle sessies van een modaliteit leegmaken. Port van ``leegModaliteit``."""
+    """Alle sessies leegmaken: afspraken weg, flex terug naar de regels. Port van ``leegModaliteit``."""
     st = state
     for s in mod_sessies(state, mod_id):
         st = leeg_sessie(st, s.get("id"))

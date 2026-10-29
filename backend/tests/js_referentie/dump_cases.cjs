@@ -172,6 +172,8 @@ for (const [mod, opts] of [['CT', { flex: 'interval', dubbel: true }], ['CT', { 
   voeg(`fn|herbouwFlex|${tag}|vrij`, 'fn', [st, k.id, false], 'herbouwFlex')
   voeg(`fn|herbouwFlex|${tag}|forceer`, 'fn', [st, k.id, true], 'herbouwFlex')
   voeg(`fn|leegModaliteit|${tag}`, 'fn', [st, m], 'leegModaliteit')
+  voeg(`fn|wisAfspraken|${tag}`, 'fn', [st, m], 'wisAfspraken')
+  voeg(`fn|wisAfspraken|${tag}|zonder-plan`, 'fn', [{ ...st, plan: { [sessies[0].id]: st.plan[sessies[0].id] } }, m], 'wisAfspraken')
   voeg(`fn|balans|${tag}`, 'fn', [st, m], 'balans')
   voeg(`fn|modStats|${tag}`, 'fn', [st, m], 'modStats')
   voeg(`fn|sessieToevoegen|${tag}`, 'fn', [st, k.id, 'za', 'avond'], 'sessieToevoegen')

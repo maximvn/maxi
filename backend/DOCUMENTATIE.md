@@ -91,7 +91,7 @@ verwijderen, "één minder").
 - `landing` — Waar komt een afspraak die op ``t`` wordt losgelaten echt te staan? ``None`` = past niet. Port van ``landing``.
 - `plaats_op_tijd` — Plaats ``item`` ``{id?, pgId, duur, appt?}`` op tijdstip ``t`` en schuif de rest door. Port van ``plaatsOpTijd``.
 - `voeg_afspraak_toe` — Afspraak van plangroep ``pg_id`` in een sessie zetten (op ``vanaf`` of de eerste vrije plek). Port van ``voegAfspraakToe``.
-- `verwijder_afspraak` — Afspraak weghalen, samen met een afspraak die er dubbel op geboekt is. Port van ``verwijderAfspraak``.
+- `verwijder_afspraak` — Eén afspraak weghalen. Port van ``verwijderAfspraak``.
 - `verwijder_laatste` — De laatste afspraak van een plangroep uit een sessie halen (de knop "−"). Port van ``verwijderLaatste``.
 - `verplaats_afspraak` — Afspraak naar een andere sessie of een ander tijdstip slepen. Port van ``verplaatsAfspraak``.
 
@@ -99,14 +99,15 @@ verwijderen, "één minder").
 
 De handelingen op de flexibele tijd van één sessie of één kamer: opnieuw opbouwen uit de
 planregels (na een wijziging in stap 3.2), handmatig aangepaste blokken vastleggen, een blok
-toevoegen, een sessie of hele modaliteit leegmaken, en een sessie rechtzetten nadat haar tijden
+toevoegen, alleen de afspraken wissen, een sessie of hele modaliteit leegmaken, en een sessie rechtzetten nadat haar tijden
 zijn veranderd (afspraken die buiten de sessie vallen opnieuw plaatsen).
 
 - `herbouw_flex` — Flexblokken van alle sessies van een kamer opnieuw uit de regels. Port van ``herbouwFlex``.
 - `zet_flex` — Nieuwe flexblokken voor één sessie vastleggen (samengevoegd). Port van ``zetFlex``.
 - `voeg_flex_toe` — Een flexblok op de eerste vrije plek (vanaf ``vanaf``). Port van ``voegFlexToe``.
 - `leeg_sessie` — Afspraken weg, flex terug naar de regels. Port van ``leegSessie``.
-- `leeg_modaliteit` — Alle sessies van een modaliteit leegmaken. Port van ``leegModaliteit``.
+- `wis_afspraken` — Alleen de afspraken van een modaliteit weghalen; de flex blijft staan. Port van ``wisAfspraken``.
+- `leeg_modaliteit` — Alle sessies leegmaken: afspraken weg, flex terug naar de regels. Port van ``leegModaliteit``.
 - `normaliseer_sessie` — Na een tijd- of dagwijziging: flex en afspraken binnen de sessie brengen. Port van ``normaliseerSessie``.
 
 ## `rasterplanner/sessierooster.py`

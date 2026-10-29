@@ -12,7 +12,8 @@ npm run build               # dist/ — rekent in de browser
 npm run build:simpel        # dist/ — zonder het voorbeeld met demodata (Vercel bouwt deze)
 npm run build:api           # dist/ — rekent via de Python-server (zelfde adres)
 npm run build:html          # ../dist/radiologie_rasterplanner_2.html — alles in één bestand
-npm test                    # rekenkern + conventies (kopblok, JSDoc, ESLint, Prettier)
+npm test                    # rekenkern, conventies en de stabiliteitstest
+npm run test:stabiliteit    # alleen de stabiliteitstest (alle planregels × invoer, ±10 s)
 npm run test:e2e            # de tool doorklikken in Chromium
 npm run test:build          # alle varianten bouwen en de drie rekenmodi controleren
 npm run test:accounts       # inloggen, beheer en logboek met de echte Python-server
@@ -65,6 +66,7 @@ src/
     util.js                 tijden, dagen/dagdelen, id's, tekst normaliseren
     data.js                 standaarden, paletten, urgenties, stappen, voorbeelddata
     importers.js            Invoerlijst 1 en 2 en het herstelblad inlezen (op platte rijen)
+    voorbeeld.js            het voorbeeld (jaarplan 2027) als complete state, ook bruikbaar in Node
     exporter.js             het Excel-werkboek bouwen
     download.js             een Blob downloaden
     api.js                  fetch naar de account- en beheer-API met nette fouten
@@ -89,6 +91,7 @@ public/                     login.html · login.js · login.css (de inlogpagina,
 tests/
   test_rekenkern.mjs        invoerlijsten (echte bestanden), rekenkern en export
   test_conventies.mjs       kopblok, JSDoc, contextvelden, ESLint, Prettier
+  test_stabiliteit.mjs      alle planregels × invoer: herhaalbaar, niets kwijt, niets over de rand
   test_tool_e2e.mjs         de tool doorklikken (Playwright)
   test_vite_build.mjs       bouwvarianten + rekenen in worker en via de server
   test_middleware.mjs       middleware.js (Vercel Edge): tokens, vrije paden, sleutelafleiding

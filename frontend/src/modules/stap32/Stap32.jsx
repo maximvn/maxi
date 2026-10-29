@@ -73,13 +73,6 @@ export default function Stap32() {
   const delRule = (id) => updRegels({ flexRules: regels.flexRules.filter((r) => r.id !== id) })
   const toggleMethode = (key) =>
     updRegels({ methoden: regels.methoden.map((m) => (m.key === key ? { ...m, on: !m.on } : m)) })
-  const moveMethode = (i, d) => {
-    const m = [...regels.methoden]
-    const j = i + d
-    if (j < 0 || j >= m.length) return
-    ;[m[i], m[j]] = [m[j], m[i]]
-    updRegels({ methoden: m })
-  }
   const kopieer = () => {
     setState((s) => {
       let st = {
@@ -372,47 +365,30 @@ export default function Stap32() {
                     <Icon name="rules" size={16} />
                   </span>
                   <div>
-                    <h3>3 · Planmethodieken en volgorde</h3>
+                    <h3>3 · Planmethodieken</h3>
                     <div className="desc">
-                      Zet methodieken aan; de volgorde bepaalt welke eerst wordt toegepast bij het vullen van de
-                      sessies.
+                      Zet methodieken aan of uit. Ze werken los van elkaar: de ene bepaalt de volgorde in een sessie, de
+                      andere het begin van een sessie.
                     </div>
                   </div>
                 </div>
               </div>
               <div className="card-body col" style={{ gap: 8 }}>
-                {regels.methoden.map((m, i) => (
-                  <div className={`method ${m.on ? 'on' : ''}`} key={m.key}>
-                    <div className="order">
-                      <button
-                        type="button"
-                        onClick={() => moveMethode(i, -1)}
-                        disabled={i === 0}
-                        title="Eerder toepassen"
-                      >
-                        <Icon name="chevU" size={12} />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => moveMethode(i, 1)}
-                        disabled={i === regels.methoden.length - 1}
-                        title="Later toepassen"
-                      >
-                        <Icon name="chevD" size={12} />
-                      </button>
-                    </div>
-                    <div>
-                      <div className="row">
-                        <span className="mono tiny muted">{i + 1}.</span>
+                {/* Vaste volgorde op het scherm; de rekenkern kijkt alleen naar aan/uit (zie test_stabiliteit). */}
+                {Object.keys(METHODEN)
+                  .map((key) => regels.methoden.find((m) => m.key === key))
+                  .filter(Boolean)
+                  .map((m) => (
+                    <div className={`method ${m.on ? 'on' : ''}`} key={m.key}>
+                      <div>
                         <b style={{ fontSize: 13 }}>{METHODEN[m.key].label}</b>
+                        <div className="small muted" style={{ marginTop: 2 }}>
+                          {METHODEN[m.key].desc}
+                        </div>
                       </div>
-                      <div className="small muted" style={{ marginTop: 2 }}>
-                        {METHODEN[m.key].desc}
-                      </div>
+                      <Switch on={m.on} onChange={() => toggleMethode(m.key)} />
                     </div>
-                    <Switch on={m.on} onChange={() => toggleMethode(m.key)} />
-                  </div>
-                ))}
+                  ))}
                 <Banner type="info">
                   De kamerbinding en het planmoment uit stap 3.1 zijn altijd leidend:{' '}
                   {toegestaanHier.length ? (

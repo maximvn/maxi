@@ -34,15 +34,49 @@ de pariteitstest die bewijst dat JavaScript en Python hetzelfde rekenen).
 ```bash
 cd frontend && npm install          # eenmalig
 npm run dev                         # de tool op http://localhost:5173 (rekent in de browser)
-npm test                            # rekenkern, invoerlijsten, export + conventies (ESLint, Prettier, kopblokken)
+npm test                            # rekenkern, invoerlijsten, export, conventies en de stabiliteitstest
 npm run build:html                  # het losse bestand dist/radiologie_rasterplanner_2.html
 npm run test:e2e                    # de tool doorklikken in Chromium (23 stappen)
 npm run test:build                  # alle bouwvarianten + rekenen via de Python-server
 
 cd backend && pip install -r requirements.txt
-python -m pytest -q                 # Python: unit, server, documentatie en pariteit (1465 gevallen)
+python -m pytest -q                 # Python: unit, server, documentatie en pariteit (1473 gevallen)
 python server.py                    # server op http://127.0.0.1:8000 (serveert ook frontend/dist)
 ```
+
+### Stabiliteit
+
+`frontend/tests/test_stabiliteit.mjs` rekent het voorstelraster door voor alle combinaties van
+planregels: gespreid of wave, korte afspraken eerst aan of uit, eerste dubbel aan of uit, en vijf
+soorten flex. Dat gebeurt voor alle negen modaliteiten van het voorbeeld, bij drie volumes en bij een
+volle en een krappe week, samen 2160 gevallen. De test controleert:
+
+- dat dezelfde invoer dezelfde uitkomst geeft;
+- dat er niets verdwijnt of dubbel komt;
+- dat niets over de rand van een sessie loopt;
+- dat een kleine wijziging een kleine sprong geeft;
+- dat een instelling zonder invloed niets verandert;
+- dat de regels overal gelden, gemeten als percentage;
+- dat de handelingen in stap 3.3 kloppend tellen.
+
+Wat de test vond en wat er is veranderd:
+
+- **Een dubbel geboekt paar verdween samen.** Wie de eerste afspraak van een Bailey-Welch-paar
+  weghaalde of versleepte, verloor ook de tweede. Nu blijft de tweede staan als gewone afspraak.
+  Dit is aangepast in JavaScript en in Python.
+- **De pijltjes voor de volgorde van de planmethodieken deden niets.** De twee methodieken werken
+  los van elkaar: de ene bepaalt de volgorde in een sessie, de andere het begin. De pijltjes zijn
+  weg. Oude bestanden met een andere volgorde werken gewoon, want alleen aan of uit telt.
+- **"Zelf raster ontwerpen" en "Raster leegmaken" deden precies hetzelfde.** Nu haalt "Zelf raster
+  ontwerpen" alleen de afspraken weg en blijft de flex staan, ook flex die met de hand is aangepast.
+  "Raster leegmaken" zet ook de flex terug naar de planregels.
+- **Eén extra afspraak kan in een vol rooster meer dan één andere verdringen.** Een punctie van
+  45 minuten kan vier afspraken van 15 minuten kosten, omdat het restgat te klein wordt. Dat is
+  begrensd: wat andere plangroepen verliezen, is hooguit de duur van de extra afspraak plus één
+  afspraak. De test bewaakt die grens.
+- **Korte afspraken eerst en wave tegenover gespreid doen niet altijd iets.** Ze hebben geen effect
+  als een sessie maar één soort afspraak heeft of als alle afspraken even lang zijn. Dat geldt voor
+  ongeveer de helft van de gevallen. In de andere helft maken ze wel verschil, dus ze blijven.
 
 ## Wat de 2.0 doet
 
@@ -68,7 +102,7 @@ dag + dagdeel), contrast, aanvrager, urgentie. Verrichtingen zijn als referentie
 per interval), live teruggerekend naar % flex en benutting; groepering (gespreid / wave); planmethodieken
 (korte afspraken eerst, eerste afspraak dubbel) met volgorde. Kamerbinding uit 3.1 is altijd leidend.
 
-**Stap 3.3 · Ontwerpen planraster** — Voorstelraster door AI, zelf ontwerpen (leeg template) of leegmaken.
+**Stap 3.3 · Ontwerpen planraster** — Voorstelraster door AI, zelf ontwerpen (de afspraken weg, de flex blijft staan) of het raster leegmaken (ook de flex terug naar de planregels).
 Per kamer (knoppen) de week ma–vr (weekend verschijnt als er sessies zijn):
 - *Weergave 1 · Globaal*: sessies uit stap 2 (wijzigen synchroniseert terug), plangroepen per sessie met
   tellers, foutmelding bij een plangroep op een niet-toegestane kamer/dag/dagdeel, benutting per sessie in %

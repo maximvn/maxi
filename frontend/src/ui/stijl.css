@@ -1985,7 +1985,7 @@ select.input {
 }
 .method {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: 1fr auto;
   gap: 12px;
   align-items: center;
   padding: 12px 14px;
@@ -1997,23 +1997,6 @@ select.input {
 .method.on {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent-soft) 45%, var(--surface));
-}
-.method .order {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.method .order button {
-  width: 22px;
-  height: 18px;
-  border-radius: 5px;
-  display: grid;
-  place-items: center;
-  color: var(--muted);
-}
-.method .order button:hover {
-  background: var(--surface-3);
-  color: var(--ink);
 }
 .radio-card {
   display: grid;
