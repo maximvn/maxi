@@ -4,7 +4,8 @@
  * Wat doet dit onderdeel
  *   Toont het merk (klik = voorblad), de naam en het type van het sessierooster, de gekozen
  *   modaliteit, en de knoppen ongedaan maken, opnieuw, exporteren, thema en opnieuw beginnen.
- *   Op het voorblad (waar geen rail is) staat in de accountmodus de naam met "Uitloggen".
+ *   Op het voorblad (waar geen rail is) staat in de accountmodus de naam met "Uitloggen". In de
+ *   accountmodus staat er ook het opslaglabel met de eerdere versies (OpslagLabel.jsx).
  *
  * Plaats in de tool
  *   Bovenaan in App.jsx, op elk scherm. Op het voorblad alleen merk en thema.
@@ -31,6 +32,7 @@ import { useApp } from '../context/AppContext.jsx'
 import { paletFor } from '../lib/data.js'
 import { fmtDate } from '../lib/util.js'
 import { Btn, Chip, Icon, IconBtn } from '../ui/index.js'
+import OpslagLabel from './OpslagLabel.jsx'
 
 /**
  * Leesbaar roostertype.
@@ -99,6 +101,7 @@ export default function Kopbalk() {
         </>
       )}
       <div className="grow" />
+      <OpslagLabel />
       {!isHome && (
         <div className="row" style={{ gap: 4 }}>
           <IconBtn icon="arrowL" title="Ongedaan maken (Ctrl+Z)" onClick={ongedaan} disabled={!kanOngedaan} />

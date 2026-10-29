@@ -2,7 +2,7 @@
  * ═══ RAIL — de stappen aan de linkerkant ═════════════════════════════════════
  *
  * Wat doet dit onderdeel
- *   Toont de stappen (1 Modaliteiten en kamers, 2 Sessierooster, 3 Planraster met 3.1–3.3) met
+ *   Toont bovenaan "Start" (startscherm of voorblad), dan de stappen (1 Modaliteiten en kamers, 2 Sessierooster, 3 Planraster met 3.1–3.3) met
  *   een vinkje als een stap klaar is, een klein overzicht met tellingen, en (op de server met
  *   accounts) het accountkaartje (RailAccount.jsx).
  *
@@ -10,7 +10,7 @@
  *   Links in App.jsx, op alle schermen behalve het voorblad (onder 1100 px breed verborgen).
  *
  * Leest uit de context
- *   `state`, `view`, `nav`, `mod`, `status`.
+ *   `state`, `view`, `nav`, `mod`, `status`, `inAccount`.
  * Schrijft naar de context
  *   — (alleen via nav)
  *
@@ -38,7 +38,7 @@ import RailAccount from './RailAccount.jsx'
  * @returns {JSX.Element}
  */
 export default function Rail() {
-  const { state, view, nav, mod, status } = useApp()
+  const { state, view, nav, mod, status, inAccount } = useApp()
   /**
    * Korte hint onder de titel van een stap.
    * @param {object} s stap uit STAPPEN
@@ -55,6 +55,21 @@ export default function Rail() {
   const afspraken = Object.values(state.plan).reduce((t, e) => t + (e.appts?.length || 0), 0)
   return (
     <nav className="rail">
+      <button
+        type="button"
+        className={`step startknop ${view === 'home' ? 'active' : ''}`}
+        onClick={() => nav('home')}
+        data-start
+      >
+        <span className="step-nr">
+          <Icon name="home" size={13} />
+        </span>
+        <span>
+          <div className="title">Start</div>
+          <div className="hint">{inAccount ? 'verder waar je was, nieuw of inladen' : 'voorblad'}</div>
+        </span>
+        <span />
+      </button>
       <div className="section eyebrow">Stappen</div>
       {STAPPEN.map((s) => {
         const active = view === s.id || (s.sub && s.sub.some((x) => x.id === view))
@@ -126,8 +141,8 @@ export default function Rail() {
         style={{ background: 'transparent', boxShadow: 'none', border: 0, padding: '8px 14px' }}
       >
         <div className="tiny muted">
-          Wijzigingen worden automatisch bewaard in deze browser. <span className="kbd">Ctrl</span>{' '}
-          <span className="kbd">Z</span> maakt ongedaan.
+          Wijzigingen worden automatisch bewaard {inAccount ? 'op de server' : 'in deze browser'}.{' '}
+          <span className="kbd">Ctrl</span> <span className="kbd">Z</span> maakt ongedaan.
         </div>
       </div>
     </nav>

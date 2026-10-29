@@ -14,7 +14,7 @@
  *   `state`, `setState`, `ongedaan`, `opnieuw`, `kanOngedaan`, `kanOpnieuw`, `wisHistorie`.
  *
  * Invoer
- *   —
+ *   `{bewaarLokaal}` (boolean).
  * Uitvoer
  *   Zie "Schrijft naar de context".
  *
@@ -24,7 +24,9 @@
  *   2. setState(fn, {undoable}) zet de vorige state op de stapel (maximaal 60) en wist "opnieuw".
  *      Geeft fn dezelfde state terug, dan gebeurt er niets.
  *   3. Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y werken overal behalve in een invoerveld (daar is het tekst-ongedaan).
- *   4. Autosave: 400 ms na de laatste wijziging naar localStorage.
+ *   4. Autosave: 400 ms na de laatste wijziging naar localStorage — alleen als `bewaarLokaal` aan
+ *      staat (de lokale modus). In de accountmodus bewaart de server de stand (useStand), en blijft
+ *      er op een gedeelde computer geen werk van een collega in de browser achter.
  *
  * Waar kan het misgaan en hoe zie je dat
  *   - Werk is weg na herladen: localStorage was vol of geblokkeerd; exporteer regelmatig naar Excel.
@@ -71,9 +73,10 @@ function leesBewaard() {
 
 /**
  * De state met ongedaan maken en autosave.
+ * @param {{bewaarLokaal?: boolean}} [opties]
  * @returns {{state: object, setState: Function, ongedaan: () => void, opnieuw: () => void, kanOngedaan: boolean, kanOpnieuw: boolean, wisHistorie: () => void}}
  */
-export function useHistorie() {
+export function useHistorie({ bewaarLokaal = true } = {}) {
   const [state, setStateRaw] = useState(leesBewaard)
   const undo = useRef([])
   const redo = useRef([])
@@ -149,6 +152,7 @@ export function useHistorie() {
   }, [ongedaan, opnieuw])
 
   useEffect(() => {
+    if (!bewaarLokaal) return undefined
     const t = setTimeout(() => {
       try {
         localStorage.setItem(STATE_SLEUTEL, JSON.stringify(state))
@@ -157,7 +161,7 @@ export function useHistorie() {
       }
     }, 400)
     return () => clearTimeout(t)
-  }, [state])
+  }, [state, bewaarLokaal])
 
   return {
     state,

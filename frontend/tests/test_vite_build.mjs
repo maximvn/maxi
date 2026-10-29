@@ -118,7 +118,7 @@ async function openVoorbeeld(browser) {
   await p.waitForTimeout(600)
   await p.getByText('Voorbeeld verkennen').click()
   await p.waitForTimeout(400)
-  await p.locator('.step').nth(2).click()
+  await p.locator('.step').filter({ hasText: 'Planraster' }).click()
   await p.waitForTimeout(300)
   await p.locator('.substep').nth(2).click()
   await p.waitForTimeout(400)

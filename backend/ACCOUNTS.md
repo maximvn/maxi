@@ -253,10 +253,15 @@ Het logboek wordt niet automatisch opgeschoond.
 - `layout/RailAccount.jsx`: naam, rol en de knoppen Beheer (alleen beheer), Wachtwoord en
   Uitloggen onderaan de rail; op het voorblad naam en Uitloggen in de kopbalk.
 - `lib/api.js`: één helper voor de account- en beheer-API (fouttekst van de server, status).
-- `hooks/useStand.js`: na het inloggen `GET /api/stand` en de stand toepassen (dezelfde weg als
-  sessie-import); daarna automatisch opslaan, 2 s na de laatste wijziging en bij het
-  verlaten van de pagina (`PUT /api/stand`). Een klein label in de kopbalk: "opgeslagen 11:42"
-  of "opslaan mislukt — opnieuw". Een lijstje "eerdere versies" om terug te gaan.
+- `hooks/useStand.js`: na het inloggen `GET /api/stand`; de tool opent op Start
+  (`modules/Start.jsx`) en past de stand pas toe als de gebruiker "Verder waar je was" kiest (of
+  een stap in de rail). Tot dan wordt niets opgeslagen. Daarna automatisch opslaan, 2 s na de
+  laatste wijziging en bij het verlaten van de pagina (`PUT /api/stand`, keepalive). De data is
+  de state plus `_plek` (scherm, modaliteit) en `project`. Een label in de kopbalk
+  (`layout/OpslagLabel.jsx`): "opgeslagen 11:42", "opslaan…" of "opslaan mislukt — opnieuw", met
+  de uitklap "Versies" (`layout/VersieLijst.jsx`) om een eerdere versie terug te zetten (na een
+  bevestiging in de pagina). In de accountmodus bewaart de browser zelf niets (geen werk van
+  een collega op een gedeelde computer).
 - `hooks/useProjecten.js`: de knop **Opslaan** (rail en naast Export) opent
   `dialogen/OpslaanDialoog.jsx`; de knop **Projecten** in de rail opent het zijpaneel `layout/ProjectenPaneel.jsx` (met `layout/ProjectenLijst.jsx`) en op Start staat de kaart "Opgeslagen project openen"; het paneel toont de projecten
   (per naam gegroepeerd) om een versie te openen of te verwijderen.

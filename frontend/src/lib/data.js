@@ -14,7 +14,7 @@
  *   Geen (constanten en fabrieksfuncties).
  * Uitvoer
  *   PALET, paletFor, iconForModality, DEFAULT_DAGDELEN, DEFAULT_PLANREGELS, URGENTIES, urgentieInfo,
- *   normaliseerUrgentie, METHODEN, newKamer, newPlangroep, emptyState, STAPPEN en VOORBEELD_*.
+ *   normaliseerUrgentie, METHODEN, newKamer, newPlangroep, emptyState, STAPPEN, stapTitel en VOORBEELD_*.
  *
  * Hoe het werkt
  *   1. Elke modaliteit krijgt een kleurindex; paletFor kiest daar een van tien tinten bij.
@@ -763,3 +763,13 @@ export const STAPPEN = [
     ],
   },
 ]
+
+/**
+ * Stapnummer en titel van een scherm ("3.3 · Ontwerpen planraster"), of '' als het geen stap is.
+ * @param {string} view bv. 'stap33'
+ * @returns {string}
+ */
+export const stapTitel = (view) => {
+  const s = STAPPEN.flatMap((x) => (x.sub ? x.sub : [x])).find((x) => x.id === view)
+  return s ? `${s.nr} · ${s.titel}` : ''
+}

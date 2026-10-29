@@ -124,7 +124,7 @@ await stap('standaardtijden 08:30–12:30 en 13:00–17:00', async () => {
   assert.deepEqual(tijden.slice(0, 4), ['08:30', '12:30', '13:00', '17:00'])
 })
 await stap('sessierooster vullen vanuit de invoerlijst: 20 sessies (worker)', async () => {
-  await p.locator('.step').nth(1).click()
+  await p.locator('.step').filter({ hasText: 'Sessierooster' }).click()
   await p.waitForTimeout(400)
   await p.getByText('Vul automatisch vanuit invoerlijst').click()
   await p.waitForTimeout(800)
@@ -202,14 +202,14 @@ const q = await nieuwePagina(browser)
 await stap('voorbeeld laden: CT-raster met 186 van 187 afspraken', async () => {
   await q.getByText('Voorbeeld verkennen').click()
   await q.waitForTimeout(500)
-  await q.locator('.step').nth(2).click()
+  await q.locator('.step').filter({ hasText: 'Planraster' }).click()
   await q.waitForTimeout(300)
   await q.locator('.substep').nth(2).click()
   await q.waitForTimeout(500)
   assert.match((await q.locator('.kpis').innerText()).replace(/\n/g, ' '), /186 \/ 187/)
 })
 await stap('sessievenster (stap 2): starttijd wijzigen', async () => {
-  await q.locator('.step').nth(1).click()
+  await q.locator('.step').filter({ hasText: 'Sessierooster' }).click()
   await q.waitForTimeout(400)
   await q.locator('.sess').first().click()
   await q.waitForTimeout(300)
@@ -222,7 +222,7 @@ await stap('sessievenster (stap 2): starttijd wijzigen', async () => {
   assert.match(await q.locator('.sess').first().innerText(), /^09:00/)
 })
 await stap('sessievenster (stap 3.3): openen vanuit het sessiepaneel', async () => {
-  await q.locator('.step').nth(2).click()
+  await q.locator('.step').filter({ hasText: 'Planraster' }).click()
   await q.waitForTimeout(300)
   await q.locator('.substep').nth(2).click()
   await q.waitForTimeout(500)
@@ -286,7 +286,7 @@ try {
   await stap('ingesloten: bevestigen via eigen venster en leegmaken werkt', async () => {
     await f.getByText('Voorbeeld verkennen').click()
     await r.waitForTimeout(500)
-    await f.locator('.step').nth(2).click()
+    await f.locator('.step').filter({ hasText: 'Planraster' }).click()
     await r.waitForTimeout(300)
     await f.locator('.substep').nth(2).click()
     await r.waitForTimeout(500)

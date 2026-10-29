@@ -27,17 +27,22 @@
  *   2. useHistorie      → state, setState, ongedaan, opnieuw, kanOngedaan, kanOpnieuw, wisHistorie
  *   3. useNavigatie     → view, nav, modId, setModId, mod, visited, setVisited, status
  *   4. useRekenen       → maakVoorstel, vulRooster, rekenStatus, herstartRekenen
+ *   4b. useStand        → standFase, opgehaald, opslag, versies, verderWaarJeWas, beginZonderStand,
+ *                         slaNuOp, zetVersieTerug, … (alleen actief in de accountmodus)
  *   5. useImportExport  → busy, importInvoerlijst1/2, laadBestaand, laadVoorbeeld, nieuwStarten,
  *                         exporteerExcel, exporteerJson
  *   6. Dialogen open/dicht (export, opnieuw beginnen, wachtwoord) → openExport, sluitExport,
  *      openReset, sluitReset, openWachtwoord
- *   Daarna wordt `waarde` samengesteld en het scherm bij `view` getekend.
+ *   Daarna wordt `waarde` samengesteld en het scherm bij `view` getekend. Twee handelingen worden
+ *   daarbij aangevuld: `nav` past eerst de opgehaalde stand toe als de gebruiker op Start nog moest
+ *   kiezen, en `uitloggen` slaat eerst het werk op. Op "home" staat in de accountmodus het
+ *   startscherm (modules/Start.jsx), anders het voorblad.
  *
  * Waar kan het misgaan en hoe zie je dat
  *   - Een wit scherm: een fout tijdens het tekenen; de foutgrens in main.jsx toont dan de melding
  *     met een knop om de tool te herladen.
  */
-import React, { useMemo, useState } from 'react'
+import React, { useCallback, useMemo, useState } from 'react'
 import { AppContext } from './context/AppContext.jsx'
 import { useWeergave } from './hooks/useWeergave.js'
 import { useAccount } from './hooks/useAccount.js'
@@ -45,6 +50,7 @@ import { useHistorie } from './hooks/useHistorie.js'
 import { useNavigatie } from './hooks/useNavigatie.js'
 import { useRekenen } from './hooks/useRekenen.js'
 import { useImportExport } from './hooks/useImportExport.js'
+import { useStand } from './hooks/useStand.js'
 import { SIMPEL } from './bouwvlaggen.js'
 import { ConfirmProvider, DragProvider, ToastProvider, useToast } from './ui/index.js'
 import Kopbalk from './layout/Kopbalk.jsx'
@@ -56,6 +62,7 @@ import ResetDialoog from './dialogen/ResetDialoog.jsx'
 import WachtwoordDialoog from './dialogen/WachtwoordDialoog.jsx'
 import Beheer from './modules/beheer/Beheer.jsx'
 import Voorblad from './modules/Voorblad.jsx'
+import Start from './modules/Start.jsx'
 import Stap1 from './modules/stap1/Stap1.jsx'
 import Stap2 from './modules/stap2/Stap2.jsx'
 import Stap31 from './modules/stap31/Stap31.jsx'
@@ -82,12 +89,25 @@ function Shell() {
   // 1–5: de hooks in vaste volgorde (zie de kop)
   const weergave = useWeergave()
   const account = useAccount()
-  const historie = useHistorie()
+  const historie = useHistorie({
+    bewaarLokaal: account.accountModus !== 'account' && account.accountModus !== 'doorsturen',
+  })
   const { state, setState, wisHistorie } = historie
   const navigatie = useNavigatie({ state })
   const { nav, modId, setModId, setVisited, view } = navigatie
   const rekenen = useRekenen({ state, setState, toast })
-  const io = useImportExport({ state, setState, nav, modId, setModId, setVisited, wisHistorie, toast })
+  const stand = useStand({ ...account, state, setState, wisHistorie, view, nav, modId, setModId, setVisited })
+  const io = useImportExport({
+    state,
+    setState,
+    nav,
+    modId,
+    setModId,
+    setVisited,
+    wisHistorie,
+    toast,
+    beginZonderStand: stand.beginZonderStand,
+  })
   // 6: dialogen
   const [exportOpen, setExportOpen] = useState(false)
   const [resetOpen, setResetOpen] = useState(false)
@@ -103,19 +123,30 @@ function Shell() {
     []
   )
 
+  const { standFase, verderWaarJeWas, slaNuOp } = stand
+  const navMetStand = useCallback(
+    (v) => (standFase === 'kiezen' && /^stap/.test(v) ? verderWaarJeWas(v) : nav(v)),
+    [standFase, verderWaarJeWas, nav]
+  )
+  const accountUitloggen = account.uitloggen
+  const uitloggen = useCallback(() => accountUitloggen(slaNuOp), [accountUitloggen, slaNuOp])
+
   const waarde = {
     ...weergave,
     ...account,
     ...historie,
     ...navigatie,
     ...rekenen,
+    ...stand,
     ...io,
     ...dialogen,
+    nav: navMetStand,
+    uitloggen,
     toast,
     simpel: SIMPEL,
   }
   const isHome = view === 'home'
-  const Scherm = SCHERMEN[view] || Voorblad
+  const Scherm = view === 'home' && account.inAccount ? Start : SCHERMEN[view] || Voorblad
 
   return (
     <AppContext.Provider value={waarde}>

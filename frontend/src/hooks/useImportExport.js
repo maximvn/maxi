@@ -11,7 +11,8 @@
  *   Export: lib/exporter.js → XLSX.write → lib/download.js.
  *
  * Leest uit de context
- *   `state`, `setState`, `nav`, `modId`, `setModId`, `setVisited`, `wisHistorie`, `toast` (argumenten).
+ *   `state`, `setState`, `nav`, `modId`, `setModId`, `setVisited`, `wisHistorie`, `toast`,
+ *   `beginZonderStand` (argumenten; de laatste meldt nieuw werk aan useStand).
  * Schrijft naar de context
  *   `busy`, `importInvoerlijst1`, `importInvoerlijst2`, `laadBestaand`, `laadVoorbeeld`,
  *   `nieuwStarten`, `exporteerExcel`, `exporteerJson`.
@@ -126,10 +127,20 @@ const veiligeNaam = (naam) => naam.trim() || 'radiologie_rasterplanner'
 
 /**
  * Import en export.
- * @param {{state: object, setState: Function, nav: Function, modId: string|null, setModId: Function, setVisited: Function, wisHistorie: Function, toast: Function}} args
+ * @param {{state: object, setState: Function, nav: Function, modId: string|null, setModId: Function, setVisited: Function, wisHistorie: Function, toast: Function, beginZonderStand?: Function}} args
  * @returns {object} zie de kop
  */
-export function useImportExport({ state, setState, nav, modId, setModId, setVisited, wisHistorie, toast }) {
+export function useImportExport({
+  state,
+  setState,
+  nav,
+  modId,
+  setModId,
+  setVisited,
+  wisHistorie,
+  toast,
+  beginZonderStand = () => {},
+}) {
   const [busy, setBusy] = useState(false)
 
   /**
@@ -214,6 +225,9 @@ export function useImportExport({ state, setState, nav, modId, setModId, setVisi
         const data = /\.json$/i.test(file.name) ? JSON.parse(await file.text()) : parseHerstel(await leesWerkboek(file))
         if (!data || !data.version) throw new Error('Onbekend bestandsformaat.')
         delete data.exportDate
+        delete data._plek
+        delete data.project
+        beginZonderStand()
         setState(() => data)
         setVisited(new Set(VIEWS))
         if (data.modaliteiten?.length)
@@ -226,27 +240,29 @@ export function useImportExport({ state, setState, nav, modId, setModId, setVisi
         setBusy(false)
       }
     },
-    [setState, setVisited, setModId, toast, nav]
+    [setState, setVisited, setModId, toast, nav, beginZonderStand]
   )
 
   /** Laadt het voorbeeld (jaarplan 2027) en opent stap 1. */
   const laadVoorbeeld = useCallback(() => {
     const { state: st, ctId } = maakVoorbeeld()
+    beginZonderStand()
     if (ctId) setModId(ctId)
     setState(() => st)
     setVisited(new Set(VIEWS))
     toast('Voorbeelddata geladen: 15 kamers, 33 plangroepen en een CT-voorstelraster.', 'ok', 5000)
     nav('stap1')
-  }, [setState, setModId, setVisited, toast, nav])
+  }, [setState, setModId, setVisited, toast, nav, beginZonderStand])
 
   /** Begint met een lege state (zonder ongedaan-geschiedenis) op stap 1. */
   const nieuwStarten = useCallback(() => {
+    beginZonderStand()
     setState(() => emptyState())
     setModId(null)
     setVisited(new Set())
     wisHistorie()
     nav('stap1')
-  }, [setState, setModId, setVisited, wisHistorie, nav])
+  }, [setState, setModId, setVisited, wisHistorie, nav, beginZonderStand])
 
   /**
    * Exporteert naar Excel en start de download.

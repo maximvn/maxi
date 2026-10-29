@@ -4,12 +4,15 @@
  * Wat doet dit onderdeel
  *   Bouwt frontend/dist (gewone build), start backend/server.py met accounts aan (een tijdelijk
  *   SQLite-bestand, eerste beheerder SZ met een testwachtwoord) en doorloopt met Playwright het
- *   verhaal uit backend/ACCOUNTS.md §6: loginpagina, fout wachtwoord, inloggen, beheer (gebruiker
- *   aanmaken, dubbel, logboek met filter, sessies, laatste stand), een nieuwe gebruiker die eerst
- *   een eigen wachtwoord moet kiezen en geen beheer ziet, wachtwoord resetten, blokkeren en uitloggen.
+ *   verhaal uit backend/ACCOUNTS.md §6: loginpagina, fout wachtwoord, inloggen op Start, werk dat
+ *   automatisch wordt opgeslagen, op een ander apparaat verder waar je was, nieuw beginnen en een
+ *   eerdere versie terugzetten, opslaan vlak voor het sluiten, beheer (gebruiker aanmaken, dubbel,
+ *   logboek met filter, sessies, laatste stand), een nieuwe gebruiker die eerst een eigen
+ *   wachtwoord moet kiezen, geen beheer ziet en niet bij de stand van een ander kan, wachtwoord
+ *   resetten, blokkeren en uitloggen.
  *
  * Plaats in de tool
- *   `npm run test:accounts`. Wordt in onderdeel 5 en 6 uitgebreid (stand, projecten).
+ *   `npm run test:accounts`. Wordt in onderdeel 6 uitgebreid (projecten).
  *
  * Invoer
  *   De broncode; Python met de pakketten uit backend/requirements.txt; Playwright (PLAYWRIGHT_PAD).
@@ -161,15 +164,75 @@ try {
     assert.match(await sz.locator('#melding').innerText(), /onjuist/)
     assert.match(sz.url(), /login\.html/)
   })
-  await stap('inloggen als SZ → de tool met naam en Uitloggen', async () => {
+  await stap('inloggen als SZ → Start met naam en Uitloggen (nog geen opgeslagen werk)', async () => {
     await login(sz, 'SZ', WW_SZ)
     await sz.waitForURL(BASIS + '/')
     await sz.waitForSelector('[data-kopaccount]')
     assert.match(await sz.locator('[data-kopaccount]').innerText(), /Beheerder[\s\S]*Uitloggen/)
+    await sz.waitForSelector('.start [data-nieuw]')
+    assert.equal(await sz.locator('[data-verder]').count(), 0)
+  })
+  await stap('nieuw beginnen → werk wordt na ~2 s opgeslagen', async () => {
+    await sz.locator('[data-nieuw]').click()
+    await sz.waitForSelector('[data-account]')
+    await sz.fill('input[placeholder="Nieuwe modaliteit…"]', 'CT')
+    await sz.keyboard.press('Enter')
+    await sz.locator('.step').filter({ hasText: 'Sessierooster' }).click()
+    await sz.waitForSelector('[data-opslag="opgeslagen"]', { timeout: 8000 })
+    assert.match(await sz.locator('.opslag-status').innerText(), /opgeslagen \d\d:\d\d/)
+  })
+  const sz2 = await nieuwApparaat()
+  await stap('ander apparaat: Start toont "Verder waar je was" met samenvatting', async () => {
+    await login(sz2, 'SZ', WW_SZ)
+    await sz2.waitForSelector('[data-verder]')
+    const t = await sz2.locator('[data-verder]').innerText()
+    assert.match(t, /Verder waar je was/)
+    assert.match(t, /Je was bij 2 · Sessierooster/)
+  })
+  await stap('verder waar je was → zelfde werk, zelfde stap', async () => {
+    await sz2.locator('[data-verder]').click()
+    await sz2.waitForSelector('[data-account]')
+    assert.match(await sz2.locator('.page-head h2').innerText(), /sessierooster/i)
+    assert.match(await sz2.locator('.rail').innerText(), /1 modaliteiten/)
+  })
+  await stap('nieuw beginnen (met bevestiging) → vorige werk blijft een eerdere versie', async () => {
+    await sz2.locator('[data-start]').click()
+    await sz2.locator('[data-nieuw]').click()
+    await sz2.locator('.modal').getByRole('button', { name: 'Nieuw beginnen' }).click()
+    await sz2.waitForSelector('[data-account]')
+    assert.match(await sz2.locator('.rail').innerText(), /0 modaliteiten/)
+    await sz2.waitForSelector('[data-opslag="wacht"], [data-opslag="bezig"]', { timeout: 4000 })
+    await sz2.waitForSelector('[data-opslag="opgeslagen"]', { timeout: 8000 })
+    await sz2.locator('.opslaglabel').getByRole('button', { name: 'Versies' }).click()
+    await sz2.waitForSelector('.opslag-uitklap [data-versie]')
+    await sz2.waitForTimeout(300)
+    assert.ok((await sz2.locator('.opslag-uitklap [data-versie]').count()) >= 2)
+  })
+  await stap('eerdere versie terugzetten (bevestiging in de pagina) → werk is terug', async () => {
+    await sz2.locator('.opslag-uitklap [data-versie]').nth(1).getByRole('button', { name: 'Terugzetten' }).click()
+    await sz2.locator('.modal').getByRole('button', { name: 'Terugzetten' }).click()
+    await sz2.waitForTimeout(600)
+    assert.match(await sz2.locator('.rail').innerText(), /1 modaliteiten/)
+    assert.match(await meldingen(sz2), /teruggezet/)
+  })
+  await stap('wijziging vlak voor het sluiten van de pagina wordt bewaard', async () => {
+    await sz2.locator('.step').filter({ hasText: 'Modaliteiten en kamers' }).click()
+    await sz2.waitForTimeout(2500) // de terugzet-versie eerst laten opslaan
+    await sz2.fill('input[placeholder="Nieuwe modaliteit…"]', 'MRI')
+    await sz2.keyboard.press('Enter')
+    await sz2.waitForTimeout(150)
+    await sz2.close({ runBeforeUnload: true }) // pagehide → keepalive-opslag, vóór de 2 s van de autosave
+    await new Promise((r) => setTimeout(r, 800))
+    const sz3 = await nieuwApparaat()
+    await login(sz3, 'SZ', WW_SZ)
+    await sz3.waitForSelector('[data-verder]')
+    assert.match(await sz3.locator('[data-verder]').innerText(), /Je was bij 1 · Modaliteiten/)
+    await sz3.locator('[data-verder]').click()
+    await sz3.waitForSelector('[data-account]')
+    assert.match(await sz3.locator('.rail').innerText(), /2 modaliteiten/)
+    await sz3.context().close()
   })
   await stap('rail: accountkaart met Beheer (beheerder)', async () => {
-    await sz.getByText('Nieuw raster ontwerpen').click()
-    await sz.waitForSelector('[data-account]')
     assert.equal(await sz.locator('[data-account]').getByRole('button', { name: 'Beheer', exact: true }).count(), 1)
   })
   await stap('beheer: tegels met kerngetallen', async () => {
@@ -217,7 +280,9 @@ try {
   await stap('beheer: sessies met de eigen sessie gemarkeerd', async () => {
     await sz.getByRole('tab', { name: /Sessies/ }).click()
     await sz.waitForSelector('[data-sessie="SZ"]')
-    assert.match(await sz.locator('[data-sessie="SZ"]').innerText(), /deze/)
+    const rijen = await sz.locator('[data-sessie="SZ"]').allInnerTexts()
+    assert.ok(rijen.length >= 2, 'SZ is op meerdere apparaten ingelogd')
+    assert.equal(rijen.filter((t) => /deze/.test(t)).length, 1)
   })
 
   const pl = await nieuwApparaat()
@@ -236,10 +301,18 @@ try {
     assert.match(await meldingen(pl), /wachtwoord is gewijzigd/)
   })
   await stap('nieuwe gebruiker: geen Beheer-knop en 403 op de beheer-API', async () => {
-    await pl.getByText('Nieuw raster ontwerpen').click()
+    await pl.locator('[data-nieuw]').click()
     await pl.waitForSelector('[data-account]')
     assert.equal(await pl.locator('[data-account]').getByRole('button', { name: 'Beheer', exact: true }).count(), 0)
     assert.equal(await status(pl, '/api/beheer/overzicht'), 403)
+  })
+  await stap('nieuwe gebruiker: geen toegang tot de stand van een ander (404)', async () => {
+    const id = await sz.evaluate(() =>
+      fetch('/api/stand/versies', { credentials: 'same-origin' })
+        .then((r) => r.json())
+        .then((d) => d.versies[0].id)
+    )
+    assert.equal(await status(pl, '/api/stand/' + id), 404)
   })
   await stap('beheer: laatste stand van de nieuwe gebruiker bekijken (komt in het logboek)', async () => {
     await sz.getByRole('tab', { name: /Gebruikers/ }).click()
