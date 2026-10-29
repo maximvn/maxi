@@ -6,13 +6,14 @@
  *   SQLite-bestand, eerste beheerder SZ met een testwachtwoord) en doorloopt met Playwright het
  *   verhaal uit backend/ACCOUNTS.md §6: loginpagina, fout wachtwoord, inloggen op Start, werk dat
  *   automatisch wordt opgeslagen, op een ander apparaat verder waar je was, nieuw beginnen en een
- *   eerdere versie terugzetten, opslaan vlak voor het sluiten, beheer (gebruiker aanmaken, dubbel,
+ *   eerdere versie terugzetten, opslaan vlak voor het sluiten, projecten (opslaan met een naam,
+ *   nieuwe versie, zijpaneel, oudere versie openen, kaart op Start, verwijderen), beheer (gebruiker aanmaken, dubbel,
  *   logboek met filter, sessies, laatste stand), een nieuwe gebruiker die eerst een eigen
- *   wachtwoord moet kiezen, geen beheer ziet en niet bij de stand van een ander kan, wachtwoord
+ *   wachtwoord moet kiezen, geen beheer ziet en niet bij de stand of projecten van een ander kan, wachtwoord
  *   resetten, blokkeren en uitloggen.
  *
  * Plaats in de tool
- *   `npm run test:accounts`. Wordt in onderdeel 6 uitgebreid (projecten).
+ *   `npm run test:accounts`.
  *
  * Invoer
  *   De broncode; Python met de pakketten uit backend/requirements.txt; Playwright (PLAYWRIGHT_PAD).
@@ -232,6 +233,75 @@ try {
     assert.match(await sz3.locator('.rail').innerText(), /2 modaliteiten/)
     await sz3.context().close()
   })
+  await stap('project opslaan met een naam (rail → Opslaan)', async () => {
+    await sz.locator('[data-rail-opslaan]').click()
+    const f = sz.locator('[data-opslaan-formulier]')
+    await f.locator('input').fill('Regulier 2027')
+    assert.match(
+      await f.locator('[data-opslaan-voorbeeld]').innerText(),
+      /Komt in de lijst als Regulier 2027 \d\d-\d\d-\d{4} \d\d:\d\d[\s\S]*Nieuw project/
+    )
+    await f.locator('input').press('Enter')
+    await sz.waitForTimeout(500)
+    assert.match(await meldingen(sz), /Opgeslagen als Regulier 2027/)
+    assert.match(await sz.locator('[data-rail-opslaan]').innerText(), /Regulier 2027/)
+  })
+  await stap('nieuwe versie van hetzelfde project, en een tweede project', async () => {
+    await sz.locator('.step').filter({ hasText: 'Modaliteiten en kamers' }).click()
+    await sz.fill('input[placeholder="Nieuwe modaliteit…"]', 'Echo')
+    await sz.keyboard.press('Enter')
+    await sz.locator('[data-kop-opslaan]').click()
+    const f = sz.locator('[data-opslaan-formulier]')
+    assert.equal(await f.locator('input').inputValue(), 'Regulier 2027')
+    assert.match(await f.locator('[data-opslaan-voorbeeld]').innerText(), /Nieuwe versie van Regulier 2027/)
+    await f.locator('input').press('Enter')
+    await sz.waitForTimeout(500)
+    await sz.locator('[data-kop-opslaan]').click()
+    await sz.locator('[data-opslaan-formulier] input').fill('Reductieweek')
+    await sz.locator('[data-opslaan-formulier] input').press('Enter')
+    await sz.waitForTimeout(500)
+    assert.match(await sz.locator('[data-rail-projecten]').innerText(), /2/)
+  })
+  await stap('zijpaneel: projecten gegroepeerd, oudere versie openen → alles terug', async () => {
+    await sz.locator('[data-rail-projecten]').click()
+    await sz.waitForSelector('[data-projectenpaneel] [data-project]')
+    const namen = await sz
+      .locator('[data-projectenpaneel] [data-project]')
+      .evaluateAll((r) => r.map((x) => x.dataset.project))
+    assert.deepEqual(namen, ['Reductieweek', 'Regulier 2027'])
+    const reg = sz.locator('[data-project="Regulier 2027"]')
+    await reg.getByRole('button', { name: /2 versies/ }).click()
+    await reg.locator('[data-projectversie]').nth(1).getByRole('button', { name: 'Openen' }).click()
+    await sz.waitForTimeout(500)
+    assert.equal(await sz.locator('[data-projectenpaneel]').count(), 0)
+    assert.match(await sz.locator('.rail').innerText(), /1 modaliteiten/)
+    assert.match(await meldingen(sz), /Regulier 2027 .* is geopend/)
+  })
+  await stap('Start: kaart "Opgeslagen project openen" met de nieuwste projecten', async () => {
+    await sz.locator('[data-start]').click()
+    await sz.waitForSelector('[data-start-projecten]')
+    const t = await sz.locator('[data-start-projecten]').innerText()
+    assert.match(t, /Reductieweek[\s\S]*Regulier 2027[\s\S]*Alle projecten \(2\)/)
+    await sz.locator('[data-start-projecten]').getByText('Reductieweek').click()
+    await sz.waitForSelector('[data-account]')
+    assert.match(await sz.locator('.rail').innerText(), /2 modaliteiten/)
+  })
+  await stap('versie en hele project verwijderen (met bevestiging in het paneel)', async () => {
+    await sz.locator('[data-rail-projecten]').click()
+    const reg = sz.locator('[data-project="Regulier 2027"]')
+    await reg.getByRole('button', { name: /2 versies/ }).click()
+    await reg.locator('[data-projectversie]').nth(0).getByTitle('Deze versie verwijderen').click()
+    await reg.getByRole('button', { name: 'Verwijderen', exact: true }).click()
+    await sz.waitForTimeout(500)
+    assert.match(await sz.locator('[data-project="Regulier 2027"]').innerText(), /1 versie\b/)
+    const red = sz.locator('[data-project="Reductieweek"]')
+    await red.getByRole('button', { name: 'Hele project verwijderen' }).click()
+    await red.getByRole('button', { name: 'Verwijderen', exact: true }).click()
+    await sz.waitForTimeout(500)
+    assert.equal(await sz.locator('[data-project="Reductieweek"]').count(), 0)
+    await sz.keyboard.press('Escape')
+    assert.equal(await sz.locator('[data-projectenpaneel]').count(), 0)
+  })
   await stap('rail: accountkaart met Beheer (beheerder)', async () => {
     assert.equal(await sz.locator('[data-account]').getByRole('button', { name: 'Beheer', exact: true }).count(), 1)
   })
@@ -313,6 +383,16 @@ try {
         .then((d) => d.versies[0].id)
     )
     assert.equal(await status(pl, '/api/stand/' + id), 404)
+  })
+  await stap('nieuwe gebruiker: ziet en opent geen projecten van een ander (404)', async () => {
+    const id = await sz.evaluate(() =>
+      fetch('/api/projecten', { credentials: 'same-origin' })
+        .then((r) => r.json())
+        .then((d) => d.projecten[0].id)
+    )
+    const lijst = await pl.evaluate(() => fetch('/api/projecten', { credentials: 'same-origin' }).then((r) => r.json()))
+    assert.deepEqual(lijst.projecten, [])
+    assert.equal(await status(pl, '/api/projecten/' + id), 404)
   })
   await stap('beheer: laatste stand van de nieuwe gebruiker bekijken (komt in het logboek)', async () => {
     await sz.getByRole('tab', { name: /Gebruikers/ }).click()

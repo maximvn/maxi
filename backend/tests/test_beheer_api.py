@@ -164,6 +164,45 @@ def test_stand_routes(server, beheer):
     assert "stand_hersteld" in soorten and "stand_bekeken" in soorten
 
 
+# ── Projecten (opslaan met een naam) ───────────────────────────────────────────
+def test_projecten_routes(server, beheer):
+    maak(beheer, "projanna")
+    maak(beheer, "projbert")
+    projanna, projbert = ingelogd(server, "projanna", WW), ingelogd(server, "projbert", WW)
+    assert projanna.get("/api/projecten").json() == {"ok": True, "projecten": []}
+    d = projanna.post("/api/projecten", json={"naam": "Regulier 2027", "data": {"kamers": [1]}, "modus": "planner"}, headers=EIGEN).json()
+    u = projanna.post("/api/projecten", json={"naam": "Reductieweek", "data": {"kamers": [2]}, "modus": "planner"}, headers=EIGEN).json()
+    assert d["ok"] and d["naam"] == "Regulier 2027" and u["id"] > d["id"]
+    lijst = projanna.get("/api/projecten").json()["projecten"]
+    assert [(x["id"], x["naam"]) for x in lijst] == [(u["id"], "Reductieweek"), (d["id"], "Regulier 2027")]
+    p = projanna.get(f"/api/projecten/{d['id']}").json()["project"]
+    assert p["naam"] == "Regulier 2027" and p["data"] == {"kamers": [1]}
+    # Alleen eigen projecten: projbert ziet, opent en verwijdert niets van projanna.
+    assert projbert.get("/api/projecten").json()["projecten"] == []
+    assert projbert.get(f"/api/projecten/{d['id']}").status_code == 404
+    assert projbert.delete(f"/api/projecten/{d['id']}", headers=EIGEN).status_code == 404
+    assert projbert.delete(f"/api/projecten/{d['id']}?alle=1", headers=EIGEN).status_code == 404
+    # Foute invoer.
+    assert projanna.get("/api/projecten/abc").status_code == 400
+    assert projanna.post("/api/projecten", json={"naam": "X"}, headers=EIGEN).status_code == 400
+    assert projanna.post("/api/projecten", json={"naam": "", "data": {}}, headers=EIGEN).status_code == 400
+    assert projanna.post("/api/projecten", json={"naam": "a\nb", "data": {}}, headers=EIGEN).status_code == 400
+    assert projanna.post("/api/projecten", json={"naam": "Groot", "data": {"x": "a" * (1024 * 1024)}}, headers=EIGEN).status_code == 413
+    # Zonder sessie of van een vreemde site: geweigerd.
+    assert client(server).get("/api/projecten").status_code == 401
+    assert client(server).post("/api/projecten", json={"naam": "X", "data": {}}, headers=EIGEN).status_code == 401
+    vreemd = {"origin": "https://kwaadwillend.example"}
+    assert projanna.post("/api/projecten", json={"naam": "X", "data": {}}, headers=vreemd).status_code == 403
+    assert projanna.delete(f"/api/projecten/{d['id']}", headers=vreemd).status_code == 403
+    # Verwijderen: één versie, daarna alles van een project.
+    assert projanna.delete(f"/api/projecten/{d['id']}", headers=EIGEN).json() == {"ok": True, "verwijderd": 1}
+    assert projanna.delete(f"/api/projecten/{u['id']}?alle=1", headers=EIGEN).json() == {"ok": True, "verwijderd": 1}
+    assert projanna.get("/api/projecten").json()["projecten"] == []
+    projanna_id = projanna.get("/api/auth/ik").json()["gebruiker"]["id"]
+    soorten = [r["soort"] for r in beheer.get("/api/beheer/logboek", params={"gebruiker_id": projanna_id}).json()["regels"]]
+    assert {"project_opgeslagen", "project_geopend", "project_verwijderd"} <= set(soorten)
+
+
 # ── Beheer ─────────────────────────────────────────────────────────────────────
 def test_beheer_alleen_voor_beheer(server, beheer):
     maak(beheer, "carla")
@@ -282,7 +321,7 @@ def test_open_stand_zonder_geheim(tmp_path):
         c = TestClient(srv.app)
         assert c.get("/api/health").json()["accounts"] is False
         for methode, pad in (("get", "/api/auth/ik"), ("post", "/api/auth/login"), ("get", "/api/stand"), ("put", "/api/stand"),
-                             ("get", "/api/beheer/gebruikers")):
+                             ("get", "/api/beheer/gebruikers"), ("get", "/api/projecten"), ("post", "/api/projecten")):
             r = getattr(c, methode)(pad)
             assert r.status_code == 503 and "Accounts niet ingesteld" in r.json()["fout"], pad
         assert c.post("/api/voorstel", json=_fk_body()).json().get("plan")   # rekenen werkt zonder login

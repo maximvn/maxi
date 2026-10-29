@@ -3,7 +3,8 @@
  *
  * Wat doet dit onderdeel
  *   Toont het merk (klik = voorblad), de naam en het type van het sessierooster, de gekozen
- *   modaliteit, en de knoppen ongedaan maken, opnieuw, exporteren, thema en opnieuw beginnen.
+ *   modaliteit, en de knoppen ongedaan maken, opnieuw, opslaan (accountmodus), exporteren, thema
+ *   en opnieuw beginnen.
  *   Op het voorblad (waar geen rail is) staat in de accountmodus de naam met "Uitloggen". In de
  *   accountmodus staat er ook het opslaglabel met de eerdere versies (OpslagLabel.jsx).
  *
@@ -12,7 +13,7 @@
  *
  * Leest uit de context
  *   `state`, `view`, `mod`, `nav`, `ongedaan`, `opnieuw`, `kanOngedaan`, `kanOpnieuw`, `thema`,
- *   `wisselThema`, `openExport`, `openReset`, `inAccount`, `gebruiker`, `uitloggen`.
+ *   `wisselThema`, `openExport`, `openReset`, `inAccount`, `gebruiker`, `uitloggen`, `openOpslaan`.
  * Schrijft naar de context
  *   — (alleen via de handelingen hierboven)
  *
@@ -63,6 +64,7 @@ export default function Kopbalk() {
     inAccount,
     gebruiker,
     uitloggen,
+    openOpslaan,
   } = useApp()
   const isHome = view === 'home'
   const r = state.rooster
@@ -107,6 +109,11 @@ export default function Kopbalk() {
           <IconBtn icon="arrowL" title="Ongedaan maken (Ctrl+Z)" onClick={ongedaan} disabled={!kanOngedaan} />
           <IconBtn icon="arrowR" title="Opnieuw (Ctrl+Y)" onClick={opnieuw} disabled={!kanOpnieuw} />
         </div>
+      )}
+      {!isHome && inAccount && (
+        <Btn size="sm" icon="save" onClick={openOpslaan} data-kop-opslaan>
+          Opslaan
+        </Btn>
       )}
       {!isHome && (
         <Btn size="sm" icon="download" onClick={openExport}>

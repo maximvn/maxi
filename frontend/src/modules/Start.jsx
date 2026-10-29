@@ -5,6 +5,7 @@
  *   Het startscherm in de accountmodus. Grote kaarten:
  *   - "Verder waar je was": de opgeslagen stand met een samenvatting (wanneer, welk rooster,
  *     aantallen, op welke stap en modaliteit je was);
+ *   - "Opgeslagen project openen": de drie nieuwste projecten en "Alle projecten (n)";
  *   - "Nieuw beginnen" (met een bevestiging als er al werk is);
  *   - "Inladen": een eerder geëxporteerd raster (Excel met herstelblad, of .json);
  *   - "Voorbeeld verkennen" (niet in de SIMPEL-variant).
@@ -17,7 +18,7 @@
  * Leest uit de context
  *   `gebruiker`, `state`, `standFase`, `opgehaald`, `laadFout`, `opslag`, `verderWaarJeWas`,
  *   `laadStandOpnieuw`, `doorgaanZonderStand`, `nieuwStarten`, `laadBestaand`, `laadVoorbeeld`,
- *   `busy`, `simpel`, `modId`.
+ *   `busy`, `simpel`, `modId`, `projecten`, `openProject`, `openProjecten`, `toast`, `waarJeWas`.
  * Schrijft naar de context
  *   — (via de handelingen hierboven)
  *
@@ -39,6 +40,7 @@ import { useApp } from '../context/AppContext.jsx'
 import { tijdTekst } from '../lib/api.js'
 import { stapTitel } from '../lib/data.js'
 import { splitsData, leesData } from '../hooks/useStand.js'
+import { groepeerProjecten, projectTijd } from '../hooks/useProjecten.js'
 import VersieLijst from '../layout/VersieLijst.jsx'
 import { Banner, Btn, Icon, useConfirm } from '../ui/index.js'
 
@@ -84,7 +86,13 @@ export default function Start() {
     busy,
     simpel,
     modId,
+    projecten,
+    openProject,
+    openProjecten,
+    toast,
+    waarJeWas,
   } = useApp()
+  const groepen = groepeerProjecten(projecten.lijst)
   const confirm = useConfirm()
 
   // Wat staat er klaar om mee verder te gaan: de opgehaalde stand, of het werk in de tool.
@@ -92,7 +100,7 @@ export default function Start() {
   const verder = opgeslagen
     ? { ...splitsData(opgeslagen), tijd: opgehaald.tijd }
     : heeftWerk(state)
-      ? { state, plek: { view: null, modId }, tijd: opslag.tijd }
+      ? { state, plek: { view: waarJeWas, modId }, tijd: opslag.tijd }
       : null
   const modNaam = verder && (verder.state.modaliteiten || []).find((m) => m.id === verder.plek.modId)?.naam
 
@@ -164,6 +172,35 @@ export default function Start() {
             </span>
             <Icon name="arrowR" size={20} className="arrow" />
           </button>
+        )}
+        {groepen.length > 0 && (
+          <div className="choice projectenkaart" data-start-projecten>
+            <span className="ic">
+              <Icon name="folder" size={22} />
+            </span>
+            <span className="grow">
+              <h3>Opgeslagen project openen</h3>
+              <span className="col" style={{ gap: 4, marginTop: 6 }}>
+                {groepen.slice(0, 3).map((g) => (
+                  <button
+                    type="button"
+                    key={g.sleutel}
+                    className="projectregel"
+                    onClick={async () => {
+                      const r = await openProject(g.versies[0])
+                      toast(r.tekst, r.ok ? 'ok' : 'error')
+                    }}
+                  >
+                    <b>{g.naam}</b>
+                    <span className="tiny muted">{projectTijd(g.versies[0].tijd)}</span>
+                  </button>
+                ))}
+              </span>
+              <Btn size="xs" variant="ghost" onClick={openProjecten} style={{ marginTop: 6 }}>
+                Alle projecten ({groepen.length})
+              </Btn>
+            </span>
+          </div>
         )}
         <button type="button" className={`choice ${verder ? '' : 'primary'}`} onClick={nieuw} data-nieuw>
           <span className="ic">

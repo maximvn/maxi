@@ -10,7 +10,7 @@
  *   In de uitklap van layout/OpslagLabel.jsx (kopbalk) en onderaan modules/Start.jsx.
  *
  * Leest uit de context
- *   `versies`, `openVersies`, `zetVersieTerug`, `toast`.
+ *   `versies`, `openVersies`, `zetVersieTerug`, `toast`, `opslag`.
  * Schrijft naar de context
  *   — (via zetVersieTerug)
  *
@@ -39,11 +39,12 @@ import { Banner, Btn, useConfirm } from '../ui/index.js'
  * @returns {JSX.Element}
  */
 export default function VersieLijst({ compact = false }) {
-  const { versies, openVersies, zetVersieTerug, toast } = useApp()
+  const { versies, openVersies, zetVersieTerug, toast, opslag } = useApp()
   const confirm = useConfirm()
+  // Laden bij het tonen, en opnieuw na elke opslag (dan is er een nieuwe of bijgewerkte versie).
   useEffect(() => {
     openVersies()
-  }, [openVersies])
+  }, [openVersies, opslag.tijd])
 
   /**
    * Een versie terugzetten na bevestiging.

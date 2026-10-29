@@ -162,7 +162,7 @@ Alle antwoorden JSON met `ok`. Fouten: `{"ok":false,"fout":"…"}` met HTTP 400/
 | `GET /api/stand/versies` | — | `{ok, versies:[{id, tijd, module, modus, grootte}]}` (nieuwste eerst) |
 | `GET /api/stand/{id}` | — | `{ok, stand}` (alleen eigen standen) |
 
-### Projecten (opslaan met een naam) — onderdeel 6
+### Projecten (opslaan met een naam)
 
 Naast de automatische stand kan de gebruiker zelf op **Opslaan** klikken: het werk komt onder
 een projectnaam op de server ("Dermatologie 26-10-2026 08:00" in de tool). Elke keer opslaan

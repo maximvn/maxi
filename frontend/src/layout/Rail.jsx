@@ -2,7 +2,8 @@
  * ═══ RAIL — de stappen aan de linkerkant ═════════════════════════════════════
  *
  * Wat doet dit onderdeel
- *   Toont bovenaan "Start" (startscherm of voorblad), dan de stappen (1 Modaliteiten en kamers, 2 Sessierooster, 3 Planraster met 3.1–3.3) met
+ *   Toont bovenaan "Start" (startscherm of voorblad), in de accountmodus "Projecten" (met het
+ *   aantal) en "Opslaan" (met de naam van het huidige project), dan de stappen (1 Modaliteiten en kamers, 2 Sessierooster, 3 Planraster met 3.1–3.3) met
  *   een vinkje als een stap klaar is, een klein overzicht met tellingen, en (op de server met
  *   accounts) het accountkaartje (RailAccount.jsx).
  *
@@ -10,7 +11,8 @@
  *   Links in App.jsx, op alle schermen behalve het voorblad (onder 1100 px breed verborgen).
  *
  * Leest uit de context
- *   `state`, `view`, `nav`, `mod`, `status`, `inAccount`.
+ *   `state`, `view`, `nav`, `mod`, `status`, `inAccount`, `projecten`, `project`, `openProjecten`,
+ *   `openOpslaan`.
  * Schrijft naar de context
  *   — (alleen via nav)
  *
@@ -32,13 +34,14 @@ import { useApp } from '../context/AppContext.jsx'
 import { STAPPEN } from '../lib/data.js'
 import { Icon } from '../ui/index.js'
 import RailAccount from './RailAccount.jsx'
+import { groepeerProjecten } from '../hooks/useProjecten.js'
 
 /**
  * De stappenrail.
  * @returns {JSX.Element}
  */
 export default function Rail() {
-  const { state, view, nav, mod, status, inAccount } = useApp()
+  const { state, view, nav, mod, status, inAccount, projecten, project, openProjecten, openOpslaan } = useApp()
   /**
    * Korte hint onder de titel van een stap.
    * @param {object} s stap uit STAPPEN
@@ -70,6 +73,26 @@ export default function Rail() {
         </span>
         <span />
       </button>
+      {inAccount && (
+        <div className="rail-projecten">
+          <button type="button" className="step mini" onClick={openProjecten} data-rail-projecten>
+            <Icon name="folder" size={14} />
+            <span className="grow">Projecten</span>
+            {groepeerProjecten(projecten.lijst).length > 0 && (
+              <span className="bolletje">{groepeerProjecten(projecten.lijst).length}</span>
+            )}
+          </button>
+          <button type="button" className="step mini" onClick={openOpslaan} data-rail-opslaan>
+            <Icon name="save" size={14} />
+            <span className="grow">
+              Opslaan
+              <span className="tiny muted truncate" style={{ display: 'block', fontWeight: 500 }}>
+                {project ? project.naam : 'nog geen projectnaam'}
+              </span>
+            </span>
+          </button>
+        </div>
+      )}
       <div className="section eyebrow">Stappen</div>
       {STAPPEN.map((s) => {
         const active = view === s.id || (s.sub && s.sub.some((x) => x.id === view))

@@ -29,6 +29,7 @@
  *   4. useRekenen       → maakVoorstel, vulRooster, rekenStatus, herstartRekenen
  *   4b. useStand        → standFase, opgehaald, opslag, versies, verderWaarJeWas, beginZonderStand,
  *                         slaNuOp, zetVersieTerug, … (alleen actief in de accountmodus)
+ *   4c. useProjecten    → projecten, opslaanOpen, projectenOpen, slaProjectOp, openProject, …
  *   5. useImportExport  → busy, importInvoerlijst1/2, laadBestaand, laadVoorbeeld, nieuwStarten,
  *                         exporteerExcel, exporteerJson
  *   6. Dialogen open/dicht (export, opnieuw beginnen, wachtwoord) → openExport, sluitExport,
@@ -51,6 +52,7 @@ import { useNavigatie } from './hooks/useNavigatie.js'
 import { useRekenen } from './hooks/useRekenen.js'
 import { useImportExport } from './hooks/useImportExport.js'
 import { useStand } from './hooks/useStand.js'
+import { useProjecten } from './hooks/useProjecten.js'
 import { SIMPEL } from './bouwvlaggen.js'
 import { ConfirmProvider, DragProvider, ToastProvider, useToast } from './ui/index.js'
 import Kopbalk from './layout/Kopbalk.jsx'
@@ -60,6 +62,8 @@ import RekenStatus from './layout/RekenStatus.jsx'
 import ExportDialoog from './dialogen/ExportDialoog.jsx'
 import ResetDialoog from './dialogen/ResetDialoog.jsx'
 import WachtwoordDialoog from './dialogen/WachtwoordDialoog.jsx'
+import OpslaanDialoog from './dialogen/OpslaanDialoog.jsx'
+import ProjectenPaneel from './layout/ProjectenPaneel.jsx'
 import Beheer from './modules/beheer/Beheer.jsx'
 import Voorblad from './modules/Voorblad.jsx'
 import Start from './modules/Start.jsx'
@@ -97,6 +101,7 @@ function Shell() {
   const { nav, modId, setModId, setVisited, view } = navigatie
   const rekenen = useRekenen({ state, setState, toast })
   const stand = useStand({ ...account, state, setState, wisHistorie, view, nav, modId, setModId, setVisited })
+  const projectenHook = useProjecten({ ...account, ...stand, state })
   const io = useImportExport({
     state,
     setState,
@@ -138,6 +143,7 @@ function Shell() {
     ...navigatie,
     ...rekenen,
     ...stand,
+    ...projectenHook,
     ...io,
     ...dialogen,
     nav: navMetStand,
@@ -160,6 +166,8 @@ function Shell() {
         <RekenStatus />
         {exportOpen && <ExportDialoog />}
         {resetOpen && <ResetDialoog />}
+        {projectenHook.opslaanOpen && <OpslaanDialoog />}
+        {projectenHook.projectenOpen && <ProjectenPaneel />}
         {account.moetWachtwoord ? (
           <WachtwoordDialoog />
         ) : (

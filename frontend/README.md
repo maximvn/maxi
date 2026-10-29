@@ -39,6 +39,7 @@ src/
     useRekenen.js           voorstel en sessierooster via de reken-client
     useImportExport.js      invoerlijsten, voorbeeld, terugzetten, opnieuw beginnen, export
     useStand.js             verder waar je was: stand ophalen, automatisch opslaan, eerdere versies
+    useProjecten.js         werk opslaan met een naam: projecten laden, opslaan, openen, verwijderen
   engine/                   de rekenkern — elk bestand heeft een Python-tweeling in backend/rasterplanner/
     index.js                één importpad voor alles hieronder
     opzoeken.js             kamers/sessies/plangroepen opzoeken, STAP = 5 min
@@ -71,8 +72,9 @@ src/
     index.js                één importpad
     Icon.jsx · invoer.jsx · basis.jsx · Modal.jsx · meldingen.jsx · slepen.jsx
     stijl.css               alle opmaak (ontwerpwaarden, licht/donker, schermindeling)
-  layout/                   Kopbalk · Rail · RailAccount · OpslagLabel · VersieLijst · VoetNavigatie · RekenStatus
-  dialogen/                 ExportDialoog · ResetDialoog · SessieDialoog · WachtwoordDialoog
+  layout/                   Kopbalk · Rail · RailAccount · OpslagLabel · VersieLijst · ProjectenPaneel ·
+                            ProjectenLijst · VoetNavigatie · RekenStatus
+  dialogen/                 ExportDialoog · ResetDialoog · SessieDialoog · WachtwoordDialoog · OpslaanDialoog
   modules/                  de schermen
     Voorblad.jsx            beginscherm zonder server (lokale modus)
     Start.jsx               beginscherm na het inloggen: verder waar je was, nieuw, inladen, versies

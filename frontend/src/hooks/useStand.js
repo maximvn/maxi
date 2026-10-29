@@ -18,7 +18,7 @@
  *   `inAccount`, `moetWachtwoord`, `naarLogin`, `state`, `setState`, `wisHistorie`, `view`, `nav`,
  *   `modId`, `setModId`, `setVisited` (via de argumenten).
  * Schrijft naar de context
- *   `standFase`, `opgehaald`, `laadFout`, `opslag`, `versies`, `verderWaarJeWas`,
+ *   `waarJeWas` (de laatste stap), `standFase`, `opgehaald`, `laadFout`, `opslag`, `versies`, `verderWaarJeWas`,
  *   `beginZonderStand`, `slaNuOp`, `laadStandOpnieuw`, `doorgaanZonderStand`, `openVersies`,
  *   `sluitVersies`, `zetVersieTerug`, `huidigeData`, `laadData`, `project`, `setProject`.
  *
@@ -358,6 +358,7 @@ export function useStand(deps) {
   )
 
   return {
+    waarJeWas: viewNu,
     standFase,
     opgehaald,
     laadFout,

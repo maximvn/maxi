@@ -272,6 +272,10 @@ frontend (``frontend/dist``), zodat één adres volstaat.
 - `api_stand_opslaan` — ``{data, module, modus, nieuwe_versie?}`` → ``{ok, id, tijd, nieuw}``; max 1 MB.
 - `api_stand_versies` — ``{ok, versies:[{id, tijd, module, modus, grootte}]}``, nieuwste eerst.
 - `api_stand_een` — ``{ok, stand}`` — één eigen versie (oudere versie terughalen → ``stand_hersteld`` in het logboek).
+- `api_projecten` — ``{ok, projecten:[{id, naam, tijd, modus, grootte}]}`` — alle versies van de eigen projecten, nieuwste eerst.
+- `api_project_opslaan` — ``{naam, data, modus?}`` → ``{ok, id, naam, tijd}``; elke aanroep is een nieuwe versie; max 1 MB.
+- `api_project_een` — ``{ok, project:{id, naam, tijd, modus, data}}`` — één eigen versie (komt als ``project_geopend`` in het logboek).
+- `api_project_verwijder` — ``{ok, verwijderd}`` — één eigen versie, of met ``?alle=1`` alle versies van dat project.
 - `api_beheer_overzicht` — ``{ok, gebruikers, actief, logins_vandaag, mislukt_vandaag, opgeslagen_vandaag, sessies_actief}``.
 - `api_beheer_gebruikers` — ``{ok, gebruikers:[…]}`` met de afgeleide kolommen (laatste login, aantal logins, …).
 - `api_beheer_gebruiker_nieuw` — ``{gebruikersnaam, naam, rol, wachtwoord, moet_wachtwoord_wijzigen?}`` → ``{ok, gebruiker}`` · 409 bestaat al.
@@ -372,3 +376,18 @@ een gebruiker inzien (om mee te kijken bij een vraag). De inhoud zelf bekijkt de
 niet, alleen de grootte.
 
 - `Standen` — Opgeslagen standen per gebruiker (zie module-docstring).
+
+## `projecten.py`
+
+Naast de automatische stand ("verder waar je was", stand.py) kan een gebruiker zelf op
+**Opslaan** klikken. Dan wordt het hele werk (kamers, sessierooster, plangroepen, planregels,
+planraster) bewaard onder een projectnaam, met de tijd erbij. In de tool verschijnt dat
+als "Regulier 2027 26-10-2026 08:00". Elke klik op Opslaan maakt een nieuwe versie; eerdere
+versies van hetzelfde project blijven staan. Later kun je elke versie weer inladen.
+
+Het verschil met de stand: de stand wordt elke paar seconden automatisch bijgewerkt en er
+worden maar 30 werkblokken bewaard. Een project blijft staan tot de gebruiker het zelf
+verwijdert (binnen de grenzen hieronder).
+
+- `schoon_naam` — Projectnaam opschonen en controleren; ``Fout(400)`` als hij niet bruikbaar is.
+- `Projecten` — Opgeslagen projecten per gebruiker (zie module-docstring).

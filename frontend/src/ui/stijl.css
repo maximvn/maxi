@@ -3101,7 +3101,7 @@ select.input {
   font-size: 13px;
 }
 .step.mini {
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto 1fr auto;
   padding: 7px 9px;
   font-size: 13px;
   font-weight: 600;
@@ -3235,6 +3235,86 @@ select.input {
 }
 .step.startknop {
   margin-bottom: 6px;
+}
+/* Projecten (layout/ProjectenPaneel.jsx, ProjectenLijst.jsx, rail, Start) */
+.rail-projecten {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+.bolletje {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-grid;
+  place-items: center;
+}
+.paneel-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: rgba(19, 33, 31, 0.18);
+  animation: fade 0.18s var(--ease);
+}
+.projectenpaneel {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 252px;
+  width: min(420px, calc(100vw - 32px));
+  overflow: auto;
+  padding: 20px;
+  background: var(--bg-raise);
+  border-right: 1px solid var(--line);
+  box-shadow: var(--shadow-3);
+  animation: rise 0.22s var(--ease);
+}
+@media (max-width: 1100px) {
+  .projectenpaneel {
+    left: 0;
+  }
+}
+.projectkaart {
+  padding: 12px;
+  border-radius: var(--r-2);
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+.bevestig {
+  margin-top: 8px;
+  padding: 10px;
+  border-radius: 10px;
+  background: var(--danger-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.btn.danger-vol {
+  background: var(--danger);
+  border-color: var(--danger);
+}
+.choice.projectenkaart {
+  cursor: default;
+  align-items: start;
+}
+.projectregel {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  font-size: 13px;
+  text-align: left;
+}
+.projectregel:hover {
+  background: var(--accent-soft);
 }
 /* Foutgrens (main.jsx) */
 .foutscherm {
