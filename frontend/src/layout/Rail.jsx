@@ -3,7 +3,8 @@
  *
  * Wat doet dit onderdeel
  *   Toont de stappen (1 Modaliteiten en kamers, 2 Sessierooster, 3 Planraster met 3.1–3.3) met
- *   een vinkje als een stap klaar is, plus een klein overzicht met tellingen.
+ *   een vinkje als een stap klaar is, een klein overzicht met tellingen, en (op de server met
+ *   accounts) het accountkaartje (RailAccount.jsx).
  *
  * Plaats in de tool
  *   Links in App.jsx, op alle schermen behalve het voorblad (onder 1100 px breed verborgen).
@@ -30,6 +31,7 @@ import React from 'react'
 import { useApp } from '../context/AppContext.jsx'
 import { STAPPEN } from '../lib/data.js'
 import { Icon } from '../ui/index.js'
+import RailAccount from './RailAccount.jsx'
 
 /**
  * De stappenrail.
@@ -118,6 +120,7 @@ export default function Rail() {
           <b>{afspraken}</b>
         </div>
       </div>
+      <RailAccount />
       <div
         className="rail-card"
         style={{ background: 'transparent', boxShadow: 'none', border: 0, padding: '8px 14px' }}

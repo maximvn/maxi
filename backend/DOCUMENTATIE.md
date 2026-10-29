@@ -244,6 +244,7 @@ pagina zelf, of via deze server. Deze server neemt dezelfde "jobs" aan als
 als de JavaScript-rekenkern (bewezen met de pariteitstest). Daarnaast serveert hij de gebouwde
 frontend (``frontend/dist``), zodat één adres volstaat.
 
+- `Diensten` — Houdt de opslag, ``Accounts`` en ``Standen`` van dit proces bij; maakt ze bij het eerste gebruik.
 - `antwoord` — Altijd HTTP 200 met JSON; de inhoud bepaalt of het goed ging (``ok:false`` bij een fout).
 - `fout_antwoord` — ``{ok:false, fout, type, spoor}`` — en de stacktrace in het logboek.
 - `tijd_op` — De foutmelding als de tijdslimiet verloopt.
@@ -257,6 +258,28 @@ frontend (``frontend/dist``), zodat één adres volstaat.
 - `api_sessierooster` — Sessierooster vullen: body ``{state, opties?, trace?}`` → ``{ok, sessies, toegevoegd, waarschuwingen}``.
 - `api_analyse` — Balans en benutting: body ``{state, modId}`` → ``{ok, balans, stats, sessies}``.
 - `api_batch` — Reeks jobs: body ``{jobs:[{type,args,trace?}]}`` → ``{ok, uit:[{ok:true,res}|{ok:false,err}]}``.
+- `ok` — ``{ok:true, …}`` met HTTP 200.
+- `fout_json` — ``{ok:false, fout}`` met de gegeven HTTP-status.
+- `bron_van` — IP-adres (van de middleware, achter een proxy het echte adres) en browser voor het logboek.
+- `sessie_van` — De sessie die de middleware heeft gecontroleerd (``None`` als er geen is).
+- `cookie_kop` — ``Set-Cookie``-waarde voor de sessie; Secure als de browser HTTPS ziet.
+- `account_actie` — Gemeenschappelijke afhandeling van een account-route.
+- `api_login` — ``{gebruikersnaam, wachtwoord}`` → ``{ok, gebruiker}`` + cookie · 401 · 429 (met ``Retry-After``).
+- `api_logout` — Sessie intrekken en de cookie wissen.
+- `api_ik` — ``{ok, gebruiker}`` voor de ingelogde gebruiker · 401 (de middleware) · 503 zonder accounts.
+- `api_wachtwoord` — ``{oud, nieuw}`` → ``{ok}``; overige sessies van deze gebruiker worden ingetrokken.
+- `api_stand` — ``{ok, stand: {id, tijd, module, modus, data} | null}`` — de nieuwste van deze gebruiker.
+- `api_stand_opslaan` — ``{data, module, modus, nieuwe_versie?}`` → ``{ok, id, tijd, nieuw}``; max 1 MB.
+- `api_stand_versies` — ``{ok, versies:[{id, tijd, module, modus, grootte}]}``, nieuwste eerst.
+- `api_stand_een` — ``{ok, stand}`` — één eigen versie (oudere versie terughalen → ``stand_hersteld`` in het logboek).
+- `api_beheer_overzicht` — ``{ok, gebruikers, actief, logins_vandaag, mislukt_vandaag, opgeslagen_vandaag, sessies_actief}``.
+- `api_beheer_gebruikers` — ``{ok, gebruikers:[…]}`` met de afgeleide kolommen (laatste login, aantal logins, …).
+- `api_beheer_gebruiker_nieuw` — ``{gebruikersnaam, naam, rol, wachtwoord, moet_wachtwoord_wijzigen?}`` → ``{ok, gebruiker}`` · 409 bestaat al.
+- `api_beheer_gebruiker_wijzig` — ``{naam?, rol?, actief?, wachtwoord?, moet_wachtwoord_wijzigen?}`` → ``{ok, gebruiker}`` · 404 · 409 laatste beheerder.
+- `api_beheer_logboek` — ``?soort=&gebruiker_id=&limit=200&voor=<id>`` → ``{ok, regels, meer}`` (nieuwste eerst).
+- `api_beheer_sessies` — ``{ok, sessies:[{id(afgekort), gebruiker_id, gebruikersnaam, aangemaakt, laatst_gezien, verloopt, ip, user_agent, huidig}]}``.
+- `api_beheer_sessie_weg` — Sessie intrekken op het afgekorte id uit de lijst → ``{ok}`` · 404.
+- `api_beheer_stand` — ``{ok, stand}`` — de nieuwste stand van die gebruiker (meekijken; komt als ``stand_bekeken`` in het logboek).
 - `api_onbekend` — Onbekend API-pad: JSON-404 in plaats van FastAPI's standaardtekst.
 - `statisch_pad` — Het bestand ``relatief`` binnen ``basis``, of ``None`` als het niet mag of niet bestaat.
 - `stuur_bestand` — ``FileResponse`` met het vaste inhoudstype bij de extensie.
@@ -289,3 +312,63 @@ sessiecookie geldig?" via een functie die ``server.py`` meegeeft.
 - `standaard_csp` — Content-Security-Policy. De Vite-build laadt scripts uit /assets (strikt); het losse
 - `is_vrij` — Mag dit verzoek zonder sessie? (ACCOUNTS.md §4)
 - `Beveiliging` — ASGI-middleware om de FastAPI-app heen (zie module-docstring voor wat ze doet).
+
+## `opslag.py`
+
+Eén kleine interface voor alle database-toegang, met twee uitvoeringen die precies dezelfde
+SQL (gewone SQLite-SQL met ``?``-parameters) uitvoeren:
+
+- ``SqliteOpslag``: een SQLite-bestand via de standaardmodule ``sqlite3`` — voor een eigen
+  server, lokaal ontwikkelen en de tests. Pad: ``RASTERPLANNER_DB_PAD`` (standaard
+  ``backend/data/rasterplanner.db``).
+- ``TursoOpslag``: Turso (gehoste SQLite, libSQL) via de HTTP-pipeline-API
+  ``POST {url}/v2/pipeline`` — voor Vercel, waar geen blijvende schijf is. Alleen ``urllib``
+  uit de standaardbibliotheek, geen extra pakket.
+
+De rest van de backend (``accounts.py``, ``stand.py``) weet niet welke van de twee draait.
+
+- `OpslagFout` — De database is niet ingesteld, niet bereikbaar, of weigerde een opdracht (tekst van de server erin).
+- `Uitkomst` — Resultaat van ``voer_uit``: rowid van de laatst ingevoegde rij en het aantal gewijzigde rijen.
+- `tijd_iso` — Tijd in UTC als ISO-tekst zonder fracties, bv. ``2026-10-20T11:42:05Z`` (``t`` = Unix-tijd, standaard nu).
+- `iso_naar_unix` — Omgekeerde van ``tijd_iso``: ``2026-10-20T11:42:05Z`` → Unix-tijd (float).
+- `iso_minus` — ISO-tijd van ``seconden`` geleden (voor vensters als "de laatste 15 minuten").
+- `begin_vandaag_iso` — Middernacht van vandaag in Nederland (Europe/Amsterdam), als UTC-ISO-tekst.
+- `Opslag` — Gemeenschappelijke interface. Subklassen leveren ``_voer`` (één opdracht) en ``transactie``.
+- `SqliteOpslag` — SQLite-bestand via ``sqlite3``: één verbinding per proces, achter een slot (zie module-docstring).
+- `naar_hrana` — Python-waarde → Hrana-waarde. ``bool`` wordt een integer (0/1), zoals in SQLite.
+- `van_hrana` — Hrana-waarde → Python-waarde (integer-tekst → ``int``, blob → ``bytes``).
+- `http_url` — ``libsql://x.turso.io`` → ``https://x.turso.io`` (ook ``wss://`` → ``https://``, ``ws://`` → ``http://``).
+- `TursoOpslag` — Turso/libSQL via ``POST {url}/v2/pipeline`` (zie module-docstring).
+- `opslag_uit_omgeving` — Maak de opslag die bij de omgeving hoort en zorg dat het schema er is.
+
+## `accounts.py`
+
+Alles rond "wie ben je en wat mag je" voor Radiologie Rasterplanner, volgens ``ACCOUNTS.md``:
+persoonlijke accounts (rol ``beheer`` of ``gebruiker``), wachtwoorden als PBKDF2-hash, inloggen
+met een blokkade na te veel mislukte pogingen, sessies in de database plus een ondertekend
+cookie-token, en een logboek dat de beheerder kan doorzoeken. De HTTP-kant (routes, cookies
+zetten) zit in ``server.py``; dit bestand is zuivere logica bovenop ``opslag.py``.
+
+- `Fout` — Een fout die als ``{ok:false, fout}`` met HTTP-status ``status`` naar de browser gaat.
+- `Bron` — Waar een verzoek vandaan komt, voor het logboek: IP-adres en browser (user-agent, ingekort).
+- `Sessie` — Een gecontroleerde, geldige sessie: id, de gebruiker (zoals nu in de database) en de vervaltijd.
+- `hash_wachtwoord` — PBKDF2-HMAC-SHA256 → ``pbkdf2_sha256$<iter>$<zout b64>$<hash b64>`` (standaard-base64).
+- `wachtwoord_klopt` — Controleer ``wachtwoord`` tegen een opgeslagen hash, in constante tijd. Kapotte hash → ``False``.
+- `controleer_wachtwoord_eisen` — Eisen aan een nieuw wachtwoord (minimaal 10 tekens); geeft het wachtwoord terug of ``Fout(400)``.
+- `b64url` — Base64url zonder ``=``-opvulling (zoals JWT).
+- `b64url_terug` — Omgekeerde van ``b64url`` (vult de ``=`` zelf aan); ``ValueError`` bij ongeldige tekens.
+- `maak_token` — Token volgens ACCOUNTS.md §3: ``b64url(payload_json) + "." + b64url(HMAC_SHA256(geheim, b64url(payload_json)))``.
+- `lees_token` — Controleer handtekening en ``exp`` van een token; geeft de payload of ``None``.
+- `Accounts` — Gebruikers, login, sessies en logboek bovenop één ``Opslag`` (zie module-docstring).
+
+## `stand.py`
+
+De frontend slaat de stand van de tool (kamers, sessierooster, plangroepen, planregels,
+planraster, het actieve scherm) automatisch op via ``PUT /api/stand``. Dit bestand bewaart die stand per
+gebruiker als JSON-tekst in de tabel ``standen``, houdt de laatste 30 versies (een versie
+per werkblok van 10 minuten, zie hieronder), en geeft de
+nieuwste, de lijst van versies of één versie terug. De beheerder kan de nieuwste stand van
+een gebruiker inzien (om mee te kijken bij een vraag). De inhoud zelf bekijkt de backend
+niet, alleen de grootte.
+
+- `Standen` — Opgeslagen standen per gebruiker (zie module-docstring).

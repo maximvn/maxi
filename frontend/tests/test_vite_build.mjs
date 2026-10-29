@@ -108,7 +108,11 @@ async function openVoorbeeld(browser) {
   const p = await (await browser.newContext({ viewport: { width: 1500, height: 940 } })).newPage()
   const verzoeken = []
   const fouten = []
-  p.on('request', (r) => r.url().includes('/api/') && verzoeken.push(r.url().replace(BASIS, '')))
+  // Alleen rekenverzoeken tellen (de tool vraagt bij het starten ook /api/auth/ik op).
+  p.on(
+    'request',
+    (r) => /\/api\/(voorstel|sessierooster|analyse|batch)/.test(r.url()) && verzoeken.push(r.url().replace(BASIS, ''))
+  )
   p.on('pageerror', (e) => fouten.push(e.message))
   await p.goto(BASIS + '/')
   await p.waitForTimeout(600)

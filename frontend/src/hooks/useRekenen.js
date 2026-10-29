@@ -27,6 +27,7 @@
  *      sessierooster alleen de nieuw toegevoegde sessies.
  *   3. Een ingehaalde berekening (null) verandert niets.
  *   4. Een fout komt in `rekenStatus.fout` met een functie "Opnieuw", en als melding in beeld.
+ *      "Niet ingelogd" (401, sessie verlopen) stuurt door naar het loginscherm.
  *
  * Waar kan het misgaan en hoe zie je dat
  *   - Rekenstatus rechtsonder toont een fout met "Opnieuw": de worker of de server gaf een fout;
@@ -37,6 +38,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { API } from '../bouwvlaggen.js'
 import { maakRekenClient } from '../engine/client.js'
 import RekenWorker from '../engine/engine.worker.js?worker&inline'
+import { naarLogin } from './useAccount.js'
 
 /**
  * Start een rekenworker; null als de browser dat niet kan.
@@ -80,6 +82,10 @@ export function useRekenen({ state, setState, toast }) {
       try {
         return await client.reken(kanaal, job)
       } catch (e) {
+        if (e && e.status === 401) {
+          naarLogin()
+          return null
+        }
         const tekst = (e && e.message) || String(e)
         setFout({ tekst, opnieuw })
         toast('Rekenen mislukt: ' + tekst, 'error', 8000)

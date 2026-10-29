@@ -2,12 +2,12 @@
 
 Dit document beschrijft wat er beveiligd is, hoe je de tool veilig op internet zet en wat je zelf
 nog moet regelen. De code staat in `backend/beveiliging.py` (toegangscontrole, limieten, CSRF,
-koppen), `backend/server.py` (invoercontrole, tijdslimiet, gelijktijdigheid), `middleware.js`
+koppen), `backend/accounts.py` (persoonlijke accounts), `backend/opslag.py` (database),
+`backend/server.py` (invoercontrole, tijdslimiet, gelijktijdigheid), `middleware.js`
 (Vercel Edge) en `api/index.py` (Vercel-functie). De hostingbestanden staan in `deploy/`.
 
-> Stand na onderdeel 3: de beveiligingslaag, Vercel en de eigen server staan klaar. De
-> persoonlijke accounts (inloggen, wachtwoorden, beheer, logboek) komen in onderdeel 4. Tot die
-> tijd kan met `RASTERPLANNER_GEHEIM` niemand inloggen: zet de tool dus pas na onderdeel 4 online.
+De accounts zelf (gebruikers, wachtwoorden, sessies, blokkade, logboek) staan in
+`backend/accounts.py`, de database in `backend/opslag.py`; het ontwerp en de API in `ACCOUNTS.md`.
 
 ## 1. Welke gegevens gaan er over de lijn
 
@@ -17,12 +17,22 @@ patiënten doorheen. De invoer is wel bedrijfsinformatie van de afdeling en de r
 server is schaars. Daar is de beveiliging op gericht: alleen bevoegden mogen erin, niemand mag de
 server platleggen, en de browser laadt niets van vreemden.
 
+Sinds de accounts bewaart de server wél iets: per gebruiker een gebruikersnaam, naam, rol en
+wachtwoord-hash, de **opgeslagen stand** (dezelfde invoer als hierboven) en een **logboek** met
+tijd, gebruikersnaam, IP-adres en browser van elke login. Dat laatste zijn persoonsgegevens van
+medewerkers: leg vast wie het logboek mag inzien en hoe lang het bewaard blijft (zie §7).
+
 ## 2. Wat de server zelf doet (beveiliging.py)
 
 | Maatregel | Hoe | Instelling |
 |---|---|---|
 | **Versleuteld verkeer** | HTTPS via Vercel, of via Caddy (automatisch Let's Encrypt) op een eigen server. De server zelf luistert dan alleen binnen het Docker-netwerk. | `deploy/Caddyfile` |
 | **Toegang** | Vrij zonder sessie: `/login.html`, `/login.js`, `/login.css`, `/favicon.ico`, `/api/health` en `POST /api/auth/login`. Al het andere alleen met een geldige sessiecookie `rasterplanner_sessie`. Zonder sessie: een pagina → `302` naar `/login.html?naar=…`; `/api/*` → `401 {"ok":false,"fout":"Niet ingelogd."}`. | `RASTERPLANNER_GEHEIM`, `_SESSIE_UREN` (12) |
+| **Persoonlijke accounts** | Elke medewerker een eigen gebruikersnaam en wachtwoord (rol `gebruiker` of `beheer`). Na het inloggen een ondertekende sessiecookie (HMAC-SHA256 over `{sid, uid, rol, exp}`, HttpOnly, SameSite=Strict, Secure achter HTTPS). Elke sessie staat ook in de database en wordt per verzoek gecontroleerd: uitloggen, blokkeren, wachtwoord resetten of een rolwijziging maken hem direct ongeldig. | `RASTERPLANNER_BEHEER_GEBRUIKER` (standaard `SZ`) / `_WACHTWOORD` |
+| **Wachtwoorden** | PBKDF2-HMAC-SHA256, 310.000 iteraties, 16 bytes zout; minimaal 10 tekens; vergelijken in constante tijd. Na een reset door de beheerder moet de gebruiker het wachtwoord wijzigen. | vast |
+| **Brute force** | 5 mislukte pogingen per gebruikersnaam óf 20 per IP-adres binnen 15 minuten → 429 met `Retry-After`. Geteld uit het logboek in de database, dus ook over meerdere processen en Vercel-instanties heen. | vast (`accounts.py`) |
+| **Beheerlogboek** | Elke login (gelukt, mislukt, geblokkeerd), uitlog, wachtwoordwijziging, beheeractie, teruggezette versie en meekijken door beheer, met tijd, gebruiker, IP en browser. | — |
+| **Opslag** | SQLite-bestand (eigen server) of Turso (Vercel). Alleen SQL met `?`-parameters. | `RASTERPLANNER_DB_PAD`, `RASTERPLANNER_DB_URL`/`_TOKEN` of `TURSO_*` |
 | **Scripts** | `Authorization: Bearer <token>` in plaats van de cookie, alleen voor de reken-API (`/api/voorstel`, `/api/sessierooster`, `/api/analyse`, `/api/batch`). | `RASTERPLANNER_TOKEN` |
 | **CSRF** | Op elke POST, PUT, PATCH en DELETE (ook inloggen): `Sec-Fetch-Site: cross-site` → 403; anders moet `Origin` (of `Referer`) de eigen herkomst zijn of in de lijst staan → anders 403. | `RASTERPLANNER_ORIGINS` |
 | **Overbelasting** | Verzoeken per minuut per adres (glijdend venster, 429 met `Retry-After`), bodygrootte (413), jobs per batch, aantallen sessies/kamers/plangroepen/afspraken in de invoer, tijdslimiet per berekening, maximaal aantal gelijktijdige berekeningen. | `_LIMIET` (120), `_MAX_BODY` (2 MB), `_MAX_JOBS` (100), `_TIMEOUT` (120 s), `_GELIJKTIJDIG` (2) |
@@ -39,7 +49,7 @@ server platleggen, en de browser laadt niets van vreemden.
    door behalve `/api/health` (503 met uitleg). Zo staat het op Vercel (`api/index.py`): een
    vergeten instelling zet de tool nooit open op internet.
 3. **Accounts aan** — `RASTERPLANNER_GEHEIM` gezet (of afgeleid, zie §3): toegang alleen met een
-   geldige sessie (accounts in onderdeel 4).
+   geldige sessie.
 
 ## 3. De sessiesleutel
 
@@ -74,12 +84,15 @@ het Turso-token vernieuwd, dan moet iedereen opnieuw inloggen; verder verandert 
 2. **Instellingen**: `cp deploy/.env.example deploy/.env` en vul in:
    - `RASTERPLANNER_DOMEIN`
    - `RASTERPLANNER_GEHEIM`: maak er één met `python3 -c "import secrets; print(secrets.token_urlsafe(48))"`
-   - `RASTERPLANNER_BEHEER_GEBRUIKER` en `RASTERPLANNER_BEHEER_WACHTWOORD` (de eerste beheerder, onderdeel 4).
+   - `RASTERPLANNER_BEHEER_GEBRUIKER` en `RASTERPLANNER_BEHEER_WACHTWOORD` (minstens 10 tekens): de
+     eerste beheerder, alleen aangemaakt zolang er geen actieve beheerder is. Wijzig dat wachtwoord
+     na de eerste login en haal het daarna uit `.env`.
 3. **Starten**: `docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build`.
    De Dockerfile bouwt zelf de frontend; Caddy haalt het certificaat op. Na een minuut is
    `https://<domein>/` bereikbaar.
 4. **Controleren**: `curl -I https://<domein>/api/health` toont de beveiligingskoppen;
-   `https://<domein>/` zonder login moet naar `/login.html` sturen. Test met
+   `https://<domein>/` zonder login moet naar `/login.html` sturen. Log in als beheerder en maak
+   de accounts aan (Beheer → Gebruikers). Test met
    <https://securityheaders.com> en <https://www.ssllabs.com/ssltest/>.
 5. **Bijwerken**: `git pull` en opnieuw `docker compose … up -d --build`.
 
@@ -109,7 +122,15 @@ en `RASTERPLANNER_HTTPS=1`.
 
 - **Geheimen**: nooit in de code, in git of in een chat. Alleen in de instellingen van Vercel of
   in `deploy/.env` op de server (dat bestand staat in `.gitignore`).
+- **Accounts bijhouden**: blokkeer accounts bij vertrek van een medewerker (Beheer → Gebruikers);
+  dat trekt ook de open sessies in. Voor veel gebruikers is het ziekenhuis-SSO (Entra ID /
+  OpenID Connect) op termijn de betere weg; dat zit er nu niet in.
 - **Geheim roteren**: een nieuw `RASTERPLANNER_GEHEIM` maakt alle sessies in één keer ongeldig.
+- **Logboek**: wordt niet automatisch opgeschoond; spreek een bewaartermijn af en ruim zo nodig op
+  (`DELETE FROM logboek WHERE tijd < '2027-01-01'`).
+- **Back-up**: eigen server: maak geregeld een kopie van het SQLite-bestand
+  (`sqlite3 rasterplanner.db ".backup kopie.db"`, werkt ook terwijl de server draait). Turso:
+  gebruik de back-up/point-in-time-restore van Turso.
 - **Updates**: `docker compose pull` voor Caddy, en de Python-afhankelijkheden een paar keer per jaar.
 - **Pentest**: laat de installatie één keer toetsen door de security-afdeling voordat de tool
   breed gebruikt wordt.
@@ -119,6 +140,10 @@ en `RASTERPLANNER_HTTPS=1`.
 - De tijdslimiet breekt een lopende berekening niet af (Python kan een thread niet stoppen); hij
   zorgt wel dat de aanvrager niet eindeloos wacht. Daarom is ook het aantal gelijktijdige
   berekeningen begrensd.
-- De verzoeklimiet zit in het geheugen van één serverproces (op Vercel uit).
+- De verzoeklimiet zit in het geheugen van één serverproces (op Vercel uit). De blokkade na
+  mislukte logins zit in de database en geldt dus overal.
+- 20 fouten per IP-adres: zit een heel ziekenhuis achter één NAT-adres, dan kan een storende
+  collega met een fout wachtwoord de anderen een kwartier buitensluiten.
+- Geen tweefactorauthenticatie en geen SSO; geen "wachtwoord vergeten"-mail (de beheerder reset).
 - Het losse HTML-bestand (`dist/radiologie_rasterplanner_2.html`) heeft geen server en dus geen
   login: het is bedoeld voor gebruik op de eigen computer.

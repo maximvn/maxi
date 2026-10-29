@@ -3084,6 +3084,79 @@ select.input {
 .stagger > *:nth-child(n + 9) {
   animation-delay: 0.32s;
 }
+/* Account in de rail (layout/RailAccount.jsx) */
+.rail .rail-card.account {
+  margin-top: 14px;
+}
+.avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex: none;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+}
+.step.mini {
+  grid-template-columns: auto 1fr;
+  padding: 7px 9px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.kopaccount {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+/* Losse kv-regels buiten de rail (bv. de stand-samenvatting in beheer) */
+.modal .kv {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--line-2);
+}
+/* Tabellen in beheer (modules/beheer/) */
+.btabel {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.btabel th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+  white-space: nowrap;
+}
+.btabel td {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line-2);
+  vertical-align: middle;
+}
+.btabel tr:last-child td {
+  border-bottom: 0;
+}
+.btabel tr.sub td {
+  background: var(--accent-soft);
+}
+.btabel .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.nowrap {
+  white-space: nowrap;
+}
 /* Foutgrens (main.jsx) */
 .foutscherm {
   max-width: 640px;

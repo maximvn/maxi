@@ -15,6 +15,7 @@ npm run build:html          # ../dist/radiologie_rasterplanner_2.html — alles 
 npm test                    # rekenkern + conventies (kopblok, JSDoc, ESLint, Prettier)
 npm run test:e2e            # de tool doorklikken in Chromium
 npm run test:build          # alle varianten bouwen en de drie rekenmodi controleren
+npm run test:accounts       # inloggen, beheer en logboek met de echte Python-server
 npm run format              # opmaak met Prettier
 ```
 
@@ -32,6 +33,7 @@ src/
   context/AppContext.jsx    de gedeelde context en useApp()
   hooks/
     useWeergave.js          thema en lettertypen
+    useAccount.js           accountmodus (server met login) of lokale modus; uitloggen
     useHistorie.js          state, ongedaan maken (Ctrl+Z/Y), autosave in de browser
     useNavigatie.js         scherm, modaliteit, bezochte en voltooide stappen
     useRekenen.js           voorstel en sessierooster via de reken-client
@@ -63,12 +65,13 @@ src/
     importers.js            Invoerlijst 1 en 2 en het herstelblad inlezen (op platte rijen)
     exporter.js             het Excel-werkboek bouwen
     download.js             een Blob downloaden
+    api.js                  fetch naar de account- en beheer-API met nette fouten
   ui/                       bouwstenen zonder kennis van de planning
     index.js                één importpad
     Icon.jsx · invoer.jsx · basis.jsx · Modal.jsx · meldingen.jsx · slepen.jsx
     stijl.css               alle opmaak (ontwerpwaarden, licht/donker, schermindeling)
-  layout/                   Kopbalk · Rail · VoetNavigatie · RekenStatus
-  dialogen/                 ExportDialoog · ResetDialoog · SessieDialoog
+  layout/                   Kopbalk · Rail · RailAccount · VoetNavigatie · RekenStatus
+  dialogen/                 ExportDialoog · ResetDialoog · SessieDialoog · WachtwoordDialoog
   modules/                  de schermen
     Voorblad.jsx
     stap1/                  Stap1 · KamerKaart
@@ -77,11 +80,15 @@ src/
     stap32/                 Stap32 · FlexVoorbeeld
     stap33/                 Stap33 · Globaal · Detail · SessiePaneel · helpers
     gedeeld/                ModKiezer · kleuren
+    beheer/                 Beheer · BeheerGebruikers · BeheerLogboek · BeheerSessies · BeheerStand · helpers
+public/                     login.html · login.js · login.css (de inlogpagina, zonder React)
 tests/
   test_rekenkern.mjs        invoerlijsten (echte bestanden), rekenkern en export
   test_conventies.mjs       kopblok, JSDoc, contextvelden, ESLint, Prettier
   test_tool_e2e.mjs         de tool doorklikken (Playwright)
   test_vite_build.mjs       bouwvarianten + rekenen in worker en via de server
+  test_middleware.mjs       middleware.js (Vercel Edge): tokens, vrije paden, sleutelafleiding
+  test_accounts_e2e.mjs     inloggen, beheer, logboek, uitloggen met de echte server
 ```
 
 ## Waar zoek je iets?

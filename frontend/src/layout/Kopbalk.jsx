@@ -4,13 +4,14 @@
  * Wat doet dit onderdeel
  *   Toont het merk (klik = voorblad), de naam en het type van het sessierooster, de gekozen
  *   modaliteit, en de knoppen ongedaan maken, opnieuw, exporteren, thema en opnieuw beginnen.
+ *   Op het voorblad (waar geen rail is) staat in de accountmodus de naam met "Uitloggen".
  *
  * Plaats in de tool
  *   Bovenaan in App.jsx, op elk scherm. Op het voorblad alleen merk en thema.
  *
  * Leest uit de context
  *   `state`, `view`, `mod`, `nav`, `ongedaan`, `opnieuw`, `kanOngedaan`, `kanOpnieuw`, `thema`,
- *   `wisselThema`, `openExport`, `openReset`.
+ *   `wisselThema`, `openExport`, `openReset`, `inAccount`, `gebruiker`, `uitloggen`.
  * Schrijft naar de context
  *   — (alleen via de handelingen hierboven)
  *
@@ -57,6 +58,9 @@ export default function Kopbalk() {
     wisselThema,
     openExport,
     openReset,
+    inAccount,
+    gebruiker,
+    uitloggen,
   } = useApp()
   const isHome = view === 'home'
   const r = state.rooster
@@ -105,6 +109,15 @@ export default function Kopbalk() {
         <Btn size="sm" icon="download" onClick={openExport}>
           Exporteren
         </Btn>
+      )}
+      {isHome && inAccount && (
+        <span className="kopaccount" data-kopaccount>
+          <span className="avatar">{(gebruiker.naam || gebruiker.gebruikersnaam).slice(0, 1).toUpperCase()}</span>
+          {gebruiker.naam || gebruiker.gebruikersnaam}
+          <Btn size="sm" variant="ghost" icon="logout" onClick={() => uitloggen()}>
+            Uitloggen
+          </Btn>
+        </span>
       )}
       <Btn
         size="sm"

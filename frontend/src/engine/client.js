@@ -224,11 +224,17 @@ export function maakRekenClient({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        credentials: 'same-origin',
       })
     } catch (e) {
       reden = 'De server is niet bereikbaar: ' + foutTekst(e)
       meld()
       throw new Error(reden)
+    }
+    if (r.status === 401) {
+      const e = new Error('Je bent niet (meer) ingelogd.')
+      e.status = 401
+      throw e
     }
     if (!r.ok) throw new Error(`De server antwoordt met HTTP ${r.status} op /api/${job.type}.`)
     const d = await r.json()

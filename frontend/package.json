@@ -16,7 +16,8 @@
     "test:build": "node tests/test_vite_build.mjs",
     "format": "prettier --write \"src/**/*.{js,jsx,css}\" \"tests/**/*.mjs\" vite.config.js",
     "format:check": "prettier --check \"src/**/*.{js,jsx,css}\" \"tests/**/*.mjs\" vite.config.js",
-    "lint": "eslint src tests vite.config.js eslint.config.js"
+    "lint": "eslint src tests vite.config.js eslint.config.js",
+    "test:accounts": "node tests/test_accounts_e2e.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",
