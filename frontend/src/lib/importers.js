@@ -12,7 +12,7 @@
  *
  * Invoer
  *   Een werkboek als platte rijen: `{ bladen: [{ naam, rijen: [[cel, …], …] }] }`, met lege cellen
- *   als null en datums als Date (zie excel/excelParse.js).
+ *   als '' en datums als Date (zie excel/excelParse.js); null en undefined tellen ook als leeg.
  * Uitvoer
  *   parseInvoerlijst1 → `{meta, kamers}`; applyInvoerlijst1 → nieuwe state;
  *   parseInvoerlijst2 → `{plangroepen, verrichtingen, meta, leeg}`; applyInvoerlijst2 → `{state, stats}`;

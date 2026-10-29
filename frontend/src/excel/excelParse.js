@@ -13,13 +13,13 @@
  * Invoer
  *   parseWerkboek(bytes: ArrayBuffer|Uint8Array, naam: string)
  * Uitvoer
- *   `{ bladen: [{ naam, rijen: any[][] }] }` in de volgorde van de werkbladen; lege cellen zijn null,
- *   datums zijn Date-objecten.
+ *   `{ bladen: [{ naam, rijen: any[][] }] }` in de volgorde van de werkbladen; lege cellen zijn '' (lege
+ *   tekst), datums zijn Date-objecten.
  *
  * Hoe het werkt
  *   1. CSV wordt eerst als tekst gedecodeerd (UTF-8, anders Windows-1252), zodat é, ë en ü goed overkomen.
  *   2. Excel wordt gelezen met datums als Date (cellDates).
- *   3. Per werkblad: sheet_to_json met header: 1 (rijen als arrays), defval: null, raw: true.
+ *   3. Per werkblad: sheet_to_json met header: 1 (rijen als arrays), defval: '', raw: true.
  *
  * Waar kan het misgaan en hoe zie je dat
  *   - Een fout van SheetJS ("Unsupported file", "File is password-protected"): het bestand is geen
@@ -53,7 +53,7 @@ export function parseWerkboek(bytes, naam = '') {
     : XLSX.read(data, { type: 'array', cellDates: true })
   const bladen = wb.SheetNames.map((blad) => ({
     naam: blad,
-    rijen: XLSX.utils.sheet_to_json(wb.Sheets[blad], { header: 1, defval: null, raw: true }),
+    rijen: XLSX.utils.sheet_to_json(wb.Sheets[blad], { header: 1, defval: '', raw: true }),
   }))
   return { bladen }
 }

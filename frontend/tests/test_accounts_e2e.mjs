@@ -10,7 +10,8 @@
  *   nieuwe versie, zijpaneel, oudere versie openen, kaart op Start, verwijderen), beheer (gebruiker aanmaken, dubbel,
  *   logboek met filter, sessies, laatste stand), een nieuwe gebruiker die eerst een eigen
  *   wachtwoord moet kiezen, geen beheer ziet en niet bij de stand of projecten van een ander kan, wachtwoord
- *   resetten, blokkeren en uitloggen.
+ *   resetten, blokkeren, een CSV met accenten via de worker, een kapot bestand, uitloggen, en de
+ *   lokale modus (een server zonder accounts).
  *
  * Plaats in de tool
  *   `npm run test:accounts`.
@@ -431,11 +432,74 @@ try {
     await sz.waitForTimeout(500)
     assert.match(await meldingen(sz), /laatste actieve beheerder/)
   })
+  await stap('CSV met accenten (Windows-1252) gaat via de worker en komt goed over', async () => {
+    let workers = 0
+    sz.on('worker', () => workers++)
+    await sz.locator('.step').filter({ hasText: 'Modaliteiten' }).click()
+    await sz.waitForTimeout(300)
+    const csv = [
+      'Kamer,Röntgen één,Échokamer 2',
+      'Modaliteit,Röntgen,Echografie',
+      'Kameromschrijving,Thorax en skelet,Echo abdomen',
+      'Benuttingspercentage,85,80',
+      'Sessieduur,240,240',
+    ].join('\r\n')
+    // latin1 = dezelfde bytes als Windows-1252 voor deze tekens: geen geldige UTF-8.
+    await sz
+      .locator('input[type=file]')
+      .first()
+      .setInputFiles({ name: 'invoerlijst1.csv', mimeType: 'text/csv', buffer: Buffer.from(csv, 'latin1') })
+    await sz.waitForTimeout(800)
+    assert.match(await meldingen(sz), /Invoerlijst 1 ingelezen: 2 kamers in 2 modaliteiten/)
+    assert.ok(workers >= 1, 'geen worker gestart')
+    const tekst = await sz.locator('main').innerText()
+    assert.match(tekst, /Röntgen/)
+    assert.match(tekst, /Echografie/)
+  })
+  await stap('kapot bestand → nette melding, de tool werkt door', async () => {
+    const kapot = Buffer.concat([Buffer.from('PK\x03\x04'), Buffer.alloc(2048, 7)])
+    await sz
+      .locator('input[type=file]')
+      .first()
+      .setInputFiles({ name: 'kapot.xlsx', mimeType: 'application/octet-stream', buffer: kapot })
+    await sz.waitForTimeout(800)
+    assert.match(await meldingen(sz), /Import mislukt: /)
+    assert.match(await sz.locator('main').innerText(), /Röntgen/)
+  })
   await stap('uitloggen → loginpagina; daarna vraagt / weer om in te loggen', async () => {
     await sz.locator('[data-account]').getByRole('button', { name: 'Uitloggen' }).click()
     await sz.waitForURL(/login\.html/)
     await sz.goto(BASIS + '/')
     await sz.waitForURL(/login\.html\?naar=/)
+  })
+  await stap('lokale modus (server zonder accounts): geen login, bewaren in deze browser', async () => {
+    const poort = POORT + 1
+    const open = spawn('python3', ['backend/server.py', '--port', String(poort)], {
+      cwd: ROOT,
+      env: { ...process.env, RASTERPLANNER_GEHEIM: '', RASTERPLANNER_DB_PAD: path.join(tmp, 'open.db') },
+      stdio: 'ignore',
+    })
+    try {
+      for (let i = 0; i < 60; i++) {
+        const ok = await fetch(`http://127.0.0.1:${poort}/api/health`).then(
+          (r) => r.ok,
+          () => false
+        )
+        if (ok) break
+        await new Promise((r) => setTimeout(r, 250))
+      }
+      const p = await nieuwApparaat()
+      await p.goto(`http://127.0.0.1:${poort}/`)
+      await p.getByText('Nieuw raster ontwerpen').waitFor()
+      assert.ok(!/login\.html/.test(p.url()))
+      assert.equal(await p.locator('[data-kopaccount]').count(), 0)
+      await p.getByText('Nieuw raster ontwerpen').click()
+      await p.waitForTimeout(400)
+      assert.match(await p.locator('.rail').innerText(), /in deze browser/)
+      await p.context().close()
+    } finally {
+      open.kill()
+    }
   })
   await stap('geen fouten in de browserconsole', async () => {
     assert.deepEqual(fouten, [])

@@ -36,7 +36,7 @@
  */
 import { useCallback, useState } from 'react'
 import * as XLSX from 'xlsx'
-import { leesWerkboek } from '../excel/leesWerkboek.js'
+import { leesTekst, leesWerkboek } from '../excel/leesWerkboek.js'
 import { emptyState } from '../lib/data.js'
 import {
   parseInvoerlijst1,
@@ -156,7 +156,9 @@ export function useImportExport({
     async (file) => {
       setBusy(true)
       try {
-        const data = /\.json$/i.test(file.name) ? JSON.parse(await file.text()) : parseHerstel(await leesWerkboek(file))
+        const data = /\.json$/i.test(file.name)
+          ? JSON.parse(await leesTekst(file))
+          : parseHerstel(await leesWerkboek(file))
         if (!data || !data.version) throw new Error('Onbekend bestandsformaat.')
         delete data.exportDate
         delete data._plek

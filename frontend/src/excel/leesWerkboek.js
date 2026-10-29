@@ -5,15 +5,17 @@
  *   Eén ingang voor alle uploads (Invoerlijst 1, Invoerlijst 2 en het terugzetten van een export):
  *   controleert de grootte, leest het bestand in de Excel-worker met een tijdslimiet, en geeft per
  *   werkblad de rijen. Kan de worker niet starten (de losse HTML via file://), dan wordt op de
- *   pagina zelf gelezen; de uitkomst is dezelfde.
+ *   pagina zelf gelezen; de uitkomst is dezelfde. Een teruggezette .json gaat via leesTekst, met
+ *   dezelfde groottegrens. Nergens anders in de tool wordt een geüpload bestand gelezen.
  *
  * Plaats in de tool
  *   hooks/useImportExport.js → leesWerkboek → excel.worker.js → excelParse.js → lib/importers.js.
  *
  * Invoer
- *   leesWerkboek(bestand: File) — het gekozen bestand.
+ *   leesWerkboek(bestand: File) of leesTekst(bestand: File) — het gekozen bestand.
  * Uitvoer
- *   Promise met `{bladen: [{naam, rijen}]}`; bij een fout een Error met een leesbare tekst.
+ *   Promise met `{bladen: [{naam, rijen}]}` (leesWerkboek) of de tekst (leesTekst); bij een fout een
+ *   Error met een leesbare tekst.
  *
  * Hoe het werkt
  *   1. Groter dan MAX_BESTAND → meteen een fout (een invoerlijst is hooguit enkele MB).
@@ -46,16 +48,34 @@ function maakWorker() {
 }
 
 /**
- * Leest een geüpload bestand en geeft per werkblad de rijen.
+ * Controleert of er een bestand is en of het niet te groot is.
  * @param {File|Blob} bestand
- * @returns {Promise<{bladen: {naam: string, rijen: any[][]}[]}>}
  */
-export async function leesWerkboek(bestand) {
+function controleer(bestand) {
   if (!bestand) throw new Error('Geen bestand gekozen.')
   if (bestand.size > MAX_BESTAND)
     throw new Error(
       `Het bestand is te groot (${Math.round(bestand.size / 1024 / 1024)} MB; maximaal ${MAX_BESTAND / 1024 / 1024} MB).`
     )
+}
+
+/**
+ * Leest een geüpload tekstbestand (een teruggezette .json) met dezelfde groottegrens.
+ * @param {File|Blob} bestand
+ * @returns {Promise<string>}
+ */
+export async function leesTekst(bestand) {
+  controleer(bestand)
+  return bestand.text()
+}
+
+/**
+ * Leest een geüpload bestand en geeft per werkblad de rijen.
+ * @param {File|Blob} bestand
+ * @returns {Promise<{bladen: {naam: string, rijen: any[][]}[]}>}
+ */
+export async function leesWerkboek(bestand) {
+  controleer(bestand)
   const bytes = await bestand.arrayBuffer()
   const naam = bestand.name || ''
   const w = maakWorker()

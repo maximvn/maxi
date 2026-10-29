@@ -131,7 +131,8 @@ en `RASTERPLANNER_HTTPS=1`.
 - **Back-up**: eigen server: maak geregeld een kopie van het SQLite-bestand
   (`sqlite3 rasterplanner.db ".backup kopie.db"`, werkt ook terwijl de server draait). Turso:
   gebruik de back-up/point-in-time-restore van Turso.
-- **Updates**: `docker compose pull` voor Caddy, en de Python-afhankelijkheden een paar keer per jaar.
+- **Updates**: `docker compose pull` voor Caddy, en een paar keer per jaar de controle uit §9
+  opnieuw (`pip-audit` en `npm audit`).
 - **Pentest**: laat de installatie één keer toetsen door de security-afdeling voordat de tool
   breed gebruikt wordt.
 
@@ -147,3 +148,89 @@ en `RASTERPLANNER_HTTPS=1`.
 - Geen tweefactorauthenticatie en geen SSO; geen "wachtwoord vergeten"-mail (de beheerder reset).
 - Het losse HTML-bestand (`dist/radiologie_rasterplanner_2.html`) heeft geen server en dus geen
   login: het is bedoeld voor gebruik op de eigen computer.
+
+## 9. Onderdelen van derden (gecontroleerd op 29 oktober 2026)
+
+**PHP of andere verouderde omgevingen: geen.** Er staat geen PHP, ASP, JSP, CGI of Ruby in de
+repository. De server is Python (FastAPI), de tool is JavaScript (React, gebouwd met Vite) en
+Vercel draait alleen die twee.
+
+Wat er is gecontroleerd en wat eruit kwam:
+
+| Controle | Uitkomst |
+|---|---|
+| `pip-audit -r requirements.txt` (Vercel) | geen bekende lekken |
+| `pip-audit -r backend/requirements.txt` (eigen server, tests) | geen bekende lekken |
+| `pip-audit` op de twee requirements in `.claude/skills/` (hulpmiddel, gaat niet online) | geen bekende lekken |
+| `npm audit --omit=dev` (wat online gaat) | vooraf 1 hoog: `xlsx` 0.18.5; nu 0 |
+| `npm audit` (alles, ook bouwgereedschap) | vooraf 3: `xlsx`, `vite` 5.4 en `esbuild` 0.21; nu 0 |
+
+Wat er is bijgewerkt:
+
+- **vite 5.4.21 naar 6.4.5** (bouwgereedschap). De lekken in vite en esbuild raakten alleen de
+  ontwikkelserver (`npm run dev`) op de eigen computer, nooit de tool online. Vite 6.4.5 is de
+  kleinste stap die ze alle dicht. De React-plugin en de single-file-plugin werken met deze
+  versie. Vite 8 kan later, maar die gebruikt een andere bundler en vraagt meer testwerk.
+- **xlsx 0.18.5 naar 0.20.3** (leest en schrijft de Excel-bestanden). Versie 0.18.5 heeft twee
+  lekken bij het lezen van kwaadaardige bestanden: prototype pollution (GHSA-4r6h-8v6p-xvw6) en
+  ReDoS (GHSA-5pgg-2g8v-p4x9). SheetJS zet de verbeterde versie niet meer op npm, alleen op
+  cdn.sheetjs.com. Daarom komt hij uit het npm-pakket `@e965/xlsx`, onder de oude naam:
+  `"xlsx": "npm:@e965/xlsx@0.20.3"` in `frontend/package.json`, exact vastgezet.
+
+Herkomst van `@e965/xlsx@0.20.3`, gecontroleerd voordat het pakket werd gebruikt:
+
+- **Publicatiescript.** Het pakket wordt gemaakt door een GitHub Action in
+  `github.com/e965/sheetjs-npm-publisher`, workflow `try-publish.yml`, commit `1c8cc59`. Het script
+  (`index.js`) haalt de officiële broncode op bij `git.sheetjs.com/sheetjs/sheetjs`, op de tag
+  `v0.20.3`. Daarna vervangt het alleen de README en in `package.json` de naam en de
+  repository-URL. Aan de code verandert niets.
+- **npm-provenance.** De attestatie (SLSA v1, gebouwd op een GitHub-runner uit die repository en
+  commit) heeft als vingerafdruk sha512 `ef4dd137…a59181ff`. Dat is precies de `integrity` in
+  `frontend/package-lock.json` (`sha512-703RN/3Ods…pZGB/w==`, dezelfde bytes in base64).
+- **Geen installatiescripts, geen afhankelijkheden.** `package.json` van het pakket heeft geen
+  `preinstall`, `install`, `postinstall` of `prepare`. De lijst `dependencies` is leeg.
+- **Geen netwerkcode.** In `xlsx.mjs` staat geen `fetch`, `XMLHttpRequest`, `WebSocket` of
+  `eval`. De treffers op "http" zijn XML-namespaces. De versie in de code is `0.20.3`.
+
+## 10. Geüploade bestanden (frontend/src/excel/)
+
+Een bestand van een gebruiker gaat altijd door één ingang, `excel/leesWerkboek.js`. Nergens anders
+in de tool wordt een geüpload bestand gelezen. Dat geldt voor Invoerlijst 1 en 2, voor het
+terugzetten van een Excel-export en voor het terugzetten van een `.json`.
+
+- **Grootte.** Een bestand groter dan 15 MB wordt meteen geweigerd, met een melding. Dat geldt
+  ook voor een `.json` (`leesTekst`).
+- **Aparte worker.** Een Excel- of CSV-bestand wordt gelezen in een eigen Web Worker
+  (`excel.worker.js`). Elke import krijgt een verse worker, en die wordt na het antwoord gestopt.
+- **Tijdslimiet.** Duurt het lezen langer dan 20 seconden, dan wordt de worker gestopt en
+  verschijnt er een melding. De tool zelf blijft werken.
+- **Alleen gewone rijen.** `excelParse.js` geeft per werkblad alleen platte rijen terug
+  (`sheet_to_json` met `header: 1` en `defval: ''`). Er komt geen SheetJS-object uit een geüpload
+  bestand in de tool.
+- **CSV met accenten.** Een CSV wordt eerst als UTF-8 gelezen en anders als Windows-1252. Zo komen
+  é, ë en ö goed over, ook uit een oude Excel-CSV.
+- **Terugval.** Kan er geen worker starten, zoals bij het losse HTML-bestand via `file://`, dan
+  wordt het bestand op de pagina zelf gelezen. De groottegrens geldt dan nog steeds.
+
+Getest in `frontend/tests/test_accounts_e2e.mjs`: een CSV in Windows-1252 met "Röntgen" gaat via
+de worker en komt goed over, en een kapot `.xlsx` geeft de melding "Import mislukt: …".
+
+### Wat nog openstaat
+
+- **De bytes niet vergeleken met cdn.sheetjs.com.** De vergelijking van het pakket met het
+  officiële bestand van SheetJS kon hier niet. Vanuit de werkomgeving waren cdn.sheetjs.com en
+  git.sheetjs.com geblokkeerd. Het publicatiescript en de provenance zijn wel gecontroleerd. Wie
+  het zelf wil nalopen, doet op een computer met internet:
+
+  ```bash
+  curl -so officieel.tgz https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz
+  curl -so npm.tgz https://registry.npmjs.org/@e965/xlsx/-/xlsx-0.20.3.tgz
+  mkdir officieel npm && tar -xzf officieel.tgz -C officieel && tar -xzf npm.tgz -C npm
+  diff -r officieel/package npm/package   # verwacht: alleen README.md en package.json (naam, repository)
+  ```
+
+- **`npm audit signatures` niet gelukt.** Deze controle van de handtekeningen lukte hier niet,
+  omdat de sigstore-server niet bereikbaar was. Op een gewone computer: `cd frontend && npm ci &&
+  npm audit signatures`.
+- **Vite 8.** Een latere stap naar Vite 8 is mogelijk, maar niet nodig voor de veiligheid.
+
