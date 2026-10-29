@@ -10,15 +10,16 @@ frontend (``frontend/dist``), zodat één adres volstaat.
 
 Plaats in de keten
 ------------------
-Browser → (later: ``beveiliging.Beveiliging``) → de routes hieronder → ``rasterplanner.jobs`` →
-de rekenstappen in ``rasterplanner/``. Op Vercel laadt ``api/index.py`` deze app.
+Browser → ``beveiliging.Beveiliging`` (limieten, toegang, CSRF, beveiligingskoppen) → de routes
+hieronder → ``rasterplanner.jobs`` → de rekenstappen in ``rasterplanner/``. Op Vercel laadt
+``api/index.py`` deze app. ``api`` is de kale FastAPI-app, ``app`` dezelfde app mét de beveiligingslaag.
 
 Invoer
 ------
-HTTP-verzoeken (zie Eindpunten) en omgevingsvariabelen:
-``RASTERPLANNER_LOG`` (INFO/DEBUG), ``RASTERPLANNER_HOST``/``_PORT`` (bij ``python server.py``),
-``RASTERPLANNER_MAX_BODY`` (bytes, standaard 2 MB), ``RASTERPLANNER_MAX_JOBS`` (100),
-``RASTERPLANNER_GELIJKTIJDIG`` (2) en ``RASTERPLANNER_TIMEOUT`` (120 s).
+HTTP-verzoeken (zie Eindpunten) en omgevingsvariabelen: ``RASTERPLANNER_LOG`` (INFO/DEBUG),
+``RASTERPLANNER_HOST``/``_PORT`` (bij ``python server.py``), en de beveiligingsinstellingen uit
+``beveiliging.py`` (``_GEHEIM``, ``_MAX_BODY`` 2 MB, ``_MAX_JOBS`` 100, ``_GELIJKTIJDIG`` 2,
+``_TIMEOUT`` 120 s, ``_LIMIET``, ``_ORIGINS`` …; zie ``BEVEILIGING.md``).
 
 Uitvoer
 -------
@@ -38,6 +39,7 @@ Frontend: ``GET /`` → ``frontend/dist/index.html`` (anders een korte uitleg); 
 
 Hoe het werkt
 -------------
+0. Eerst beslist ``Beveiliging`` of het verzoek door mag (zie ``beveiliging.py``).
 1. De body wordt begrensd gelezen (``lees_body``) en als JSON-object gecontroleerd.
 2. De invoer wordt op redelijke grootte gecontroleerd (``controleer_invoer``).
 3. De berekening draait in een werkthread, met een maximum aantal gelijktijdige berekeningen en
@@ -72,12 +74,14 @@ from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 
 HIER = Path(__file__).resolve().parent
 sys.path.insert(0, str(HIER))
 
 import rasterplanner  # noqa: E402
+from beveiliging import Beveiliging, Instellingen  # noqa: E402
 from rasterplanner.jobs import TYPES, voer_job_uit  # noqa: E402
 
 logging.basicConfig(level=os.environ.get("RASTERPLANNER_LOG", "INFO").upper(),
@@ -88,20 +92,17 @@ VITE_DIST = HIER.parent / "frontend" / "dist"
 VITE_INDEX = VITE_DIST / "index.html"
 
 
-def _int_env(naam: str, standaard: int) -> int:
-    try:
-        return int(os.environ.get(naam, standaard))
-    except ValueError:
-        return standaard
+INST = Instellingen()   # alle instellingen uit de omgeving (beveiliging.py)
+MAX_BODY = INST.max_body
+MAX_JOBS = INST.max_jobs
+GELIJKTIJDIG = INST.gelijktijdig
+TIMEOUT = INST.timeout
 
-
-MAX_BODY = _int_env("RASTERPLANNER_MAX_BODY", 2 * 1024 * 1024)
-MAX_JOBS = _int_env("RASTERPLANNER_MAX_JOBS", 100)
-GELIJKTIJDIG = _int_env("RASTERPLANNER_GELIJKTIJDIG", 2)
-TIMEOUT = _int_env("RASTERPLANNER_TIMEOUT", 120)
-
-app = FastAPI(title="Radiologie Rasterplanner — Python-backend", version=rasterplanner.__version__,
+api = FastAPI(title="Radiologie Rasterplanner — Python-backend", version=rasterplanner.__version__,
               docs_url=None, redoc_url=None, openapi_url=None)   # geen openbare API-documentatie op internet
+if INST.origins:
+    api.add_middleware(CORSMiddleware, allow_origins=INST.origins, allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+                       allow_headers=["Content-Type", "Authorization"], allow_credentials=True)
 REKENSLOT = asyncio.Semaphore(max(1, GELIJKTIJDIG))   # maximaal aantal gelijktijdige berekeningen
 
 
@@ -221,31 +222,31 @@ async def reken_route(request: Request, soort: str, velden: tuple[str, ...]) -> 
 
 
 # ── Eindpunten ──────────────────────────────────────────────────────────────────
-@app.get("/api/health")
+@api.get("/api/health")
 def health() -> Response:
     """Leeft de server, welke versie, en is de rekenkern er? (vrij toegankelijk, voor monitoring)"""
     return antwoord({"ok": True, "versie": rasterplanner.__version__, "rekenkern": True, "jobs": list(TYPES)})
 
 
-@app.post("/api/voorstel")
+@api.post("/api/voorstel")
 async def api_voorstel(request: Request) -> Response:
     """Voorstelraster: body ``{state, modId, trace?}`` → ``{ok, plan, onplaatsbaar, meldingen}``."""
     return await reken_route(request, "voorstel", ("modId",))
 
 
-@app.post("/api/sessierooster")
+@api.post("/api/sessierooster")
 async def api_sessierooster(request: Request) -> Response:
     """Sessierooster vullen: body ``{state, opties?, trace?}`` → ``{ok, sessies, toegevoegd, waarschuwingen}``."""
     return await reken_route(request, "sessierooster", ("opties",))
 
 
-@app.post("/api/analyse")
+@api.post("/api/analyse")
 async def api_analyse(request: Request) -> Response:
     """Balans en benutting: body ``{state, modId}`` → ``{ok, balans, stats, sessies}``."""
     return await reken_route(request, "analyse", ("modId",))
 
 
-@app.post("/api/batch")
+@api.post("/api/batch")
 async def api_batch(request: Request) -> Response:
     """Reeks jobs: body ``{jobs:[{type,args,trace?}]}`` → ``{ok, uit:[{ok:true,res}|{ok:false,err}]}``.
 
@@ -279,7 +280,7 @@ async def api_batch(request: Request) -> Response:
         return antwoord(fout_antwoord(e))
 
 
-@app.api_route("/api/{rest:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
+@api.api_route("/api/{rest:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
 async def api_onbekend(rest: str) -> Response:
     """Onbekend API-pad: JSON-404 in plaats van FastAPI's standaardtekst."""
     return JSONResponse({"ok": False, "fout": f"Onbekend API-pad: /api/{rest}"}, status_code=404)
@@ -337,7 +338,7 @@ def niet_gevonden() -> Response:
     return Response("Niet gevonden.", status_code=404, media_type="text/plain; charset=utf-8")
 
 
-@app.get("/")
+@api.get("/")
 def frontend() -> Response:
     """De gebouwde frontend, of een korte uitleg hoe je die bouwt."""
     if VITE_INDEX.exists():
@@ -345,14 +346,14 @@ def frontend() -> Response:
     return HTMLResponse(UITLEG)
 
 
-@app.get("/assets/{relatief:path}")
+@api.get("/assets/{relatief:path}")
 def assets(relatief: str) -> Response:
     """Bestanden uit ``frontend/dist/assets`` (scripts, stijlen, workers van de Vite-build)."""
     pad = statisch_pad(VITE_DIST / "assets", relatief)
     return stuur_bestand(pad) if pad else niet_gevonden()
 
 
-@app.get("/{naam}")
+@api.get("/{naam}")
 def los_bestand(naam: str) -> Response:
     """Losse bestanden in de hoofdmap van ``frontend/dist`` (``login.html``, ``favicon.ico``, …)."""
     pad = statisch_pad(VITE_DIST, naam)
@@ -361,6 +362,12 @@ def los_bestand(naam: str) -> Response:
     if naam == "favicon.ico":
         return Response(status_code=204)   # geen icoon: geen ruis in de console
     return niet_gevonden()
+
+
+# De beveiligingslaag om de hele app heen (toegang, limieten, CSRF, koppen). De Vite-build heeft
+# geen inline script, dus de strikte CSP. ``controleer_sessie`` komt in onderdeel 4 uit accounts.py;
+# tot die tijd is er zonder geheim de open ontwikkelstand en met geheim komt niemand binnen.
+app = Beveiliging(api, INST, inline_script=lambda: False, controleer_sessie=None)
 
 
 def main(argv: list[str] | None = None) -> None:

@@ -13,10 +13,16 @@ Gebouwd op basis van het document *AI script – Aanpassingen 28-09-2026*.
 ## Opbouw
 
 ```
-backend/    Python: de rekenkern (zelfde uitkomst als de browser) en de webserver (FastAPI)
-frontend/   React + Vite: de tool zelf (schermen, rekenkern in JavaScript, Excel in en uit)
-dist/       radiologie_rasterplanner_2.html — de tool als één los bestand
-voorbeelden/ de twee invoerlijsten om mee te testen
+backend/       Python: de rekenkern (zelfde uitkomst als de browser), de webserver (FastAPI)
+               en de beveiligingslaag (beveiliging.py, uitleg in BEVEILIGING.md)
+frontend/      React + Vite: de tool zelf (schermen, rekenkern in JavaScript, Excel in en uit)
+               en de loginpagina (public/login.*)
+api/index.py   de Python-server als Vercel-functie
+middleware.js  Vercel Edge: alleen binnen met een geldige sessiecookie
+vercel.json    hoe Vercel bouwt en serveert (plus beveiligingskoppen)
+deploy/        eigen server: Dockerfile, docker-compose (met Caddy voor HTTPS), VERCEL.md
+dist/          radiologie_rasterplanner_2.html — de tool als één los bestand
+voorbeelden/   de twee invoerlijsten om mee te testen
 ```
 
 Meer uitleg per deel: `frontend/README.md` (bestanden en hoe je bouwt), `frontend/CONVENTIES.md`

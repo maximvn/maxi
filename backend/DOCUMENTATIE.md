@@ -265,3 +265,27 @@ frontend (``frontend/dist``), zodat één adres volstaat.
 - `assets` — Bestanden uit ``frontend/dist/assets`` (scripts, stijlen, workers van de Vite-build).
 - `los_bestand` — Losse bestanden in de hoofdmap van ``frontend/dist`` (``login.html``, ``favicon.ico``, …).
 - `main` — ``python server.py [--host 127.0.0.1] [--port 8000]``: start uvicorn zelf.
+
+## `beveiliging.py`
+
+De rekenserver (``server.py``) mag op internet alleen gebruikt worden door wie een account
+heeft, de rekenkracht mag niet door een vreemde worden leeggetrokken, en de browser moet weten
+wat hij wél en niet mag laden. Dit bestand bundelt die maatregelen in één ASGI-middleware
+(``Beveiliging``) plus een paar helpers. Het inloggen zelf (gebruikers, wachtwoorden, sessies in
+de database) zit in ``accounts.py``; deze middleware vraagt per verzoek alleen "is deze
+sessiecookie geldig?" via een functie die ``server.py`` meegeeft.
+
+- `bepaal_geheim` — De sleutel voor de sessiecookie: ``RASTERPLANNER_GEHEIM``, of anders automatisch afgeleid van de databasesleutel.
+- `Instellingen` — Alle beveiligingsinstellingen, gelezen uit de omgeving (zie module-docstring).
+- `token_klopt` — ``Authorization: Bearer <token>`` voor scripts, alleen als er een token is ingesteld (constante tijd).
+- `sessie_cookie` — De ``Set-Cookie``-waarde voor ``rasterplanner_sessie`` (HttpOnly, SameSite=Strict, Path=/, Secure achter HTTPS).
+- `Teller` — Glijdend venster per sleutel (adres); klein genoeg om in het geheugen te houden.
+- `kop` — Eerste waarde van HTTP-kop ``naam`` (hoofdletterongevoelig), of ``None``.
+- `cookies_van` — Alle cookies uit de ``Cookie``-kop als dict.
+- `adres_van` — Het clientadres; achter een proxy het eerste adres uit X-Forwarded-For.
+- `is_https` — Ziet de browser deze verbinding als HTTPS? (zelf, via ``RASTERPLANNER_HTTPS`` of via X-Forwarded-Proto).
+- `eigen_herkomst` — ``https://host`` zoals de browser het ziet (achter een proxy via X-Forwarded-Host/Proto).
+- `herkomst_toegestaan` — CSRF-controle voor schrijvende verzoeken: Origin (of Referer) moet de eigen herkomst zijn, of
+- `standaard_csp` — Content-Security-Policy. De Vite-build laadt scripts uit /assets (strikt); het losse
+- `is_vrij` — Mag dit verzoek zonder sessie? (ACCOUNTS.md §4)
+- `Beveiliging` — ASGI-middleware om de FastAPI-app heen (zie module-docstring voor wat ze doet).

@@ -1,0 +1,63 @@
+# Radiologie Rasterplanner op een eigen server: de Python-server (met de gebouwde frontend) achter Caddy (automatisch HTTPS via Let's Encrypt).
+#
+#   cp deploy/.env.example deploy/.env      # vul domein, geheim en de eerste beheerder in
+#   docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
+#
+# Caddy vraagt zelf een certificaat aan voor RASTERPLANNER_DOMEIN (poort 80 en 443 moeten open
+# staan en het domein moet naar deze machine wijzen). De rekenserver luistert alleen binnen het
+# Docker-netwerk; de buitenwereld praat uitsluitend met Caddy over HTTPS.
+services:
+  rasterplanner:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    environment:
+      RASTERPLANNER_HOST: 0.0.0.0
+      RASTERPLANNER_PORT: "8000"
+      RASTERPLANNER_GEHEIM: ${RASTERPLANNER_GEHEIM:?zet RASTERPLANNER_GEHEIM in deploy/.env}
+      RASTERPLANNER_BEHEER_GEBRUIKER: ${RASTERPLANNER_BEHEER_GEBRUIKER:?zet RASTERPLANNER_BEHEER_GEBRUIKER in deploy/.env}
+      RASTERPLANNER_BEHEER_WACHTWOORD: ${RASTERPLANNER_BEHEER_WACHTWOORD:?zet RASTERPLANNER_BEHEER_WACHTWOORD in deploy/.env}
+      RASTERPLANNER_DB_PAD: /data/rasterplanner.db
+      RASTERPLANNER_TOKEN: ${RASTERPLANNER_TOKEN:-}
+      RASTERPLANNER_ACHTER_PROXY: "1"
+      RASTERPLANNER_HTTPS: "1"
+      RASTERPLANNER_SESSIE_UREN: ${RASTERPLANNER_SESSIE_UREN:-12}
+      RASTERPLANNER_GELIJKTIJDIG: ${RASTERPLANNER_GELIJKTIJDIG:-2}
+      RASTERPLANNER_TIMEOUT: ${RASTERPLANNER_TIMEOUT:-120}
+      RASTERPLANNER_LIMIET: ${RASTERPLANNER_LIMIET:-120}
+      RASTERPLANNER_LOG: ${RASTERPLANNER_LOG:-INFO}
+    expose:
+      - "8000"
+    volumes:
+      - rasterplanner_data:/data   # SQLite-database: accounts, opgeslagen standen, logboek
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=5).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 1g
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - rasterplanner
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      RASTERPLANNER_DOMEIN: ${RASTERPLANNER_DOMEIN:?zet RASTERPLANNER_DOMEIN in deploy/.env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  rasterplanner_data:
+  caddy_data:
+  caddy_config:

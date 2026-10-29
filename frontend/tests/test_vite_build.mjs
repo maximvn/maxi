@@ -7,7 +7,8 @@
  *   - build:simpel → bouwt zonder fouten;
  *   - build:api    → rekent via POST /api/voorstel; valt de server weg, dan een duidelijke fout met
  *                    "Opnieuw", en na herstel werkt "Opnieuw";
- *   - build        → rekent in de Web Worker (geen /api-verzoek, geen terugval).
+ *   - build        → rekent in de Web Worker (geen /api-verzoek, geen terugval), ook onder de CSP;
+ *   - met RASTERPLANNER_GEHEIM → zonder login naar /login.html, zonder CSP-fouten.
  *
  * Plaats in de tool
  *   `npm run test:build`. Laat frontend/dist achter als gewone build.
@@ -65,10 +66,15 @@ const bouw = (script) => execSync(`npm run ${script}`, { cwd: FRONTEND, stdio: '
 let server = null
 /**
  * Start de Python-server en wacht tot /api/health antwoordt.
+ * @param {Record<string, string>} [extraEnv] extra omgevingsvariabelen (bv. RASTERPLANNER_GEHEIM)
  * @returns {Promise<void>}
  */
-async function startServer() {
-  server = spawn('python3', ['backend/server.py', '--port', String(POORT)], { cwd: ROOT, stdio: 'ignore' })
+async function startServer(extraEnv = {}) {
+  server = spawn('python3', ['backend/server.py', '--port', String(POORT)], {
+    cwd: ROOT,
+    stdio: 'ignore',
+    env: { ...process.env, ...extraEnv },
+  })
   for (let i = 0; i < 60; i++) {
     try {
       if ((await fetch(BASIS + '/api/health')).ok) return
@@ -79,10 +85,18 @@ async function startServer() {
   }
   throw new Error('server start niet')
 }
-/** Stopt de Python-server (als die draait). */
+/**
+ * Stopt de Python-server (als die draait) en wacht tot het proces weg is.
+ * @returns {Promise<void>}
+ */
 function stopServer() {
-  if (server) server.kill()
+  const s = server
   server = null
+  if (!s || s.exitCode !== null) return Promise.resolve()
+  return new Promise((klaar) => {
+    s.once('exit', () => klaar())
+    s.kill()
+  })
 }
 
 /**
@@ -138,8 +152,7 @@ try {
     assert.match(await api.p.locator('.rekenstatus').innerText(), /Rekent op de server/)
   })
   await stap('api-variant: server weg → duidelijke fout met "Opnieuw"', async () => {
-    stopServer()
-    await new Promise((r) => setTimeout(r, 400))
+    await stopServer()
     await voorstel(api.p)
     const fout = api.p.locator('.rekenstatus.fout')
     assert.equal(await fout.count(), 1)
@@ -155,7 +168,7 @@ try {
     assert.deepEqual(api.fouten, [])
   })
   await api.p.context().close()
-  stopServer()
+  await stopServer()
 
   await stap('build (standaard) bouwt', () => {
     bouw('build')
@@ -171,8 +184,34 @@ try {
     assert.deepEqual(w.fouten, [])
   })
   await w.p.context().close()
+  await stopServer()
+
+  await startServer({ RASTERPLANNER_GEHEIM: 'test-geheim-' + 'x'.repeat(48) })
+  await stap('met geheim: zonder login naar de loginpagina, zonder CSP-fouten', async () => {
+    const p = await (await browser.newContext()).newPage()
+    const fouten = []
+    p.on('console', (m) => m.type() === 'error' && fouten.push(m.text()))
+    p.on('pageerror', (e) => fouten.push(e.message))
+    await p.goto(BASIS + '/')
+    await p.waitForTimeout(500)
+    assert.match(p.url(), /\/login\.html\?naar=%2F$/)
+    assert.equal(await p.locator('form#login').count(), 1)
+    const csp = (await p.request.get(BASIS + '/login.html')).headers()['content-security-policy']
+    assert.match(csp, /default-src 'self'/)
+    // een login geeft (tot onderdeel 4) een nette melding, geen crash
+    await p.fill('#gebruikersnaam', 'iemand')
+    await p.fill('#wachtwoord', 'een-wachtwoord')
+    await p.click('#knop')
+    await p.waitForTimeout(500)
+    assert.equal(await p.locator('#melding').isVisible(), true)
+    assert.deepEqual(
+      fouten.filter((f) => !/Failed to load resource/.test(f)),
+      []
+    )
+    await p.context().close()
+  })
 } finally {
-  stopServer()
+  await stopServer()
   await browser.close()
 }
 console.log(`\n${n} stappen geslaagd`)

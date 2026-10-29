@@ -1,0 +1,95 @@
+/*
+ * ═══ LOGIN.CSS — opmaak van de inlogpagina ══════════════════════════════════
+ * Wat doet dit onderdeel
+ *   De huisstijl van de tool voor login.html: dezelfde kleuren en lettertypen als
+ *   frontend/src/ui/stijl.css (--accent, --ink, --muted, --line, --danger).
+ *   Eén kolom, werkt op een telefoon.
+ * Waar kan het misgaan en hoe zie je dat
+ *   - Pagina zonder opmaak → /login.css wordt niet geserveerd (vrij pad in
+ *     middleware.js en in de backend; kijk in de netwerk-tab).
+ */
+:root {
+  --primary: #0F766E;
+  --primary-donker: #0B5A54;
+  --tekst: #13211F;
+  --gedempt: #66746F;
+  --rand: #E3E0D6;
+  --fout: #C0392B;
+  --fout-bg: #FBE3DF;
+  --fout-rand: #ebb4aa;
+  --achtergrond: #F4F3EE;
+  --wit: #ffffff;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; color-scheme: light; }
+body {
+  min-height: 100vh;
+  background: linear-gradient(180deg, #0B3B37 0%, #0F5F58 42%, var(--achtergrond) 42%);
+  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color: var(--tekst);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 48px 16px;
+}
+.kader { width: 100%; max-width: 400px; }
+.merk { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; color: #EAF5F3; }
+.logo {
+  width: 44px; height: 44px; border-radius: 13px;
+  background: #0F766E; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18);
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 6px 16px rgba(11, 60, 90, 0.5);
+}
+.merknaam { font-size: 18px; font-weight: 800; letter-spacing: -0.01em; }
+.merknaam { font-family: 'Sora', 'Inter', sans-serif; }
+.merknaam em { font-style: normal; font-weight: 700; color: #7FD8CB; }
+.merksub { font-size: 12px; opacity: .75; margin-top: 2px; }
+.kaart {
+  background: var(--wit);
+  border: 1px solid var(--rand);
+  border-radius: 14px;
+  box-shadow: 0 16px 48px rgba(27, 39, 51, 0.16);
+  padding: 26px 24px 24px;
+}
+h1 { font-size: 20px; margin: 0 0 6px; letter-spacing: -0.01em; }
+.uitleg { font-size: 13px; color: var(--gedempt); line-height: 1.55; margin: 0 0 14px; }
+label { display: block; font-size: 13px; font-weight: 600; margin: 14px 0 5px; }
+input {
+  width: 100%;
+  font: inherit;
+  font-size: 16px; /* 16px: geen automatisch inzoomen op iOS */
+  padding: 11px 12px;
+  border: 1px solid #CBC7BA;
+  border-radius: 9px;
+  background: var(--wit);
+  color: var(--tekst);
+}
+input:focus { outline: 3px solid rgba(28, 110, 164, 0.25); border-color: var(--primary); }
+button {
+  width: 100%;
+  margin-top: 20px;
+  padding: 12px 16px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--primary);
+  border: 1px solid var(--primary);
+  border-radius: 10px;
+  cursor: pointer;
+}
+button:hover { background: var(--primary-donker); border-color: var(--primary-donker); }
+button:focus-visible { outline: 3px solid rgba(57, 198, 172, 0.6); outline-offset: 2px; }
+button[disabled] { opacity: 0.6; cursor: wait; }
+.melding {
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: #8a2e20;
+  background: var(--fout-bg);
+  border: 1px solid var(--fout-rand);
+  border-radius: 9px;
+}
+.melding.blokkade { color: #7a5000; background: #fef6e0; border-color: #f0c840; }
+.voet { font-size: 12px; color: var(--gedempt); text-align: center; margin-top: 16px; line-height: 1.5; }

@@ -8,7 +8,8 @@ document beschrijft hoe de backend in elkaar zit, zodat je zelf kunt opzoeken wa
 
 ```
 backend/
-├── server.py                 FastAPI-app: rekenroutes, (later) accounts en beveiliging, frontend serveren
+├── server.py                 FastAPI-app: rekenroutes, frontend serveren; app = api + beveiligingslaag
+├── beveiliging.py            middleware: limieten, toegang (sessie/token), CSRF, beveiligingskoppen
 ├── maak_documentatie.py      maakt DOCUMENTATIE.md uit de docstrings
 ├── requirements.txt          Python-pakketten (FastAPI, uvicorn, pydantic; pytest/httpx voor tests)
 ├── rasterplanner/            de rekenkern, per stap één bestand

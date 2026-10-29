@@ -6,6 +6,8 @@ De rekenkern van de rasterplanner in Python, met een webserver eromheen.
   in de browser (bewezen met 1465 pariteitsgevallen).
 - **Server**: `server.py` (FastAPI). Rekenroutes `/api/voorstel`, `/api/sessierooster`, `/api/analyse`,
   `/api/batch`, `/api/health`, en de gebouwde frontend op `/`.
+- **Beveiliging**: `beveiliging.py` (toegang, limieten, CSRF, koppen) om de hele app; uitleg en
+  hosting (Vercel, eigen server) in `BEVEILIGING.md`.
 - **Uitleg**: `ARCHITECTUUR.md` (indeling, datamodel, valkuilen, testafspraken) en `DOCUMENTATIE.md`
   (per module, automatisch uit de docstrings).
 
