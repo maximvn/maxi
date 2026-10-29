@@ -159,6 +159,21 @@ het dashboard, stap 2.)
    certificaat. De sessiecookie werkt per domein: wie wisselt tussen `vercel.app` en het eigen
    domein, logt op elk apart in.
 
+## Zoals het nu is ingericht (29 oktober 2026)
+
+| Wat | Waarde |
+|---|---|
+| Vercel-team | `raster4` |
+| Project | `rasterplanner`, adres `https://rasterplanner.vercel.app` |
+| Branch die live gaat | `claude/radiologie-rasterplanner-2-wtrmeb` |
+| Database | Turso, gekoppeld via Storage, alleen aan dit project |
+| Regio | Washington (VS), zowel de database als de Python-functie |
+| Andere projecten in hetzelfde team | `rastertoolpoli` (PoliRaster, eigen branch) en `maxi`; die staan los hiervan |
+
+De regio staat in de VS. Moeten gebruikersnamen, inlogtijden en IP-adressen binnen de EU blijven,
+maak dan een nieuwe Turso-database in Frankfurt of Amsterdam. Zet daarna onder Settings → Functions de
+regio op `fra1` en doe een Redeploy. Doe dat bij voorkeur voordat collega's veel werk hebben opgeslagen.
+
 ## Controleren
 
 - Privévenster → `https://rasterplanner.vercel.app` → de inlogpagina, niet de tool.
