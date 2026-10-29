@@ -25,7 +25,8 @@ dist/          radiologie_rasterplanner_2.html — de tool als één los bestand
 voorbeelden/   de twee invoerlijsten om mee te testen
 ```
 
-Meer uitleg per deel: `frontend/README.md` (bestanden en hoe je bouwt), `frontend/CONVENTIES.md`
+Hoe de tool stap voor stap een veilige webapplicatie werd: `WERKWIJZE.md`. Online zetten:
+`deploy/VERCEL.md`. Meer uitleg per deel: `frontend/README.md` (bestanden en hoe je bouwt), `frontend/CONVENTIES.md`
 (afspraken voor de code), `backend/README.md` en `backend/ARCHITECTUUR.md` (rekenkern, server en
 de pariteitstest die bewijst dat JavaScript en Python hetzelfde rekenen).
 

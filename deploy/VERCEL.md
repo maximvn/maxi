@@ -1,6 +1,6 @@
 # Radiologie Rasterplanner op Vercel
 
-## Snelstart (voor wie nog nooit met Vercel werkte) — 4 stappen, ±10 minuten
+## Snelstart (voor wie nog nooit met Vercel werkte) — 5 stappen, ±15 minuten
 
 Je hoeft niets te programmeren of te installeren. Alles gaat via de website van Vercel.
 
@@ -32,6 +32,16 @@ Je hoeft niets te programmeren of te installeren. Alles gaat via de website van 
 1. Klik bovenin op **Deployments**.
 2. Bij de bovenste regel: klik op de drie puntjes **⋯** → **Redeploy** → **Redeploy**.
 3. Wacht tot er **Ready** staat (1 à 2 minuten).
+
+**Stap 5 — accounts voor collega's aanmaken (na de eerste keer inloggen, zie hieronder)**
+1. Klik in de tool links onderin op **Beheer**.
+2. Klik **+ Nieuwe gebruiker**. Vul de gebruikersnaam (bv. `j.jansen`) en de naam in, en kies
+   de rol: **Gebruiker** voor planners, **Beheer** alleen voor wie zelf accounts moet kunnen maken.
+3. Klik op **Maak** naast het veld *Startwachtwoord*: de tool bedenkt een tijdelijk wachtwoord.
+   Klik **Aanmaken**.
+4. Geef de gebruikersnaam en het tijdelijke wachtwoord persoonlijk of telefonisch door, niet in
+   dezelfde mail. Bij de eerste keer inloggen kiest de collega zelf een eigen wachtwoord.
+5. In **Beheer → Logboek** zie je daarna wie wanneer inlogde.
 
 **Klaar. Zo test je het**
 1. Open `https://rasterplanner.vercel.app` in een privévenster (Ctrl+Shift+N).
@@ -120,7 +130,7 @@ de eerste login dus laten staan of weghalen.
    wachtwoord uit stap 3. Je komt op het startscherm (*Verder waar je was* / *Nieuw raster
    beginnen* / *Raster of sessie inladen*).
 3. Klik in het linkermenu op **Beheer** → **+ Nieuwe gebruiker**: vul gebruikersnaam, naam,
-   rol (`gebruiker` of `beheer`) en een tijdelijk wachtwoord in (de knop ⟳ maakt er een).
+   rol (**Gebruiker** of **Beheer**) en een startwachtwoord in (de knop **Maak** bedenkt er een).
    Geef het wachtwoord veilig door. Met **Wachtwoord resetten** krijgt een gebruiker een
    nieuw tijdelijk wachtwoord en moet hij bij de volgende login zelf een eigen kiezen.
 4. Zet de branch als productiebranch: Settings → Git → **Production Branch**. Elke push
