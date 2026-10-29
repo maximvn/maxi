@@ -1,7 +1,7 @@
 # Radiologie Rasterplanner — rekenserver + gebouwde frontend in één container.
 #
 # Wat doet dit bestand
-#   Bouwt in twee stappen één image: eerst de frontend (Node, `npm run build:simpel`), daarna de
+#   Bouwt in twee stappen één image: eerst de frontend (Node, `npm run build`), daarna de
 #   Python-server die de frontend serveert, met login, limieten en beveiligingskoppen.
 # Gebruik (vanuit de hoofdmap van de repo; docker-compose.yml doet dit voor je):
 #   docker build -f deploy/Dockerfile -t rasterplanner .
@@ -16,7 +16,7 @@ WORKDIR /bouw/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY frontend/ ./
-RUN npm run build:simpel
+RUN npm run build
 
 # ── stap 2: de Python-server ───────────────────────────────────────────────────
 FROM python:3.12-slim

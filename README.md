@@ -84,10 +84,10 @@ Wat de test vond en wat er is veranderd:
 **Voorblad** — Nieuw raster ontwerpen, bestaand raster aanpassen (Excel met herstelblad of .json), doorgaan
 waar je gebleven was (autosave in de browser) en een voorbeeld (jaarplan 2027) verkennen.
 
-**Twee varianten** — De online versie op Vercel is de *simpele* variant (`npm run build:simpel`): daarin
-staat het voorbeeld met demodata nergens, niet op het voorblad, niet op Start en niet in stap 1. Wil je
-het voorbeeld online terug, verander dan in `vercel.json` de regel `"buildCommand"` van
-`npm run build:simpel` naar `npm run build`. Het losse HTML-bestand en `npm run dev` hebben het voorbeeld wel.
+**Twee varianten** — De online versie op Vercel is de volledige tool (`npm run build`): met het voorbeeld
+(jaarplan 2027) op het voorblad, op Start en in stap 1. Er is ook een *simpele* variant zonder dat voorbeeld
+(`npm run build:simpel`). Die zet je online door in `vercel.json` de regel `"buildCommand"` te veranderen
+in `cd frontend && npm run build:simpel`.
 
 **Stap 1 · Modaliteiten en kamers** — *Invoerlijst 1* inladen (Kamer, Modaliteit, Kameromschrijving,
 Benuttingspercentage, Sessieduur, Aantal sessies regulier/reductie, Gemiddeld aantal afspraken). Elke

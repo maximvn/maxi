@@ -9,7 +9,7 @@
  *   - `npm run build:html`   → één los bestand ../dist/radiologie_rasterplanner_2.html (alles ingebakken).
  *
  * Plaats in de tool
- *   Bouwgereedschap. Vercel draait `npm run build:simpel` (zie vercel.json in de hoofdmap).
+ *   Bouwgereedschap. Vercel draait `npm run build` (zie vercel.json in de hoofdmap).
  *
  * Invoer
  *   index.html, src/, public/ en de .env.<modus>-bestanden.

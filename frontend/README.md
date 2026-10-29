@@ -9,7 +9,7 @@ De tool zelf: React 18 met Vite. Rekent in de browser (in een Web Worker), of �
 npm install                 # eenmalig
 npm run dev                 # ontwikkelen op http://localhost:5173 (/api gaat door naar poort 8000)
 npm run build               # dist/ — rekent in de browser
-npm run build:simpel        # dist/ — zonder het voorbeeld met demodata (Vercel bouwt deze)
+npm run build:simpel        # dist/ — zonder het voorbeeld met demodata (Vercel bouwt `npm run build`)
 npm run build:api           # dist/ — rekent via de Python-server (zelfde adres)
 npm run build:html          # ../dist/radiologie_rasterplanner_2.html — alles in één bestand
 npm test                    # rekenkern, conventies en de stabiliteitstest

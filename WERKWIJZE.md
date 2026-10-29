@@ -99,9 +99,10 @@ De uitleg, ook over wat bewust zo blijft, staat in `README.md` onder *Stabilitei
 
 ## Onderdeel 8 — de simpele variant
 
-De online versie bevat geen voorbeeld met demodata, niet op het voorblad, niet op Start en niet in
-stap 1. Wil je het voorbeeld terug, dan verander je één regel in `vercel.json`. Hoe, staat in
-`README.md` onder *Twee varianten*.
+Er is een bouwvariant zonder het voorbeeld met demodata, `npm run build:simpel`. Daarin staat het
+voorbeeld niet op het voorblad, niet op Start en niet in stap 1. Eerst bouwde Vercel deze variant.
+Op verzoek bouwt Vercel nu weer de volledige tool, met het voorbeeld. Terug naar de simpele variant
+is één regel in `vercel.json`. Hoe, staat in `README.md` onder *Twee varianten*.
 
 ## Onderdeel 9 — onderdelen van derden en geüploade bestanden
 

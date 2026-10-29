@@ -66,7 +66,7 @@ het Turso-token vernieuwd, dan moet iedereen opnieuw inloggen; verder verandert 
 
 ## 4. Vercel
 
-- `vercel.json`: installeert en bouwt de frontend (`cd frontend && npm ci`, `npm run build:simpel`),
+- `vercel.json`: installeert en bouwt de frontend (`cd frontend && npm ci`, `npm run build`),
   serveert `frontend/dist`, stuurt `/api/(.*)` naar de Python-functie `api/index.py`, en zet de
   beveiligingskoppen ook op de statische bestanden.
 - `api/index.py`: de FastAPI-app als serverless-functie, met `RASTERPLANNER_ACCOUNTS_VERPLICHT=1`,

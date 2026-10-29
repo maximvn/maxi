@@ -72,7 +72,7 @@ inlogde. Het ontwerp en alle API-afspraken staan in `backend/ACCOUNTS.md`.
 
 | Bestand | Doet |
 |---|---|
-| `vercel.json` | bouwopdracht (`frontend/`, variant zonder voorbeeld met demodata: `npm run build:simpel`; wil je het voorbeeld terug, verander dan alleen de regel `"buildCommand"` in `cd frontend && npm run build`), uitvoermap `frontend/dist`, `/api/*` naar de Python-functie, beveiligingskoppen (CSP, HSTS, geen frames) |
+| `vercel.json` | bouwopdracht (`frontend/`, `npm run build`: de volledige tool, met het voorbeeld op het voorblad en op Start; wil je een versie zonder voorbeeld, verander dan alleen de regel `"buildCommand"` in `cd frontend && npm run build:simpel`), uitvoermap `frontend/dist`, `/api/*` naar de Python-functie, beveiligingskoppen (CSP, HSTS, geen frames) |
 | `middleware.js` | Edge Middleware vóór elk verzoek: controleert de sessiecookie (HMAC-SHA256 met `RASTERPLANNER_GEHEIM`, vervaltijd). Zonder sessie: pagina → `/login.html`, API → 401. Zonder `RASTERPLANNER_GEHEIM` laat hij niemand binnen (503) |
 | `frontend/public/login.html`, `login.js`, `login.css` | de inlogpagina (statisch, komt via de build in `frontend/dist/`) |
 | `api/index.py` + `requirements.txt` | de Python-API: rekenen, inloggen, opgeslagen stand, beheer |
