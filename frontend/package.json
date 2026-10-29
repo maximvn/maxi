@@ -1,0 +1,37 @@
+{
+  "name": "radiologie-rasterplanner-frontend",
+  "private": true,
+  "version": "2.0.0",
+  "description": "Radiologie Rasterplanner 2.0 — de React-frontend als Vite-project (bron in src/).",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:simpel": "vite build --mode simpel",
+    "build:api": "vite build --mode api",
+    "build:html": "vite build --mode html",
+    "preview": "vite preview",
+    "test": "node tests/test_rekenkern.mjs && node tests/test_conventies.mjs",
+    "test:e2e": "npm run build:html && node tests/test_tool_e2e.mjs",
+    "test:build": "node tests/test_vite_build.mjs",
+    "format": "prettier --write \"src/**/*.{js,jsx,css}\" \"tests/**/*.mjs\" vite.config.js",
+    "format:check": "prettier --check \"src/**/*.{js,jsx,css}\" \"tests/**/*.mjs\" vite.config.js",
+    "lint": "eslint src tests vite.config.js eslint.config.js"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "globals": "^15.15.0",
+    "prettier": "^3.3.3",
+    "vite": "^5.4.11",
+    "vite-plugin-singlefile": "^2.0.3"
+  }
+}

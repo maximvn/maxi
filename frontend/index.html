@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="nl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Radiologie Rasterplanner 2.0</title>
+    <meta
+      name="description"
+      content="Rasterplanner 2.0 voor radiologie: van invoerlijst naar sessierooster en planraster per kamer, met voorstelraster, planregels en Excel-export."
+    />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%230F766E'/%3E%3Cpath d='M6 6h5v5H6zM13 6h5v5h-5zM6 13h5v5H6zM13 13h5v5h-5z' fill='white'/%3E%3C/svg%3E"
+    />
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: #f4f3ee;
+      }
+      #root {
+        min-height: 100vh;
+      }
+      .boot {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        color: #66746f;
+        font-size: 13px;
+        letter-spacing: 0.02em;
+      }
+      #noscript {
+        padding: 40px;
+        text-align: center;
+        font-family: sans-serif;
+        color: #333;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"><div class="boot">Rasterplanner wordt geladen…</div></div>
+    <noscript
+      ><div id="noscript">
+        Deze tool heeft JavaScript nodig. Zet JavaScript aan in je browser en open de tool opnieuw.
+      </div></noscript
+    >
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
